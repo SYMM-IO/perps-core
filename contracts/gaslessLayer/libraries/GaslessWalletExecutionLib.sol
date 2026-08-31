@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
@@ -166,7 +166,7 @@ library GaslessWalletExecutionLib {
 		IInstantLayer.SignedOperation calldata signedOp
 	) internal view returns (address ownerWallet, address canonicalAccount) {
 		if (signedOp.signerAccount.isPartyB) revert IGaslessLayer.WalletOperationForPartyBUnsupported();
-		canonicalAccount = _resolveBillingAccount(accountLayer, signedOp.signerAccount.addr);
+		canonicalAccount = _resolveCanonicalAccount(accountLayer, signedOp.signerAccount.addr);
 		ownerWallet = _ownerWalletForCanonicalAccount(accountLayer, canonicalAccount);
 	}
 
@@ -179,7 +179,7 @@ library GaslessWalletExecutionLib {
 	}
 
 	function _isWalletOperation(ISymmioAccountLayer accountLayer, IInstantLayer.SignedOperation calldata signedOp) internal view returns (bool) {
-		address canonicalAccount = _resolveBillingAccount(accountLayer, signedOp.signerAccount.addr);
+		address canonicalAccount = _resolveCanonicalAccount(accountLayer, signedOp.signerAccount.addr);
 		address ownerWallet = _ownerWalletForCanonicalAccount(accountLayer, canonicalAccount);
 		return signedOp.target == GaslessWalletDeployerLib.getGaslessWalletAddress(ownerWallet);
 	}
@@ -208,8 +208,10 @@ library GaslessWalletExecutionLib {
 		}
 	}
 
-	function _resolveBillingAccount(ISymmioAccountLayer accountLayer, address account) internal view returns (address) {
-		return GaslessBillingIdentity.resolveBillingAccount(accountLayer, account);
+	/// @dev Authorization identity, not billing identity: only a live VA rolls up to its parent, so a
+	///      deleted VA address cannot widen wallet ownership or delegation scope to the parent.
+	function _resolveCanonicalAccount(ISymmioAccountLayer accountLayer, address account) internal view returns (address) {
+		return GaslessBillingIdentity.resolveCanonicalAccount(accountLayer, account);
 	}
 
 	function _selectorFromCalldata(bytes calldata callData) internal pure returns (bytes4) {

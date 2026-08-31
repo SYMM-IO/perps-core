@@ -2,8 +2,8 @@
 #
 # symmio — operator entrypoint for deploying, configuring and inspecting SYMMIO.
 #
-#   ./symmio doctor --config deployments/arbitrum.json
-#   ./symmio deploy --config deployments/arbitrum.json
+#   ./symmio doctor --config deployment-recipes/arbitrum.json
+#   ./symmio deploy --config deployment-recipes/arbitrum.json
 #
 # This is the same CLI that `npm link` exposes globally as `symmio`; running it from the
 # checkout needs no install step. It guards the two things that make the CLI trustworthy —

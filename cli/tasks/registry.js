@@ -1,4 +1,4 @@
-import { DEPLOYABLE_CONTRACTS } from "../../deployment/deployableContracts.js";
+import { DEPLOYABLE_CONTRACTS } from "../../deployment-tooling/deployableContracts.js";
 import { config as runConfig } from "../commands/config.js";
 import { deploy, readComponentReport, validateDeploymentHandoff } from "../commands/deploy.js";
 import { doctor } from "../commands/doctor.js";
@@ -145,7 +145,7 @@ function readPendingSafeActions(input) {
 			live: recipe.recipe.network.mode === "live",
 			config: {
 				admin: component.admin || recipe.recipe.governance.admin,
-				...(input.only === "partyB" ? { signer: component.signer, adlEnabled: component.adlEnabled } : {}),
+				...(input.only === "partyB" ? { signer: component.signer, operators: component.operators, adlEnabled: component.adlEnabled } : {}),
 				...(input.only === "symbolManager" ? { operator: component.operator } : {}),
 			},
 		});
@@ -209,8 +209,8 @@ async function configureRequiredKeystoreKeys(ui, signer, keys) {
 }
 
 async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = {}) {
-	const directory = path.join(root, "deployments");
-	if (!fs.existsSync(directory)) throw new Error("No deployments/ directory exists in this checkout");
+	const directory = path.join(root, "deployment-recipes");
+	if (!fs.existsSync(directory)) throw new Error("No deployment-recipes/ directory exists in this checkout");
 	const files = fs
 		.readdirSync(directory)
 		.filter(file => file.endsWith(".json"))
@@ -226,7 +226,7 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 				return false;
 			}
 		});
-	if (files.length === 0) throw new Error("No deployment recipe exists under deployments/");
+	if (files.length === 0) throw new Error("No deployment recipe exists under deployment-recipes/");
 	const selected = await ui.select({
 		message: "Which reviewed deployment recipe?",
 		options: files.map(file => ({ value: file, label: path.basename(file), hint: path.relative(root, file) })),
@@ -245,14 +245,23 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 function deploymentPlan(input, scope) {
 	const live = input.mode === "live";
 	const contracts = scope === "full" || scope === "core" ? Object.keys(DEPLOYABLE_CONTRACTS).sort() : [];
-	const batchItems = stage =>
-		contracts.map((key, index) => {
+	let componentActions = [];
+	if ((scope === "full" || scope === "partyB") && input.config) {
+		const context = loadRecipeContext(input.config, { only: scope === "partyB" ? "partyB" : undefined });
+		componentActions = context.plan.components.flatMap(component =>
+			(component.actions || []).map(action => ({ component: component.name, action })),
+		);
+	}
+	const batchItems = stage => [
+		...contracts.map((key, index) => {
 			const slug = key
 				.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
 				.replace(/[^A-Za-z0-9]+/g, "-")
 				.toLowerCase();
 			return `${stage}.contract-${String(index + 1).padStart(3, "0")}.${slug}`;
-		});
+		}),
+		...componentActions.map(({ component, action }) => `${stage}.${component}.${action.id}`),
+	];
 	return [
 		{ id: "preflight", phase: "prepare", title: "Validate recipe, RPC, signer, permissions and deployment plan" },
 		{ id: "compile", phase: "prepare", title: "Compile the exact production source" },
@@ -425,6 +434,7 @@ async function executeDeployment(ctx, input) {
 function deployDefinition({ id, title, description, only, coreBundle = false }) {
 	return common({
 		id,
+		version: only === "partyB" || (!only && !coreBundle) ? 3 : 2,
 		category: "deploy",
 		risk: "transaction",
 		title,
@@ -1026,16 +1036,6 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 
 const MAINTENANCE_TASKS = [
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
-	oneStepMaintenance({
-		id: "maintenance.rpc-health",
-		version: 1,
-		risk: "read-only",
-		title: "RPC health check",
-		description: "Check the encrypted Arbitrum RPC endpoint without exposing its URL.",
-		supportedNetworks: ["arbitrum"],
-		prepare: async () => ({}),
-		execute: ctx => ctx.runProcess("./utils/checkArbitrumRpc.sh"),
-	}),
 	...["show", "diff", "export"].map(operation =>
 		oneStepMaintenance({
 			id: `maintenance.config-${operation}`,
@@ -1092,28 +1092,6 @@ const MAINTENANCE_TASKS = [
 			ctx
 				.runCallable("explorer verification retry", () => verify({ config: input.config, "retry-failed": true, _: [] }))
 				.then(code => requireZero(code, "Explorer verification")),
-		reconcile: mutationReconcile,
-	}),
-	oneStepMaintenance({
-		id: "maintenance.arbitrum-ledger-handover",
-		version: 1,
-		risk: "transaction",
-		title: "Arbitrum Ledger handover completion",
-		description: "Discover the expected Ledger signer, complete pending handover transactions and recheck ownership.",
-		supportedNetworks: ["arbitrum"],
-		inputs: ["expected Ledger address", "device confirmation"],
-		prepare: async ({ ui }) => {
-			const address = await inputText(ui, "Expected Ledger address", { address: true });
-			if (address === null) return null;
-			if (!(await ui.confirm({ message: "Ledger is connected and the Ethereum app is open?", initialValue: true }))) return null;
-			return {
-				address,
-				network: "arbitrum",
-				chainId: 42161,
-				signer: { mode: SIGNER_MODES.LEDGER, address, derivation: "ledger-live" },
-			};
-		},
-		execute: (ctx, input) => ctx.runProcess("./utils/completeArbitrumHandoverWithLedger.sh", [input.address]),
 		reconcile: mutationReconcile,
 	}),
 	...["enable", "disable"].map(action =>

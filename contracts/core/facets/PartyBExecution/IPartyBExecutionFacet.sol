@@ -5,12 +5,18 @@
 pragma solidity >=0.8.18;
 
 import { IPartiesEvents } from "../../interfaces/IPartiesEvents.sol";
+import { SolverFeeEntry } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlSig, PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
-/// @notice The fee-aware solver execution interface: every trade action a solver performs, with the
-///         solver rate fee charged atomically. Pass solverFee = 0 for fee-less execution.
+/// @notice Party B execution with atomic, tagged solver fee charging. An empty fee list means no fee.
 interface IPartyBExecutionFacet is IPartiesEvents {
-	function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, PairUpnlAndPriceSig memory upnlSig, uint256 solverFee) external;
+	function openPosition(
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 openedPrice,
+		PairUpnlAndPriceSig memory upnlSig,
+		SolverFeeEntry[] calldata solverFees
+	) external;
 
 	function lockAndOpenPosition(
 		uint256 quoteId,
@@ -18,7 +24,7 @@ interface IPartyBExecutionFacet is IPartiesEvents {
 		uint256 openedPrice,
 		SingleUpnlSig memory lockSig,
 		PairUpnlAndPriceSig memory upnlSig,
-		uint256 solverFee
+		SolverFeeEntry[] calldata solverFees
 	) external;
 
 	function fillCloseRequest(
@@ -26,14 +32,14 @@ interface IPartyBExecutionFacet is IPartiesEvents {
 		uint256 filledAmount,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
-		uint256 solverFee
+		SolverFeeEntry[] calldata solverFees
 	) external;
 
 	function fillCloseRequestToLiquidation(
 		uint256 quoteId,
-		uint256 maxQuantity,
+		uint256 maxFillAmount,
 		uint256 closedPrice,
 		PairUpnlAndPriceSig memory upnlSig,
-		uint256 solverFee
+		SolverFeeEntry[] calldata maxSolverFees
 	) external returns (uint256 filledAmount);
 }

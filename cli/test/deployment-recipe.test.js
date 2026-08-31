@@ -7,7 +7,7 @@ import {
 	recipeDigest,
 	recipeEnvironment,
 	validateDeploymentRecipe,
-} from "../../deployment/recipe.js";
+} from "../../deployment-tooling/recipe.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -112,6 +112,23 @@ test("recipe validation is strict at every layer and enforces conditional addres
 	const reuseWithoutAddress = localRecipe();
 	reuseWithoutAddress.partyB = { mode: "reuse", adlEnabled: false };
 	assert.throws(() => validateDeploymentRecipe(reuseWithoutAddress), /partyB\.address is required/);
+
+	const deployWithoutOperators = localRecipe();
+	deployWithoutOperators.partyB = { mode: "deploy", signer: B, adlEnabled: false };
+	assert.throws(() => validateDeploymentRecipe(deployWithoutOperators), /partyB\.operators is required/);
+
+	const deployWithoutSigner = localRecipe();
+	deployWithoutSigner.partyB = { mode: "deploy", operators: [D], adlEnabled: false };
+	assert.equal(validateDeploymentRecipe(deployWithoutSigner).partyB.signer, undefined);
+	assert.equal(recipeEnvironment(deployWithoutSigner).env.PARTYB_SIGNER, "");
+
+	const duplicateOperators = localRecipe();
+	duplicateOperators.partyB = { mode: "deploy", signer: B, operators: [D, D.toLowerCase()], adlEnabled: false };
+	assert.throws(() => validateDeploymentRecipe(duplicateOperators), /partyB\.operators\[1\] duplicates an earlier address/);
+
+	const reusedWithOperators = localRecipe();
+	reusedWithOperators.partyB = { mode: "reuse", address: D, operators: [B], adlEnabled: false };
+	assert.throws(() => validateDeploymentRecipe(reusedWithOperators), /partyB\.operators must be omitted when mode is reuse/);
 
 	const deployWithAddress = localRecipe();
 	deployWithAddress.expressProvider = { mode: "deploy", address: D };
@@ -264,12 +281,19 @@ test("secret references are metadata only and live recipes require infrastructur
 
 test("planner supports one-go and component-only runs without silently deploying dependencies", () => {
 	const recipe = localRecipe();
-	recipe.partyB = { mode: "deploy", signer: B, adlEnabled: true };
+	recipe.partyB = { mode: "deploy", signer: B, operators: [D], adlEnabled: true };
 	recipe.symbolManager = { mode: "deploy", operator: C };
+	const operatorAction = {
+		id: `grant-trusted-operator-${D.toLowerCase()}`,
+		target: "SymmioPartyB",
+		operation: "grantRole",
+		role: "TRUSTED_ROLE",
+		account: D,
+	};
 
 	assert.deepEqual(createDeploymentPlan(recipe).components, [
 		{ name: "core", mode: "deploy", dependsOn: [] },
-		{ name: "partyB", mode: "deploy", dependsOn: ["core"] },
+		{ name: "partyB", mode: "deploy", dependsOn: ["core"], actions: [operatorAction] },
 		{ name: "symbolManager", mode: "deploy", dependsOn: ["core"] },
 		{ name: "expressProvider", mode: "skip", dependsOn: ["core"] },
 		{ name: "gaslessLayer", mode: "skip", dependsOn: ["core"] },
@@ -279,7 +303,7 @@ test("planner supports one-go and component-only runs without silently deploying
 	onlyRecipe.core.fromReport = "reports/core.json";
 	assert.deepEqual(createDeploymentPlan(onlyRecipe, { only: "partyB" }).components, [
 		{ name: "core", mode: "reuse", dependsOn: [] },
-		{ name: "partyB", mode: "deploy", dependsOn: ["core"] },
+		{ name: "partyB", mode: "deploy", dependsOn: ["core"], actions: [operatorAction] },
 	]);
 	assert.throws(
 		() => createDeploymentPlan(onlyRecipe, { only: "expressProvider" }),
@@ -287,7 +311,7 @@ test("planner supports one-go and component-only runs without silently deploying
 	);
 
 	const missingProof = localRecipe();
-	missingProof.partyB = { mode: "deploy", signer: B, adlEnabled: false };
+	missingProof.partyB = { mode: "deploy", signer: B, operators: [D], adlEnabled: false };
 	assert.throws(
 		() => createDeploymentPlan(missingProof, { only: "partyB" }),
 		error => error.code === "CORE_DEPENDENCY_UNPROVEN",
@@ -296,7 +320,7 @@ test("planner supports one-go and component-only runs without silently deploying
 	const reusedCore = localRecipe();
 	reusedCore.core.mode = "reuse";
 	reusedCore.core.fromReport = "reports/core.json";
-	reusedCore.partyB = { mode: "deploy", signer: B, adlEnabled: false };
+	reusedCore.partyB = { mode: "deploy", signer: B, operators: [D], adlEnabled: false };
 	assert.throws(
 		() => createDeploymentPlan(reusedCore),
 		error => error.code === "TARGET_MODE_UNSUPPORTED",
@@ -628,7 +652,7 @@ test("environment projection contains public values and unresolved secret metada
 });
 
 test("distributed example is JSON-parseable but intentionally fails until placeholders are replaced", () => {
-	const examplePath = path.resolve("deployment/examples/arbitrum.v1.example.json");
+	const examplePath = path.resolve("deployment-tooling/examples/arbitrum.v1.example.json");
 	const example = JSON.parse(fs.readFileSync(examplePath, "utf8"));
 	assert.equal(example.apiVersion, "deployment.symm.io/v1");
 	assert.throws(() => validateDeploymentRecipe(example, examplePath), /REPLACE|20-byte hexadecimal address/);

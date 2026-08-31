@@ -6,6 +6,5 @@ pragma solidity >=0.8.18;
 
 /// @notice Minimal interface for OpenZeppelin's ProxyAdmin, used by upgrade tasks
 interface IProxyAdmin {
-	function upgrade(address proxy, address implementation) external;
 	function upgradeAndCall(address proxy, address implementation, bytes calldata data) external payable;
 }

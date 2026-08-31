@@ -43,6 +43,7 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 			const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress, SymmioPartyA.bytecode], {
 				initializer: "initialize",
 				label: "MultiAccount",
+				proxyKey: "peripherals/MultiAccount",
 			})
 
 			const addresses = {

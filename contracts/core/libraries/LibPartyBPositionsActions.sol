@@ -4,6 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus, SolverFeeState } from "../storages/QuoteStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
@@ -17,12 +18,21 @@ import { LibAccount } from "./LibAccount.sol";
 import { LibSolvency } from "./LibSolvency.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibHook } from "./LibHook.sol";
+import { LibLiquidationOvershoot } from "./LibLiquidationOvershoot.sol";
 import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 import { LibSymbol } from "./LibSymbol.sol";
 
 library LibPartyBPositionsActions {
 	using LockedValuesOps for LockedValues;
+
+	struct CloseToLiquidationPlan {
+		uint256 filledAmount;
+		uint256 zeroRateAmount;
+		uint256 effectiveRate;
+		uint256 allowedShortfall;
+		bool canCloseAll;
+	}
 
 	/// @notice Validates and fills a close request by checking state, expiry, price, and amount constraints.
 	function fillCloseRequest(uint256 quoteId, uint256 filledAmount, uint256 closedPrice) internal {
@@ -38,12 +48,40 @@ library LibPartyBPositionsActions {
 		} else {
 			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
 		}
-		if (quote.orderType == OrderType.LIMIT) {
+		if (
+			quote.orderType == OrderType.LIMIT ||
+			(quote.orderType == OrderType.MARKET_BEST_EFFORT && quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING)
+		) {
 			require(quote.quantityToClose >= filledAmount, "PartyBFacet: Invalid filledAmount");
 		} else {
 			require(quote.quantityToClose == filledAmount, "PartyBFacet: Invalid filledAmount");
 		}
 		LibQuoteClose.closeQuote(quote.id, filledAmount, closedPrice);
+	}
+
+	/// @notice Prepares a close-to-liquidation fill without duplicating its state transition across execution paths.
+	/// @dev A partial MARKET_BEST_EFFORT fill is finalized through the existing cancellation path, which atomically
+	///      clears the unfilled request after the calculated amount is closed.
+	function prepareCloseToLiquidationFill(uint256 quoteId, uint256 filledAmount) internal {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		require(
+			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
+			"PartyBFacet: Invalid state"
+		);
+		_requireCloseToLiquidationOrderType(quote.orderType);
+		require(filledAmount > 0 && filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
+
+		if (quote.orderType == OrderType.MARKET_BEST_EFFORT && filledAmount < quote.quantityToClose) {
+			quote.quoteStatus = QuoteStatus.CANCEL_CLOSE_PENDING;
+		}
+	}
+
+	/// @notice Reverts unless the order type supports close-to-liquidation execution.
+	function _requireCloseToLiquidationOrderType(OrderType orderType) private pure {
+		require(
+			orderType == OrderType.LIMIT || orderType == OrderType.MARKET_BEST_EFFORT,
+			"PartyBFacet: Only LIMIT or MARKET_BEST_EFFORT orders supported"
+		);
 	}
 
 	/// @notice Opens a position by filling a locked quote, handling partial fills and fee collection.
@@ -272,29 +310,20 @@ library LibPartyBPositionsActions {
 		);
 	}
 
-	/// @notice Validates a close-to-liquidation request and computes the amount that keeps PartyA at the
-	///         liquidation edge, reserving room for `solverFeeAmount` (pass 0 for the legacy fee-less path).
-	///         Shared by PartyBPositionActionsFacetImpl and PartyBExecutionFacet so the validation
-	///         and rounding rules cannot diverge between the two close-to-liquidation paths.
+	/// @notice Validates a close-to-liquidation request and builds the shared execution plan.
 	/// @dev Does NOT verify the Muon signature or any party's solvency; callers remain responsible for that.
-	/// @param maxQuantity Ceiling on the close amount. The result is capped to `maxQuantity` and never exceeds it,
-	///        even when keeping PartyA solvent would require closing more. When the cap binds the result can leave
-	///        PartyA below the liquidation edge; the caller's solvency check then reverts (see
-	///        PartyBPositionActionsFacetImpl). Pass `type(uint256).max` for the uncapped (legacy) path.
-	/// @return filledAmount The close amount after applying both the liquidation limit and the `maxQuantity` cap.
-	/// @return uncappedAmount The close amount the liquidation limit alone would allow, before the `maxQuantity`
-	///         cap; equals `filledAmount` when the cap does not bind. Fee-aware callers use the
-	///         `filledAmount / uncappedAmount` ratio to pro-rate an absolute solver fee to the amount actually closed.
-	function calculateCloseToLiquidationAmount(
+	///      The boundary search is bounded by `min(maxFillAmount, quantityToClose)` inside LibSolvency, so `filledAmount`
+	///      already respects the caller's ceiling before the remaining-value fallback runs. For MARKET_BEST_EFFORT,
+	///      `maxFillAmount` must be at least the full requested quantity, so it never caps the result.
+	function calculateCloseToLiquidationPlan(
 		uint256 quoteId,
-		uint256 maxQuantity,
+		uint256 maxFillAmount,
 		uint256 closedPrice,
 		uint256 marketPrice,
 		int256 upnlPartyA,
-		uint256 solverFeeAmount
-	) internal view returns (uint256 filledAmount, uint256 uncappedAmount) {
+		uint256 maxSolverFee
+	) internal view returns (CloseToLiquidationPlan memory plan) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 
 		require(
 			quote.quoteStatus == QuoteStatus.CLOSE_PENDING || quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
@@ -309,51 +338,60 @@ library LibPartyBPositionsActions {
 			require(closedPrice <= quote.requestedClosePrice, "PartyBFacet: Closed price isn't valid");
 		}
 
-		// Only applicable for LIMIT orders - MARKET orders must be filled completely
-		require(quote.orderType == OrderType.LIMIT, "PartyBFacet: Only LIMIT orders supported");
-
-		// Calculate max close amount that keeps PartyA at liquidation threshold
-		(uint256 maxCloseAmount, bool canCloseAll) = LibSolvency.calculateMaxCloseAmountToLiquidation(
-			quoteId,
-			closedPrice,
-			marketPrice,
-			upnlPartyA,
-			solverFeeAmount
-		);
-
-		if (canCloseAll) {
-			// Full close is safe
-			filledAmount = quote.quantityToClose;
-		} else {
-			// Need to close partial amount
-			filledAmount = maxCloseAmount;
+		// Ordinary MARKET orders must be filled completely and are not supported by this path.
+		_requireCloseToLiquidationOrderType(quote.orderType);
+		if (quote.orderType == OrderType.MARKET_BEST_EFFORT) {
+			require(maxFillAmount >= quote.quantityToClose, "PartyBFacet: maxFillAmount cannot limit MARKET_BEST_EFFORT");
 		}
 
-		// Liquidation-limited amount before the maxQuantity cap, so fee-aware callers can pro-rate an absolute fee.
-		uncappedAmount = filledAmount;
+		plan.effectiveRate = LibLiquidationOvershoot.rate(quote.partyB, quote.symbolId);
+		LibSolvency.CloseToLiquidationInputs memory inputs = LibSolvency.CloseToLiquidationInputs({
+			closedPrice: closedPrice,
+			marketPrice: marketPrice,
+			upnlPartyA: upnlPartyA,
+			maxSolverFee: maxSolverFee,
+			maxFillAmount: maxFillAmount,
+			overshootRate: plan.effectiveRate
+		});
+		// A caller cap smaller than the boundary may leave PartyA solvent; the fill is simply the tighter of the two limits.
+		(plan.filledAmount, plan.canCloseAll) = LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, inputs);
+		if (plan.effectiveRate == 0) {
+			plan.zeroRateAmount = plan.filledAmount;
+		}
+		require(plan.filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
 
-		if (filledAmount > maxQuantity) {
-			filledAmount = maxQuantity;
+		if (!_remainingQuoteValueIsValid(quote, plan.filledAmount)) {
+			// The zero-rate amount is only needed when the configured-rate amount enters the invalid remainder band.
+			if (plan.effectiveRate != 0) {
+				inputs.overshootRate = 0;
+				(plan.zeroRateAmount, ) = LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, inputs);
+			}
+			if (plan.filledAmount > plan.zeroRateAmount && _remainingQuoteValueIsValid(quote, plan.zeroRateAmount)) {
+				plan.filledAmount = plan.zeroRateAmount;
+			} else {
+				revert("PartyBFacet: Remaining quote value is low");
+			}
 		}
 
-		// Re-check minAcceptableQuoteValue only when the close was reduced below the requested amount -- a partial close
-		// (maxCloseAmount) or a maxQuantity cap creates a new remaining position. A full fill of the requested amount was
-		// already validated against minAcceptableQuoteValue at request time.
-		if (filledAmount < quote.quantityToClose) {
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			// Match LibQuoteClose rounding for remaining locked values
-			uint256 remainingCva = quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / openAmount);
-			uint256 remainingLf = quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / openAmount);
-			uint256 remainingPartyAmm = quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / openAmount);
-			uint256 remainingLockedValue = remainingCva + remainingLf + remainingPartyAmm;
-			require(
-				remainingLockedValue == 0 || remainingLockedValue >= symbolLayout.symbols[quote.symbolId].minAcceptableQuoteValue,
-				"PartyBFacet: Remaining quote value is low"
-			);
-		}
+		plan.allowedShortfall = LibLiquidationOvershoot.allowedShortfallAfterClose(quote, plan.filledAmount, plan.effectiveRate);
+	}
 
-		require(filledAmount > 0, "PartyBFacet: Cannot close any amount");
-		require(filledAmount <= quote.quantityToClose, "PartyBFacet: Invalid filledAmount");
+	/// @notice Matches the remaining-position check performed by LibQuoteClose for partial close-request fills.
+	function _remainingQuoteValueIsValid(Quote storage quote, uint256 filledAmount) private view returns (bool) {
+		// Filling the whole pending close request creates no new intermediate remainder. Any position left open after
+		// that requested close was already checked when PartyA created the request, so only a partial fill needs this check.
+		if (filledAmount == quote.quantityToClose) return true;
+
+		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+		uint256 remainingLockedValue =
+			quote.lockedValues.cva -
+				Math.mulDiv(quote.lockedValues.cva, filledAmount, openAmount) +
+				quote.lockedValues.lf -
+				Math.mulDiv(quote.lockedValues.lf, filledAmount, openAmount) +
+				quote.lockedValues.partyAmm -
+				Math.mulDiv(quote.lockedValues.partyAmm, filledAmount, openAmount);
+		uint256 minAcceptableQuoteValue = SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue;
+		return remainingLockedValue == 0 || remainingLockedValue >= minAcceptableQuoteValue;
 	}
 
 	/// @notice On a partial open, the child (remainder) quote inherits the same solver-fee rate caps as the opened

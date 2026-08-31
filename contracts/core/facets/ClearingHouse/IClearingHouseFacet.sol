@@ -11,8 +11,8 @@ import { IClearingHouseFacetEvents } from "./IClearingHouseFacetEvents.sol";
 ///      Every value is final after any Clearing House deficit, haircut, dispute, or cap. Funding and realized PnL
 ///      require a real symbolId; platform fees may use symbolId zero when they are not market-attributed.
 ///      Each field is applied with its matching balance-change reason, so corrections use the original economic
-///      class with the opposite sign instead of an unclassified adjustment. Close solver fees are
-///      quote-level inputs to liquidatePositionsForClearingHouse and use the normal close-fee accounting path.
+///      class with the opposite sign instead of an unclassified adjustment. Solver fees are not Clearing House
+///      settlement components and cannot be charged through liquidation.
 ///      Entries must be strictly ordered by account, allocationKey, and symbolId.
 struct ClearingHouseSettlement {
 	address account;
@@ -52,12 +52,8 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 
 	function liquidatePendingPositionsForClearingHouse(address subject, address[] memory counterparties) external;
 
-	function liquidatePositionsForClearingHouse(
-		address subject,
-		uint256[] memory quoteIds,
-		uint256[] memory prices,
-		uint256[] memory closeSolverFees
-	) external;
+	/// @notice Liquidates opened positions at Clearing House supplied prices without charging solver fees.
+	function liquidatePositionsForClearingHouse(address subject, uint256[] memory quoteIds, uint256[] memory prices) external;
 
 	function closeAffiliatePositions(address affiliate, uint256[] memory quoteIds, uint256[] memory prices) external;
 

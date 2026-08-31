@@ -1,5 +1,5 @@
 {
-	"$schema": "../deployment/deployment-recipe.schema.json",
+	"$schema": "../deployment-tooling/deployment-recipe.schema.json",
 	"apiVersion": "deployment.symm.io/v1",
 	"kind": "DeploymentRecipe",
 	"name": "arbitrum-deployment",
@@ -181,6 +181,7 @@
 	"partyB": {
 		"mode": "deploy",
 		"signer": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"operators": ["0x77A955776Ee1dd3E9C800c3214ed489441d74b94"],
 		"adlEnabled": true
 	},
 	"symbolManager": {

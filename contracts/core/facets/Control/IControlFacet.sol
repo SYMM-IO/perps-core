@@ -43,6 +43,8 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet {
 
 	function setSolverFeeReceiver(address partyB, address receiver) external;
 
+	function setSolverFeeReceiverForTag(address partyB, bytes32 tag, address receiver) external;
+
 	function registerAffiliate(address affiliate) external;
 
 	function deregisterAffiliate(address affiliate) external;
@@ -54,7 +56,7 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet {
 	function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime) external;
 
 	/// @notice Sets or clears the UPNL signature validity override for one Muon function category.
-	/// @dev Pass a nonzero value to override the global UPNL validity. Pass zero to clear the override and use setMuonConfig's global value.
+	/// @dev Zero means unset and makes verification use setMuonConfig's global UPNL validity.
 	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external;
 
 	function setMuonIds(uint256 muonAppId) external;

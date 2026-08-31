@@ -13,7 +13,8 @@ enum PositionType {
 /// @notice Type of order execution
 enum OrderType {
 	LIMIT,
-	MARKET
+	MARKET,
+	MARKET_BEST_EFFORT
 }
 
 /// @notice Lifecycle status of a quote from creation through settlement
@@ -29,6 +30,12 @@ enum QuoteStatus {
 	LIQUIDATED, //8
 	EXPIRED, //9
 	LIQUIDATED_PENDING //10
+}
+
+/// @notice The quote-side notional cap used for a solver fee charge
+enum SolverFeeType {
+	OPEN,
+	CLOSE
 }
 
 /// @notice Margin components locked for a position (CVA, liquidation fee, maintenance margins)
@@ -84,6 +91,12 @@ struct Fee {
 struct SolverFeeCaps {
 	uint256 openRateCap;
 	uint256 closeRateCap;
+}
+
+/// @notice One solver fee charge: an amount paired with the tag that routes it to a receiver
+struct SolverFeeEntry {
+	uint256 amount;
+	bytes32 tag;
 }
 
 /// @notice Tracks approved caps and cumulative solver fee charges for a quote

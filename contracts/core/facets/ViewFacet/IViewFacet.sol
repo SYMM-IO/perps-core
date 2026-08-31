@@ -111,6 +111,8 @@ interface IViewFacet {
 
 	function getSolverFeeReceiver(address partyB) external view returns (address);
 
+	function getSolverFeeReceiverForTag(address partyB, bytes32 tag) external view returns (address);
+
 	function getOperationalFeeAllowance(
 		address payer,
 		address charger
@@ -257,14 +259,6 @@ interface IViewFacet {
 	function isLegacyFundingDeprecated() external view returns (bool);
 
 	function isAccumulatedFundingActivated() external view returns (bool);
-
-	function getMaxCloseAmountToLiquidation(
-		uint256 quoteId,
-		uint256 closedPrice,
-		uint256 marketPrice,
-		int256 upnlPartyA,
-		uint256 solverFeeAmount
-	) external view returns (uint256 maxCloseAmount, bool canCloseAll);
 
 	function partyAReimbursement(address partyA) external view returns (uint256);
 

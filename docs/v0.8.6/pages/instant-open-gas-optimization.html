@@ -135,7 +135,7 @@
     uint256 openedPrice,
     SingleUpnlSig memory lockSig,
     PairUpnlAndPriceSig memory upnlSig,
-    uint256 solverFee
+    SolverFeeEntry[] calldata solverFees
 ) external whenNotPartyBOpenPositionsPaused onlyPartyB notLiquidated(quoteId)</code></pre>
 					<p>
 						Event order remains <code>LockQuote</code>, the internal open events, then <code>OpenPosition</code>.
@@ -145,9 +145,10 @@
 						outside that mode, partial fills retain the existing child-quote and <code>SendQuote</code> behavior.
 					</p>
 					<p>
-						A non-zero <code>solverFee</code> is charged after the open, subject to the quote's user-approved open-rate cap. The combined
-						path uses the same solvency guard and emits the same <code>OpenSolverFeeCharged</code> event as fee-aware
-						<code>openPosition</code>. A zero <code>solverFee</code> leaves the open fee-free.
+						A non-empty <code>solverFees</code> entry list is charged after the open, each entry routed to the receiver resolved for its
+						tag, subject to the quote's user-approved open-rate cap over the list total. The combined path uses the same solvency guard
+						and emits the same per-entry <code>SolverFeeCharged</code> events as fee-aware <code>openPosition</code>. Empty arrays leave
+						the open fee-free.
 					</p>
 					<p>
 						Joining lock and open removes the solver's second signed operation and the extra SymmioPartyB routing round trip. The user's
@@ -190,7 +191,7 @@
 					<ol>
 						<li><code>_callWithMargin(subAccount, isolationType, symbolId, margin, [sendQuote])</code>, signed by the user.</li>
 						<li>
-							<code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig, solverFee)</code>, signed by the solver.
+							<code>lockAndOpenPosition(quoteId, filledAmount, openedPrice, lockSig, upnlSig, solverFees)</code>, signed by the solver.
 						</li>
 					</ol>
 					<p>
@@ -565,7 +566,7 @@
 
 					<h3>What a pre-Cancun build requires</h3>
 					<p>
-						The current source compiles with solc 0.8.34 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
+						The current source compiles with solc 0.8.36 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
 						batch paths initiate transient authority. Authorized direct callers can still set the persistent
 						<code>instantOpenMode</code> by calling the legacy selector outside a transient scope, and suspension/restoration continues to
 						protect that compatibility state. Core's legacy <code>setSigner</code> likewise writes the persistent core signer when no

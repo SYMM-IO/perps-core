@@ -42,7 +42,12 @@ describe("LockAndOpenPosition", function () {
 		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB((notional * 12n) / 10n, quote.partyA)
 	}
 
-	function lockAndOpen(quoteId: bigint, filledAmount: bigint = quantity, price: bigint = openPrice, solverFee: bigint = 0n) {
+	function lockAndOpen(
+		quoteId: bigint,
+		filledAmount: bigint = quantity,
+		price: bigint = openPrice,
+		solverFees: { amount: bigint; tag: string }[] = [],
+	) {
 		return (async () =>
 			context.partyBExecutionFacet
 				.connect(context.signers.hedger)
@@ -52,7 +57,7 @@ describe("LockAndOpenPosition", function () {
 					price,
 					await getDummySingleUpnlSig(0n),
 					await getDummyPairUpnlAndPriceSig(openPrice),
-					solverFee,
+					solverFees,
 				))()
 	}
 
@@ -163,11 +168,12 @@ describe("LockAndOpenPosition", function () {
 
 		await allocateForQuote(3n)
 		const solverFee = decimal(1n) // 1 unit on a 100-notional quote = 1%, within the 2% cap
+		const tag = ethers.encodeBytes32String("lock-and-open")
 		const hedgerAddress = await hedger.getAddress()
 
-		await expect(lockAndOpen(3n, quantity, openPrice, solverFee))
-			.to.emit(context.partyBExecutionFacet, "OpenSolverFeeCharged")
-			.withArgs(3, (await context.viewFacetQuote.getQuote(3)).partyA, hedgerAddress, hedgerAddress, request.symbolId, solverFee)
+		await expect(lockAndOpen(3n, quantity, openPrice, [{ amount: solverFee, tag }]))
+			.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
+			.withArgs(3, (await context.viewFacetQuote.getQuote(3)).partyA, hedgerAddress, hedgerAddress, request.symbolId, 0, solverFee, tag)
 	})
 
 	it("should fail when caller is not a partyB", async function () {
@@ -175,7 +181,7 @@ describe("LockAndOpenPosition", function () {
 			(async () =>
 				context.partyBExecutionFacet
 					.connect(context.signers.user2)
-					.lockAndOpenPosition(1, quantity, openPrice, await getDummySingleUpnlSig(0n), await getDummyPairUpnlAndPriceSig(openPrice), 0))(),
+					.lockAndOpenPosition(1, quantity, openPrice, await getDummySingleUpnlSig(0n), await getDummyPairUpnlAndPriceSig(openPrice), []))(),
 		).to.be.revertedWith("Accessibility: Should be partyB")
 	})
 

@@ -4,12 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
-import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { IPartyALiquidationFacet } from "../../core/facets/PartyALiquidation/IPartyALiquidationFacet.sol";
 import { IPartyALiquidationSnapshotFacet } from "../../core/facets/PartyALiquidationSnapshot/IPartyALiquidationSnapshotFacet.sol";
@@ -19,7 +19,7 @@ import { IPartyBLiquidationFacet } from "../../core/facets/PartyBLiquidation/IPa
 ///         against the Symmio core, while fee collection/withdrawal is restricted to
 ///         a separate manager role (operators cannot move funds).
 contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUpgradeable, UUPSUpgradeable {
-	using SafeERC20Upgradeable for IERC20Upgradeable;
+	using SafeERC20 for IERC20;
 
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 	bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
@@ -54,7 +54,6 @@ contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUp
 	function initialize(address admin, address symmioAddress_) public initializer {
 		__Pausable_init();
 		__AccessControl_init();
-		__UUPSUpgradeable_init();
 
 		if (admin == address(0)) revert ZeroAddress();
 		if (symmioAddress_ == address(0)) revert ZeroAddress();
@@ -159,7 +158,7 @@ contract SymmioLiquidator is Initializable, PausableUpgradeable, AccessControlUp
 	///         Only MANAGER_ROLE may call this; operators cannot.
 	function withdrawERC20(address token, address to, uint256 amount) external onlyRole(MANAGER_ROLE) {
 		if (to == address(0)) revert ZeroAddress();
-		IERC20Upgradeable(token).safeTransfer(to, amount);
+		IERC20(token).safeTransfer(to, amount);
 		emit FeeWithdrawn(token, to, amount);
 	}
 

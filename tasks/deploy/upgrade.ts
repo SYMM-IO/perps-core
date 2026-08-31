@@ -96,9 +96,9 @@ export const upgradeProxyTask = task("upgrade:proxy", "Plan a proxy upgrade; exe
 				if (recoveredImplementation) logger.info("[DRY RUN] Would reuse implementation %s", recoveredImplementation)
 				else logger.info("[DRY RUN] Would deploy new implementation of %s", contractName)
 				if (isUUPS) {
-					logger.info("[DRY RUN] Would call proxy.upgradeTo(newImpl)")
+					logger.info("[DRY RUN] Would call proxy.upgradeToAndCall(newImpl, 0x)")
 				} else {
-					logger.info("[DRY RUN] Would call ProxyAdmin(%s).upgrade(proxy, newImpl)", adminSlot)
+					logger.info("[DRY RUN] Would call ProxyAdmin(%s).upgradeAndCall(proxy, newImpl, 0x)", adminSlot)
 				}
 				logger.info(
 					`[DRY RUN] On a local or simulated fork only, re-run with --execute=true --dryrun=false and CONFIRM_CHAIN_ID=${chainId} after reviewing this plan.`,
@@ -140,21 +140,17 @@ export const upgradeProxyTask = task("upgrade:proxy", "Plan a proxy upgrade; exe
 				if (uuid.toLowerCase() !== IMPLEMENTATION_SLOT.toLowerCase()) {
 					throw new Error(`New implementation proxiableUUID is ${uuid}, expected ${IMPLEMENTATION_SLOT}`)
 				}
-				// UUPS: call upgradeTo directly on the proxy
-				// Note: OZ v4.x upgradeToAndCall with empty data forces a delegate call that reverts
-				// (no fallback function), so use upgradeTo instead
-				logger.info("Calling upgradeTo on proxy...")
+				// OpenZeppelin 5 exposes only upgradeToAndCall; empty data performs no delegate call.
+				logger.info("Calling upgradeToAndCall on proxy...")
 				const proxyContract = await ethers.getContractAt(contractName, proxyAddress)
-				await proxyContract.upgradeTo.staticCall(newImplAddress)
-				await send(proxyContract.upgradeTo(newImplAddress), `upgradeTo(${contractName})`)
+				await proxyContract.upgradeToAndCall.staticCall(newImplAddress, "0x")
+				await send(proxyContract.upgradeToAndCall(newImplAddress, "0x"), `upgradeToAndCall(${contractName})`)
 			} else {
-				// Transparent: call ProxyAdmin.upgrade
-				// Note: OZ v4.x upgradeAndCall with empty data forces a delegate call that reverts
-				// (no fallback function), so use upgrade instead
-				logger.info("Calling ProxyAdmin.upgrade...")
+				// OpenZeppelin 5 ProxyAdmin exposes only upgradeAndCall.
+				logger.info("Calling ProxyAdmin.upgradeAndCall...")
 				const proxyAdmin = await ethers.getContractAt("IProxyAdmin", adminSlot)
-				await proxyAdmin.upgrade.staticCall(proxyAddress, newImplAddress)
-				await send(proxyAdmin.upgrade(proxyAddress, newImplAddress), `ProxyAdmin.upgrade(${contractName})`)
+				await proxyAdmin.upgradeAndCall.staticCall(proxyAddress, newImplAddress, "0x")
+				await send(proxyAdmin.upgradeAndCall(proxyAddress, newImplAddress, "0x"), `ProxyAdmin.upgradeAndCall(${contractName})`)
 			}
 
 			// Verify

@@ -8,6 +8,7 @@ import { checkpointDeployment, recoverCheckpointContractDeployments } from "./de
 import { assertStandaloneDeploymentTaskAllowed, getConnection, requireArg } from "./helpers.js"
 import { logger } from "./logger.js"
 import { confirmDeployment } from "./tx.js"
+import { deployContract, type VanityContext } from "./vanityDeploy.js"
 
 // Contract configuration
 const CONTRACT_CONFIG = {
@@ -24,9 +25,11 @@ type DeployInstantLayerArgs = {
 	admin: string
 	logData?: boolean
 	checkpoint?: DeploymentCheckpoint
+	/** Present when the owning deployment mines CREATE2 addresses; null for standalone runs. */
+	vanity?: VanityContext | null
 }
 
-export async function deployInstantLayer(hre: any, { symmioaddress, admin, logData = true, checkpoint }: DeployInstantLayerArgs) {
+export async function deployInstantLayer(hre: any, { symmioaddress, admin, logData = true, checkpoint, vanity }: DeployInstantLayerArgs) {
 	const { ethers } = await getConnection(hre)
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.instantLayer")
 
@@ -47,7 +50,7 @@ export async function deployInstantLayer(hre: any, { symmioaddress, admin, logDa
 
 	// Deploy InstantLayer
 	logger.subsection("Contract")
-	const instantLayer = await deployInstantLayerContract(symmioaddress, admin, ethers, deployer, checkpoint)
+	const instantLayer = await deployInstantLayerContract(symmioaddress, admin, ethers, deployer, checkpoint, vanity)
 
 	const address = await instantLayer.getAddress()
 	logger.deployed("InstantLayer", address)
@@ -91,12 +94,25 @@ export const instantLayerTask = task("deploy:InstantLayer", "Deploys the Instant
 /**
  * Deploys the InstantLayer contract
  */
-async function deployInstantLayerContract(symmioAddress: string, admin: string, ethers: any, deployer: any, checkpoint?: DeploymentCheckpoint) {
+async function deployInstantLayerContract(
+	symmioAddress: string,
+	admin: string,
+	ethers: any,
+	deployer: any,
+	checkpoint?: DeploymentCheckpoint,
+	vanity?: VanityContext | null,
+) {
 	const InstantLayerFactory = await ethers.getContractFactory("InstantLayer")
-	const instantLayer = await InstantLayerFactory.connect(deployer).deploy(symmioAddress, admin)
-	await confirmDeployment(instantLayer, "InstantLayer", checkpointDeployment(checkpoint, "contracts.instantLayer", [symmioAddress, admin]))
+	const { address } = await deployContract(vanity || null, {
+		key: "peripherals/InstantLayer",
+		component: "contracts.instantLayer",
+		label: "InstantLayer",
+		factory: InstantLayerFactory.connect(deployer),
+		constructorArgs: [symmioAddress, admin],
+		checkpoint,
+	})
 
-	return instantLayer
+	return ethers.getContractAt("InstantLayer", address)
 }
 
 /**

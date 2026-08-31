@@ -32,12 +32,17 @@ test("doctor blocks a deployer-admin pair on mainnet", () => {
 
 test("doctor mirrors PartyB and SymbolManager component requirements", () => {
 	const valid = "0x0000000000000000000000000000000000000001";
-	assert.deepEqual(deploymentComponentProblems({ PARTYB_SIGNER: valid, SYMBOL_MANAGER_OPERATOR: valid }).problems, []);
+	assert.deepEqual(deploymentComponentProblems({ PARTYB_OPERATORS: valid, SYMBOL_MANAGER_OPERATOR: valid }).problems, []);
 	const missing = deploymentComponentProblems({});
 	assert.equal(missing.deployPartyB, true);
 	assert.equal(missing.deploySymbolManager, true);
-	assert.ok(missing.problems.some(([message]) => message.includes("PARTYB_SIGNER is required")));
+	assert.ok(missing.problems.some(([message]) => message.includes("PARTYB_OPERATORS is required")));
 	assert.ok(missing.problems.some(([message]) => message.includes("SYMBOL_MANAGER_OPERATOR is required")));
+	assert.ok(
+		deploymentComponentProblems({ PARTYB_SIGNER: "invalid", PARTYB_OPERATORS: valid, SYMBOL_MANAGER_OPERATOR: valid }).problems.some(
+			([message]) => message.includes("PARTYB_SIGNER is not a valid"),
+		),
+	);
 
 	const contradictory = deploymentComponentProblems({
 		DEPLOY_PARTYB: "false",
@@ -106,10 +111,10 @@ test("doctor always requests a deployment plan, including full recipe preflight"
 		received = { configPath, options };
 		return context;
 	};
-	assert.equal(resolveDoctorRecipeContext({ config: "deployments/release.json" }, {}, loader), context);
-	assert.deepEqual(received, { configPath: "deployments/release.json", options: { only: undefined } });
+	assert.equal(resolveDoctorRecipeContext({ config: "deployment-recipes/release.json" }, {}, loader), context);
+	assert.deepEqual(received, { configPath: "deployment-recipes/release.json", options: { only: undefined } });
 	assert.throws(
-		() => resolveDoctorRecipeContext({ config: "deployments/release.json" }, {}, () => ({ plan: null })),
+		() => resolveDoctorRecipeContext({ config: "deployment-recipes/release.json" }, {}, () => ({ plan: null })),
 		/requires a validated deployment plan/,
 	);
 });
@@ -125,15 +130,14 @@ test("component-only doctor uses the exact component checkpoint scope", () => {
 });
 
 test("component-only doctor validates only the selected add-on inputs", () => {
-	const signer = "0x0000000000000000000000000000000000000001";
 	const operator = "0x0000000000000000000000000000000000000002";
-	assert.deepEqual(deploymentComponentProblemsForSelection({ PARTYB_SIGNER: signer }, "partyB").problems, []);
+	assert.deepEqual(deploymentComponentProblemsForSelection({ PARTYB_OPERATORS: operator }, "partyB").problems, []);
 	assert.deepEqual(deploymentComponentProblemsForSelection({ SYMBOL_MANAGER_OPERATOR: operator }, "symbolManager").problems, []);
 	assert.deepEqual(deploymentComponentProblemsForSelection({}, "expressProvider").problems, []);
 	assert.deepEqual(deploymentComponentProblemsForSelection({}, "gaslessLayer").problems, []);
 	assert.ok(
 		deploymentComponentProblemsForSelection({ SYMBOL_MANAGER_OPERATOR: operator }, "partyB").problems.some(([message]) =>
-			message.includes("PARTYB_SIGNER is required"),
+			message.includes("PARTYB_OPERATORS is required"),
 		),
 	);
 });

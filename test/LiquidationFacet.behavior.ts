@@ -559,12 +559,16 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 
 	describe("Liquidate PartyA", async function () {
 		it("Should use separate UPNL validity windows for account management and liquidation", async function () {
-			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 10n)
+			await expect(context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 10n))
+				.to.emit(context.controlFacet, "SetMuonFunctionUpnlValidTime")
+				.withArgs(MuonFunction.AccountManagement, 10n)
 			let [accountValidTime, accountOverride] = await context.viewFacet.getMuonFunctionUpnlValidTime(MuonFunction.AccountManagement)
 			expect(accountValidTime).to.equal(10n)
 			expect(accountOverride).to.equal(true)
 
-			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 0n)
+			await expect(context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 0n))
+				.to.emit(context.controlFacet, "SetMuonFunctionUpnlValidTime")
+				.withArgs(MuonFunction.AccountManagement, 0n)
 			;[accountValidTime, accountOverride] = await context.viewFacet.getMuonFunctionUpnlValidTime(MuonFunction.AccountManagement)
 			expect(accountValidTime).to.equal(1000n)
 			expect(accountOverride).to.equal(false)

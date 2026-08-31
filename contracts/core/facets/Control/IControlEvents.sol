@@ -14,7 +14,7 @@ interface IControlEvents is IExecutionContextEvents {
 	event RoleAdminAdded(bytes32 role, address admin);
 	event RoleAdminRemoved(bytes32 role, address admin);
 	event SetMuonConfig(uint256 upnlValidTime, uint256 priceValidTime);
-	event SetMuonFunctionUpnlValidTime(MuonFunction indexed func, bool enabled, uint256 upnlValidTime);
+	event SetMuonFunctionUpnlValidTime(MuonFunction indexed func, uint256 upnlValidTime);
 	event SetMuonIds(uint256 muonAppId);
 	event SetCollateral(address collateral);
 	event AddSymbol(
@@ -33,6 +33,7 @@ interface IControlEvents is IExecutionContextEvents {
 	event OperationalFeeReductionDelaySet(uint256 oldDelay, uint256 newDelay);
 	event SetOperationalFeeReceiver(address indexed charger, address indexed receiver);
 	event SetSolverFeeReceiver(address indexed partyB, address indexed receiver);
+	event SetSolverFeeReceiverForTag(address indexed partyB, address indexed receiver, bytes32 indexed tag);
 	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,
@@ -59,6 +60,7 @@ interface IControlEvents is IExecutionContextEvents {
 		uint256 newMinAcceptableNotionalLFRate,
 		bool hasOverride
 	);
+	event SetPartyBLiquidationOvershootRate(address indexed partyB, uint256 indexed symbolId, uint256 oldRate, uint256 newRate, bool hasOverride);
 	event SetSymbolTradingFee(uint256 symbolId, uint256 oldTradingFee, uint256 tradingFee);
 	event SetSymbolMaxLeverage(uint256 symbolId, uint256 oldMaxLeverage, uint256 maxLeverage);
 	event SetDeallocateCooldown(uint256 oldDeallocateCooldown, uint256 newDeallocateCooldown);

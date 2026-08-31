@@ -120,6 +120,9 @@ export function assertVerificationRunBinding(
 				throw new Error(`Deployment report component mode ${component} is not bound to the active JSON recipe`)
 			}
 		}
+		if (active.recipe.liquidator && report.recipe?.components?.liquidator !== active.recipe.liquidator.mode) {
+			throw new Error("Deployment report component mode liquidator is not bound to the active JSON recipe")
+		}
 	}
 	if (report.checks?.health !== "passed") {
 		throw new Error(`Deployment health must pass before explorer verification; got ${JSON.stringify(report.checks?.health)}`)
@@ -183,6 +186,15 @@ export function assertVerificationRecordsCoverReport(contracts: ContractToVerify
 	if (report.config?.gaslessLayerMode === "deploy") {
 		required.push(["GaslessLayer", report.addresses?.gaslessLayer])
 		required.push(["GaslessLayer implementation", report.addresses?.gaslessLayerImplementation])
+	}
+	if (report.config?.expressProviderMode === "deploy") {
+		// Without this, a stale expressprovider.json from an earlier deployment satisfied the
+		// file requirement while describing contracts from a different run.
+		required.push(["ExpressProvider", report.addresses?.expressProvider])
+	}
+	if (report.config?.liquidatorMode === "deploy") {
+		required.push(["SymmioLiquidator", report.addresses?.symmioLiquidator])
+		required.push(["SymmioLiquidator implementation", report.addresses?.symmioLiquidatorImplementation])
 	}
 	if (report.config?.collateralAddress === "") required.push(["deployed collateral", report.addresses?.collateral])
 	for (const [label, address] of required) {
@@ -265,6 +277,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				// Unlike the others this has no legacy env fallback: it only ever ships via a recipe.
 				const deploysExpressProvider = report ? report.config?.expressProviderMode === "deploy" : false
 				const deploysGaslessLayer = report ? report.config?.gaslessLayerMode === "deploy" : false
+				const deploysLiquidator = report ? report.config?.liquidatorMode === "deploy" : false
 				const logFiles: Array<{ file: string; name: string; required: boolean; include: boolean }> = [
 					{ file: DEPLOYMENT_LOG_FILE, name: "Core Diamond deployment records", required: true, include: true },
 					{ file: ACCOUNTLAYER_DEPLOYMENT_FILE, name: "AccountLayer deployment records", required: true, include: true },
@@ -310,8 +323,8 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					{
 						file: LIQUIDATOR_DEPLOYMENT_FILE,
 						name: "SymmioLiquidator deployment records",
-						required: false,
-						include: !report,
+						required: Boolean(report && deploysLiquidator),
+						include: report ? deploysLiquidator : true,
 					},
 				]
 
@@ -320,6 +333,9 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 					const filePath = `${getDataDir()}/${file}`
 					if (!fs.existsSync(filePath)) {
 						if (required) throw new Error(`Missing required ${name} at ${filePath}`)
+						// Optional records used to vanish without a word, so a run that verified
+						// core but skipped PartyB still printed a fully green summary.
+						console.log(`Skipping ${name}: ${filePath} not found`)
 						continue
 					}
 					const loaded = readVerificationRecords(filePath, name, ethers)
@@ -336,7 +352,7 @@ export const verifyAllTask = task("verify:all", "Verifies all deployed contracts
 				throw new Error(
 					`No contracts to verify on ${network} (chainId ${chainId}). ` +
 						`Expected deployment logs under ${getDataDir()}. ` +
-						`so the records may exist only on the machine that ran the deployment.`,
+						"Deployment records are not committed to git, so they may exist only on the machine that ran the deployment.",
 				)
 			}
 
@@ -1361,6 +1377,41 @@ async function verifyMuonSignatureVerifier(
 			pushAndLog(results, { category, check: "Registered gateway signers", status: "pass", actual: String(targetGatewaySigners.length) })
 		}
 
+		// The checks above only prove the configured identities are a SUBSET of what is
+		// registered. A leftover test key or an added gateway signer can sign price and UPNL
+		// attestations, so anything registered beyond the reviewed configuration is reported
+		// rather than passing silently. Extras are legitimate mid-rotation, so this warns.
+		if (hasConfiguredKey) {
+			const targetKeyIds = new Set(targetKeys.map((key: { x: string; parity: number }) => `${key.x}:${key.parity}`))
+			const unexpectedKeys = registeredKeys.filter((key: { x: string; parity: number }) => !targetKeyIds.has(`${key.x}:${key.parity}`))
+			if (unexpectedKeys.length > 0) {
+				pushAndLog(results, {
+					category,
+					check: "Unexpected public keys",
+					status: "warn",
+					message: unexpectedKeys.map((key: { x: string; parity: number }) => `x=${key.x}, parity=${key.parity}`).join("; "),
+					hint: "Confirm each extra key is an intentional rotation, or revoke it with an account holding SETTER_ROLE",
+				})
+			} else {
+				pushAndLog(results, { category, check: "Unexpected public keys", status: "pass", actual: "none" })
+			}
+		}
+		if (configuredGatewaySigners.length > 0) {
+			const targetGatewayIds = new Set(targetGatewaySigners.map((signer: string) => signer.toLowerCase()))
+			const unexpectedGateways = registeredGatewaySigners.filter((signer: string) => !targetGatewayIds.has(signer.toLowerCase()))
+			if (unexpectedGateways.length > 0) {
+				pushAndLog(results, {
+					category,
+					check: "Unexpected gateway signers",
+					status: "warn",
+					message: unexpectedGateways.join(", "),
+					hint: "Confirm each extra gateway signer is intentional, or revoke it with an account holding SETTER_ROLE",
+				})
+			} else {
+				pushAndLog(results, { category, check: "Unexpected gateway signers", status: "pass", actual: "none" })
+			}
+		}
+
 		const inspection = await inspectConfiguredMuonPermissions(verifier, {
 			publicKeys: targetKeys,
 			gatewaySigners: targetGatewaySigners,
@@ -1602,7 +1653,12 @@ async function verifyAccountLayerFull(
 	try {
 		const impl = await alView.accountManagerImplementation()
 		if (impl && impl !== "0x") {
-			pushAndLog(results, { category: cat, check: "Account manager implementation", status: "pass", actual: `${impl.length} bytes` })
+			pushAndLog(results, {
+				category: cat,
+				check: "Account manager implementation",
+				status: "pass",
+				actual: `${Math.floor(impl.replace(/^0x/u, "").length / 2)} bytes`,
+			})
 		} else {
 			pushAndLog(results, {
 				category: cat,
@@ -1731,7 +1787,18 @@ async function verifyInstantLayerFull(
 		}
 
 		for (const [templateId, expectedTemplate] of protocolConfig.instantLayerTemplates.entries()) {
-			if (templateId >= templateCount) continue
+			if (templateId >= templateCount) {
+				// Dropping these silently shrank the totals, so a short registry looked like
+				// fewer checks rather than missing ones.
+				pushAndLog(results, {
+					category: cat,
+					check: `InstantLayer template ${templateId}`,
+					status: "fail",
+					message: `Template ${templateId} is declared in the protocol config but the registry only holds ${templateCount}`,
+					hint: templateHint,
+				})
+				continue
+			}
 			const template = await instantLayer.getTemplate(templateId)
 			let instantOpenMode: boolean | undefined
 			try {
@@ -1764,7 +1831,7 @@ async function verifyInstantLayerFull(
 async function verifyPartyBFull(
 	ethers: any,
 	partyBAddress: string,
-	addresses: { diamond?: string; instantLayer?: string; admin?: string },
+	addresses: { diamond?: string; instantLayer?: string; admin?: string; partyBOperators?: string[] },
 	results: VerificationResult[],
 	deployerAddress: string,
 ) {
@@ -1857,6 +1924,9 @@ async function verifyPartyBFull(
 
 	if (addresses.instantLayer) {
 		await checkRole(results, cat, partyB, addresses.instantLayer, "TRUSTED_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioPartyB" })
+	}
+	for (const operator of addresses.partyBOperators || []) {
+		await checkRole(results, cat, partyB, operator, "TRUSTED_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioPartyB" })
 	}
 
 	console.log("")
@@ -1971,6 +2041,8 @@ async function verifyLiquidatorFull(
 	liquidatorAddress: string,
 	addresses: { diamond?: string; admin?: string; operators?: string[] },
 	results: VerificationResult[],
+	allowPendingAdminActions = false,
+	deployerAddress?: string,
 ) {
 	const cat = "Liquidator"
 	const liquidator = await ethers.getContractAt("SymmioLiquidator", liquidatorAddress)
@@ -2014,8 +2086,12 @@ async function verifyLiquidatorFull(
 	console.log("")
 	console.log(`   ${c.dim}-- Roles on SymmioLiquidator --${c.reset}`)
 	if (addresses.admin) {
-		await checkOzDefaultAdminRole(results, cat, liquidator, addresses.admin, "fail", "SymmioLiquidator")
-		await checkRole(results, cat, liquidator, addresses.admin, "MANAGER_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioLiquidator" })
+		await checkOzDefaultAdminRole(results, cat, liquidator, addresses.admin, allowPendingAdminActions ? "warn" : "fail", "SymmioLiquidator")
+		await checkRole(results, cat, liquidator, addresses.admin, "MANAGER_ROLE", ethers, {
+			ozStyle: true,
+			contractLabel: "SymmioLiquidator",
+			failStatus: allowPendingAdminActions ? "warn" : "fail",
+		})
 	} else {
 		pushAndLog(results, {
 			category: cat,
@@ -2028,8 +2104,22 @@ async function verifyLiquidatorFull(
 
 	if (addresses.operators && addresses.operators.length > 0) {
 		for (const op of addresses.operators) {
-			await checkRole(results, cat, liquidator, op, "OPERATOR_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioLiquidator" })
+			await checkRole(results, cat, liquidator, op, "OPERATOR_ROLE", ethers, {
+				ozStyle: true,
+				contractLabel: "SymmioLiquidator",
+				failStatus: allowPendingAdminActions ? "warn" : "fail",
+			})
 		}
+	}
+	if (deployerAddress && (!addresses.admin || deployerAddress.toLowerCase() !== addresses.admin.toLowerCase())) {
+		await checkRoleAbsent(results, cat, liquidator, deployerAddress, "DEFAULT_ADMIN_ROLE", ethers, {
+			ozStyle: true,
+			contractLabel: "SymmioLiquidator",
+		})
+		await checkRoleAbsent(results, cat, liquidator, deployerAddress, "MANAGER_ROLE", ethers, {
+			ozStyle: true,
+			contractLabel: "SymmioLiquidator",
+		})
 	}
 
 	// LIQUIDATOR_ROLE + PARTYB_LIQUIDATOR_ROLE on core
@@ -2091,6 +2181,10 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 		gaslessLayer: existing.gaslessLayer || checkpoint.contracts?.gaslessLayer?.proxy?.address,
 		gaslessLayerImplementation: existing.gaslessLayerImplementation || checkpoint.contracts?.gaslessLayer?.implementation?.address,
 		liquidator: existing.liquidator || checkpoint.contracts?.symmioLiquidator?.address,
+		liquidatorImplementation: existing.liquidatorImplementation || checkpoint.contracts?.symmioLiquidator?.implementation,
+		liquidatorAdmin: existing.liquidatorAdmin,
+		liquidatorOperators: existing.liquidatorOperators,
+		partyBOperators: existing.partyBOperators,
 		collateral: existing.collateral || checkpoint.contracts?.collateral?.address,
 		signatureVerifier: existing.signatureVerifier || checkpoint.contracts?.signatureVerifier?.address,
 		admin: existing.admin,
@@ -2109,6 +2203,10 @@ export function loadAddressesFromReport(report: any, existing: any) {
 		gaslessLayer: existing.gaslessLayer || report.addresses?.gaslessLayer || undefined,
 		gaslessLayerImplementation: existing.gaslessLayerImplementation || report.addresses?.gaslessLayerImplementation || undefined,
 		liquidator: existing.liquidator || report.addresses?.symmioLiquidator || undefined,
+		liquidatorImplementation: existing.liquidatorImplementation || report.addresses?.symmioLiquidatorImplementation || undefined,
+		liquidatorAdmin: existing.liquidatorAdmin || report.config?.liquidatorAdmin || undefined,
+		liquidatorOperators: existing.liquidatorOperators || report.config?.liquidatorOperators || undefined,
+		partyBOperators: existing.partyBOperators || report.config?.partyBOperators || undefined,
 		collateral: existing.collateral || report.addresses?.collateral || undefined,
 		signatureVerifier: existing.signatureVerifier || report.addresses?.signatureVerifier || undefined,
 		admin: existing.admin || report.config?.admin || undefined,
@@ -2183,6 +2281,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		defaultValue: "",
 	})
 	.addOption({
+		name: "signatureVerifier",
+		description: "MuonSignatureVerifier address (defaults to the one recorded by --fromReport/--fromCheckpoint)",
+		type: ArgumentType.STRING,
+		defaultValue: "",
+	})
+	.addOption({
 		name: "deployer",
 		description: "Original deployer address whose privileges must be gone (required unless --fromReport/--fromCheckpoint supplies it)",
 		type: ArgumentType.STRING,
@@ -2212,6 +2316,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 		type: ArgumentType.BOOLEAN,
 		defaultValue: false,
 	})
+	.addOption({
+		name: "allowPendingLiquidatorActions",
+		description: "Allow only report-declared SymmioLiquidator admin and operator grants to remain pending for governance execution",
+		type: ArgumentType.BOOLEAN,
+		defaultValue: false,
+	})
 	.setAction(async () => ({
 		default: async (args: any, hre: any) => {
 			const connection = await getConnection(hre)
@@ -2237,6 +2347,10 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				gaslessLayer?: string
 				gaslessLayerImplementation?: string
 				liquidator?: string
+				liquidatorImplementation?: string
+				liquidatorAdmin?: string
+				liquidatorOperators?: string[]
+				partyBOperators?: string[]
 				collateral?: string
 				signatureVerifier?: string
 				admin?: string
@@ -2251,8 +2365,12 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				gaslessLayer: undefined,
 				gaslessLayerImplementation: undefined,
 				liquidator: args.liquidator || undefined,
+				liquidatorImplementation: undefined,
+				liquidatorAdmin: undefined,
+				liquidatorOperators: undefined,
+				partyBOperators: undefined,
 				collateral: args.collateral || undefined,
-				signatureVerifier: undefined,
+				signatureVerifier: args.signatureVerifier || undefined,
 				admin: args.admin || undefined,
 				symmioFeeReceiver: undefined,
 				symbolManagerOperator: args.symbolManagerOperator || undefined,
@@ -2372,6 +2490,13 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 				if (
 					args.fromReport &&
+					(reportConfig?.partyBMode ? reportConfig.partyBMode !== "skip" : reportConfig?.deployPartyB === true) &&
+					(!Array.isArray(addresses.partyBOperators) || addresses.partyBOperators.length === 0)
+				) {
+					throw new Error("partyB operators are missing from a report that declares deployPartyB=true")
+				}
+				if (
+					args.fromReport &&
 					(reportConfig?.symbolManagerMode ? reportConfig.symbolManagerMode !== "skip" : reportConfig?.deploySymbolManager === true) &&
 					!addresses.symbolManager
 				) {
@@ -2383,9 +2508,29 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						throw new Error("gaslessLayer implementation is missing from a report that declares gaslessLayerMode=deploy")
 					}
 				}
+				if (args.fromReport && reportConfig?.liquidatorMode === "deploy") {
+					if (!addresses.liquidator) throw new Error("liquidator address is missing from a report that declares liquidatorMode=deploy")
+					if (!addresses.liquidatorImplementation) {
+						throw new Error("liquidator implementation is missing from a report that declares liquidatorMode=deploy")
+					}
+					if (!addresses.liquidatorAdmin) throw new Error("liquidator admin is missing from a report that declares liquidatorMode=deploy")
+					if (!Array.isArray(addresses.liquidatorOperators) || addresses.liquidatorOperators.length === 0) {
+						throw new Error("liquidator operators are missing from a report that declares liquidatorMode=deploy")
+					}
+				}
 			}
 			for (const [field, value] of Object.entries(addresses)) {
 				if (value === undefined) continue
+				if (field === "liquidatorOperators" || field === "partyBOperators") {
+					if (
+						!Array.isArray(value) ||
+						value.some(operator => typeof operator !== "string" || !ethers.isAddress(operator) || operator === ethers.ZeroAddress)
+					) {
+						throw new Error(`${field} must contain valid non-zero addresses`)
+					}
+					if (new Set(value.map(operator => operator.toLowerCase())).size !== value.length) throw new Error(`${field} contains duplicate addresses`)
+					continue
+				}
 				if (field === "partyB") continue
 				if (typeof value !== "string" || !ethers.isAddress(value) || value === ethers.ZeroAddress) {
 					throw new Error(`${field} must be a valid non-zero address; received ${JSON.stringify(value)}`)
@@ -2425,6 +2570,9 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 			} else {
 				console.log(`${c.dim}  PartyB         (not set)${c.reset}`)
+			}
+			for (let i = 0; i < (addresses.partyBOperators || []).length; i++) {
+				console.log(`${c.dim}  PartyB Operator [${i}] ${c.reset}${addresses.partyBOperators![i]}`)
 			}
 			console.log(`${c.dim}  Liquidator     ${c.reset}${addresses.liquidator || `${c.dim}(not set)${c.reset}`}`)
 			if (operators.length > 0) {
@@ -2485,7 +2633,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 				await checkExactFacetSelectors(ethers, addresses.diamond, FacetNames, "Core Diamond", results)
 
-				// Check solver-fee facet selectors are installed and the legacy no-affiliate sendQuote is removed (v0.8.6)
+				// Check fee-aware execution selectors are installed and the legacy no-affiliate sendQuote is removed (v0.8.6)
 				try {
 					const loupe = await ethers.getContractAt("IDiamondLoupe", addresses.diamond)
 					const solverFeeInterface = (await ethers.getContractAt("IPartyBExecutionFacet", ethers.ZeroAddress)).interface
@@ -2498,13 +2646,13 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						}
 					}
 					if (missing.length === 0) {
-						pushAndLog(results, { category: "Core Diamond", check: "Solver-fee facet selectors", status: "pass" })
+						pushAndLog(results, { category: "Core Diamond", check: "Fee-aware execution selectors", status: "pass" })
 					} else {
 						pushAndLog(results, {
 							category: "Core Diamond",
-							check: "Solver-fee facet selectors",
+							check: "Fee-aware execution selectors",
 							status: "fail",
-							message: `Missing fee-aware selectors: ${missing.join(", ")}`,
+							message: `Missing PartyB execution selectors: ${missing.join(", ")}`,
 							hint: "Run deploy:diamond to add PartyBExecutionFacet via diamondCut",
 						})
 					}
@@ -2575,6 +2723,17 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			// The core merely stores a verifier address. A healthy deployment must also
 			// prove the verifier's role handoff, registered identities, and all category
 			// authorizations recorded in the scoped deployment report.
+			if (!addresses.signatureVerifier) {
+				// Silently omitting this section removed it from the totals too, so a run against
+				// a mock verifier could print "all checks passed" without ever inspecting it.
+				pushAndLog(results, {
+					category: "MuonSignatureVerifier",
+					check: "Verifier inspection",
+					status: "fail",
+					message: "No MuonSignatureVerifier address is available, so its roles, identities and permissions were not verified",
+					hint: "Use --fromReport/--fromCheckpoint, or pass --signatureVerifier <address>",
+				})
+			}
 			if (addresses.signatureVerifier) {
 				await verifyMuonSignatureVerifier(
 					ethers,
@@ -2730,11 +2889,22 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 						check: "Contract exists",
 						status: "fail",
 						message: "No contract at address",
-						hint: "Verify the SymmioLiquidator address is correct, or run scripts/deployLiquidator.ts",
+						hint: "Verify the SymmioLiquidator address is correct, or use ./symmio and choose the guarded SymmioLiquidator task",
 					})
 				} else {
 					pushAndLog(results, { category: "Liquidator", check: "Contract exists", status: "pass" })
-					await verifyLiquidatorFull(ethers, addresses.liquidator, { ...addresses, operators }, results)
+					await verifyLiquidatorFull(
+						ethers,
+						addresses.liquidator,
+						{
+							diamond: addresses.diamond,
+							admin: addresses.liquidatorAdmin || addresses.admin,
+							operators: operators.length > 0 ? operators : addresses.liquidatorOperators,
+						},
+						results,
+						args.allowPendingLiquidatorActions,
+						originalDeployerAddress,
+					)
 				}
 				console.log("")
 			}

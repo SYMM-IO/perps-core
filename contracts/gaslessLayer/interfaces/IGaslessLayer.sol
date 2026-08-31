@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 interface IGaslessLayer {
 	// ─────────────────────────── Types ────────────────────────────
@@ -22,8 +22,9 @@ interface IGaslessLayer {
 
 	// ────────────────────────── Events ────────────────────────────
 
-	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 payerCount, uint256 totalFee);
-	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 payerCount, uint256 totalFee);
+	// Payers are read from the per-op OperationalFeeRouted events in the same receipt.
+	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 totalFee);
+	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 totalFee);
 	event DelegationBySigRelayed(
 		address indexed relayer,
 		address indexed delegatorAccount,

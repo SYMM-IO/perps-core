@@ -7,7 +7,7 @@ import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { cloneTypes, DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "./helpers/instantLayerEIP712Types.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { QuoteStatus } from "./models/Enums.js"
+import { OrderType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
@@ -780,6 +780,41 @@ export function shouldBehaveLikeInstantLayer(): void {
 					"ArrayLengthMismatch",
 				)
 			})
+
+			it("rejects MARKET_BEST_EFFORT when InstantLayer forwards an opening quote", async function () {
+				const request = execCtx.requestSendQuote
+				const callData = execCtx.context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+					request.partyBWhiteList,
+					request.symbolId,
+					request.positionType,
+					OrderType.MARKET_BEST_EFFORT,
+					request.price,
+					request.quantity,
+					request.cva,
+					request.lf,
+					request.partyAmm,
+					request.partyBmm,
+					request.maxFundingRate,
+					await request.deadline,
+					request.affiliate,
+					await request.upnlSig,
+				])
+				const op = createSignedOperation(
+					execCtx.context.signers.admin.address,
+					execCtx.symmioAddress,
+					callData,
+					{ addr: execCtx.accounts[0].accountAddress, isPartyB: false },
+					1n,
+					execCtx.deadline,
+				)
+				const sig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op)
+				const revertMessage = "PartyAFacet: MARKET_BEST_EFFORT is close-only"
+				const revertData = "0x08c379a0" + ethers.AbiCoder.defaultAbiCoder().encode(["string"], [revertMessage]).slice(2)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]]))
+					.to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+					.withArgs(0n, revertData)
+			})
 		})
 
 		describe("executeBatch - Deadline Validation", function () {
@@ -1226,6 +1261,209 @@ export function shouldBehaveLikeInstantLayer(): void {
 				await expect(
 					ctx.context.instantLayer.executeBatch([opFail, opSuccess], [sigFail, sigSuccess], [[], []], [[], []]),
 				).to.be.revertedWithCustomError(ctx.context.instantLayer, "OperationFailed")
+			})
+		})
+
+		describe("Delegation Grant Operations", function () {
+			let instantLayerAddress: string
+			let sessionKey: any
+			let accountAddress: string
+			let quoteSelector: string
+			let expiry: bigint
+
+			beforeEach(async function () {
+				instantLayerAddress = await ctx.context.instantLayer.getAddress()
+				sessionKey = ctx.context.signers.user2
+				accountAddress = execCtx.accounts[0].accountAddress
+				quoteSelector = ctx.quoteCallData.slice(0, 10)
+				expiry = await getBlockTimestamp(DEFAULT_EXPIRY_OFFSET)
+			})
+
+			function createGrantOp(
+				delegate: string,
+				selectors: string[],
+				overrides: {
+					signer?: string
+					signerAccount?: InstantLayer.AccountStruct
+					infoAccount?: InstantLayer.AccountStruct
+					expiryTimestamp?: bigint
+					maxUses?: bigint
+					flexFields?: InstantLayer.FlexFieldStruct[]
+				} = {},
+			): InstantLayer.SignedOperationStruct {
+				const signerAccount = overrides.signerAccount ?? { addr: accountAddress, isPartyB: false }
+				const callData = ctx.context.instantLayer.interface.encodeFunctionData("grantDelegation", [
+					{
+						account: overrides.infoAccount ?? signerAccount,
+						delegatedSigner: delegate,
+						selectors,
+						expiryTimestamp: overrides.expiryTimestamp ?? expiry,
+					},
+				])
+				const op = createSignedOperation(
+					overrides.signer ?? execCtx.context.signers.user.address,
+					instantLayerAddress,
+					callData,
+					signerAccount,
+					0n,
+					execCtx.deadline,
+				)
+				if (overrides.maxUses !== undefined) op.maxUses = overrides.maxUses
+				if (overrides.flexFields !== undefined) op.flexFields = overrides.flexFields
+				return op
+			}
+
+			it("applies an owner-signed grant and executes a session-key op in the same batch", async function () {
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector])
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				const quoteOp = createPartyASendQuoteOp(accountAddress, sessionKey.address, 0n, execCtx.deadline)
+				const quoteSig = await signOperation(sessionKey, execCtx.domain, execCtx.types, quoteOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp, quoteOp], [grantSig, quoteSig], [[], []], [[], []]))
+					.to.emit(ctx.context.instantLayer, "DelegationGranted")
+					.withArgs(accountAddress, sessionKey.address, quoteSelector, expiry)
+
+				expect(await ctx.context.instantLayer.isDelegationActive(accountAddress, sessionKey.address, quoteSelector)).to.be.true
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+
+			it("applies a grant operation inside executeTemplate", async function () {
+				await ctx.context.instantLayer.addTemplate("GrantThenQuote", [
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				])
+				const templateId = (await ctx.context.instantLayer.nextTemplateId()) - 1n
+
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector])
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				const quoteOp = createPartyASendQuoteOp(accountAddress, sessionKey.address, 0n, execCtx.deadline)
+				const quoteSig = await signOperation(sessionKey, execCtx.domain, execCtx.types, quoteOp)
+
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [grantOp, quoteOp], [grantSig, quoteSig], [[], []], [[], []])).not.to.be
+					.reverted
+
+				const quote = await ctx.context.viewFacetQuote.getQuote(1)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.PENDING)
+			})
+
+			it("rejects a grant operation signed by a delegate instead of the owner", async function () {
+				// Even a delegate holding the grantDelegation selector cannot mint further delegations
+				const grantSelector = ctx.context.instantLayer.interface.getFunction("grantDelegation")!.selector
+				await ctx.context.instantLayer.connect(ctx.partyA1.signer).grantDelegation({
+					account: { addr: accountAddress, isPartyB: false },
+					delegatedSigner: sessionKey.address,
+					selectors: [grantSelector],
+					expiryTimestamp: expiry,
+				})
+
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector], { signer: sessionKey.address })
+				const grantSig = await signOperation(sessionKey, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidDelegation",
+				)
+			})
+
+			it("rejects a grant operation with maxUses != 1", async function () {
+				for (const maxUses of [0n, 2n]) {
+					const grantOp = createGrantOp(sessionKey.address, [quoteSelector], { maxUses })
+					const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+					await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+						ctx.context.instantLayer,
+						"InvalidGrantOperation",
+					)
+				}
+			})
+
+			it("rejects a grant operation with flex fields", async function () {
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector], {
+					flexFields: [{ offset: 0, length: 32, authorizedFlexFiller: execCtx.context.signers.admin.address }],
+				})
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidGrantOperation",
+				)
+			})
+
+			it("rejects non-grant selectors targeting the InstantLayer", async function () {
+				const callData = ctx.context.instantLayer.interface.encodeFunctionData("setAccountLayer", [accountAddress])
+				const op = createSignedOperation(
+					execCtx.context.signers.user.address,
+					instantLayerAddress,
+					callData,
+					{ addr: accountAddress, isPartyB: false },
+					0n,
+					execCtx.deadline,
+				)
+				const sig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op)
+
+				await expect(ctx.context.instantLayer.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidGrantOperation",
+				)
+			})
+
+			it("rejects a grant whose DelegationInfo account differs from the signer account", async function () {
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector], {
+					infoAccount: { addr: ctx.partyA2.address, isPartyB: false },
+				})
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidDelegation",
+				)
+			})
+
+			it("rejects a PartyB-flagged grant operation", async function () {
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector], {
+					signerAccount: { addr: accountAddress, isPartyB: true },
+				})
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"InvalidDelegation",
+				)
+			})
+
+			it("rejects a self-delegation grant operation", async function () {
+				const grantOp = createGrantOp(execCtx.context.signers.user.address, [quoteSelector])
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"SelfDelegation",
+				)
+			})
+
+			it("rejects a grant operation with expiry in the past", async function () {
+				const pastExpiry = (await getBlockTimestamp()) - 100n
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector], { expiryTimestamp: pastExpiry })
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"DelegationExpired",
+				)
+			})
+
+			it("prevents replaying a grant operation", async function () {
+				const grantOp = createGrantOp(sessionKey.address, [quoteSelector])
+				const grantSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, grantOp)
+
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeBatch([grantOp], [grantSig], [[]], [[]])).to.be.revertedWithCustomError(
+					ctx.context.instantLayer,
+					"MaxUsesExceeded",
+				)
 			})
 		})
 	})
@@ -2465,7 +2703,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 		})
 
 		describe("TPSL scenario (requestToClosePosition)", function () {
-			it("should allow TPSL bot to fill quantityToClose via flex field on an open position", async function () {
+			it("should forward MARKET_BEST_EFFORT value 2 through the unchanged close selector", async function () {
 				// Step 1: Open a position via template (sendQuote → lockQuote → openPosition)
 				const lockQuoteCallDataTemplate = ctx.context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [
 					0,
@@ -2529,7 +2767,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 					1, // quoteId
 					execCtx.requestOpenQuote.openPrice, // closePrice
 					0, // quantityToClose placeholder — flex filler will provide
-					1, // OrderType.MARKET
+					OrderType.MARKET_BEST_EFFORT,
 					closeDeadline,
 				])
 
@@ -2555,6 +2793,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const quoteAfter = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
 				expect(quoteAfter.quantityToClose).to.equal(quote.quantity)
+				expect(quoteAfter.orderType).to.equal(OrderType.MARKET_BEST_EFFORT)
 			})
 		})
 

@@ -39,7 +39,7 @@ describe("deployment recipe standalone component execution", function () {
 
 	it("deploys, wires, verifies post-state, and durably reports PartyB and SymbolManager independently", async function () {
 		const context = await loadFixture(initializeFixture)
-		const [admin] = await ethers.getSigners()
+		const [admin, partyBOperator] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
 		const coreReport: CoreDependencyReport = {
 			deploymentId: "fixture-core",
@@ -62,7 +62,7 @@ describe("deployment recipe standalone component execution", function () {
 			recipeDigest: "partyB-digest",
 			target,
 			component: "partyB",
-			componentConfig: { mode: "deploy", signer: admin.address, adlEnabled: true, admin: admin.address },
+			componentConfig: { mode: "deploy", operators: [partyBOperator.address], adlEnabled: true, admin: admin.address },
 			coreReport,
 			coreReportPath: "/tmp/core-report.json",
 			fresh: false,
@@ -74,6 +74,24 @@ describe("deployment recipe standalone component execution", function () {
 		expect(partyB.report.verification.records).to.have.length(2)
 		expect(await context.viewFacet.isPartyB(partyB.report.address)).to.equal(true)
 		expect(await context.instantLayer.registeredPartyBs(partyB.report.address)).to.equal(true)
+		const partyBContract = await ethers.getContractAt("SymmioPartyB", partyB.report.address!)
+		expect(partyB.report.config).to.deep.equal({ admin: admin.address, operators: [partyBOperator.address], adlEnabled: true })
+		expect(await partyBContract.signer()).to.equal(ethers.ZeroAddress)
+		expect(await partyBContract.hasRole(await partyBContract.TRUSTED_ROLE(), partyBOperator.address)).to.equal(true)
+		expect(
+			assertComponentStatusReportBinding(partyB.report, {
+				component: "partyB",
+				recipeName,
+				recipePath: partyBInput.recipePath,
+				recipeDigest: partyBInput.recipeDigest,
+				network: networkName,
+				chainId: 31337,
+				live: false,
+				config: { admin: admin.address, operators: [partyBOperator.address], adlEnabled: true },
+				coreReport,
+				coreReportPath: partyBInput.coreReportPath,
+			}).deploymentId,
+		).to.equal(partyB.report.deploymentId)
 		const resumedPartyB = await executeComponentDeployment(hre, partyBInput)
 		expect(resumedPartyB.report.address).to.equal(partyB.report.address)
 		const freshPartyB = await executeComponentDeployment(hre, { ...partyBInput, fresh: true })
@@ -658,7 +676,7 @@ describe("deployment recipe standalone component execution", function () {
 
 	it("re-probes PartyB and SymbolManager code, wiring, roles, signer, ADL, and operator without writes", async function () {
 		const context = await loadFixture(initializeFixture)
-		const [admin, changedSigner] = await ethers.getSigners()
+		const [admin, changedSigner, partyBOperator] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
 		const coreReport: CoreDependencyReport = {
 			deploymentId: "fixture-core-status",
@@ -682,7 +700,7 @@ describe("deployment recipe standalone component execution", function () {
 			recipeDigest: "partyB-status-digest",
 			target,
 			component: "partyB",
-			componentConfig: { mode: "deploy", signer: admin.address, adlEnabled: true, admin: admin.address },
+			componentConfig: { mode: "deploy", signer: admin.address, operators: [partyBOperator.address], adlEnabled: true, admin: admin.address },
 			coreReport,
 			coreReportPath,
 			fresh: false,
@@ -696,7 +714,7 @@ describe("deployment recipe standalone component execution", function () {
 			network: networkName,
 			chainId: 31337,
 			live: false,
-			config: { admin: admin.address, signer: admin.address, adlEnabled: true },
+			config: { admin: admin.address, signer: admin.address, operators: [partyBOperator.address], adlEnabled: true },
 			coreReport,
 			coreReportPath,
 		})
@@ -716,6 +734,10 @@ describe("deployment recipe standalone component execution", function () {
 		expect(healthyPartyB.checks.every(check => check.status === "passed")).to.equal(true)
 		expect(healthyPartyB.manualActions).to.deep.equal([])
 		const partyBContract = await ethers.getContractAt("SymmioPartyB", partyB.report.address!)
+		await partyBContract.revokeRole(await partyBContract.TRUSTED_ROLE(), partyBOperator.address)
+		const missingPartyBOperator = await inspectComponentStatus(ethers, "partyB", partyB.report, coreReport)
+		expect(missingPartyBOperator.checks.find(check => check.check.includes("PartyB operator TRUSTED_ROLE"))?.status).to.equal("failed")
+		await partyBContract.grantRole(await partyBContract.TRUSTED_ROLE(), partyBOperator.address)
 		await partyBContract.setSigner(changedSigner.address)
 		const wrongSigner = await inspectComponentStatus(ethers, "partyB", partyB.report, coreReport)
 		expect(wrongSigner.checks.find(check => check.check === "signer")?.status).to.equal("failed")
@@ -749,7 +771,7 @@ describe("deployment recipe standalone component execution", function () {
 
 	it("deploys a PartyB for a separate production admin and resumes without regaining local privileges", async function () {
 		const context = await loadFixture(initializeFixture)
-		const [deployer, finalAdmin, partyBSigner] = await ethers.getSigners()
+		const [deployer, finalAdmin, partyBSigner, partyBOperator] = await ethers.getSigners()
 		const networkName = (await hre.network.getOrCreate()).networkName || "default"
 		const partyBManagerRole = ethers.keccak256(ethers.toUtf8Bytes("PARTY_B_MANAGER_ROLE"))
 		const instantSetterRole = await context.instantLayer.SETTER_ROLE()
@@ -785,7 +807,13 @@ describe("deployment recipe standalone component execution", function () {
 			recipeDigest: "partyB-handover-digest",
 			target: { name: networkName, chainId: 31337, mode: "local" as const },
 			component: "partyB",
-			componentConfig: { mode: "deploy", signer: partyBSigner.address, adlEnabled: true, admin: finalAdmin.address },
+			componentConfig: {
+				mode: "deploy",
+				signer: partyBSigner.address,
+				operators: [partyBOperator.address],
+				adlEnabled: true,
+				admin: finalAdmin.address,
+			},
 			coreReport,
 			coreReportPath: "/tmp/core-governance-report.json",
 			fresh: false,
@@ -798,6 +826,7 @@ describe("deployment recipe standalone component execution", function () {
 		expect(first.report.config).to.deep.equal({
 			admin: finalAdmin.address,
 			signer: partyBSigner.address,
+			operators: [partyBOperator.address],
 			adlEnabled: true,
 		})
 		expect(first.report.manualActions).to.deep.equal([
@@ -835,6 +864,7 @@ describe("deployment recipe standalone component execution", function () {
 			expect(await partyB.hasRole(role, deployer.address)).to.equal(false)
 		}
 		expect(await partyB.signer()).to.equal(partyBSigner.address)
+		expect(await partyB.hasRole(await partyB.TRUSTED_ROLE(), partyBOperator.address)).to.equal(true)
 		expect(await partyB.multicastWhitelist(await context.instantLayer.getAddress())).to.equal(true)
 		expect(await context.viewFacet.isPartyB(first.report.address)).to.equal(false)
 		expect(await context.instantLayer.registeredPartyBs(first.report.address)).to.equal(false)

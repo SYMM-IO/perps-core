@@ -1,0 +1,226 @@
+{
+	"$schema": "../deployment-tooling/deployment-recipe.schema.json",
+	"apiVersion": "deployment.symm.io/v1",
+	"kind": "DeploymentRecipe",
+	"name": "arbitrum-vibe-production",
+	"network": {
+		"name": "arbitrum",
+		"chainId": 42161,
+		"mode": "live"
+	},
+	"secrets": {
+		"deployer": "hardhat-keystore://NEW_DEPLOYER",
+		"rpc": "hardhat-keystore://RPC_ARBITRUM",
+		"explorer": "hardhat-keystore://ETHERSCAN_APIKEY"
+	},
+	"execution": {
+		"logLevel": "verbose",
+		"verify": true,
+		"confirmations": 1,
+		"txTimeoutSeconds": 300,
+		"slowNoticeSeconds": 30
+	},
+	"governance": {
+		"admin": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"feeReceiver": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1",
+		"liquidationInsuranceVault": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"maxLiquidationProfitPerPosition": "100000000000000000000",
+		"softLiquidationPenaltyCollector": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
+	},
+	"create2": {
+		"factory": {
+			"mode": "reuse",
+			"address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975"
+		},
+		"groups": {
+			"diamonds": {
+				"prefix": "573310"
+			},
+			"facets": {
+				"suffix": "861"
+			}
+		},
+		"miningBudget": 200000000
+	},
+	"core": {
+		"mode": "deploy",
+		"collateral": {
+			"mode": "reuse",
+			"address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+		},
+		"muon": {
+			"mode": "deploy",
+			"appId": "67095677696457568621176602095256212877581942797155816526660337292193161013107",
+			"upnlValidTime": "60",
+			"priceValidTime": "60",
+			"upnlValidTimeByFunction": {
+				"AccountManagement": "30",
+				"LiquidationPartyA": "120",
+				"LiquidationPartyB": "120",
+				"RemoveMargin": "30"
+			},
+			"publicKey": {
+				"x": "28816647750548585451357630311330111079635661660584752231799347508659086631222",
+				"parity": 0
+			},
+			"gatewaySigners": ["0xF621f85f20BBe733699306D336230184621dBe60"],
+			"permissions": [
+				"Trading",
+				"AccountManagement",
+				"Settlement",
+				"ForceClose",
+				"Funding",
+				"LiquidationPartyA",
+				"LiquidationPartyB",
+				"RemoveMargin",
+				"ExpressCredit"
+			]
+		},
+		"protocol": {
+			"description": "Arbitrum One Production Vibe",
+			"parameters": {
+				"balanceLimitPerUser": "1000000000000000000000000",
+				"maxWithdrawParts": 10,
+				"deallocateCooldown": 259200,
+				"settlementCooldown": 300,
+				"deallocateDebounceTime": 0,
+				"liquidatorShare": "100000000000000000",
+				"liquidationTimeout": 100,
+				"forceCloseCooldowns": [300, 120],
+				"forceCancelCooldown": 300,
+				"forceCancelCloseCooldown": 300,
+				"pendingQuotesValidLength": 10,
+				"maxPartyAConnectionLimit": 5
+			},
+			"instantLayerTemplates": [
+				{
+					"name": "InstantOpen",
+					"instantOpenMode": true,
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						}
+					]
+				},
+				{
+					"name": "InstantClose",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantCloseWithAllocation",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantOpenNoMargin",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						}
+					]
+				}
+			]
+		},
+		"setupInstantLayerTemplates": true,
+		"registerDummyAffiliate": false
+	},
+	"partyB": {
+		"mode": "deploy",
+		"operators": [
+			"0xb60ABeFda283865Dee94A78948F94A9750e9033B",
+			"0xE73e6C598CC0233E28C5aa6154796de3B04c4E92",
+			"0xE9AD8c77112C31b8CA91C9e4c8775A6263e73c91",
+			"0x59356179e0466e4ccB5617e0cF69576B7d1CD7FC"
+		],
+		"adlEnabled": true
+	},
+	"symbolManager": {
+		"mode": "deploy",
+		"operator": "0xE09563c28Bb12C7E7d7C4ae02d9a94d8f0Bc732A"
+	},
+	"expressProvider": {
+		"mode": "deploy",
+		"registerOnCore": true,
+		"securityWindow": 20,
+		"tolerancePeriod": 60,
+		"creditLine": {
+			"signatureVerifier": "fromCore",
+			"muonAppId": "67095677696457568621176602095256212877581942797155816526660337292193161013107",
+			"muonFreshnessWindow": 120
+		}
+	},
+	"gaslessLayer": {
+		"mode": "deploy",
+		"treasury": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1",
+		"depositFee": "2000000",
+		"minimumDeposit": "5000000",
+		"defaultSelectorFee": "0",
+		"dailyFreeOpsLimit": "0",
+		"revertWhenFreeQuotaExhausted": false,
+		"dailySponsoredNativeLimit": "0",
+		"revertWhenNativeSponsorLimitExhausted": true,
+		"maxNativeGasTopUpAmount": "1000000000000000",
+		"nativeGasTopUpFeeBps": 0,
+		"relayers": ["0x999DA1bB819b50cc85de02D088E449351FDa8B78", "0x66e632490F0544D92E673f5F624537589BbC0C28"],
+		"selectorFees": []
+	},
+	"liquidator": {
+		"mode": "deploy",
+		"operators": ["0xC72C972ee28c17343ebc891520b09a8E35599283", "0x313132469d487A63DfeD39D3437a331A41304645"]
+	}
+}

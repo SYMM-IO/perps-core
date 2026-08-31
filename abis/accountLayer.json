@@ -240,6 +240,17 @@
     {
         "inputs": [
             {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            }
+        ],
+        "name": "SafeERC20FailedOperation",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "bytes4",
                 "name": "selector",
                 "type": "bytes4"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import { GaslessWallet } from "../GaslessWallet.sol";
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
@@ -18,7 +18,7 @@ library GaslessWalletDeployerLib {
 	///      golden bytecode hash, and getOrDeployGaslessWallet's runtime address-mismatch revert fires if it
 	///      ever diverges from the actually-deployed bytecode. Update only alongside a deliberate wallet
 	///      version change (which mints new addresses for all future users).
-	bytes32 internal constant GASLESS_WALLET_INIT_CODE_HASH = 0x40cfacbf4eccc3b74023a9319355d56dfa5d7b1ba9db5357cfef9d88579d487c;
+	bytes32 internal constant GASLESS_WALLET_INIT_CODE_HASH = 0x3f601fa99034209285834aabec34f49354849bbf4fdfdbb92b51f5f9b5064f31;
 
 	// ───────────────────── External Entrypoints ───────────────────
 

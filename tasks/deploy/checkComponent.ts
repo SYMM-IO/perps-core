@@ -3,7 +3,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import fs from "node:fs"
 import path from "node:path"
 
-import { createDeploymentPlan } from "../../deployment/recipe.js"
+import { createDeploymentPlan } from "../../deployment-tooling/recipe.js"
 import { getDataDir } from "../utils/fs.js"
 import { getCheckpointPath, setCheckpointSimulated, type DeploymentCheckpoint } from "./checkpoint.js"
 import {
@@ -37,7 +37,7 @@ export interface ComponentStatusBinding {
 	network: string
 	chainId: number
 	live: boolean
-	config: { admin: string; signer?: string; adlEnabled?: boolean; operator?: string }
+	config: { admin: string; signer?: string; operators?: string[]; adlEnabled?: boolean; operator?: string }
 	coreReport: CoreDependencyReport
 	coreReportPath: string
 }
@@ -56,6 +56,22 @@ function address(value: unknown, label: string): string {
 function sameAddress(actual: unknown, expected: unknown): boolean {
 	try {
 		return address(actual, "actual address") === address(expected, "expected address")
+	} catch {
+		return false
+	}
+}
+
+function sameOptionalAddress(actual: unknown, expected: unknown): boolean {
+	if (expected === undefined) return actual === undefined
+	return sameAddress(actual, expected)
+}
+
+function sameAddressArray(actual: unknown, expected: unknown): boolean {
+	if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length === 0 || actual.length !== expected.length) return false
+	try {
+		const normalizedActual = actual.map((entry, index) => address(entry, `actual address ${index}`))
+		const normalizedExpected = expected.map((entry, index) => address(entry, `expected address ${index}`))
+		return new Set(normalizedActual).size === normalizedActual.length && normalizedActual.every((entry, index) => entry === normalizedExpected[index])
 	} catch {
 		return false
 	}
@@ -122,7 +138,11 @@ export function assertComponentStatusReportBinding(reportValue: unknown, expecte
 	if (!isRecord(report.config)) throw new Error("component report is missing public config evidence")
 	if (!sameAddress(report.config.admin, expected.config.admin)) throw new Error("component report admin does not match recipe governance.admin")
 	if (expected.component === "partyB") {
-		if (!sameAddress(report.config.signer, expected.config.signer)) throw new Error("component report signer does not match recipe partyB.signer")
+		if (!sameOptionalAddress(report.config.signer, expected.config.signer))
+			throw new Error("component report signer does not match recipe partyB.signer")
+		if (!sameAddressArray(report.config.operators, expected.config.operators)) {
+			throw new Error("component report operators do not match recipe partyB.operators")
+		}
 		if (report.config.adlEnabled !== expected.config.adlEnabled)
 			throw new Error("component report ADL setting does not match recipe partyB.adlEnabled")
 	} else if (expected.component === "symbolManager" && !sameAddress(report.config.operator, expected.config.operator)) {
@@ -304,7 +324,8 @@ export async function inspectComponentStatus(
 			address: report.address!,
 			implementation: report.implementation!,
 			admin: report.config.admin,
-			signer: report.config.signer!,
+			signer: report.config.signer,
+			operators: report.config.operators!,
 			adlEnabled: report.config.adlEnabled!,
 			core: coreReport.addresses.diamond,
 			instantLayer: coreReport.addresses.instantLayer,
@@ -423,6 +444,7 @@ async function checkComponent(hre: any, recipePath: string, rawComponent: string
 			? {
 					admin: active.recipe.governance.admin,
 					signer: active.recipe.partyB.signer,
+					operators: active.recipe.partyB.operators,
 					adlEnabled: active.recipe.partyB.adlEnabled,
 				}
 			: component === "symbolManager"
@@ -477,7 +499,7 @@ export const checkComponentTask = task("check:component", "Read-only canonical h
 	})
 	.addOption({
 		name: "component",
-		description: "Component to inspect: partyB or symbolManager",
+		description: "Component to inspect: partyB, symbolManager, expressProvider or gaslessLayer",
 		type: ArgumentType.STRING_WITHOUT_DEFAULT,
 		defaultValue: undefined,
 	})

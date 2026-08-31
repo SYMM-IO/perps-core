@@ -1,5 +1,5 @@
-import { DEPLOYABLE_CONTRACTS } from "../../deployment/deployableContracts.js";
-import { recipeDigest, validateDeploymentRecipe } from "../../deployment/recipe.js";
+import { DEPLOYABLE_CONTRACTS } from "../../deployment-tooling/deployableContracts.js";
+import { recipeDigest, validateDeploymentRecipe } from "../../deployment-tooling/recipe.js";
 import { buildInitialRecipe } from "../commands/recipe.js";
 import { RECIPE_EXAMPLE } from "../lib/config-guide.js";
 import { readCheckpoint, readDeploymentReport, resolveNetwork } from "../lib/context.js";
@@ -21,7 +21,8 @@ const LABELS = Object.freeze({
 	"core.muon.appId": "Muon app ID",
 	"core.muon.publicKey.x": "Muon public-key X coordinate",
 	"core.muon.gatewaySigners.0": "Muon gateway signer",
-	"partyB.signer": "PartyB signer",
+	"partyB.signer": "PartyB signer (optional)",
+	"partyB.operators.0": "PartyB operator",
 	"symbolManager.operator": "SymbolManager operator",
 	"expressProvider.creditLine.muonAppId": "ExpressProvider Muon app ID",
 	"expressProvider.roles.OPERATOR_ROLE.0": "ExpressProvider operator",
@@ -134,6 +135,20 @@ async function askAddress(ui, message, current) {
 	});
 }
 
+async function askOptionalAddress(ui, message, current) {
+	const value = await ui.text({
+		message,
+		initialValue: isNonZeroAddress(current) ? current : undefined,
+		placeholder: "Leave empty to keep unset",
+		validate: answer => {
+			const trimmed = String(answer || "").trim();
+			return trimmed !== "" && !isNonZeroAddress(trimmed) ? "Enter a non-zero EVM address or leave empty" : undefined;
+		},
+	});
+	if (value === null) return null;
+	return String(value || "").trim() || undefined;
+}
+
 async function askUintString(ui, message, current, options) {
 	return ui.text({
 		message,
@@ -208,7 +223,10 @@ function applyLocalAccountDefaults(recipe, accounts) {
 		liquidationInsuranceVault: account(1),
 		softLiquidationPenaltyCollector: account(1),
 	};
-	if (recipe.partyB.mode === "deploy") recipe.partyB.signer = account(2);
+	if (recipe.partyB.mode === "deploy") {
+		recipe.partyB.signer = account(2);
+		recipe.partyB.operators = [account(4)];
+	}
 	if (recipe.symbolManager.mode === "deploy") recipe.symbolManager.operator = account(3);
 	if (recipe.expressProvider.mode === "deploy") {
 		recipe.expressProvider.creditLine = {
@@ -238,6 +256,7 @@ function applyLocalAccountDefaults(recipe, accounts) {
 		recipe.gaslessLayer.treasury = account(1);
 		recipe.gaslessLayer.relayers = [account(4)];
 	}
+	if (recipe.liquidator?.mode === "deploy") recipe.liquidator.operators = [account(4)];
 	return recipe;
 }
 
@@ -256,7 +275,7 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 	const secretSummary = Object.entries(recipe.secrets)
 		.map(([purpose, reference]) => `${purpose}: ${reference}`)
 		.join("\n");
-	const componentSummary = ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"]
+	const componentSummary = ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer", ...(recipe.liquidator ? ["liquidator"] : [])]
 		.map(name => `${name}: ${recipe[name].mode}`)
 		.join("\n");
 	const warnings = [];
@@ -283,8 +302,15 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 		"",
 		"COMPONENTS",
 		componentSummary,
-		...(recipe.partyB.signer ? [`PartyB signer: ${recipe.partyB.signer}`] : []),
+		...(recipe.partyB.mode === "deploy" ? [`PartyB signer: ${recipe.partyB.signer || "not configured"}`] : []),
+		...(recipe.partyB.mode === "deploy" ? [`PartyB operators: ${recipe.partyB.operators.join(", ")}`] : []),
 		...(recipe.symbolManager.operator ? [`SymbolManager operator: ${recipe.symbolManager.operator}`] : []),
+		...(recipe.liquidator?.mode === "deploy"
+			? [
+					`Liquidator admin: ${recipe.liquidator.admin || recipe.governance.admin}`,
+					`Liquidator operators: ${recipe.liquidator.operators.join(", ")}`,
+				]
+			: []),
 		...(recipe.expressProvider.mode !== "skip"
 			? [
 					`Express timing: ${recipe.expressProvider.securityWindow === undefined ? "unchanged" : `${recipe.expressProvider.securityWindow}s`} security • ${recipe.expressProvider.tolerancePeriod === undefined ? "unchanged" : `${recipe.expressProvider.tolerancePeriod}s`} tolerance`,
@@ -626,16 +652,26 @@ async function editProtocol(ui, recipe) {
 
 async function editComponents(ui, recipe) {
 	if (recipe.partyB.mode === "deploy") {
-		const signer = await askAddress(ui, "PartyB signer", recipe.partyB.signer);
+		const signer = await askOptionalAddress(ui, "PartyB signer (optional)", recipe.partyB.signer);
+		const operators = await askAddressList(ui, "PartyB operators", recipe.partyB.operators || [], { allowEmpty: false });
 		const adl = await ui.confirm({ message: "Enable PartyB ADL?", initialValue: recipe.partyB.adlEnabled === true });
-		if (signer === null || adl === null) return false;
-		recipe.partyB.signer = signer;
+		if (signer === null || operators === null || adl === null) return false;
+		if (signer) recipe.partyB.signer = signer;
+		else delete recipe.partyB.signer;
+		recipe.partyB.operators = operators;
 		recipe.partyB.adlEnabled = adl;
 	}
 	if (recipe.symbolManager.mode === "deploy") {
 		const operator = await askAddress(ui, "SymbolManager operator", recipe.symbolManager.operator);
 		if (operator === null) return false;
 		recipe.symbolManager.operator = operator;
+	}
+	if (recipe.liquidator?.mode === "deploy") {
+		const admin = await askAddress(ui, "SymmioLiquidator admin", recipe.liquidator.admin || recipe.governance.admin);
+		const operators = await askAddressList(ui, "SymmioLiquidator operators", recipe.liquidator.operators || [], { allowEmpty: false });
+		if (admin === null || operators === null) return false;
+		recipe.liquidator.admin = admin;
+		recipe.liquidator.operators = operators;
 	}
 	return true;
 }
@@ -828,7 +864,9 @@ async function customizeRecipe(ui, recipe, { only, forceSelection = false } = {}
 					{ value: "protocol", label: "Protocol parameter overrides", hint: "reviewed defaults are recommended" },
 				]
 			: []),
-		...(only === "expressProvider" || only === "gaslessLayer" ? [] : [{ value: "components", label: "PartyB and SymbolManager assignments" }]),
+		...(only === "expressProvider" || only === "gaslessLayer"
+			? []
+			: [{ value: "components", label: "PartyB, SymbolManager, and Liquidator assignments" }]),
 		...(recipe.expressProvider.mode !== "skip" ? [{ value: "express", label: "ExpressProvider configuration" }] : []),
 		...(recipe.gaslessLayer.mode !== "skip" ? [{ value: "gasless", label: "GaslessLayer configuration" }] : []),
 	];
@@ -878,7 +916,7 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 		chainId: chain.chainId,
 	});
 	if (!signer) return null;
-	const defaultFile = path.join(root, "deployments", `${network}${only ? `-${only}` : coreBundle ? "-core" : ""}.json`);
+	const defaultFile = path.join(root, "deployment-recipes", `${network}${only ? `-${only}` : coreBundle ? "-core" : ""}.json`);
 	const outputPath = defaultFile;
 	let recipe;
 	let replacing = fs.existsSync(defaultFile);
@@ -921,7 +959,8 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 				[
 					`Deployer: ${accounts[0]}`,
 					`Governance admin: ${recipe.governance.admin}`,
-					`PartyB signer: ${recipe.partyB.signer || "not deployed"}`,
+					`PartyB signer: ${recipe.partyB.mode === "deploy" ? recipe.partyB.signer || "not configured" : "not deployed"}`,
+					`PartyB operators: ${recipe.partyB.operators?.join(", ") || "not deployed"}`,
 					`SymbolManager operator: ${recipe.symbolManager.operator || "not deployed"}`,
 					"These are unlocked, pre-funded accounts exposed only by the persistent local node.",
 				].join("\n"),
@@ -1003,7 +1042,7 @@ export async function prepareExpressPatch({ root = PROJECT_ROOT, ui, readReport 
 		{ network: "arbitrum", chainId: 42161, mode: "live" },
 	]
 		.map(candidate => {
-			const recipePath = path.join(root, "deployments", `${candidate.network}.json`);
+			const recipePath = path.join(root, "deployment-recipes", `${candidate.network}.json`);
 			const reportPath = path.join(
 				root,
 				"tasks",
@@ -1047,7 +1086,7 @@ export async function prepareExpressPatch({ root = PROJECT_ROOT, ui, readReport 
 	const recipe = structuredClone(base.recipe);
 	recipe.name = `${selected.network}-expressProvider-patch`;
 	recipe.governance = { admin: base.recipe.governance.admin };
-	const outputPath = path.join(root, "deployments", `${selected.network}-expressProvider-patch.json`);
+	const outputPath = path.join(root, "deployment-recipes", `${selected.network}-expressProvider-patch.json`);
 	recipe.core = { mode: "reuse", fromReport: relativeReference(outputPath, selected.reportPath) };
 	recipe.partyB = { mode: "skip", adlEnabled: false };
 	recipe.symbolManager = { mode: "skip" };

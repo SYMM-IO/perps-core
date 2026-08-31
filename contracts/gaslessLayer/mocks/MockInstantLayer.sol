@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import { IInstantLayer } from "../interfaces/IInstantLayer.sol";
 
@@ -128,6 +128,22 @@ contract MockInstantLayer is IInstantLayer {
 		lastDelegationDeadline = signedDelegation.replayAttackHeader.deadline;
 		lastDelegationSalt = signedDelegation.replayAttackHeader.salt;
 		lastDelegationSignature = signature;
+
+		for (uint256 i = 0; i < info.selectors.length; i++) {
+			delegations[info.account.addr][info.delegatedSigner][info.selectors[i]] = info.expiryTimestamp;
+		}
+	}
+
+	/// @notice Mirrors the real InstantLayer's delegation-grant surface: a self-targeted signed
+	///         operation whose callData encodes this call applies the grant during batch execution.
+	function grantDelegation(DelegationInfo calldata info) external {
+		if (forceDelegationFailure) revert ForcedDelegationFailure();
+		lastDelegationAccount = info.account.addr;
+		lastDelegationIsPartyB = info.account.isPartyB;
+		lastDelegationDelegate = info.delegatedSigner;
+		lastDelegationSelectorCount = info.selectors.length;
+		lastDelegationFirstSelector = info.selectors.length == 0 ? bytes4(0) : info.selectors[0];
+		lastDelegationExpiry = info.expiryTimestamp;
 
 		for (uint256 i = 0; i < info.selectors.length; i++) {
 			delegations[info.account.addr][info.delegatedSigner][info.selectors[i]] = info.expiryTimestamp;

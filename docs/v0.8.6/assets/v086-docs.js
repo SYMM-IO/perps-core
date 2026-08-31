@@ -907,9 +907,235 @@
 		mount.querySelectorAll("input").forEach(control => control.addEventListener("input", update));
 		update();
 	};
+	const ADJUSTMENT_SCALE = 1000000000000000000n;
+
+	const parseScaledFactor = raw => {
+		const text = String(raw == null ? "" : raw).trim();
+		if (!/^\d*\.?\d*$/.test(text) || text === "" || text === ".") return null;
+		const [whole, fraction = ""] = text.split(".");
+		if (fraction.length > 18) return null;
+		const padded = (fraction + "000000000000000000").slice(0, 18);
+		const value = BigInt(whole || "0") * ADJUSTMENT_SCALE + BigInt(padded);
+		return value > 0n ? value : null;
+	};
+
+	const parseSignedInteger = raw => {
+		const text = String(raw == null ? "" : raw)
+			.trim()
+			.replace(/[_,\s]/g, "");
+		if (!/^-?\d+$/.test(text)) return null;
+		return BigInt(text);
+	};
+
+	const parseUnsignedInteger = raw => {
+		const value = parseSignedInteger(raw);
+		return value == null || value < 0n ? null : value;
+	};
+
+	const formatFactor = value => {
+		const whole = value / ADJUSTMENT_SCALE;
+		const fraction = (value % ADJUSTMENT_SCALE).toString().padStart(18, "0").replace(/0+$/, "");
+		return fraction ? `${whole}.${fraction}` : `${whole}`;
+	};
+
+	const formatBigInt = value => {
+		const negative = value < 0n;
+		const digits = (negative ? -value : value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+		return negative ? `-${digits}` : digits;
+	};
+
+	const scaleDown = (amount, factor) => (amount * factor) / ADJUSTMENT_SCALE;
+
+	const convertAmountPricePair = (amount, price, factor) => {
+		const adjustedAmount = scaleDown(amount, factor);
+		if (adjustedAmount === 0n) return { adjustedAmount, adjustedPrice: 0n, oldNotional: amount * price, newNotional: 0n, dust: 0n };
+		const adjustedPrice = price === 0n ? 0n : (amount * price) / adjustedAmount;
+		const oldNotional = amount * price;
+		const newNotional = adjustedAmount * adjustedPrice;
+		return { adjustedAmount, adjustedPrice, oldNotional, newNotional, dust: oldNotional - newNotional };
+	};
+
+	const installSymbolAdjustmentTool = mount => {
+		mount.innerHTML = `
+			<div class="tool-heading">
+				<div>
+					<p class="eyebrow">Context helper</p>
+					<h3>Factor and quote conversion</h3>
+				</div>
+				<p>Describe one venue event and one stored quote. The panel shows the price Muon must publish on the adjusted-price route, and the rewritten fields, rounding dust, and rejection rules on the physical route.</p>
+			</div>
+			<div class="tool-input-groups">
+				<div class="tool-input-group">
+					<strong>Venue event</strong>
+					<div class="tool-grid tool-grid-compact">
+						<label>Active factor<input type="text" inputmode="decimal" value="1" data-active-factor></label>
+						<label>This event's factor<input type="text" inputmode="decimal" value="4" data-event-factor></label>
+						<label>Raw venue price after event<input type="text" inputmode="numeric" value="100" data-venue-price></label>
+					</div>
+				</div>
+				<div class="tool-input-group">
+					<strong>Quote as stored, in raw amount units</strong>
+					<div class="tool-grid tool-grid-compact">
+						<label>quantity<input type="text" inputmode="numeric" value="100" data-quantity></label>
+						<label>openedPrice<input type="text" inputmode="numeric" value="400" data-opened-price></label>
+						<label>closedAmount<input type="text" inputmode="numeric" value="0" data-closed-amount></label>
+						<label>avgClosedPrice<input type="text" inputmode="numeric" value="0" data-avg-closed-price></label>
+						<label>quantityToClose<input type="text" inputmode="numeric" value="0" data-quantity-to-close></label>
+						<label>requestedClosePrice<input type="text" inputmode="numeric" value="0" data-requested-close-price></label>
+					</div>
+				</div>
+				<div class="tool-input-group">
+					<strong>Funding</strong>
+					<div class="tool-grid tool-grid-compact">
+						<label>Current rate per old unit<input type="text" inputmode="numeric" value="8" data-funding-rate></label>
+					</div>
+				</div>
+			</div>
+			<div class="tool-result" aria-live="polite"></div>
+		`;
+		const result = mount.querySelector(".tool-result");
+		const readField = (selector, parser) => parser(mount.querySelector(selector).value);
+		const row = (label, before, after, note) =>
+			`<tr><td><code>${escapeHtml(label)}</code></td><td>${before}</td><td>${after}</td><td>${note}</td></tr>`;
+
+		const update = () => {
+			const activeFactor = readField("[data-active-factor]", parseScaledFactor);
+			const eventFactor = readField("[data-event-factor]", parseScaledFactor);
+			const venuePrice = readField("[data-venue-price]", parseUnsignedInteger);
+			const quantity = readField("[data-quantity]", parseUnsignedInteger);
+			const openedPrice = readField("[data-opened-price]", parseUnsignedInteger);
+			const closedAmount = readField("[data-closed-amount]", parseUnsignedInteger);
+			const avgClosedPrice = readField("[data-avg-closed-price]", parseUnsignedInteger);
+			const quantityToClose = readField("[data-quantity-to-close]", parseUnsignedInteger);
+			const requestedClosePrice = readField("[data-requested-close-price]", parseUnsignedInteger);
+			const fundingRate = readField("[data-funding-rate]", parseSignedInteger);
+
+			const missing = [
+				activeFactor == null && "active factor",
+				eventFactor == null && "this event's factor",
+				venuePrice == null && "raw venue price",
+				quantity == null && "quantity",
+				openedPrice == null && "openedPrice",
+				closedAmount == null && "closedAmount",
+				avgClosedPrice == null && "avgClosedPrice",
+				quantityToClose == null && "quantityToClose",
+				requestedClosePrice == null && "requestedClosePrice",
+				fundingRate == null && "funding rate",
+			].filter(Boolean);
+			if (missing.length) {
+				result.innerHTML = `<ul class="tool-warnings"><li>Enter a valid value for ${escapeHtml(missing.join(", "))}. Factors are positive decimals; amounts and prices are whole numbers; the funding rate may be negative.</li></ul>`;
+				return;
+			}
+			if (quantity === 0n) {
+				result.innerHTML = `<ul class="tool-warnings"><li>A stored quote has a nonzero <code>quantity</code>.</li></ul>`;
+				return;
+			}
+
+			const prospectiveFactor = (activeFactor * eventFactor) / ADJUSTMENT_SCALE;
+			if (prospectiveFactor === 0n) {
+				result.innerHTML = `<ul class="tool-warnings"><li>The two factors compound to zero: <code>floor(${escapeHtml(formatFactor(activeFactor))} &times; ${escapeHtml(formatFactor(eventFactor))})</code> floors away entirely. Confirmation, direct start, and preview all reject this product.</li></ul>`;
+				return;
+			}
+
+			// Adjusted-price route: external prices are lifted onto the stored quote basis.
+			const adjustedMark = scaleDown(venuePrice, prospectiveFactor);
+			const venueQuantity = scaleDown(quantity, prospectiveFactor);
+			const venueClosedAmount = scaleDown(closedAmount, prospectiveFactor);
+			const venueOpenFromParts = venueQuantity - venueClosedAmount;
+			const venueOpenDirect = scaleDown(quantity - closedAmount, prospectiveFactor);
+			const upnlRaw = (quantity - closedAmount) * (venuePrice - openedPrice);
+			const upnlAdjusted = (quantity - closedAmount) * (adjustedMark - openedPrice);
+
+			// Physical route: a direct restatement converts by the prospective factor.
+			const position = convertAmountPricePair(quantity, openedPrice, prospectiveFactor);
+			const closed = convertAmountPricePair(closedAmount, avgClosedPrice, prospectiveFactor);
+			const closeRequest = convertAmountPricePair(quantityToClose, requestedClosePrice, prospectiveFactor);
+
+			const rejections = [];
+			if (position.adjustedAmount === 0n)
+				rejections.push(
+					`The whole position vanishes: <code>floor(${escapeHtml(formatBigInt(quantity))} &times; factor) = 0</code>. Core will not store a zero-quantity position.`,
+				);
+			if (closedAmount > 0n && closed.adjustedAmount === 0n)
+				rejections.push(
+					`Recorded closed quantity vanishes: <code>floor(${escapeHtml(formatBigInt(closedAmount))} &times; factor) = 0</code>. Core will not erase closed history.`,
+				);
+			if (position.adjustedAmount > 0n && position.adjustedAmount <= closed.adjustedAmount)
+				rejections.push(
+					`No open quantity survives: converted quantity <code>${escapeHtml(formatBigInt(position.adjustedAmount))}</code> is not greater than converted closed amount <code>${escapeHtml(formatBigInt(closed.adjustedAmount))}</code>.`,
+				);
+			if (quantityToClose > 0n && closeRequest.adjustedAmount === 0n)
+				rejections.push(
+					`The pending close request vanishes: <code>floor(${escapeHtml(formatBigInt(quantityToClose))} &times; factor) = 0</code>. Core will not keep a close request for zero quantity.`,
+				);
+
+			const restatable = rejections.length === 0;
+			const totalDust = position.dust + closed.dust + closeRequest.dust;
+			const rateMagnitude = fundingRate < 0n ? -fundingRate : fundingRate;
+			const restoredMagnitude = (rateMagnitude * ADJUSTMENT_SCALE) / prospectiveFactor;
+			const restoredRate = fundingRate < 0n ? -restoredMagnitude : restoredMagnitude;
+			const fundingBefore = quantity * fundingRate;
+			const fundingAfter = position.adjustedAmount * restoredRate;
+
+			const notes = [];
+			if (venueOpenFromParts !== venueOpenDirect)
+				notes.push(
+					`The venue-unit view scales total and closed amounts separately, so its open amount is <code>${escapeHtml(formatBigInt(venueOpenFromParts))}</code> while scaling the stored open amount directly gives <code>${escapeHtml(formatBigInt(venueOpenDirect))}</code>. That one-wei gap is expected.`,
+				);
+			if (restatable && totalDust > 0n)
+				notes.push(
+					`Integer division discards <code>${escapeHtml(formatBigInt(totalDust))}</code> of notional across the converted pairs. Each pair's dust is <code>oldNotional % adjustedAmount</code>, always smaller than the converted amount.`,
+				);
+			if (restatable && fundingBefore !== fundingAfter)
+				notes.push(
+					`Flooring the restored rate moves the funding amount from <code>${escapeHtml(formatBigInt(fundingBefore))}</code> to <code>${escapeHtml(formatBigInt(fundingAfter))}</code>.`,
+				);
+			if (activeFactor !== ADJUSTMENT_SCALE)
+				notes.push(
+					`A direct restatement converts by the prospective factor shown. A restatement opened later, after <code>confirmPriceAdjusted</code>, would instead convert by the active factor <code>${escapeHtml(formatFactor(activeFactor))}</code>.`,
+				);
+
+			result.innerHTML = `
+				<div class="result-metrics">
+					<span><small>Prospective factor</small><strong>${escapeHtml(formatFactor(prospectiveFactor))}x</strong></span>
+					<span><small>Adjusted mark Muon publishes</small><strong>${escapeHtml(formatBigInt(adjustedMark))}</strong></span>
+					<span><small>Physical conversion</small><strong>${restatable ? "Accepted" : "Rejected"}</strong></span>
+					<span><small>Notional dust</small><strong>${restatable ? escapeHtml(formatBigInt(totalDust)) : "n/a"}</strong></span>
+				</div>
+				<p class="eyebrow">Adjusted-price route &mdash; storage untouched</p>
+				<p>
+					Muon multiplies the raw venue price by the factor: <code>floor(${escapeHtml(formatBigInt(venuePrice))} &times; ${escapeHtml(formatFactor(prospectiveFactor))}) = ${escapeHtml(formatBigInt(adjustedMark))}</code>.
+					Feeding Core the raw <code>${escapeHtml(formatBigInt(venuePrice))}</code> instead would report a price UPNL of
+					<code>${escapeHtml(formatBigInt(upnlRaw))}</code> on this long, against the correct
+					<code>${escapeHtml(formatBigInt(upnlAdjusted))}</code>.
+					<code>getQuoteInVenueUnits</code> reports quantity <code>${escapeHtml(formatBigInt(venueQuantity))}</code>,
+					closed amount <code>${escapeHtml(formatBigInt(venueClosedAmount))}</code>, and open amount
+					<code>${escapeHtml(formatBigInt(venueOpenFromParts))}</code> for display only.
+				</p>
+				<p class="eyebrow">Physical route &mdash; storage rewritten</p>
+				<div class="table-wrap">
+					<table>
+						<thead><tr><th>Field</th><th>Stored</th><th>Rewritten</th><th>Notional</th></tr></thead>
+						<tbody>
+							${row("quantity / openedPrice", `${escapeHtml(formatBigInt(quantity))} @ ${escapeHtml(formatBigInt(openedPrice))}`, `${escapeHtml(formatBigInt(position.adjustedAmount))} @ ${escapeHtml(formatBigInt(position.adjustedPrice))}`, `${escapeHtml(formatBigInt(position.oldNotional))} &rarr; ${escapeHtml(formatBigInt(position.newNotional))}${position.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(position.dust))})` : ""}`)}
+							${closedAmount > 0n ? row("closedAmount / avgClosedPrice", `${escapeHtml(formatBigInt(closedAmount))} @ ${escapeHtml(formatBigInt(avgClosedPrice))}`, `${escapeHtml(formatBigInt(closed.adjustedAmount))} @ ${escapeHtml(formatBigInt(closed.adjustedPrice))}`, `${escapeHtml(formatBigInt(closed.oldNotional))} &rarr; ${escapeHtml(formatBigInt(closed.newNotional))}${closed.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(closed.dust))})` : ""}`) : row("closedAmount / avgClosedPrice", "0", "0", "not converted while zero")}
+							${quantityToClose > 0n ? row("quantityToClose / requestedClosePrice", `${escapeHtml(formatBigInt(quantityToClose))} @ ${escapeHtml(formatBigInt(requestedClosePrice))}`, `${escapeHtml(formatBigInt(closeRequest.adjustedAmount))} @ ${escapeHtml(formatBigInt(closeRequest.adjustedPrice))}`, `${escapeHtml(formatBigInt(closeRequest.oldNotional))} &rarr; ${escapeHtml(formatBigInt(closeRequest.newNotional))}${closeRequest.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(closeRequest.dust))})` : ""}`) : row("quantityToClose / requestedClosePrice", "0", "0", "not converted while zero")}
+							${row("current funding rate", `${escapeHtml(formatBigInt(fundingRate))} per old unit`, `${escapeHtml(formatBigInt(restoredRate))} per new unit`, `${escapeHtml(formatBigInt(fundingBefore))} &rarr; ${escapeHtml(formatBigInt(fundingAfter))}`)}
+						</tbody>
+					</table>
+				</div>
+				${rejections.length ? `<ul class="tool-warnings">${rejections.map(entry => `<li>${entry}</li>`).join("")}</ul>` : `<p class="tool-ok">Every amount survives the conversion, so <code>applyAdjustment</code> would rewrite this quote. The dust exception does not apply.</p>`}
+				${notes.length ? `<ul class="tool-warnings">${notes.map(entry => `<li>${entry}</li>`).join("")}</ul>` : ""}
+			`;
+		};
+		mount.querySelectorAll("input").forEach(control => control.addEventListener("input", update));
+		update();
+	};
+
 	const installExpressTools = () => {
 		document.querySelectorAll("[data-express-funding-tool]").forEach(installExpressFundingTool);
 		document.querySelectorAll("[data-express-timing-tool]").forEach(installExpressTimingTool);
+		document.querySelectorAll("[data-symbol-adjustment-tool]").forEach(installSymbolAdjustmentTool);
 	};
 
 	installExpressTools();

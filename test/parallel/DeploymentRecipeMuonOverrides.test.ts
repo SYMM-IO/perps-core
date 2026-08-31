@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { recipeEnvironment, validateDeploymentRecipe } from "../../deployment/recipe.js"
+import { recipeEnvironment, validateDeploymentRecipe } from "../../deployment-tooling/recipe.js"
 
 /**
  * Smallest recipe that still validates, so the assertions below are about the Muon
@@ -96,7 +96,7 @@ describe("recipe Muon UPNL validity overrides", function () {
 		const source = recipe()
 		source.core.muon.upnlValidTimeByFunction = { Trading: "30" }
 		source.core.mode = "reuse"
-		source.core.fromReport = "deployments/core.json"
+		source.core.fromReport = "deployment-recipes/core.json"
 		expect(recipeEnvironment(source).env.MUON_FUNCTION_UPNL_VALID_TIMES).to.equal("")
 	})
 

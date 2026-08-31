@@ -32,7 +32,8 @@
 		"partyB": { "$ref": "#/$defs/partyB" },
 		"symbolManager": { "$ref": "#/$defs/symbolManager" },
 		"expressProvider": { "$ref": "#/$defs/expressProvider" },
-		"gaslessLayer": { "$ref": "#/$defs/gaslessLayer" }
+		"gaslessLayer": { "$ref": "#/$defs/gaslessLayer" },
+		"liquidator": { "$ref": "#/$defs/liquidator" }
 	},
 	"allOf": [
 		{
@@ -441,16 +442,26 @@
 				"mode": { "$ref": "#/$defs/componentMode" },
 				"address": { "$ref": "#/$defs/address" },
 				"signer": { "$ref": "#/$defs/address" },
+				"operators": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "$ref": "#/$defs/address" }
+				},
 				"adlEnabled": { "type": "boolean" }
 			},
 			"allOf": [
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["signer"], "not": { "type": "object", "required": ["address"] } }
+					"then": { "type": "object", "required": ["operators"], "not": { "type": "object", "required": ["address"] } }
 				},
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["address"], "not": { "type": "object", "required": ["signer"] } }
+					"then": {
+						"type": "object",
+						"required": ["address"],
+						"not": { "anyOf": [{ "required": ["signer"] }, { "required": ["operators"] }] }
+					}
 				},
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
@@ -460,7 +471,8 @@
 						"not": {
 							"anyOf": [
 								{ "type": "object", "required": ["address"] },
-								{ "type": "object", "required": ["signer"] }
+								{ "type": "object", "required": ["signer"] },
+								{ "type": "object", "required": ["operators"] }
 							]
 						}
 					}
@@ -493,6 +505,45 @@
 							"anyOf": [
 								{ "type": "object", "required": ["address"] },
 								{ "type": "object", "required": ["operator"] }
+							]
+						}
+					}
+				}
+			]
+		},
+		"liquidator": {
+			"description": "SymmioLiquidator UUPS proxy over the core diamond. Optional at the root; omitting the section is equivalent to skip.",
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "$ref": "#/$defs/componentMode" },
+				"address": { "$ref": "#/$defs/address" },
+				"admin": { "$ref": "#/$defs/address", "description": "Defaults to governance.admin when omitted" },
+				"operators": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/address" } }
+			},
+			"allOf": [
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
+					"then": { "type": "object", "required": ["operators"], "not": { "type": "object", "required": ["address"] } }
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"required": ["address"],
+						"not": { "anyOf": [{ "required": ["admin"] }, { "required": ["operators"] }] }
+					}
+				},
+				{
+					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
+					"then": {
+						"type": "object",
+						"not": {
+							"anyOf": [
+								{ "type": "object", "required": ["address"] },
+								{ "type": "object", "required": ["admin"] },
+								{ "type": "object", "required": ["operators"] }
 							]
 						}
 					}

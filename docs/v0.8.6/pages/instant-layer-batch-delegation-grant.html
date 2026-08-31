@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A delegation grant can travel as a regular signed operation inside executeBatch or executeTemplate, so one owner signature bootstraps a session key that signs the rest of the batch."
+		/>
+		<title>Batch Delegation Grant Operations - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#the-grant-operation">The grant operation</a>
+				<a class="toc-link level-2" href="#verification-rules">Verification rules</a>
+				<a class="toc-link level-2" href="#usage">Usage</a>
+				<a class="toc-link level-2" href="#onboarding-scenario">Scenario: one-signature onboarding</a>
+				<a class="toc-link level-2" href="#existing-grant-paths">Existing grant paths</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Batch Delegation Grant Operations</h1>
+							<p class="hero-copy">
+								A delegation grant can travel as a regular signed operation inside <code>executeBatch</code> or
+								<code>executeTemplate</code>. Operations later in the same batch verify against the delegation the grant just wrote,
+								so one owner signature bootstraps a session key that signs the rest of the batch.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Before v0.8.6, granting a delegation was its own transaction: the owner called <code>grantDelegation</code> directly or a
+						relayer submitted a <code>grantBatchDelegationBySig</code> payload, and only afterwards could an operation signed by the
+						delegate execute. A flow such as &ldquo;authorize this session key, then let it configure my account&rdquo; therefore took at
+						least two transactions, and the second could not be prepared until the first had landed.
+					</p>
+					<p>
+						In v0.8.6 the grant itself is a <code>SignedOperation</code>: an operation that targets the InstantLayer contract itself and
+						carries <code>grantDelegation(DelegationInfo)</code> as its calldata. The InstantLayer recognizes the self-target, verifies
+						the operation through the normal EIP-712 pipeline, and applies the grant in place instead of making an external call. Because
+						both <code>executeBatch</code> and <code>executeTemplate</code> verify each operation immediately before executing it, an
+						operation at index 1 can already use a delegation granted at index 0 &mdash; within one atomic transaction.
+					</p>
+					<p>
+						No entry point changed shape. There are no new parameters, no new signing scheme, and no new EIP-712 types: the owner signs
+						the grant with the same <code>SignedOperation</code> typehash used for every other operation.
+					</p>
+
+					<h2 id="the-grant-operation">The grant operation</h2>
+					<p>A grant operation is an ordinary <code>SignedOperation</code> with two distinguishing properties:</p>
+					<ul>
+						<li><code>target</code> is the InstantLayer contract itself, and</li>
+						<li><code>callData</code> is an ABI-encoded call to <code>grantDelegation(DelegationInfo)</code>.</li>
+					</ul>
+					<pre><code>DelegationInfo {
+    Account account;          // the account granting delegation (must match signerAccount)
+    address delegatedSigner;  // the session key / delegate
+    bytes4[] selectors;       // functions the delegate may sign for
+    uint256 expiryTimestamp;  // when the delegation lapses
+}</code></pre>
+					<p>
+						Execution decodes the <code>DelegationInfo</code>, normalizes the granting account to its canonical account family (a Virtual
+						Account resolves to its parent SubAccount), writes each selector permission, clears any pending revocation for those
+						selectors, and emits <code>DelegationGranted</code> per selector &mdash; the same shared logic behind the direct and
+						by-signature grant paths.
+					</p>
+
+					<h2 id="verification-rules">Verification rules</h2>
+					<p>
+						Self-targeted operations are valid <em>only</em> as delegation grants, and grants carry stricter shape rules than ordinary
+						operations:
+					</p>
+					<ul>
+						<li>
+							Only the <code>grantDelegation</code> selector may target the InstantLayer. Any other self-targeted calldata reverts with
+							<code>InvalidGrantOperation</code>, so the target whitelist never opens other InstantLayer functions to signed operations.
+						</li>
+						<li>
+							The operation signer must be the account owner. A delegate can never sign a grant &mdash; not even one holding a
+							delegation over the <code>grantDelegation</code> selector &mdash; so a session key cannot mint further delegations for
+							itself.
+						</li>
+						<li>
+							<code>maxUses</code> must be exactly <code>1</code>. Granting clears pending revocation timestamps, so a replayable grant
+							operation could silently cancel a revocation the owner had already scheduled.
+						</li>
+						<li>
+							<code>flexFields</code> must be empty, and the grant decodes from the original signed calldata rather than the
+							fill-and-injection-modified copy. Neither flex fills nor template result injection can rewrite the delegate, the
+							selectors, or the expiry after the owner signed.
+						</li>
+						<li>
+							<code>DelegationInfo.account</code> must equal the operation's <code>signerAccount</code>, and PartyB accounts cannot
+							grant.
+						</li>
+					</ul>
+					<p>
+						Everything else is the standard operation machinery: the EIP-712 signature check, the salt-based usage count, the optional
+						ordered nonce, and the deadline all apply unchanged. Replaying a grant operation fails with <code>MaxUsesExceeded</code>. The
+						shared grant validation also enforces <code>SelfDelegation</code>, <code>DelegationExpired</code>, and non-empty selectors.
+					</p>
+
+					<h2 id="usage">Usage</h2>
+					<p>Build the grant like any other operation; only the target and calldata differ:</p>
+					<pre><code>const grantOp = {
+    signer: owner.address,                       // the account owner signs
+    target: instantLayerAddress,                 // self-targeted
+    callData: instantLayer.interface.encodeFunctionData("grantDelegation", [{
+        account: { addr: subAccount, isPartyB: false },
+        delegatedSigner: sessionKey.address,
+        selectors: [bindToPartyBSelector, approveOperationalFeeSelector],
+        expiryTimestamp: now + 3600n,
+    }]),
+    signerAccount: { addr: subAccount, isPartyB: false },
+    flexFields: [],
+    maxUses: 1,                                  // required for grant operations
+    replayAttackHeader: { nonce: 0n, deadline, salt },
+}
+const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp)</code></pre>
+					<p>
+						Then submit it in front of the operations that depend on it. Operations signed by the session key list the granted selectors
+						in their calldata and verify against the fresh delegation:
+					</p>
+					<pre><code>await instantLayer.executeBatch(
+    [grantOp, bindOp, approveFeeOp],
+    [grantSig, bindSig, approveFeeSig],
+    [[], [], []],
+    [[], [], []],
+)</code></pre>
+					<p>
+						The GaslessLayer needs no dedicated surface for this: <code>relayInstantBatch</code> forwards a grant operation like any other
+						instant operation, and billing prices it by its <code>grantDelegation</code> selector through the normal fee schedule
+						(<code>setSelectorFeeConfig</code>), including the daily free-operation quota and Virtual Account &rarr; parent payer
+						resolution.
+					</p>
+
+					<h2 id="onboarding-scenario">Scenario: one-signature onboarding</h2>
+					<p>The motivating flow is gasless user onboarding, end to end:</p>
+					<ol>
+						<li>
+							<strong>Show the deposit address.</strong> The service reads <code>getGaslessWalletAddress(user)</code> &mdash; a
+							deterministic CREATE2 address &mdash; and shows it to the user. No transaction, no gas.
+						</li>
+						<li><strong>The user deposits.</strong> Collateral is bridged to that address from anywhere.</li>
+						<li>
+							<strong>The relayer settles.</strong> <code>settleDepositToNewAccount</code> sweeps the wallet, takes the flat deposit
+							fee, creates a SubAccount owned by the user through the AccountLayer, and deposits the remainder into core.
+						</li>
+						<li>
+							<strong>One relayed batch finishes setup.</strong> The batch carries the user's single signature and the session key's
+							signatures:
+							<pre><code>[
+    grantOp,       // signed by the user: delegate bindToPartyB + approveOperationalFee
+                   // to the session key
+    bindOp,        // signed by the session key: bindToPartyB(solver)
+    approveFeeOp,  // signed by the session key: approveOperationalFee([gaslessLayer], budget)
+]</code></pre>
+							The grant lands first, so the session-key operations verify against it inside the same transaction. Operational fees are
+							collected <em>after</em> the batch executes, so the in-batch <code>approveOperationalFee</code> funds the billing of the
+							very batch that carried it. The whole sequence is atomic: if any step fails, no delegation, binding, or approval lands.
+						</li>
+					</ol>
+					<p>
+						From the user's perspective: one deposit and one signature. Every subsequent action &mdash; and everything in the setup batch
+						beyond the grant itself &mdash; is signed by the session key and relayed gaslessly.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Deployment wiring.</strong>
+						For this flow the GaslessLayer must hold <code>OPERATOR_ROLE</code> on the InstantLayer and
+						<code>ACCOUNT_CREATOR_ROLE</code> on the AccountLayer, and must be registered as an operational-fee charger on core via
+						<code>registerOperationalFeeCharger</code> &mdash; without that registration, <code>chargeOperationalFee</code> rejects the
+						post-batch billing. Relayer bots need <code>RELAYER_ROLE</code> on the GaslessLayer.
+					</aside>
+
+					<h2 id="existing-grant-paths">Existing grant paths</h2>
+					<p>
+						The operation form is additive. <code>grantDelegation</code> as a direct owner call and
+						<code>grantBatchDelegationBySig</code> with its dedicated EIP-712 payload and delegation nonce both keep working unchanged;
+						all three paths share the same validation and write the same delegation storage. For new integrations the operation form is
+						preferred, since it composes with other operations in a batch and rides the standard operation replay machinery instead of a
+						separate nonce track.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>
