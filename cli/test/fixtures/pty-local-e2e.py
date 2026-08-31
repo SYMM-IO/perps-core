@@ -67,18 +67,18 @@ while time.time() < deadline:
     elif state == "network" and b"Where do you want to deploy?" in view:
         send(b"\r")
         state = "existing-or-overrides"
-    elif state == "existing-or-overrides" and b"Deployment transaction signer" in view:
-        # Persistent-local defaults highlight the unlocked local-node account.
-        send(b"\r")
-        state = "overrides"
     elif state in ("existing-or-overrides", "overrides") and b"A reviewed recipe already exists" in view:
-        # For a deliberate rerun, start again from reviewed defaults (third row).
-        send(b"\x1b[B\x1b[B\r")
+        # For a deliberate rerun, start again from reviewed defaults (fourth row).
+        send(b"\x1b[B\x1b[B\x1b[B\r")
         state = "overrides"
     elif state in ("existing-or-overrides", "overrides") and b"Anything you want to override before the final review?" in view:
         send(b"\r")
         state = "review"
     elif state == "review" and b"Create the task with this exact reviewed intent?" in view:
+        send(b"\r")
+        state = "signer"
+    elif state == "signer" and b"Deployment transaction signer" in view:
+        # Persistent-local defaults highlight the unlocked local-node account.
         send(b"\r")
         state = "running"
     elif state == "running" and b"Full SYMMIO system completed" in view:
