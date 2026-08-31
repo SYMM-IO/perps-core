@@ -252,15 +252,18 @@ function deploymentPlan(input, scope) {
 			(component.actions || []).map(action => ({ component: component.name, action })),
 		);
 	}
+	const stableSlug = value =>
+		String(value)
+			.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+			.replace(/[^A-Za-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.toLowerCase();
 	const batchItems = stage => [
 		...contracts.map((key, index) => {
-			const slug = key
-				.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-				.replace(/[^A-Za-z0-9]+/g, "-")
-				.toLowerCase();
+			const slug = stableSlug(key);
 			return `${stage}.contract-${String(index + 1).padStart(3, "0")}.${slug}`;
 		}),
-		...componentActions.map(({ component, action }) => `${stage}.${component}.${action.id}`),
+		...componentActions.map(({ component, action }) => `${stage}.${stableSlug(component)}.${stableSlug(action.id)}`),
 	];
 	return [
 		{ id: "preflight", phase: "prepare", title: "Validate recipe, RPC, signer, permissions and deployment plan" },
