@@ -103,6 +103,7 @@ test("the deployment checklist requires explorer success live and an explicit no
 
 test("full deployment plans give every contract batch entry a unique stable id", async () => {
 	const definition = TASK_DEFINITIONS.find(item => item.id === "deploy.full");
+	assert.equal(definition.version, 3);
 	for (const mode of ["local", "fork", "live"]) {
 		const plan = await definition.plan({}, { mode });
 		const items = plan.flatMap(step => step.items || []);
@@ -112,6 +113,7 @@ test("full deployment plans give every contract batch entry a unique stable id",
 	}
 	const productionPlan = await definition.plan({}, { mode: "live", config: path.resolve("deployment-recipes/arbitrum-vibe-production.json") });
 	const liveItems = productionPlan.find(step => step.id === "execute").items;
+	assert.ok(liveItems.some(item => item.startsWith("live.partyB.grant-trusted-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
 	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));

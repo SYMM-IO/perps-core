@@ -133,6 +133,20 @@ function sameAddress(actual, expected) {
 	return validAddress(actual) && validAddress(expected) && actual.toLowerCase() === expected.toLowerCase();
 }
 
+function sameOptionalAddress(actual, expected) {
+	return expected === undefined ? actual === undefined : sameAddress(actual, expected);
+}
+
+function sameAddressArray(actual, expected) {
+	if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length === 0 || actual.length !== expected.length) return false;
+	const normalized = actual.map(value => (validAddress(value) ? value.toLowerCase() : null));
+	return (
+		!normalized.includes(null) &&
+		new Set(normalized).size === normalized.length &&
+		normalized.every((value, index) => value === expected[index].toLowerCase())
+	);
+}
+
 export function componentReportPath(chainId, { simulated = false, recipeName, component }) {
 	return projectPath("tasks", "data", `${Number(chainId)}${simulated ? "-fork" : ""}`, "components", recipeName, `${component}-report.json`);
 }
@@ -186,10 +200,13 @@ export function validateComponentReport(report, expected) {
 		);
 	}
 	if (expected.component === "partyB") {
-		if (!sameAddress(report.config.signer, expected.config.signer)) {
+		if (!sameOptionalAddress(report.config.signer, expected.config.signer)) {
 			throw new Error(
 				`component report config.signer is ${JSON.stringify(report.config.signer)}, expected ${JSON.stringify(expected.config.signer)}`,
 			);
+		}
+		if (!sameAddressArray(report.config.operators, expected.config.operators)) {
+			throw new Error("component report config.operators does not match expected PartyB operators");
 		}
 		if (report.config.adlEnabled !== expected.config.adlEnabled) {
 			throw new Error(
@@ -312,7 +329,8 @@ function showComponentHandoff(report, reportPath, recipePath) {
 		["admin", report.config.admin],
 		...(report.component === "partyB"
 			? [
-					["signer", report.config.signer],
+					["signer", report.config.signer || "(not set)"],
+					["operators", report.config.operators.join(", ")],
 					["ADL enabled", String(report.config.adlEnabled)],
 				]
 			: report.component === "symbolManager"
@@ -368,6 +386,26 @@ export function validateDeploymentHandoff(report, expectedChainId, { requireVeri
 	}
 	if (report.config?.deploySymbolManager === true && !validAddress(report.addresses.symbolManager)) {
 		throw new Error("deployment report declares SymbolManager enabled but has no addresses.symbolManager");
+	}
+	const deploysPartyB = report.config?.partyBMode === "deploy" || report.config?.deployPartyB === true;
+	if (deploysPartyB && !validAddress(report.addresses.symmioPartyB)) {
+		throw new Error("deployment report declares PartyB enabled but has no addresses.symmioPartyB");
+	}
+	if (deploysPartyB) {
+		if (!Array.isArray(report.config.partyBOperators) || report.config.partyBOperators.length === 0) {
+			throw new Error("deployment report declares PartyB enabled but has no config.partyBOperators");
+		}
+		const normalized = report.config.partyBOperators.map((operator, index) => {
+			if (!validAddress(operator)) throw new Error(`deployment report config.partyBOperators[${index}] is not a valid address`);
+			return operator.toLowerCase();
+		});
+		if (new Set(normalized).size !== normalized.length) throw new Error("deployment report config.partyBOperators contains duplicates");
+		if (recipeContext?.recipe.partyB.mode === "deploy") {
+			const expected = recipeContext.recipe.partyB.operators.map(operator => operator.toLowerCase());
+			if (normalized.length !== expected.length || normalized.some((operator, index) => operator !== expected[index])) {
+				throw new Error("deployment report PartyB operators do not match recipe partyB.operators");
+			}
+		}
 	}
 	for (const field of ["liquidationInsuranceVault", "softLiquidationPenaltyCollector"]) {
 		const value = report.config?.[field];
@@ -576,6 +614,7 @@ export async function deploy(args) {
 						? {
 								admin: recipeContext.recipe.governance.admin,
 								signer: recipeContext.recipe.partyB.signer,
+								operators: recipeContext.recipe.partyB.operators,
 								adlEnabled: recipeContext.recipe.partyB.adlEnabled,
 							}
 						: args.only === "symbolManager"

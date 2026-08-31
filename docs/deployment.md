@@ -35,7 +35,7 @@ npx hardhat node --hostname 127.0.0.1 --port 8545
 
 In a second terminal launch `./symmio`, choose **Deploy a contract**, then **Persistent local
 Hardhat node**. The form discovers the node's unlocked accounts and shows exactly which one
-will act as deployer, governance admin, PartyB signer, SymbolManager operator, Express
+will act as deployer, governance admin, PartyB signer and operator, SymbolManager operator, Express
 operator/signer, and affiliate. No private key, RPC URL, or password is written to the
 recipe or task state.
 
@@ -84,6 +84,12 @@ InstantLayer. PartyB, SymbolManager, and ExpressProvider may be deployed separat
 a report-bound existing Core. FeeDistributor, MultiAccount, and Multicall remain local/fork
 only until their live workflows meet this runbook's full safety contract. Primitive
 diamonds, verifier pieces, fake stablecoin, and CREATE2 factory are hidden dependencies.
+
+A PartyB deployment requires `partyB.operators` as a non-empty address list. The deployment
+grants each listed account `TRUSTED_ROLE` and verifies the grants on-chain. The PartyB
+`signer` is optional. When omitted, deployment leaves `signer()` at `address(0)`, so ERC-1271
+signature validation remains disabled until an account with `SETTER_ROLE` configures it.
+Governance keeps `MANAGER_ROLE`, which can withdraw tokens and change destination permissions.
 
 Choose **Patch configurations for deployed contracts** for an existing ExpressProvider.
 Select only the sections that should be authoritative, then choose the patch signer.

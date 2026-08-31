@@ -262,6 +262,7 @@ function componentExpectedConfig(recipeContext, component) {
 		return {
 			admin,
 			signer: recipeContext.recipe.partyB.signer,
+			operators: recipeContext.recipe.partyB.operators,
 			adlEnabled: recipeContext.recipe.partyB.adlEnabled,
 		};
 	}
@@ -290,6 +291,7 @@ function showComponentStatusReport(report, reportPath, checkpointPath, networkNa
 		...(report.component === "partyB"
 			? [
 					["signer", report.config.signer],
+					["operators", report.config.operators.join(", ")],
 					["ADL enabled", String(report.config.adlEnabled)],
 				]
 			: report.component === "symbolManager"

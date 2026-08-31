@@ -127,6 +127,7 @@ interface SystemDeploymentReport {
 		collateralAddress: string
 		deployPartyB: boolean
 		setAdlEnabled: boolean
+		partyBOperators: string[]
 		deploySymbolManager: boolean
 		symbolManagerOperator: string
 		registerDummyAffiliate: boolean
@@ -288,6 +289,10 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 	const registerDummyAffiliate = parseBooleanSetting(source.REGISTER_DUMMY_AFFILIATE, "REGISTER_DUMMY_AFFILIATE", false)
 	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
 	const partyBSigner = source.PARTYB_SIGNER || ""
+	const partyBOperators = (source.PARTYB_OPERATORS || "")
+		.split(",")
+		.map(operator => operator.trim())
+		.filter(Boolean)
 	// Optional operator address that will receive SYMBOL_ADDER_ROLE + SYMBOL_REMOVER_ROLE on the SymbolManager
 	const symbolManagerOperator = source.SYMBOL_MANAGER_OPERATOR || ""
 	// Setup InstantLayer templates (default: true, set to "false" to skip)
@@ -328,6 +333,7 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 		symbolManagerOperator,
 		registerDummyAffiliate,
 		partyBSigner,
+		partyBOperators,
 		setupInstantLayerTemplates,
 		signatureVerifierAddress,
 		deployMockVerifier,
@@ -412,11 +418,18 @@ export async function validateDeploymentConfig(
 		config.signatureVerifierAddress = requireAddress(ethers, config.signatureVerifierAddress, "MUON_SIGNATURE_VERIFIER_ADDRESS")
 	}
 	if (config.partyBSigner) config.partyBSigner = requireAddress(ethers, config.partyBSigner, "PARTYB_SIGNER")
-	if (config.deployPartyB && !config.partyBSigner) {
-		throw new Error("PARTYB_SIGNER is required when DEPLOY_PARTYB=true; refusing to deploy a PartyB that cannot validate operational signatures")
+	config.partyBOperators = config.partyBOperators.map((operator, index) => requireAddress(ethers, operator, `PARTYB_OPERATORS[${index}]`))
+	if (new Set(config.partyBOperators.map(operator => operator.toLowerCase())).size !== config.partyBOperators.length) {
+		throw new Error("PARTYB_OPERATORS contains duplicate addresses")
+	}
+	if (config.deployPartyB && config.partyBOperators.length === 0) {
+		throw new Error("PARTYB_OPERATORS is required when DEPLOY_PARTYB=true; refusing to deploy a PartyB without a TRUSTED_ROLE operator")
 	}
 	if (!config.deployPartyB && config.partyBSigner) {
 		throw new Error("PARTYB_SIGNER is set while DEPLOY_PARTYB=false; remove it or enable PartyB explicitly")
+	}
+	if (!config.deployPartyB && config.partyBOperators.length > 0) {
+		throw new Error("PARTYB_OPERATORS is set while DEPLOY_PARTYB=false; remove it or enable PartyB explicitly")
 	}
 	if (config.symbolManagerOperator) {
 		config.symbolManagerOperator = requireAddress(ethers, config.symbolManagerOperator, "SYMBOL_MANAGER_OPERATOR")
@@ -952,6 +965,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			logger.info(`Deploy PartyB: ${config.deployPartyB}`)
 			logger.info(`Set ADL Enabled: ${config.setAdlEnabled}`)
 			logger.info(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
+			logger.info(`PartyB Operators: ${config.partyBOperators.join(", ") || "(not set)"}`)
 			logger.info(`Deploy SymbolManager: ${config.deploySymbolManager}`)
 			logger.info(`SymbolManager Operator: ${config.symbolManagerOperator || "(not set)"}`)
 			logger.info(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
@@ -2542,6 +2556,19 @@ async function setupSystem(
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), config.admin), "grantRole")
 		})
 
+		await checkpointedBatch(
+			checkpoint,
+			"setup.pbTrustedOperators",
+			config.partyBOperators,
+			"Granting SymmioPartyB TRUSTED_ROLE to {item}",
+			async operator => {
+				const trustedRole = roleHash("TRUSTED_ROLE")
+				if (!(await symmioPartyB.hasRole(trustedRole, operator))) {
+					await send(symmioPartyB.connect(deployer).grantRole(trustedRole, operator), `grantRole(PartyB operator ${operator})`)
+				}
+			},
+		)
+
 		await checkpointedStep(checkpoint, "setup.pbManagerRole", "Granting MANAGER_ROLE to admin on SymmioPartyB", async () => {
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin), "grantRole")
 		})
@@ -3041,6 +3068,7 @@ function generateReport(
 			collateralAddress: config.collateralAddress,
 			deployPartyB: config.deployPartyB,
 			setAdlEnabled: config.setAdlEnabled,
+			partyBOperators: config.partyBOperators,
 			deploySymbolManager: config.deploySymbolManager,
 			symbolManagerOperator: config.symbolManagerOperator,
 			registerDummyAffiliate: config.registerDummyAffiliate,
@@ -3116,6 +3144,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	logger.info(`Soft Penalty Collector:      ${report.config.softLiquidationPenaltyCollector}`)
 	logger.info(`Deploy PartyB:               ${report.config.deployPartyB}`)
 	logger.info(`Set ADL Enabled:             ${report.config.setAdlEnabled}`)
+	logger.info(`PartyB Operators:            ${report.config.partyBOperators.join(", ") || "(not set)"}`)
 	logger.info(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
 	logger.info(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
 	logger.info(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)

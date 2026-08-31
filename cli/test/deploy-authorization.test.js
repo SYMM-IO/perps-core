@@ -162,6 +162,7 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 		config: {
 			admin: "0x4000000000000000000000000000000000000004",
 			signer: "0x5000000000000000000000000000000000000005",
+			operators: ["0x6000000000000000000000000000000000000006"],
 			adlEnabled: true,
 		},
 	};
@@ -179,6 +180,7 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 		config: {
 			admin: "0x4000000000000000000000000000000000000004",
 			signer: "0x5000000000000000000000000000000000000005",
+			operators: ["0x6000000000000000000000000000000000000006"],
 			adlEnabled: true,
 		},
 		verification: {
@@ -222,6 +224,17 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 	assert.throws(
 		() => validateComponentReport({ ...report, config: { ...report.config, signer: "0x6000000000000000000000000000000000000006" } }, expected),
 		/config.signer/,
+	);
+	const { signer: _expectedSigner, ...expectedConfigWithoutSigner } = expected.config;
+	const { signer: _reportSigner, ...reportConfigWithoutSigner } = report.config;
+	const expectedWithoutSigner = { ...expected, config: expectedConfigWithoutSigner };
+	const reportWithoutSigner = { ...report, config: reportConfigWithoutSigner };
+	assert.equal(validateComponentReport(reportWithoutSigner, expectedWithoutSigner), reportWithoutSigner);
+	assert.throws(() => validateComponentReport(report, expectedWithoutSigner), /config.signer/);
+	assert.throws(
+		() =>
+			validateComponentReport({ ...report, config: { ...report.config, operators: ["0x7000000000000000000000000000000000000007"] } }, expected),
+		/config.operators/,
 	);
 	assert.throws(
 		() => validateComponentReport({ ...report, verification: { ...report.verification, records: [] } }, expected),

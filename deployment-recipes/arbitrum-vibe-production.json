@@ -181,7 +181,7 @@
 	},
 	"partyB": {
 		"mode": "deploy",
-		"signer": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"operators": ["0xb60ABeFda283865Dee94A78948F94A9750e9033B", "0xE73e6C598CC0233E28C5aa6154796de3B04c4E92", "0xE9AD8c77112C31b8CA91C9e4c8775A6263e73c91", "0x59356179e0466e4ccB5617e0cF69576B7d1CD7FC"],
 		"adlEnabled": true
 	},
 	"symbolManager": {

@@ -145,7 +145,7 @@ function readPendingSafeActions(input) {
 			live: recipe.recipe.network.mode === "live",
 			config: {
 				admin: component.admin || recipe.recipe.governance.admin,
-				...(input.only === "partyB" ? { signer: component.signer, adlEnabled: component.adlEnabled } : {}),
+				...(input.only === "partyB" ? { signer: component.signer, operators: component.operators, adlEnabled: component.adlEnabled } : {}),
 				...(input.only === "symbolManager" ? { operator: component.operator } : {}),
 			},
 		});
@@ -245,10 +245,12 @@ async function prepareExistingRecipe({ root, ui }, { only, fullOnly = false } = 
 function deploymentPlan(input, scope) {
 	const live = input.mode === "live";
 	const contracts = scope === "full" || scope === "core" ? Object.keys(DEPLOYABLE_CONTRACTS).sort() : [];
-	let liquidatorActions = [];
-	if (scope === "full" && input.config) {
-		const context = loadRecipeContext(input.config);
-		liquidatorActions = context.plan.components.find(component => component.name === "liquidator")?.actions || [];
+	let componentActions = [];
+	if ((scope === "full" || scope === "partyB") && input.config) {
+		const context = loadRecipeContext(input.config, { only: scope === "partyB" ? "partyB" : undefined });
+		componentActions = context.plan.components.flatMap(component =>
+			(component.actions || []).map(action => ({ component: component.name, action })),
+		);
 	}
 	const batchItems = stage => [
 		...contracts.map((key, index) => {
@@ -258,7 +260,7 @@ function deploymentPlan(input, scope) {
 				.toLowerCase();
 			return `${stage}.contract-${String(index + 1).padStart(3, "0")}.${slug}`;
 		}),
-		...liquidatorActions.map(action => `${stage}.liquidator.${action.id}`),
+		...componentActions.map(({ component, action }) => `${stage}.${component}.${action.id}`),
 	];
 	return [
 		{ id: "preflight", phase: "prepare", title: "Validate recipe, RPC, signer, permissions and deployment plan" },
@@ -432,6 +434,7 @@ async function executeDeployment(ctx, input) {
 function deployDefinition({ id, title, description, only, coreBundle = false }) {
 	return common({
 		id,
+		version: only === "partyB" || (!only && !coreBundle) ? 3 : 2,
 		category: "deploy",
 		risk: "transaction",
 		title,

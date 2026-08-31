@@ -21,7 +21,8 @@ const LABELS = Object.freeze({
 	"core.muon.appId": "Muon app ID",
 	"core.muon.publicKey.x": "Muon public-key X coordinate",
 	"core.muon.gatewaySigners.0": "Muon gateway signer",
-	"partyB.signer": "PartyB signer",
+	"partyB.signer": "PartyB signer (optional)",
+	"partyB.operators.0": "PartyB operator",
 	"symbolManager.operator": "SymbolManager operator",
 	"expressProvider.creditLine.muonAppId": "ExpressProvider Muon app ID",
 	"expressProvider.roles.OPERATOR_ROLE.0": "ExpressProvider operator",
@@ -134,6 +135,20 @@ async function askAddress(ui, message, current) {
 	});
 }
 
+async function askOptionalAddress(ui, message, current) {
+	const value = await ui.text({
+		message,
+		initialValue: isNonZeroAddress(current) ? current : undefined,
+		placeholder: "Leave empty to keep unset",
+		validate: answer => {
+			const trimmed = String(answer || "").trim();
+			return trimmed !== "" && !isNonZeroAddress(trimmed) ? "Enter a non-zero EVM address or leave empty" : undefined;
+		},
+	});
+	if (value === null) return null;
+	return String(value || "").trim() || undefined;
+}
+
 async function askUintString(ui, message, current, options) {
 	return ui.text({
 		message,
@@ -208,7 +223,10 @@ function applyLocalAccountDefaults(recipe, accounts) {
 		liquidationInsuranceVault: account(1),
 		softLiquidationPenaltyCollector: account(1),
 	};
-	if (recipe.partyB.mode === "deploy") recipe.partyB.signer = account(2);
+	if (recipe.partyB.mode === "deploy") {
+		recipe.partyB.signer = account(2);
+		recipe.partyB.operators = [account(4)];
+	}
 	if (recipe.symbolManager.mode === "deploy") recipe.symbolManager.operator = account(3);
 	if (recipe.expressProvider.mode === "deploy") {
 		recipe.expressProvider.creditLine = {
@@ -284,7 +302,8 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 		"",
 		"COMPONENTS",
 		componentSummary,
-		...(recipe.partyB.signer ? [`PartyB signer: ${recipe.partyB.signer}`] : []),
+		...(recipe.partyB.mode === "deploy" ? [`PartyB signer: ${recipe.partyB.signer || "not configured"}`] : []),
+		...(recipe.partyB.mode === "deploy" ? [`PartyB operators: ${recipe.partyB.operators.join(", ")}`] : []),
 		...(recipe.symbolManager.operator ? [`SymbolManager operator: ${recipe.symbolManager.operator}`] : []),
 		...(recipe.liquidator?.mode === "deploy"
 			? [
@@ -633,10 +652,13 @@ async function editProtocol(ui, recipe) {
 
 async function editComponents(ui, recipe) {
 	if (recipe.partyB.mode === "deploy") {
-		const signer = await askAddress(ui, "PartyB signer", recipe.partyB.signer);
+		const signer = await askOptionalAddress(ui, "PartyB signer (optional)", recipe.partyB.signer);
+		const operators = await askAddressList(ui, "PartyB operators", recipe.partyB.operators || [], { allowEmpty: false });
 		const adl = await ui.confirm({ message: "Enable PartyB ADL?", initialValue: recipe.partyB.adlEnabled === true });
-		if (signer === null || adl === null) return false;
-		recipe.partyB.signer = signer;
+		if (signer === null || operators === null || adl === null) return false;
+		if (signer) recipe.partyB.signer = signer;
+		else delete recipe.partyB.signer;
+		recipe.partyB.operators = operators;
 		recipe.partyB.adlEnabled = adl;
 	}
 	if (recipe.symbolManager.mode === "deploy") {
@@ -937,7 +959,8 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 				[
 					`Deployer: ${accounts[0]}`,
 					`Governance admin: ${recipe.governance.admin}`,
-					`PartyB signer: ${recipe.partyB.signer || "not deployed"}`,
+					`PartyB signer: ${recipe.partyB.mode === "deploy" ? recipe.partyB.signer || "not configured" : "not deployed"}`,
+					`PartyB operators: ${recipe.partyB.operators?.join(", ") || "not deployed"}`,
 					`SymbolManager operator: ${recipe.symbolManager.operator || "not deployed"}`,
 					"These are unlocked, pre-funded accounts exposed only by the persistent local node.",
 				].join("\n"),

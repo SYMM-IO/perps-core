@@ -40,6 +40,7 @@ function deploymentConfig(): any {
 		deploySymbolManager: true,
 		registerDummyAffiliate: false,
 		partyBSigner: `0x${"5".repeat(40)}`,
+		partyBOperators: [`0x${"8".repeat(40)}`],
 		symbolManagerOperator: `0x${"4".repeat(40)}`,
 		setupInstantLayerTemplates: true,
 		signatureVerifierAddress: "",
@@ -253,10 +254,24 @@ describe("deploy:system input parsing", function () {
 		)
 	})
 
-	it("requires an explicit signer for every PartyB deployment", async function () {
+	it("allows PartyB deployment without an ERC-1271 signer", async function () {
 		const config = deploymentConfig()
 		config.partyBSigner = ""
-		await expectRejection(validateDeploymentConfig(fakeEthers, 31337, config, structuredClone(DEFAULT_PROTOCOL_CONFIG)), "PARTYB_SIGNER is required")
+		await validateDeploymentConfig(fakeEthers, 31337, config, structuredClone(DEFAULT_PROTOCOL_CONFIG))
+		expect(config.partyBSigner).to.equal("")
+	})
+
+	it("requires unique trusted operators for every PartyB deployment", async function () {
+		const missing = deploymentConfig()
+		missing.partyBOperators = []
+		await expectRejection(
+			validateDeploymentConfig(fakeEthers, 31337, missing, structuredClone(DEFAULT_PROTOCOL_CONFIG)),
+			"PARTYB_OPERATORS is required",
+		)
+
+		const duplicate = deploymentConfig()
+		duplicate.partyBOperators = [duplicate.partyBOperators[0], duplicate.partyBOperators[0].toUpperCase().replace("0X", "0x")]
+		await expectRejection(validateDeploymentConfig(fakeEthers, 31337, duplicate, structuredClone(DEFAULT_PROTOCOL_CONFIG)), "duplicate addresses")
 	})
 })
 
