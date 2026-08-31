@@ -91,4 +91,6 @@ The same flow is exposed through `./symmio` under **Other maintenance scripts**:
 2. **Apply ordered symbol synchronization**
 
 The operator task owns the input selection, signer, typed chain confirmation, transaction journal, pause/resume state, and final post-state
-verification. Direct scripts remain available as auditable low-level adapters.
+verification. It currently exposes the EOA modes that match the deployed manager's operator-role model. A Safe must first hold both
+`SYMBOL_ADDER_ROLE` and `SYMBOL_REMOVER_ROLE`, after which the report actions can be moved into a separately reviewed atomic Safe multisend.
+Direct scripts remain available as auditable low-level adapters.

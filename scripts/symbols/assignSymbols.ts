@@ -15,6 +15,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { requireExecutionConfirmation } from "../../tasks/deploy/executionGuard.js"
+import { emitTaskEvent } from "../../tasks/deploy/logger.js"
 import { send, type DeploymentTransactionRecord } from "../../tasks/deploy/tx.js"
 import { ethers } from "../../test/helpers/hardhat-connection.js"
 import {
@@ -314,14 +315,16 @@ async function resolveAuthority(execute: boolean): Promise<{ address?: string; s
 		if (!ethers.isAddress(safeAddress) || ethers.getAddress(safeAddress) === ethers.ZeroAddress) {
 			throw new Error("SYMMIO_SAFE_ADDRESS must be a non-zero EVM address")
 		}
-		if (execute) throw new Error("Safe mode cannot broadcast directly; use the generated actions through the SYMMIO operator task")
+		if (execute) throw new Error("Safe mode cannot broadcast directly; export the report actions into a separately reviewed Safe multisend")
 		return { address: ethers.getAddress(safeAddress), safe: true }
 	}
 	const explicit = process.env.SYMBOL_SYNC_AUTHORITY || process.env.SYMMIO_EXPECTED_SIGNER
 	if (explicit && (!ethers.isAddress(explicit) || ethers.getAddress(explicit) === ethers.ZeroAddress)) {
 		throw new Error("Configured symbol-sync authority must be a non-zero EVM address")
 	}
-	if (!execute && !process.env.SYMMIO_SIGNER_MODE && !explicit) return { safe: false }
+	if (!execute && !process.env.SYMMIO_SIGNER_MODE) {
+		return { address: explicit ? ethers.getAddress(explicit) : undefined, safe: false }
+	}
 	const signers = await ethers.getSigners()
 	let signer: (typeof signers)[number] | undefined = signers[0]
 	if (explicit) signer = signers.find(candidate => candidate.address.toLowerCase() === explicit.toLowerCase())
@@ -345,6 +348,7 @@ async function reconcileTransactions(report: AssignmentReport, reportPath: strin
 		transaction.blockNumber = receipt.blockNumber
 		transaction.gasUsed = receipt.gasUsed.toString()
 		if (receipt.status !== 1) transaction.error = `Transaction reverted in block ${receipt.blockNumber}`
+		emitTaskEvent(receipt.status === 1 ? "tx.confirmed" : "tx.failed", { transaction: { ...transaction } })
 	}
 	saveReport(reportPath, report)
 }

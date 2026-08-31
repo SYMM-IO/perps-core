@@ -77,10 +77,21 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 9);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 11);
 	const settlementRepair = entries.find(item => item.id === "maintenance.recreate-settlement-templates");
 	assert.equal(settlementRepair.title, "Recreate settleUpnl InstantLayer templates");
 	assert.deepEqual(settlementRepair.supportedNetworks, ["localhost", "fork-arbitrum", "arbitrum"]);
+	const symbolFetch = entries.find(item => item.id === "maintenance.symbol-sync-fetch");
+	const symbolAssign = entries.find(item => item.id === "maintenance.symbol-sync-assign");
+	assert.equal(symbolFetch.risk, "local-write");
+	assert.equal(symbolAssign.risk, "transaction");
+	assert.deepEqual(symbolAssign.supportedNetworks, ["arbitrum"]);
+	assert.deepEqual(
+		TASK_DEFINITIONS.find(item => item.id === "maintenance.symbol-sync-assign")
+			.plan()
+			.map(step => step.id),
+		["inspect", "authorize", "apply", "verify"],
+	);
 	for (const removed of ["maintenance.rpc-health", "maintenance.arbitrum-ledger-handover"]) {
 		assert.ok(!entries.some(entry => entry.id === removed));
 	}

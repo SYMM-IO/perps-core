@@ -837,6 +837,119 @@ async function prepareNetwork({ ui }, options = ["arbitrum", "fork-arbitrum", "h
 	return network === null ? null : { network, chainId: resolveNetwork(network).chainId };
 }
 
+function readSymbolSyncMetadata(file, expectedApiVersion) {
+	let value;
+	try {
+		value = JSON.parse(fs.readFileSync(file, "utf8"));
+	} catch (error) {
+		throw new Error(`Cannot read ${path.relative(PROJECT_ROOT, file)}: ${error.message || error}`);
+	}
+	if (!value || typeof value !== "object" || Array.isArray(value) || value.apiVersion !== expectedApiVersion) {
+		throw new Error(`${path.relative(PROJECT_ROOT, file)} must use ${expectedApiVersion}`);
+	}
+	return value;
+}
+
+function filesIn(directory, suffix) {
+	if (!fs.existsSync(directory)) return [];
+	return fs
+		.readdirSync(directory)
+		.filter(file => file.endsWith(suffix))
+		.map(file => path.join(directory, file));
+}
+
+async function prepareSymbolSyncFetch({ root, ui }) {
+	const directory = path.join(root, "scripts", "symbols", "config");
+	const files = filesIn(directory, ".json");
+	if (!files.length) throw new Error("No symbol-sync config exists under scripts/symbols/config");
+	const selected = await ui.select({
+		message: "Ordered symbol synchronization configuration",
+		options: files.map(file => {
+			const config = readSymbolSyncMetadata(file, "operations.symm.io/symbol-sync-config-v1");
+			return { value: file, label: config.name, hint: path.relative(root, file) };
+		}),
+	});
+	if (selected === null) return null;
+	const config = readSymbolSyncMetadata(selected, "operations.symm.io/symbol-sync-config-v1");
+	const network = String(config.target?.network || "");
+	const chainId = Number(config.target?.chainId);
+	if (resolveNetwork(network).chainId !== chainId) throw new Error(`Config target ${network} does not match chain ${chainId}`);
+	const output = path.join(root, ".symmio", "symbol-sync", path.basename(config.output?.snapshot || "symbols.snapshot.json"));
+	return { config: selected, network, chainId, output };
+}
+
+function symbolSyncSnapshotFiles(root) {
+	return [
+		...filesIn(path.join(root, ".symmio", "symbol-sync"), ".snapshot.json"),
+		...filesIn(path.join(root, "scripts", "output", "symbol-sync"), ".snapshot.json"),
+	];
+}
+
+async function prepareSymbolSyncAssignment({ root, ui }) {
+	const files = symbolSyncSnapshotFiles(root);
+	if (!files.length) throw new Error("No symbol snapshot exists. Run Fetch ordered symbol synchronization snapshot first.");
+	const selected = await ui.select({
+		message: "Digest-bound symbol snapshot",
+		options: files.map(file => {
+			const snapshot = readSymbolSyncMetadata(file, "operations.symm.io/symbol-sync-snapshot-v1");
+			return {
+				value: file,
+				label: snapshot.config?.name || path.basename(file),
+				hint: `${snapshot.source?.symbols?.length || 0} source symbols • ${path.relative(root, file)}`,
+			};
+		}),
+	});
+	if (selected === null) return null;
+	const snapshot = readSymbolSyncMetadata(selected, "operations.symm.io/symbol-sync-snapshot-v1");
+	const network = String(snapshot.config?.target?.network || "");
+	const chainId = Number(snapshot.config?.target?.chainId);
+	if (resolveNetwork(network).chainId !== chainId) throw new Error(`Snapshot target ${network} does not match chain ${chainId}`);
+	if (typeof snapshot.digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(snapshot.digest)) {
+		throw new Error("Symbol snapshot is missing its SHA-256 intent digest");
+	}
+	return { snapshot: selected, snapshotDigest: snapshot.digest, network, chainId };
+}
+
+function symbolSyncReportPath(ctx) {
+	return path.join(path.dirname(ctx.state.eventPath), "symbol-sync-assignment.json");
+}
+
+function readSymbolSyncAssignmentReport(file) {
+	return readSymbolSyncMetadata(file, "operations.symm.io/symbol-sync-assignment-v1");
+}
+
+async function runSymbolSyncAssignmentAdapter(ctx, input, execute) {
+	const report = symbolSyncReportPath(ctx);
+	await ctx.runProcess("./node_modules/.bin/hardhat", ["run", "--no-compile", "scripts/symbols/assignSymbols.ts", "--network", input.network], {
+		env: {
+			SYMBOL_SYNC_INPUT: input.snapshot,
+			SYMBOL_SYNC_REPORT: report,
+			EXECUTE: String(execute),
+			CONFIRM_CHAIN_ID: execute ? String(input.chainId) : "",
+		},
+	});
+	return readSymbolSyncAssignmentReport(report);
+}
+
+async function reconcileSymbolSync(ctx, input) {
+	const reportPath = symbolSyncReportPath(ctx);
+	if (fs.existsSync(reportPath)) {
+		const report = readSymbolSyncAssignmentReport(reportPath);
+		const authority = report.lastState?.authority?.address;
+		await ctx.runProcess("./node_modules/.bin/hardhat", ["run", "--no-compile", "scripts/symbols/assignSymbols.ts", "--network", input.network], {
+			env: {
+				SYMBOL_SYNC_INPUT: input.snapshot,
+				SYMBOL_SYNC_REPORT: reportPath,
+				SYMBOL_SYNC_AUTHORITY: authority || "",
+				SYMMIO_SIGNER_MODE: "",
+				EXECUTE: "false",
+				CONFIRM_CHAIN_ID: "",
+			},
+		});
+	}
+	return mutationReconcile(ctx);
+}
+
 async function prepareConfigOperation({ ui }, operation) {
 	const networkInput = await prepareNetwork({ ui }, ["arbitrum", "hyperevm", "fork-arbitrum", "fork-hyperevm"]);
 	if (!networkInput) return null;
@@ -1034,8 +1147,115 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 	reconcile: mutationReconcile,
 });
 
+const SYMBOL_SYNC_FETCH_TASK = common({
+	id: "maintenance.symbol-sync-fetch",
+	version: 1,
+	category: "maintenance",
+	risk: "local-write",
+	title: "Fetch ordered symbol synchronization snapshot",
+	description: "Pin source and target symbol catalogs, prove exact-ID prefix compatibility, and write a digest-bound JSON snapshot.",
+	supportedNetworks: ["arbitrum"],
+	inputs: [
+		{ id: "config", label: "Symbol synchronization config", type: "string", required: true },
+		{ id: "network", label: "Target network", type: "network", required: true },
+		{ id: "chainId", label: "Target chain ID", type: "integer", required: true },
+		{ id: "output", label: "Digest-bound snapshot output", type: "string", required: true },
+	],
+	artifacts: ["pinned source and target catalogs", "role and daily-limit report", "digest-bound snapshot"],
+	prepare: prepareSymbolSyncFetch,
+	plan: () => [{ id: "fetch", phase: "prepare", title: "Fetch and compare ordered source and target symbols" }],
+	run: async (ctx, input) => {
+		await ctx.step("fetch", "Fetch and compare ordered source and target symbols", () =>
+			ctx.runProcess("./node_modules/.bin/hardhat", ["run", "--no-compile", "scripts/symbols/fetchSymbols.ts", "--network", input.network], {
+				env: { SYMBOL_SYNC_CONFIG: input.config, SYMBOL_SYNC_OUTPUT: input.output },
+			}),
+		);
+	},
+	reconcile: mutationReconcile,
+});
+
+const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
+	id: "maintenance.symbol-sync-assign",
+	version: 2,
+	category: "maintenance",
+	risk: "transaction",
+	title: "Apply ordered symbol synchronization",
+	description: "Apply exact-ID symbol additions and validation states through the target Symbol Manager across resumable daily windows.",
+	supportedNetworks: ["arbitrum"],
+	inputs: [
+		{ id: "snapshot", label: "Digest-bound symbol snapshot", type: "string", required: true },
+		{ id: "snapshotDigest", label: "Snapshot digest", type: "string", required: true },
+		{ id: "network", label: "Target network", type: "network", required: true },
+		{ id: "chainId", label: "Target chain ID", type: "integer", required: true },
+		{ id: "signer", label: "Symbol Manager operator", type: "selection", required: true },
+	],
+	artifacts: ["assignment plan and calldata", "transaction journal", "receipt history", "post-state catalog verification"],
+	prepare: prepareSymbolSyncAssignment,
+	signerPolicy: {
+		role: "Symbol Manager operator with adder and remover roles",
+		allowedModes: [SIGNER_MODES.KEYSTORE, SIGNER_MODES.PRIVATE_KEY],
+		initialMode: SIGNER_MODES.KEYSTORE,
+	},
+	postPrepare: async ({ ui }, input) => ((await configureRequiredKeystoreKeys(ui, input.signer, ["RPC_ARBITRUM"])) ? input : null),
+	plan: () => [
+		{ id: "inspect", phase: "prepare", title: "Reconcile live target state and review the next daily window" },
+		{ id: "authorize", phase: "authorization", title: "Type the live Arbitrum chain ID" },
+		{ id: "apply", phase: "execution", title: "Apply and reconcile available Symbol Manager actions" },
+		{ id: "verify", phase: "verification", title: "Verify exact ordered symbol parity" },
+	],
+	run: async (ctx, input) => {
+		await ctx.step("inspect", "Reconcile live target state and review the next daily window", async () => {
+			const report = await runSymbolSyncAssignmentAdapter(ctx, input, false);
+			ctx.state.symbolSyncReportPath = symbolSyncReportPath(ctx);
+			ctx.ui.note(
+				[
+					`Status: ${report.status}`,
+					`Target symbols: ${report.lastState?.targetSymbolCount ?? "unknown"}`,
+					...(report.lastState?.plannedActions || []).map(
+						action => `${action.description} • ${action.simulation?.status || "not simulated"}`,
+					),
+				].join("\n"),
+				"Reviewed symbol actions",
+			);
+			ctx.checkpoint();
+		});
+		await ctx.step("authorize", "Type the live Arbitrum chain ID", async () => {
+			const typed = await ctx.ui.text({
+				message: `Type chain ID ${input.chainId} to authorize the reviewed live symbol actions`,
+				validate: value => (value === String(input.chainId) ? undefined : `Type exactly ${input.chainId}`),
+			});
+			if (typed === null) ctx.requestPause();
+			ctx.checkpoint();
+		});
+		await ctx.step("apply", "Apply and reconcile available Symbol Manager actions", async () => {
+			for (let pass = 0; pass < 4; pass++) {
+				const report = await runSymbolSyncAssignmentAdapter(ctx, input, true);
+				if (report.status === "complete") return;
+				if (report.status === "waiting-daily-limit") {
+					ctx.wait(
+						`Symbol Manager daily capacity is exhausted. Continue this task after ${report.nextEligibleAt || "the next on-chain reset"}.`,
+					);
+				}
+				if (report.status !== "ready") throw new Error(`Symbol assignment stopped with status ${report.status}`);
+			}
+			throw new Error("Symbol assignment remained ready after four bounded adapter passes; inspect the assignment report before continuing");
+		});
+		await ctx.step("verify", "Verify exact ordered symbol parity", async () => {
+			const report = await runSymbolSyncAssignmentAdapter(ctx, input, false);
+			if (report.status !== "complete") throw new Error(`Final symbol parity is not complete; report status is ${report.status}`);
+		});
+	},
+	validateResume: (_context, input) => {
+		const snapshot = readSymbolSyncMetadata(input.snapshot, "operations.symm.io/symbol-sync-snapshot-v1");
+		if (snapshot.digest !== input.snapshotDigest) throw new Error("Symbol snapshot digest changed after task preparation");
+	},
+	reconcile: reconcileSymbolSync,
+});
+
 const MAINTENANCE_TASKS = [
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
+	SYMBOL_SYNC_FETCH_TASK,
+	SYMBOL_SYNC_ASSIGNMENT_TASK,
 	...["show", "diff", "export"].map(operation =>
 		oneStepMaintenance({
 			id: `maintenance.config-${operation}`,
