@@ -270,9 +270,9 @@ function getOperationalFeeAllowance(address payer, address charger)
 					</div>
 					<p>
 						This is the same treatment for every operational-fee charger, including a registered solver. The solver's separate per-quote
-						rate fee also uses a standalone, signature-free charge path: it checks the quote cap and available allocated balance, but does
-						not run a Muon or post-fee solvency check. See
-						<a href="../pages/solver-fees.html#safety-boundary">Solver Fees</a>.
+						rate fee takes the opposite approach: it rides the execution call itself, bounded by the quote cap and a post-fee solvency
+						check on that execution. See
+						<a href="../pages/solver-fees.html#edge-cases">Solver Fees</a>.
 					</p>
 
 					<h2 id="timelocked-reductions">Timelocked reductions</h2>

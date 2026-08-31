@@ -4638,10 +4638,28 @@ export function shouldBehaveLikeAccountLayer(): void {
 				])
 				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
 
-				const tag = ethers.hexlify(toUtf8Bytes("account-layer/final-close"))
+				const tag = ethers.encodeBytes32String("al/final-close")
 				const solverFee = decimal(1n)
 				const receiverBalanceBefore = await context.viewFacet.balanceOf(context.signers.hedger.address)
-				await expect((context.partyBExecutionFacet.connect(context.signers.hedger) as any).chargeSolverFee(quoteId, 1, solverFee, tag))
+
+				// The fee rides the final close itself: it is charged before the fill executes, so it
+				// settles before the POSITION virtual-account cleanup deallocates the payer.
+				const fillCloseRequest = limitFillCloseRequestBuilder().build()
+				await expect(
+					context.partyBExecutionFacet
+						.connect(context.signers.hedger)
+						.fillCloseRequest(
+							quoteId,
+							fillCloseRequest.filledAmount,
+							fillCloseRequest.closedPrice,
+							await getDummyPairUpnlAndPriceSig(
+								BigInt(fillCloseRequest.price),
+								BigInt(fillCloseRequest.upnlPartyA),
+								BigInt(fillCloseRequest.upnlPartyB),
+							),
+							[{ amount: solverFee, tag }],
+						),
+				)
 					.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
 					.withArgs(
 						quoteId,
@@ -4654,20 +4672,6 @@ export function shouldBehaveLikeAccountLayer(): void {
 						tag,
 					)
 				expect(await context.viewFacet.balanceOf(context.signers.hedger.address)).to.equal(receiverBalanceBefore + solverFee)
-
-				const fillCloseRequest = limitFillCloseRequestBuilder().build()
-				await context.partyBPositionActionsFacet
-					.connect(context.signers.hedger)
-					.fillCloseRequest(
-						quoteId,
-						fillCloseRequest.filledAmount,
-						fillCloseRequest.closedPrice,
-						await getDummyPairUpnlAndPriceSig(
-							BigInt(fillCloseRequest.price),
-							BigInt(fillCloseRequest.upnlPartyA),
-							BigInt(fillCloseRequest.upnlPartyB),
-						),
-					)
 
 				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
 				expect((await context.viewFacetQuote.getSolverFeeState(quoteId)).closeFeeCharged).to.equal(solverFee)

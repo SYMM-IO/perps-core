@@ -93,6 +93,12 @@ struct SolverFeeCaps {
 	uint256 closeRateCap;
 }
 
+/// @notice One solver fee charge: an amount paired with the tag that routes it to a receiver
+struct SolverFeeEntry {
+	uint256 amount;
+	bytes32 tag;
+}
+
 /// @notice Tracks approved caps and cumulative solver fee charges for a quote
 struct SolverFeeState {
 	uint256 openRateCap;
@@ -158,9 +164,6 @@ library QuoteStorage {
 		mapping(uint256 => uint256) closeIds;
 		/// @notice Solver fee caps and cumulative charges keyed by quote ID.
 		mapping(uint256 => SolverFeeState) solverFeeStates;
-		/// @notice Standalone CLOSE solver fees charged against each unique close request ID.
-		/// @dev Separates the current request's cap usage from the quote's lifetime closeFeeCharged total.
-		mapping(uint256 => uint256) closeRequestSolverFeeCharged;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

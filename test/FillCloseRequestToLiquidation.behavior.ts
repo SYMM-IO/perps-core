@@ -405,7 +405,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const upnlPartyA = decimal(-428n) - decimal(4n, 17)
 			const balanceBefore = await user.getBalanceInfo()
 
-			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 			const openAmount = quote.quantity - quote.closedAmount
 			const zeroRateThreshold =
 				balanceBefore.lockedCva +
@@ -416,7 +416,13 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			expect((zeroRateThreshold * FIVE_BPS) / WAD).to.equal(decimal(5n, 15))
 
 			await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, FIVE_BPS)
-			const [overshootAmount, canCloseAll] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [overshootAmount, canCloseAll] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(
+				quoteId,
+				closePrice,
+				marketPrice,
+				upnlPartyA,
+				0n,
+			)
 			expect(canCloseAll).to.equal(false)
 			expect(overshootAmount).to.be.greaterThan(zeroRateAmount)
 
@@ -457,10 +463,10 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const closePrice = decimal(1n)
 			const marketPrice = decimal(2n)
 			const upnlPartyA = decimal(-428n) - decimal(4n, 17)
-			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 
 			await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, LARGE_CUSHION)
-			const [overshootAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [overshootAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 			expect(overshootAmount).to.be.greaterThan(zeroRateAmount)
 
 			const zeroRateRemainder = remainingLockedValue(quote, zeroRateAmount)
@@ -471,7 +477,7 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 				.connect(context.signers.admin)
 				.setSymbolAcceptableValues(quote.symbolId, minAcceptableQuoteValue, symbol.minAcceptablePortionLF)
 
-			const [previewAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [previewAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 			expect(previewAmount).to.equal(zeroRateAmount)
 
 			const filledAmount = await hedger.fillCloseRequestToLiquidation(
@@ -490,14 +496,14 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const closePrice = decimal(1n)
 			const marketPrice = decimal(2n)
 			const upnlPartyA = decimal(-428n) - decimal(4n, 17)
-			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 			const symbol = await context.viewFacetSymbol.getSymbol(quote.symbolId)
 			await context.symbolControlFacet
 				.connect(context.signers.admin)
 				.setSymbolAcceptableValues(quote.symbolId, remainingLockedValue(quote, zeroRateAmount) + 1n, symbol.minAcceptablePortionLF)
 			await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, LARGE_CUSHION)
 
-			await expect(context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)).to.be.revertedWith(
+			await expect(context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)).to.be.revertedWith(
 				"PartyBFacet: Remaining quote value is low",
 			)
 			await expect(
@@ -533,7 +539,13 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const closePrice = decimal(1n)
 			const marketPrice = decimal(2n)
 			const upnlPartyA = decimal(-428n) - decimal(4n, 17)
-			const [previewAmount, canCloseAll] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [previewAmount, canCloseAll] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(
+				quoteId,
+				closePrice,
+				marketPrice,
+				upnlPartyA,
+				0n,
+			)
 			expect(canCloseAll).to.equal(false)
 			// With the maximum rate, the boundary sits where the shortfall equals the remaining account CVA+LF.
 			expect(previewAmount).to.equal(69900990099009900990n)
@@ -558,9 +570,9 @@ export function shouldBehaveLikeFillCloseRequestToLiquidation(): void {
 			const marketPrice = decimal(5n, 17)
 			const targetAvailable = decimal(10n)
 			const upnlPartyA = targetAvailable - (balanceBefore.allocatedBalances - balanceBefore.lockedCva - balanceBefore.lockedLf)
-			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [zeroRateAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 			await context.symbolControlFacet.connect(context.signers.admin).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 1n, FIVE_BPS)
-			const [overshootAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA)
+			const [overshootAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
 			expect(overshootAmount).to.be.greaterThan(zeroRateAmount)
 
 			const openAmount = quote.quantity - quote.closedAmount

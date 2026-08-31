@@ -9,7 +9,10 @@ import { RunContext } from "../models/RunContext.js"
 import { User } from "../models/User.js"
 import { limitQuoteRequestBuilder } from "../models/requestModels/QuoteRequest.js"
 import { decimal, unDecimal } from "../utils/Common.js"
-import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
+import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
+
+const SEND_QUOTE_WITH_DATA_AND_FEE_CAPS =
+	"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)),bytes,(uint256,uint256))"
 
 describe("LockAndOpenPosition", function () {
 	let context: RunContext, user: User, hedger: Hedger
@@ -39,11 +42,23 @@ describe("LockAndOpenPosition", function () {
 		await context.partyBAccountFacet.connect(context.signers.hedger).allocateForPartyB((notional * 12n) / 10n, quote.partyA)
 	}
 
-	function lockAndOpen(quoteId: bigint, filledAmount: bigint = quantity, price: bigint = openPrice) {
+	function lockAndOpen(
+		quoteId: bigint,
+		filledAmount: bigint = quantity,
+		price: bigint = openPrice,
+		solverFees: { amount: bigint; tag: string }[] = [],
+	) {
 		return (async () =>
 			context.partyBExecutionFacet
 				.connect(context.signers.hedger)
-				.lockAndOpenPosition(quoteId, filledAmount, price, await getDummySingleUpnlSig(0n), await getDummyPairUpnlAndPriceSig(openPrice)))()
+				.lockAndOpenPosition(
+					quoteId,
+					filledAmount,
+					price,
+					await getDummySingleUpnlSig(0n),
+					await getDummyPairUpnlAndPriceSig(openPrice),
+					solverFees,
+				))()
 	}
 
 	it("should produce the same quote state as sequential lockQuote + openPosition", async function () {
@@ -125,12 +140,48 @@ describe("LockAndOpenPosition", function () {
 		expect(child.parentId).to.equal(1n)
 	})
 
+	it("should charge the solver fee when the quote carries an open rate cap", async function () {
+		// Quote 3 with a 2% open rate cap, so a fee can be charged through the combined entry
+		const openRateCap = decimal(2n, 16)
+		const request = limitQuoteRequestBuilder()
+			.partyBWhiteList([await hedger.getAddress()])
+			.upnlSig(getDummySingleUpnlAndPriceSig(decimal(1n)))
+			.build()
+		const sendQuote = (context.partyAFacet.connect(context.signers.user) as any)[SEND_QUOTE_WITH_DATA_AND_FEE_CAPS]
+		await sendQuote(
+			request.partyBWhiteList,
+			request.symbolId,
+			request.positionType,
+			request.orderType,
+			request.price,
+			request.quantity,
+			request.cva,
+			request.lf,
+			request.partyAmm,
+			request.partyBmm,
+			await request.deadline,
+			await context.accountManager.getAddress(),
+			await request.upnlSig,
+			"0x",
+			[openRateCap, openRateCap],
+		)
+
+		await allocateForQuote(3n)
+		const solverFee = decimal(1n) // 1 unit on a 100-notional quote = 1%, within the 2% cap
+		const tag = ethers.encodeBytes32String("lock-and-open")
+		const hedgerAddress = await hedger.getAddress()
+
+		await expect(lockAndOpen(3n, quantity, openPrice, [{ amount: solverFee, tag }]))
+			.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
+			.withArgs(3, (await context.viewFacetQuote.getQuote(3)).partyA, hedgerAddress, hedgerAddress, request.symbolId, 0, solverFee, tag)
+	})
+
 	it("should fail when caller is not a partyB", async function () {
 		await expect(
 			(async () =>
 				context.partyBExecutionFacet
 					.connect(context.signers.user2)
-					.lockAndOpenPosition(1, quantity, openPrice, await getDummySingleUpnlSig(0n), await getDummyPairUpnlAndPriceSig(openPrice)))(),
+					.lockAndOpenPosition(1, quantity, openPrice, await getDummySingleUpnlSig(0n), await getDummyPairUpnlAndPriceSig(openPrice), []))(),
 		).to.be.revertedWith("Accessibility: Should be partyB")
 	})
 

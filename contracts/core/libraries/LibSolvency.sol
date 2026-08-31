@@ -19,7 +19,10 @@ library LibSolvency {
 		uint256 closedPrice;
 		uint256 marketPrice;
 		int256 upnlPartyA;
-		/// @dev The caller's close ceiling. Callers with no cap pass `type(uint256).max`; `quantityToClose` still bounds the search.
+		/// @dev The most the solver fee can total; the charge is pro-rated as `maxSolverFee * filledAmount / maxFillAmount`.
+		uint256 maxSolverFee;
+		/// @dev The caller's close ceiling. It bounds the boundary search and is the quantity `maxSolverFee` is quoted for.
+		///      Fee-less callers with no cap pass `type(uint256).max`; `quantityToClose` still bounds the search.
 		uint256 maxFillAmount;
 		uint256 overshootRate;
 	}
@@ -239,22 +242,23 @@ library LibSolvency {
 	/// @notice Calculates a close amount at PartyA's configured post-close shortfall boundary.
 	/// @dev For a candidate amount `x`, the exact acceptance rule is:
 	///      `postCloseBalance(x) >= -allowedShortfall(x)`, where
-	///      `postCloseBalance = currentBalance + releasedCVA + releasedLF + PnL - closeFee`
+	///      `postCloseBalance = currentBalance + releasedCVA + releasedLF + PnL - closeFee - proratedSolverFee`
 	///      and `allowedShortfall = postCloseAccountLockedCVAAndLF * overshootRate / 1e18`.
 	///
-	///      The allowance shrinks as this quote releases CVA and LF. Before integer rounding, the balance changes are proportional
+	///      The allowance shrinks as this quote releases CVA and LF. The charged solver fee also changes with `x` because execution
+	///      charges `floor(maxSolverFee * x / maxFillAmount)`. Before integer rounding, all of those changes are proportional
 	///      to `x`, so the overshoot boundary is solved directly from the headroom at zero and the deficit at the upper bound.
 	///      The resulting amount is then checked with execution's exact component-wise rounding and reduced algebraically if necessary.
 	///      Therefore, it is exact for the proportional model and proven executable after rounding; separate floor operations can make it
 	///      conservatively lower by a few smallest quantity units rather than allowing a shortfall above the configured allowance.
-	///      The zero-overshoot path keeps the legacy closed-form estimate and the same exact-rounding correction.
+	///      The zero-overshoot, fee-less path keeps the legacy closed-form estimate and the same exact-rounding correction.
 	///
 	///      The search runs over `[0, min(maxFillAmount, quantityToClose)]`, so a caller cap that fits the allowance returns
 	///      immediately without solving for the protocol boundary above it.
 	///      A close of the whole bounded amount is accepted when it fits the allowance. With a nonzero overshoot, this can leave
 	///      PartyA below zero.
 	/// @param quoteId Quote whose pending close amount, together with `inputs.maxFillAmount`, bounds the calculation.
-	/// @param inputs Price snapshot, PartyA uPnL, the caller's close ceiling, and the overshoot rate.
+	/// @param inputs Price snapshot, PartyA uPnL, solver-fee terms, the caller's close ceiling, and the overshoot rate.
 	/// @return maxCloseAmount Calculated boundary amount within the bound, before the planner's remaining-value fallback.
 	/// @return canCloseAll Whether the whole bounded amount fits the allowance, not whether PartyA remains nonnegative.
 	function calculateMaxCloseAmountToLiquidation(
@@ -264,6 +268,7 @@ library LibSolvency {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 		require(openAmount > 0, "LibSolvency: No open amount");
+		require(inputs.maxSolverFee == 0 || inputs.maxFillAmount > 0, "LibSolvency: Invalid solver fee basis");
 
 		int256 currentBalance = LibAccount.partyAAvailableBalanceForLiquidation(
 			inputs.upnlPartyA,
@@ -273,8 +278,9 @@ library LibSolvency {
 		int256 pnlRate = _partyAPnlRate(quote.positionType, inputs.closedPrice, inputs.marketPrice);
 		uint256 unlockRate = Math.mulDiv(quote.lockedValues.cva + quote.lockedValues.lf, 1e18, openAmount);
 		uint256 feeRate = Math.mulDiv(inputs.closedPrice, quote.closeFee, 1e18, Math.Rounding.Ceil);
+		uint256 solverFeeRate = inputs.maxSolverFee == 0 ? 0 : Math.mulDiv(inputs.maxSolverFee, 1e18, inputs.maxFillAmount, Math.Rounding.Ceil);
 		// This rate classifies the close and supports the legacy formula. Candidate acceptance always uses the exact balance simulation.
-		int256 totalRate = int256(unlockRate) + pnlRate - int256(feeRate);
+		int256 totalRate = int256(unlockRate) + pnlRate - int256(feeRate) - int256(solverFeeRate);
 
 		// The search space is bounded by both limits at once: a fill can never exceed the pending request, and the caller
 		// never executes more than its own `maxFillAmount`. Solving above either would compute an amount nothing can use.
@@ -294,11 +300,11 @@ library LibSolvency {
 
 		uint256 harmfulRate = uint256(-totalRate);
 		// The unrounded balance-plus-allowance model is linear in the close amount. Solve its boundary directly, then enforce exact rounding.
-		if (inputs.overshootRate > 0) {
+		if (inputs.overshootRate > 0 || inputs.maxSolverFee > 0) {
 			return (_calculateOvershootCloseAmount(quote, upperBound, currentBalance, balanceAtUpperBound, upperBoundAllowance, inputs), false);
 		}
 
-		// Retain the legacy zero-rate estimate. The exact check below repairs any component-rounding difference.
+		// Retain the legacy zero-rate, fee-less estimate. The exact check below repairs any component-rounding difference.
 		maxCloseAmount = Math.mulDiv(uint256(currentBalance), 1e18, harmfulRate);
 		if (maxCloseAmount > upperBound) maxCloseAmount = upperBound;
 		int256 candidateBalance = _simulatePartyAAvailableBalanceAfterClose(quote, maxCloseAmount, currentBalance, inputs);
@@ -355,7 +361,7 @@ library LibSolvency {
 		return Math.mulDiv(upperBound, headroom, headroom + deficit);
 	}
 
-	/// @dev Mirrors execution rounding: CVA and LF unlock separately, and the close fee uses its execution formula.
+	/// @dev Mirrors execution rounding: CVA and LF unlock separately, and the solver fee is floored after proration.
 	function _simulatePartyAAvailableBalanceAfterClose(
 		Quote storage quote,
 		uint256 filledAmount,
@@ -368,7 +374,8 @@ library LibSolvency {
 		uint256 closeFee = (filledAmount * inputs.closedPrice * quote.closeFee) / 1e36;
 		int256 pnlRate = _partyAPnlRate(quote.positionType, inputs.closedPrice, inputs.marketPrice);
 
-		balance = currentBalance + int256(unlockedAmount) - int256(closeFee);
+		uint256 chargedSolverFee = inputs.maxSolverFee == 0 ? 0 : Math.mulDiv(inputs.maxSolverFee, filledAmount, inputs.maxFillAmount);
+		balance = currentBalance + int256(unlockedAmount) - int256(closeFee) - int256(chargedSolverFee);
 		uint256 pnl = Math.mulDiv(filledAmount, pnlRate >= 0 ? uint256(pnlRate) : uint256(-pnlRate), 1e18);
 		balance = pnlRate >= 0 ? balance + int256(pnl) : balance - int256(pnl);
 	}

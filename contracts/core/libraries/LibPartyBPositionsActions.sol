@@ -320,7 +320,8 @@ library LibPartyBPositionsActions {
 		uint256 maxFillAmount,
 		uint256 closedPrice,
 		uint256 marketPrice,
-		int256 upnlPartyA
+		int256 upnlPartyA,
+		uint256 maxSolverFee
 	) internal view returns (CloseToLiquidationPlan memory plan) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
@@ -348,6 +349,7 @@ library LibPartyBPositionsActions {
 			closedPrice: closedPrice,
 			marketPrice: marketPrice,
 			upnlPartyA: upnlPartyA,
+			maxSolverFee: maxSolverFee,
 			maxFillAmount: maxFillAmount,
 			overshootRate: plan.effectiveRate
 		});
