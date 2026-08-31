@@ -1,7 +1,7 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readDataIfExists, writeData } from "../utils/fs.js"
+import { upsertDeploymentRecords } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import {
 	assertStandaloneDeploymentTaskAllowed,
@@ -59,30 +59,15 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 			}
 
 			if (logData) {
-				// Read existing data
-				const deployedData: any[] = readDataIfExists(DEPLOYMENT_LOG_FILE) || []
-
-				// Append new data
-				deployedData.push(
+				upsertDeploymentRecords(DEPLOYMENT_LOG_FILE, [
 					{
 						name: "MultiAccountProxy",
 						address: await contract.getAddress(),
 						constructorArguments: [admin, symmioAddress, SymmioPartyA.bytecode],
 					},
-					{
-						name: "MultiAccountAdmin",
-						address: addresses.admin,
-						constructorArguments: [],
-					},
-					{
-						name: "MultiAccountImplementation",
-						address: addresses.implementation,
-						constructorArguments: [],
-					},
-				)
-
-				// Write updated data back to JSON file
-				writeData(DEPLOYMENT_LOG_FILE, deployedData)
+					...(addresses.admin ? [{ name: "MultiAccountAdmin", address: addresses.admin, constructorArguments: [] }] : []),
+					...(addresses.implementation ? [{ name: "MultiAccountImplementation", address: addresses.implementation, constructorArguments: [] }] : []),
+				])
 				logger.debug("Deployed addresses written to JSON file")
 			}
 

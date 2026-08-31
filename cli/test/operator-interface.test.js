@@ -120,6 +120,64 @@ test("full deployment plans give every contract batch entry a unique stable id",
 	assert.ok(liveItems.includes("live.liquidator.grant-core-partyb-liquidator-role"));
 });
 
+test("standalone deployments expose stable preflight, execution, and post-state verification steps", async () => {
+	const cases = [
+		{
+			id: "deploy.fee-distributor",
+			input: {
+				network: "fork-arbitrum",
+				symmio: "0x1111111111111111111111111111111111111111",
+				admin: "0x2222222222222222222222222222222222222222",
+				receiver: "0x3333333333333333333333333333333333333333",
+				share: "400000000000000000",
+			},
+		},
+		{
+			id: "deploy.multi-account",
+			input: {
+				network: "fork-arbitrum",
+				symmio: "0x1111111111111111111111111111111111111111",
+				admin: "0x2222222222222222222222222222222222222222",
+			},
+		},
+		{ id: "deploy.multicall", input: { network: "fork-arbitrum" } },
+	];
+
+	for (const testCase of cases) {
+		const definition = TASK_DEFINITIONS.find(item => item.id === testCase.id);
+		assert.equal(definition.version, 3);
+		assert.deepEqual(
+			(await definition.plan({}, testCase.input)).map(step => [step.id, step.phase]),
+			[
+				["inspect", "prepare"],
+				["deploy", "execution"],
+				["verify", "verification"],
+			],
+		);
+
+		const steps = [];
+		const processes = [];
+		await definition.run(
+			{
+				step: async (id, title, action) => {
+					steps.push([id, title]);
+					return action();
+				},
+				runProcess: async (command, args) => processes.push([command, args]),
+			},
+			testCase.input,
+		);
+		assert.deepEqual(
+			steps.map(([id]) => id),
+			["inspect", "deploy", "verify"],
+		);
+		assert.equal(processes.length, 3);
+		assert.ok(processes[0][1].includes("preflight"));
+		assert.ok(processes[1][1][0].startsWith("deploy:"));
+		assert.ok(processes[2][1].includes("poststate"));
+	}
+});
+
 test("progress summary is compact at 80 columns and details expose hashes, receipts and gas", () => {
 	const state = {
 		completedSteps: ["one"],

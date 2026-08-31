@@ -2,7 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readDataIfExists, writeData } from "../utils/fs.js"
+import { upsertDeploymentRecords } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
 import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
 import { logger } from "./logger.js"
@@ -25,18 +25,13 @@ export const multicallTask = task("deploy:multicall", "Deploys the Multicall")
 			logger.deployed("Multicall3", address)
 
 			if (logData) {
-				// Read existing data
-				const deployedData: any[] = readDataIfExists(DEPLOYMENT_LOG_FILE) || []
-
-				// Append new data
-				deployedData.push({
-					name: "Multicall3",
-					address,
-					constructorArguments: [],
-				})
-
-				// Write updated data back to JSON file
-				writeData(DEPLOYMENT_LOG_FILE, deployedData)
+				upsertDeploymentRecords(DEPLOYMENT_LOG_FILE, [
+					{
+						name: "Multicall3",
+						address,
+						constructorArguments: [],
+					},
+				])
 				logger.debug("Deployed addresses written to JSON file")
 			}
 
