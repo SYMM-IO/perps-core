@@ -112,8 +112,12 @@ test("full deployment plans give every contract batch entry a unique stable id",
 		for (const item of items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
 	}
 	const productionPlan = await definition.plan({}, { mode: "live", config: path.resolve("deployment-recipes/arbitrum-vibe-production.json") });
+	for (const step of productionPlan.filter(step => step.items)) {
+		assert.equal(new Set(step.items).size, step.items.length);
+		for (const item of step.items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
+	}
 	const liveItems = productionPlan.find(step => step.id === "execute").items;
-	assert.ok(liveItems.some(item => item.startsWith("live.partyB.grant-trusted-operator-")));
+	assert.ok(liveItems.some(item => item.startsWith("live.party-b.grant-trusted-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
 	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));
