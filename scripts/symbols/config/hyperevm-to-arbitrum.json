@@ -1,0 +1,23 @@
+{
+	"apiVersion": "operations.symm.io/symbol-sync-config-v1",
+	"name": "HyperEVM v0.8.6 symbols to Arbitrum v0.8.6",
+	"source": {
+		"network": "hyperevm",
+		"chainId": "999",
+		"core": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB"
+	},
+	"target": {
+		"network": "arbitrum",
+		"chainId": "42161",
+		"core": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
+		"symbolManager": "0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c"
+	},
+	"execution": {
+		"batchSize": 25,
+		"preserveValidation": true
+	},
+	"output": {
+		"snapshot": "scripts/output/symbol-sync/hyperevm-to-arbitrum.snapshot.json",
+		"assignmentReport": "scripts/output/symbol-sync/hyperevm-to-arbitrum.assignment.json"
+	}
+}
