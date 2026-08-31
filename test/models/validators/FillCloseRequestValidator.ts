@@ -3,7 +3,7 @@ import { expect } from "chai"
 import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
 import { unDecimal } from "../../utils/Common.js"
 import { logger } from "../../utils/LoggerUtils.js"
-import { PositionType, QuoteStatus } from "../Enums.js"
+import { OrderType, PositionType, QuoteStatus } from "../Enums.js"
 import { Hedger } from "../Hedger.js"
 import { RunContext } from "../RunContext.js"
 import { BalanceInfo, User } from "../User.js"
@@ -153,8 +153,12 @@ export class FillCloseRequestValidator implements TransactionValidator {
 
 		expect(newQuote.closedAmount.toString()).to.equal((BigInt(oldQuote.closedAmount) + BigInt(arg.fillAmount)).toString())
 
+		const requestRemainder = BigInt(oldQuote.quantityToClose) - BigInt(arg.fillAmount)
 		const expectedQuantityToClose =
-			oldQuote.quoteStatus === BigInt(QuoteStatus.CANCEL_CLOSE_PENDING) ? 0n : BigInt(oldQuote.quantityToClose) - BigInt(arg.fillAmount)
+			oldQuote.quoteStatus === BigInt(QuoteStatus.CANCEL_CLOSE_PENDING) ||
+			(oldQuote.orderType === BigInt(OrderType.MARKET_BEST_EFFORT) && newQuote.quoteStatus === BigInt(QuoteStatus.OPENED) && requestRemainder > 0n)
+				? 0n
+				: requestRemainder
 		expect(newQuote.quantityToClose).to.equal(expectedQuantityToClose)
 
 		let profit

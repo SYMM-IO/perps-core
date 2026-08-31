@@ -1196,7 +1196,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			})
 
 			const balBefore = await collateral.balanceOf(deployer.address)
-			await expressProvider.claimOperatorFees(affiliate, deployer.address)
+			await expect(expressProvider.claimOperatorFees(affiliate, deployer.address))
+				.to.emit(expressProvider, "OperatorFeesClaimed")
+				.withArgs(affiliate, deployer.address, opFee)
 			const balAfter = await collateral.balanceOf(deployer.address)
 
 			expect(balAfter - balBefore).to.equal(opFee)
@@ -1288,7 +1290,9 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 			})
 
 			const balBefore = await collateral.balanceOf(deployer.address)
-			await expressProvider.claimFees(affiliate, deployer.address)
+			await expect(expressProvider.claimFees(affiliate, deployer.address))
+				.to.emit(expressProvider, "FeesClaimed")
+				.withArgs(affiliate, deployer.address, fee)
 			const balAfter = await collateral.balanceOf(deployer.address)
 
 			expect(balAfter - balBefore).to.equal(fee)

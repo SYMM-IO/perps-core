@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import { GaslessWallet } from "./GaslessWallet.sol";
 import { IGaslessLayer } from "./interfaces/IGaslessLayer.sol";
@@ -34,8 +34,8 @@ import { GaslessWalletExecutionLib } from "./libraries/GaslessWalletExecutionLib
 ///      deposit/wallet addresses survive logic upgrades. The core and account-layer hooks are kept
 ///      behind narrow interfaces (see ISymmioCore.chargeOperationalFee and ISymmioAccountLayer.createSubAccountFor).
 ///      Linked libraries hold the largest self-contained execution paths so the implementation remains
-///      deployable under EIP-170 without changing the proxy storage layout or external API.
-contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+///      deployable under EIP-170 without moving application state into libraries or changing the external API.
+contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable, ReentrancyGuard, UUPSUpgradeable {
 	using SafeERC20 for IERC20;
 
 	// ───────────────────────── Constants ──────────────────────────
@@ -118,8 +118,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		if (minimumDeposit_ <= depositFee_) revert MinimumDepositNotAboveFee(minimumDeposit_, depositFee_);
 
 		__AccessControl_init();
-		__ReentrancyGuard_init();
-		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(CONFIG_ADMIN_ROLE, admin);
@@ -176,9 +174,9 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			}
 		}
 
-		(uint256 totalFee, uint256 payerCount) = _collectOperationalFees(signedOps);
+		uint256 totalFee = _collectOperationalFees(signedOps);
 
-		emit InstantBatchRelayed(msg.sender, signedOps.length, payerCount, totalFee);
+		emit InstantBatchRelayed(msg.sender, signedOps.length, totalFee);
 	}
 
 	/// @notice Forward a registered InstantLayer template (e.g. sendQuote→lockQuote→openPosition) and
@@ -201,16 +199,17 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		// signature/fill/flex lengths and the op shape against the registered template.
 		results = instantLayer.executeTemplate(templateId, signedOps, signatures, fills, flexFillerSignatures);
 
-		(uint256 totalFee, uint256 payerCount) = _collectOperationalFees(signedOps);
+		uint256 totalFee = _collectOperationalFees(signedOps);
 
-		emit InstantTemplateRelayed(msg.sender, templateId, signedOps.length, payerCount, totalFee);
+		emit InstantTemplateRelayed(msg.sender, templateId, signedOps.length, totalFee);
 	}
 
 	/// @notice Relay a user-signed InstantLayer delegation setup and settle one operational fee/free usage.
-	/// @dev Delegation grants are not SignedOperation executions, so they use the InstantLayer's dedicated
-	///      grantBatchDelegationBySig surface. The payer is the delegation account resolved through the
-	///      same VA→parent billing rule as normal instant operations. One relay call consumes one free
-	///      daily usage, regardless of how many selectors are granted inside the delegation.
+	/// @dev Delegation grants can also ride relayInstantBatch as owner-signed grant operations; this
+	///      dedicated surface relays the InstantLayer's standalone grantBatchDelegationBySig form. The
+	///      payer is the delegation account resolved through the same VA→parent billing rule as normal
+	///      instant operations. One relay call consumes one free daily usage, regardless of how many
+	///      selectors are granted inside the delegation.
 	function relayGrantBatchDelegationBySig(
 		IInstantLayer.SignedDelegation calldata signedDelegation,
 		bytes calldata signature
@@ -402,9 +401,14 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		return _baseSelectorFee(selector);
 	}
 
-	/// @notice What `account`'s resolved billing account would be charged for its ops in `signedOps`
-	///         right now, after quota. Virtual accounts are quoted through their parent SubAccount.
-	/// @return amountDue Amount that would be charged (0 if fully free-covered, or if it would revert).
+	/// @notice What would be charged right now for `account`'s ops in `signedOps`, after quota. Virtual
+	///         accounts are quoted through their parent SubAccount; when the parent cannot cover an op,
+	///         the quote prices it against its signer-VA fallback payer (see settleOperationalFees).
+	/// @dev Approval-only batches are always priced with the parent's post-approval multiplier, since the
+	///      approval is expected to fund the parent's charge. If execution nevertheless falls back to the
+	///      signer VA (empty parent), the charge uses the VA's own multiplier and can differ from this quote.
+	/// @return amountDue Total that would be charged across the billing account and any fallback VA payers
+	///         (0 if fully free-covered, or if it would revert).
 	/// @return freeOpsApplied How many billing-account ops are waived by its remaining daily quota.
 	/// @return wouldBlockOnQuota True if the call would revert with DailyFreeOpsLimitExceeded (block mode).
 	function getAccountOperationalFee(
@@ -420,6 +424,8 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			freeRemaining = _remainingFreeOps(usedToday, limit);
 		}
 
+		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](signedOps.length);
+		uint256 chargeableCount;
 		for (uint256 i = 0; i < signedOps.length; i++) {
 			if (_resolveBillingAccount(signedOps[i].signerAccount.addr) != billingAccount) continue;
 			if (freeRemaining > 0) {
@@ -428,10 +434,25 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 				continue; // covered by this billing account's daily quota
 			}
 			if (limit > 0 && revertWhenFreeQuotaExhausted) return (0, freeOpsApplied, true);
-			amountDue +=
-				approvalOnlyQuote
-					? _postApprovalOperationalFee(billingAccount, signedOps[i])
-					: _effectiveOperationalFee(billingAccount, signedOps[i]);
+			if (approvalOnlyQuote) {
+				// An approval funds itself before fee collection, so it is always priced on the parent.
+				amountDue += _postApprovalOperationalFee(billingAccount, signedOps[i]);
+				continue;
+			}
+			ops[chargeableCount++] = GaslessOperationalFeeLib.OpBilling({
+				signer: signedOps[i].signerAccount.addr,
+				billingParent: billingAccount,
+				baseFee: _baseOperationalFee(signedOps[i])
+			});
+		}
+		if (chargeableCount > 0) {
+			assembly ("memory-safe") {
+				mstore(ops, chargeableCount) // trim to the chargeable prefix
+			}
+			(, uint256[] memory opFees) = GaslessOperationalFeeLib.planOperationalFees(address(core), address(accountLayer), ops);
+			for (uint256 i = 0; i < opFees.length; i++) {
+				amountDue += opFees[i];
+			}
 		}
 	}
 
@@ -567,17 +588,12 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		return config.configured ? config.amount : defaultSelectorFee;
 	}
 
-	/// @dev Per-op fee for `account`: base selector fee scaled by the latest perps-core v0.8.6
-	///      allowance feeMultiplier for this layer. Unset core storage resolves to 100%.
-	function _effectiveOperationalFee(address account, bytes4 selector) internal view returns (uint256) {
-		uint256 base = _baseSelectorFee(selector);
-		return (base * _coreOperationalFeeMultiplier(account)) / FEE_MULTIPLIER_BASE;
-	}
-
-	function _effectiveOperationalFee(address account, IInstantLayer.SignedOperation calldata signedOp) internal view returns (uint256 fee) {
+	/// @dev Summed base selector fees for one op, before any core multiplier (the settlement library
+	///      prices the fee with the actual payer's multiplier).
+	function _baseOperationalFee(IInstantLayer.SignedOperation calldata signedOp) internal view returns (uint256 fee) {
 		bytes4[] memory selectors = GaslessWalletExecutionLib.operationalFeeSelectors(address(accountLayer), signedOp);
 		for (uint256 i = 0; i < selectors.length; i++) {
-			fee += _effectiveOperationalFee(account, selectors[i]);
+			fee += _baseSelectorFee(selectors[i]);
 		}
 	}
 
@@ -589,83 +605,49 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			GaslessOperationalFeeLib.postApprovalOperationalFee(address(core), account, address(this), signedOp.callData, _baseSelectorFee(selector));
 	}
 
-	/// @dev Reads the latest four-word response and this checkout's older six-word response.
-	function _coreOperationalFeeMultiplier(address account) internal view returns (uint256 feeMultiplier) {
-		return GaslessOperationalFeeLib.coreOperationalFeeMultiplier(address(core), account, address(this));
-	}
-
 	function _collectOneOperationalFee(address signerAccount, bytes4 selector) internal returns (address payer, uint256 fee) {
-		payer = _resolveBillingAccount(signerAccount);
-		if (!_useDailyFreeOp(payer)) {
-			fee = _effectiveOperationalFee(payer, selector);
-			if (fee > 0) {
-				core.chargeOperationalFee(payer, fee);
-			}
-		}
+		address billingParent = _resolveBillingAccount(signerAccount);
+		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](1);
+		ops[0] = GaslessOperationalFeeLib.OpBilling({
+			signer: signerAccount,
+			billingParent: billingParent,
+			baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseSelectorFee(selector)
+		});
+		(uint256 totalFee, address[] memory opPayers, ) = GaslessOperationalFeeLib.settleOperationalFees(address(core), address(accountLayer), ops);
+		payer = opPayers[0];
+		fee = totalFee;
 		emit OperationalFeeRouted(signerAccount, payer, fee);
 	}
 
-	/// @dev Bill the batch per resolved payer: VA signers roll up to their parent SubAccount, then each
-	///      distinct payer is charged once after successful execution. Signer attribution is still emitted per
-	///      distinct signer so off-chain accounting can reconcile the consolidated payer charge.
-	///      Returns the grand total charged and the number of distinct payers; the call is atomic, so any
-	///      later failure rolls every charge back.
-	function _collectOperationalFees(IInstantLayer.SignedOperation[] calldata signedOps) internal returns (uint256 totalFee, uint256 payerCount) {
+	/// @dev Bill the batch per op, resolved entirely AFTER execution: VA signers roll up to their parent
+	///      SubAccount (a VA deleted inside the batch still resolves — parentAccount survives on the
+	///      pooled record, and that parent holds the VA's returned funds), and an op whose parent cannot
+	///      cover its fee falls back to its own signer VA (see
+	///      GaslessOperationalFeeLib.settleOperationalFees). Each distinct payer is charged once after
+	///      successful execution, and one OperationalFeeRouted event is emitted PER OP so off-chain
+	///      accounting can reconcile every operation against the consolidated charges. The call is
+	///      atomic, so any later failure rolls every charge back.
+	function _collectOperationalFees(IInstantLayer.SignedOperation[] calldata signedOps) internal returns (uint256 totalFee) {
 		uint256 n = signedOps.length;
-		address[] memory payers = new address[](n);
-		uint256[] memory payerAmountsDue = new uint256[](n);
-		address[] memory signerAccounts = new address[](n);
-		address[] memory signerPayers = new address[](n);
-		uint256[] memory signerAmountsDue = new uint256[](n);
-		uint256 signerCount;
+		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](n);
+		for (uint256 i = 0; i < n; i++) {
+			address signer = signedOps[i].signerAccount.addr;
+			address billingParent = _resolveBillingAccount(signer);
+			// Free this op against the parent's daily quota (regardless of who ends up paying), else
+			// carry its summed base selector fees into settlement.
+			ops[i] = GaslessOperationalFeeLib.OpBilling({
+				signer: signer,
+				billingParent: billingParent,
+				baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseOperationalFee(signedOps[i])
+			});
+		}
+
+		address[] memory opPayers;
+		uint256[] memory opFees;
+		(totalFee, opPayers, opFees) = GaslessOperationalFeeLib.settleOperationalFees(address(core), address(accountLayer), ops);
 
 		for (uint256 i = 0; i < n; i++) {
-			address signerAccount = signedOps[i].signerAccount.addr;
-
-			uint256 signerSlot = signerCount;
-			for (uint256 s = 0; s < signerCount; s++) {
-				if (signerAccounts[s] == signerAccount) {
-					signerSlot = s;
-					break;
-				}
-			}
-			if (signerSlot == signerCount) {
-				signerAccounts[signerSlot] = signerAccount;
-				signerPayers[signerSlot] = _resolveBillingAccount(signerAccount);
-				signerCount++;
-			}
-
-			address payer = signerPayers[signerSlot];
-
-			uint256 payerSlot = payerCount;
-			for (uint256 s = 0; s < payerCount; s++) {
-				if (payers[s] == payer) {
-					payerSlot = s;
-					break;
-				}
-			}
-			if (payerSlot == payerCount) {
-				payers[payerSlot] = payer;
-				payerCount++;
-			}
-
-			// Free this op against the resolved payer's daily quota, else add its fee to both tallies.
-			if (!_useDailyFreeOp(payer)) {
-				uint256 opFee = _effectiveOperationalFee(payer, signedOps[i]);
-				signerAmountsDue[signerSlot] += opFee;
-				payerAmountsDue[payerSlot] += opFee;
-			}
-		}
-
-		for (uint256 s = 0; s < payerCount; s++) {
-			if (payerAmountsDue[s] > 0) {
-				core.chargeOperationalFee(payers[s], payerAmountsDue[s]);
-				totalFee += payerAmountsDue[s];
-			}
-		}
-
-		for (uint256 s = 0; s < signerCount; s++) {
-			emit OperationalFeeRouted(signerAccounts[s], signerPayers[s], signerAmountsDue[s]);
+			emit OperationalFeeRouted(ops[i].signer, opPayers[i], opFees[i]);
 		}
 	}
 

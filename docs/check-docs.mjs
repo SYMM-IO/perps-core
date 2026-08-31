@@ -47,6 +47,10 @@ const htmlFiles = (function walk(dir) {
 /* --- 1. The manifest, the catalog, and the page files describe one list ---- */
 
 const portal = read("assets/docs-portal.js");
+const portalCss = read("assets/docs-portal.css");
+if (!/\[data-catalog-item\]\[hidden\][^{]*\{[^}]*display:\s*none/.test(portalCss)) {
+	fail("assets/docs-portal.css", "hidden catalog search results must use display: none");
+}
 const manifestFor = version => {
 	const block = new RegExp(`"${version}":\\s*\\[([\\s\\S]*?)\\n\\t\\t\\],`).exec(portal);
 	if (!block) return null;

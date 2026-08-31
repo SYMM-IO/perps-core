@@ -10,8 +10,33 @@ import { IViewFacetQuote } from "./IViewFacetQuote.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibQuoteAdjustment } from "../../libraries/LibQuoteAdjustment.sol";
 import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 
 contract ViewFacetQuote is IViewFacetQuote {
+	/// @notice Calculates the maximum executable close amount under PartyB's configured liquidation overshoot.
+	/// @dev For fee-aware preview, `maxSolverFee` is the fee quoted for the full pending `quantityToClose`.
+	///      Execution uses the same fee rate against the solver-provided maxFillAmount.
+	/// @return maxCloseAmount The uncapped executable amount after applying any remaining-value fallback.
+	/// @return canCloseAll True if the full quantityToClose fits within the configured shortfall allowance.
+	function getMaxCloseAmountToLiquidation(
+		uint256 quoteId,
+		uint256 closedPrice,
+		uint256 marketPrice,
+		int256 upnlPartyA,
+		uint256 maxSolverFee
+	) external view returns (uint256 maxCloseAmount, bool canCloseAll) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		LibPartyBPositionsActions.CloseToLiquidationPlan memory plan = LibPartyBPositionsActions.calculateCloseToLiquidationPlan(
+			quoteId,
+			quote.quantityToClose,
+			closedPrice,
+			marketPrice,
+			upnlPartyA,
+			maxSolverFee
+		);
+		return (plan.filledAmount, plan.canCloseAll);
+	}
+
 	/// @notice Returns the details of a quote by its ID.
 	/// @param quoteId The ID of the quote.
 	/// @return The details of the quote.

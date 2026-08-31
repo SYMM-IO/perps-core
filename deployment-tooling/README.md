@@ -1,9 +1,13 @@
-# Deployment recipes
+# Deployment tooling
+
+This directory contains the checked-in code and schema used to define and validate deployments.
+It does not describe a deployed network. Operator-owned recipe instances live under
+[`deployment-recipes/`](../deployment-recipes/).
 
 `deployment.symm.io/v1` is the portable, reviewed public intent used by the SYMMIO Operator.
 Launch the guided application with `./symmio`, then choose a deployment or patch action. The
 operator starts from the reviewed profile, collects typed values, validates immediately,
-writes the recipe atomically under `deployments/`, and shows the complete intent before any
+writes the recipe atomically under `deployment-recipes/`, and shows the complete intent before any
 execution.
 
 Recipes explicitly bind network and chain, infrastructure secret references, execution policy, governance,

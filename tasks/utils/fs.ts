@@ -124,8 +124,33 @@ function resolveReadablePath(fileName: string): string | null {
 	// A simulated fork must never consume a legacy live-chain record. For live scopes,
 	// retain the one-way migration path: old records are readable, new writes are scoped.
 	const legacy = `${BASE_PATH}/${fileName}`
-	if (dataScope && !simulatedDataScope && fs.existsSync(legacy)) return legacy
+	if (dataScope && !simulatedDataScope && fs.existsSync(legacy)) {
+		assertLegacyRecordBelongsToScope(legacy)
+		return legacy
+	}
 	return null
+}
+
+/**
+ * Unscoped records predate chain scoping, so nothing about their path says which chain they
+ * describe. CREATE2/CREATE addresses repeat across chains for the same deployer, so a record
+ * from another chain can look plausible. When the record names its chain, hold it to it.
+ */
+function assertLegacyRecordBelongsToScope(legacyPath: string): void {
+	let parsed: any
+	try {
+		parsed = JSON.parse(fs.readFileSync(legacyPath, "utf8"))
+	} catch {
+		return // readJson reports the parse failure with its own message.
+	}
+	const recordedChainId = Array.isArray(parsed) ? undefined : parsed?.chainId
+	if (recordedChainId === undefined || recordedChainId === null) return
+	if (Number(recordedChainId) !== Number(dataScope)) {
+		throw new Error(
+			`Legacy deployment record ${legacyPath} was written for chainId ${Number(recordedChainId)} but the current scope is ${dataScope}. ` +
+				`Move it to ${BASE_PATH}/${recordedChainId}/ so chain-scoped reads cannot mix deployments.`,
+		)
+	}
 }
 
 export function createDirectory(path: string): void {

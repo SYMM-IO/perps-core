@@ -620,3 +620,74 @@ export function displayCheckpointStatus(checkpoint: DeploymentCheckpoint): void 
 	logger.info("=".repeat(80))
 	logger.info("")
 }
+
+/**
+ * Cross-process lock for one chain's checkpoint.
+ *
+ * Two `deploy:system` runs against the same chain interleave last-wins atomic writes while
+ * both broadcast transactions, and neither notices. The operator CLI holds its own runner
+ * lock, but the Hardhat task is also reachable directly, so the guard belongs next to the
+ * checkpoint it protects. A lock whose owner is gone is reclaimed, so a killed run does not
+ * strand the chain.
+ */
+export interface CheckpointLockHandle {
+	release: () => void
+}
+
+function checkpointLockPath(chainId: number, scope?: string): string {
+	return `${getCheckpointPath(chainId, scope)}.lock`
+}
+
+function lockOwnerAlive(pid: unknown): boolean {
+	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return false
+	try {
+		process.kill(pid, 0)
+		return true
+	} catch (error) {
+		// EPERM means the pid exists but belongs to another user: still alive.
+		return (error as NodeJS.ErrnoException)?.code === "EPERM"
+	}
+}
+
+export function acquireCheckpointLock(chainId: number, scope?: string): CheckpointLockHandle {
+	const lockPath = checkpointLockPath(chainId, scope)
+	fs.mkdirSync(path.dirname(lockPath), { recursive: true })
+	const record = { pid: process.pid, chainId, scope: normalizeCheckpointScope(scope) || null, startedAt: new Date().toISOString() }
+
+	const claim = () => fs.writeFileSync(lockPath, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" })
+	try {
+		claim()
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error
+		let existing: { pid?: unknown; startedAt?: unknown } = {}
+		try {
+			existing = JSON.parse(fs.readFileSync(lockPath, "utf8"))
+		} catch {
+			// An unreadable lock is treated as stale: its owner could not have written it well.
+		}
+		if (lockOwnerAlive(existing.pid)) {
+			throw new Error(
+				`Another deployment is already running for chainId ${chainId} (pid ${existing.pid}, started ${String(existing.startedAt)}). ` +
+					"Wait for it to finish, or stop it and rerun so its transactions are reconciled first.",
+			)
+		}
+		logger.warn(`Reclaiming a stale deployment lock left by pid ${String(existing.pid)} for chainId ${chainId}.`)
+		fs.rmSync(lockPath, { force: true })
+		claim()
+	}
+
+	let released = false
+	return {
+		release: () => {
+			if (released) return
+			released = true
+			try {
+				const current = JSON.parse(fs.readFileSync(lockPath, "utf8"))
+				if (current?.pid !== process.pid) return
+			} catch {
+				return
+			}
+			fs.rmSync(lockPath, { force: true })
+		},
+	}
+}

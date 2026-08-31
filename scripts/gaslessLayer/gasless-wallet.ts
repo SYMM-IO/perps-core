@@ -14,8 +14,8 @@ import { AbiCoder, getCreate2Address, keccak256 } from "ethers"
  */
 export const GASLESS_WALLET_VERSION = 1n
 
-// keccak256(type(GaslessWallet).creationCode) under solc 0.8.18, viaIR, runs=200, no metadata hash.
-export const GOLDEN_WALLET_INITCODE_HASH = "0x40cfacbf4eccc3b74023a9319355d56dfa5d7b1ba9db5357cfef9d88579d487c"
+// keccak256(type(GaslessWallet).creationCode) under solc 0.8.36, Cancun, viaIR, runs=200, no metadata hash.
+export const GOLDEN_WALLET_INITCODE_HASH = "0x3f601fa99034209285834aabec34f49354849bbf4fdfdbb92b51f5f9b5064f31"
 
 // A fixed reference owner used to pin the salt scheme and to sanity-check on-chain derivation.
 export const REFERENCE_WALLET_OWNER = "0x0000000000000000000000000000000000000001"

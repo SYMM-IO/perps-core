@@ -129,13 +129,15 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should fail on low collateral", async function () {
-			await expect(context.accountFacet.connect(context.signers.user2).deposit(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWith(
-				"ERC20: insufficient allowance",
+			await expect(context.accountFacet.connect(context.signers.user2).deposit(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWithCustomError(
+				context.collateral,
+				"ERC20InsufficientAllowance",
 			)
 
 			await context.collateral.connect(context.signers.user2).approve(context.diamond, ethers.MaxUint256)
-			await expect(context.accountFacet.connect(context.signers.user2).deposit(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWith(
-				"ERC20: transfer amount exceeds balance",
+			await expect(context.accountFacet.connect(context.signers.user2).deposit(BALANCES.DEPOSIT_AMOUNT)).to.be.revertedWithCustomError(
+				context.collateral,
+				"ERC20InsufficientBalance",
 			)
 		})
 

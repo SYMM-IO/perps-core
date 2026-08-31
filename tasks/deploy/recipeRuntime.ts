@@ -1,4 +1,4 @@
-import { loadDeploymentRecipe, recipeEnvironment, type DeploymentRecipe, type SecretMetadata } from "../../deployment/recipe.js"
+import { loadDeploymentRecipe, recipeEnvironment, type DeploymentRecipe, type SecretMetadata } from "../../deployment-tooling/recipe.js"
 
 export interface ActiveDeploymentRecipe {
 	recipe: DeploymentRecipe
@@ -33,6 +33,7 @@ const PUBLIC_DEPLOYMENT_ENV = [
 	"DEPLOY_PARTYB",
 	"SET_ADL_ENABLED",
 	"PARTYB_SIGNER",
+	"PARTYB_OPERATORS",
 	"DEPLOY_SYMBOL_MANAGER",
 	"SYMBOL_MANAGER_OPERATOR",
 	"REGISTER_DUMMY_AFFILIATE",

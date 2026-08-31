@@ -4,6 +4,7 @@ import { HELP_TEXT, runCli } from "../symmio.js";
 import { catalog } from "../task-runner.js";
 import { TASK_DEFINITIONS, checklistExplorerVerification } from "../tasks/registry.js";
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 function stream({ tty = false } = {}) {
@@ -76,10 +77,13 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 11);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 9);
 	const settlementRepair = entries.find(item => item.id === "maintenance.recreate-settlement-templates");
 	assert.equal(settlementRepair.title, "Recreate settleUpnl InstantLayer templates");
 	assert.deepEqual(settlementRepair.supportedNetworks, ["localhost", "fork-arbitrum", "arbitrum"]);
+	for (const removed of ["maintenance.rpc-health", "maintenance.arbitrum-ledger-handover"]) {
+		assert.ok(!entries.some(entry => entry.id === removed));
+	}
 	for (const hidden of ["Create2Factory", "FakeStablecoin", "Diamond", "AccountLayer", "InstantLayer", "MuonSignatureVerifier"]) {
 		assert.ok(!entries.some(entry => entry.title === hidden));
 	}
@@ -99,6 +103,7 @@ test("the deployment checklist requires explorer success live and an explicit no
 
 test("full deployment plans give every contract batch entry a unique stable id", async () => {
 	const definition = TASK_DEFINITIONS.find(item => item.id === "deploy.full");
+	assert.equal(definition.version, 3);
 	for (const mode of ["local", "fork", "live"]) {
 		const plan = await definition.plan({}, { mode });
 		const items = plan.flatMap(step => step.items || []);
@@ -106,6 +111,13 @@ test("full deployment plans give every contract batch entry a unique stable id",
 		assert.equal(new Set(items).size, items.length);
 		for (const item of items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
 	}
+	const productionPlan = await definition.plan({}, { mode: "live", config: path.resolve("deployment-recipes/arbitrum-vibe-production.json") });
+	const liveItems = productionPlan.find(step => step.id === "execute").items;
+	assert.ok(liveItems.some(item => item.startsWith("live.partyB.grant-trusted-operator-")));
+	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
+	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
+	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));
+	assert.ok(liveItems.includes("live.liquidator.grant-core-partyb-liquidator-role"));
 });
 
 test("progress summary is compact at 80 columns and details expose hashes, receipts and gas", () => {

@@ -725,6 +725,55 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
+	describe("PartyB liquidation overshoot rates", () => {
+		const FIVE_BPS = 5n * 10n ** 14n
+
+		it("inherits the PartyB default, supports an explicit zero override, and clears back to inheritance", async function () {
+			const partyB = await hedger.getAddress()
+
+			await expect(context.symbolControlFacet.connect(owner).setPartyBLiquidationOvershootRate(partyB, 0n, FIVE_BPS))
+				.to.emit(context.symbolControlFacet, "SetPartyBLiquidationOvershootRate")
+				.withArgs(partyB, 0n, 0n, FIVE_BPS, false)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationOvershootRate(partyB, 0n)).to.deep.equal([FIVE_BPS, false])
+			expect(await context.viewFacetSymbol.getPartyBLiquidationOvershootRate(partyB, 1n)).to.deep.equal([FIVE_BPS, false])
+
+			await expect(context.symbolControlFacet.connect(owner).setPartyBLiquidationOvershootRate(partyB, 1n, 0n))
+				.to.emit(context.symbolControlFacet, "SetPartyBLiquidationOvershootRate")
+				.withArgs(partyB, 1n, FIVE_BPS, 0n, true)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationOvershootRate(partyB, 1n)).to.deep.equal([0n, true])
+
+			await expect(context.symbolControlFacet.connect(owner).clearPartyBLiquidationOvershootRateOverride(partyB, 1n))
+				.to.emit(context.symbolControlFacet, "SetPartyBLiquidationOvershootRate")
+				.withArgs(partyB, 1n, 0n, FIVE_BPS, false)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationOvershootRate(partyB, 1n)).to.deep.equal([FIVE_BPS, false])
+		})
+
+		it("defaults unconfigured PartyBs to zero and caps manager-selected rates at 1e18", async function () {
+			expect(await context.viewFacetSymbol.getPartyBLiquidationOvershootRate(await hedger2.getAddress(), 1n)).to.deep.equal([0n, false])
+
+			await expect(
+				context.symbolControlFacet.connect(owner).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 1n, 10n ** 18n + 1n),
+			).to.be.revertedWith("SymbolControlFacet: High overshoot rate")
+			await context.symbolControlFacet.connect(owner).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 1n, 10n ** 18n)
+			expect(await context.viewFacetSymbol.getPartyBLiquidationOvershootRate(await hedger.getAddress(), 1n)).to.deep.equal([10n ** 18n, true])
+		})
+
+		it("requires PartyB manager authority, a registered PartyB, and symbol zero or an existing symbol", async function () {
+			await expect(
+				context.symbolControlFacet.connect(user2).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 0n, FIVE_BPS),
+			).to.be.revertedWith("Accessibility: Must have role")
+			await expect(
+				context.symbolControlFacet.connect(owner).setPartyBLiquidationOvershootRate(await user2.getAddress(), 0n, FIVE_BPS),
+			).to.be.revertedWith("SymbolControlFacet: Address is not PartyB")
+			await expect(
+				context.symbolControlFacet.connect(owner).setPartyBLiquidationOvershootRate(await hedger.getAddress(), 2n, FIVE_BPS),
+			).to.be.revertedWith("SymbolControlFacet: Invalid id")
+			await expect(
+				context.symbolControlFacet.connect(owner).clearPartyBLiquidationOvershootRateOverride(await hedger.getAddress(), 0n),
+			).to.be.revertedWith("SymbolControlFacet: Invalid id")
+		})
+	})
+
 	describe("addSymbolsWithType", () => {
 		it("Should addSymbolsWithType successfully", async function () {
 			const symbolsWithType = [

@@ -29,7 +29,7 @@ library LibSymbol {
 	/// @dev Quantity and price use 1e18 precision. Both normalization steps round upward so the result
 	///      never falls below the mathematically configured minimum because of integer division.
 	function requiredNotionalLF(uint256 symbolId, uint256 quantity, uint256 price) internal view returns (uint256) {
-		uint256 notional = Math.mulDiv(quantity, price, 1e18, Math.Rounding.Up);
-		return Math.mulDiv(notional, minAcceptableNotionalLFRate(symbolId), 1e18, Math.Rounding.Up);
+		uint256 notional = Math.mulDiv(quantity, price, 1e18, Math.Rounding.Ceil);
+		return Math.mulDiv(notional, minAcceptableNotionalLFRate(symbolId), 1e18, Math.Rounding.Ceil);
 	}
 }

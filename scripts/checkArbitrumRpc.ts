@@ -24,13 +24,13 @@ function timeoutMs(): number {
 }
 
 function loadRecipe(): { collateral: string; admin: string } {
-	const recipeUrl = new URL("../deployments/arbitrum.json", import.meta.url)
+	const recipeUrl = new URL("../deployment-recipes/arbitrum.json", import.meta.url)
 	const recipe = JSON.parse(fs.readFileSync(recipeUrl, "utf8")) as ArbitrumRecipe
 	if (recipe.network?.chainId !== Number(EXPECTED_CHAIN_ID)) {
-		throw new Error(`deployments/arbitrum.json must target chainId ${EXPECTED_CHAIN_ID}; received ${String(recipe.network?.chainId)}`)
+		throw new Error(`deployment-recipes/arbitrum.json must target chainId ${EXPECTED_CHAIN_ID}; received ${String(recipe.network?.chainId)}`)
 	}
-	if (!recipe.core?.collateral?.address) throw new Error("deployments/arbitrum.json does not declare core.collateral.address")
-	if (!recipe.governance?.admin) throw new Error("deployments/arbitrum.json does not declare governance.admin")
+	if (!recipe.core?.collateral?.address) throw new Error("deployment-recipes/arbitrum.json does not declare core.collateral.address")
+	if (!recipe.governance?.admin) throw new Error("deployment-recipes/arbitrum.json does not declare governance.admin")
 	return { collateral: recipe.core.collateral.address, admin: recipe.governance.admin }
 }
 

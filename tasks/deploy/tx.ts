@@ -598,6 +598,18 @@ export async function send(
 				receipt = error.receipt as ContractTransactionReceipt
 				replacementHash = error.replacement?.hash || receipt.hash
 				replaced = true
+				// ethers raises this as soon as the replacement is mined, i.e. at one
+				// confirmation. Anything deeper was explicitly requested for reorg safety, so
+				// the replacement has to earn it too rather than being accepted early.
+				if (confirmations > 1 && error?.replacement?.wait) {
+					receipt = (await withTimeout(
+						error.replacement.wait(confirmations),
+						txTimeoutSeconds(),
+						`${label} (replacement)`,
+						replacementHash || receipt.hash,
+						Boolean(writeAhead),
+					)) as ContractTransactionReceipt
+				}
 			} else {
 				throw error
 			}

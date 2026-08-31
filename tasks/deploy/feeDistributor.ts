@@ -46,6 +46,7 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 				initializer: "initialize",
 				kind: "transparent",
 				label: "SymmioFeeDistributor",
+				proxyKey: "peripherals/FeeDistributor",
 			})
 
 			const addresses = {

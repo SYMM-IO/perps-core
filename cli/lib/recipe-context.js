@@ -4,7 +4,7 @@ import {
 	loadCoreDependencyReport,
 	loadDeploymentRecipe,
 	recipeEnvironment,
-} from "../../deployment/recipe.js";
+} from "../../deployment-tooling/recipe.js";
 import { PROJECT_ROOT } from "./paths.js";
 
 const SECRET_RUNTIME_KEYS = Object.freeze({
@@ -70,10 +70,15 @@ export function assertDeploymentReportRecipeBinding(report, context) {
 			);
 		}
 	}
+	if (context.recipe.liquidator && report.recipe.components.liquidator !== context.recipe.liquidator.mode) {
+		throw new Error(
+			`deployment report recipe component liquidator is ${JSON.stringify(report.recipe.components.liquidator)}, expected ${context.recipe.liquidator.mode}`,
+		);
+	}
 	const keys = Object.keys(report.recipe.components).sort();
-	const expectedKeys = [...DEPLOYMENT_COMPONENTS].sort();
+	const expectedKeys = [...DEPLOYMENT_COMPONENTS, ...(context.recipe.liquidator ? ["liquidator"] : [])].sort();
 	if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) {
-		throw new Error(`deployment report recipe components must contain exactly: ${DEPLOYMENT_COMPONENTS.join(", ")}`);
+		throw new Error(`deployment report recipe components must contain exactly: ${expectedKeys.join(", ")}`);
 	}
 	return report.recipe;
 }

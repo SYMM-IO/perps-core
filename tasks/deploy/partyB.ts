@@ -14,12 +14,15 @@ import {
 	requireArg,
 } from "./helpers.js"
 import { logger } from "./logger.js"
+import type { VanityContext } from "./vanityDeploy.js"
 
 type DeploySymmioPartyBArgs = {
 	symmioAddress: string
 	admin: string
 	logData?: boolean
 	checkpoint?: DeploymentCheckpoint
+	/** Present when the owning deployment mines CREATE2 addresses; null for standalone runs. */
+	vanity?: VanityContext | null
 }
 
 const SYMMIO_PARTYB_FQN = "contracts/helpers/accounts/SymmioPartyB.sol:SymmioPartyB"
@@ -64,7 +67,7 @@ export function createSymmioPartyBVerificationRecords(
 
 export async function deploySymmioPartyB(
 	hre: any,
-	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint }: DeploySymmioPartyBArgs,
+	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint, vanity }: DeploySymmioPartyBArgs,
 ) {
 	const { ethers, upgrades } = await getConnection(hre)
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.symmioPartyB")
@@ -89,6 +92,8 @@ export async function deploySymmioPartyB(
 		symmioPartyB = await deployProxyWithFallback(hre, SymmioPartyBFactory, initializerArgs, {
 			initializer: "initialize",
 			label: "SymmioPartyB",
+			vanity: vanity || null,
+			proxyKey: "peripherals/SymmioPartyB",
 			checkpoint,
 			implementationComponent: "deployments.symmioPartyB.implementation",
 			proxyComponent: "contracts.symmioPartyB",

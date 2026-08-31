@@ -346,7 +346,7 @@ function validateCreate2(value, source) {
 function validateCore(value, source, networkMode) {
 	const core = object(value, source, "core");
 	if (core.create2 !== undefined) {
-		fail(source, "core.create2", 'has moved to the top-level "create2" block; see deployment/examples/arbitrum.v1.example.json');
+		fail(source, "core.create2", 'has moved to the top-level "create2" block; see deployment-tooling/examples/arbitrum.v1.example.json');
 	}
 	const keys = ["mode", "fromReport", "collateral", "muon", "protocol", "setupInstantLayerTemplates", "registerDummyAffiliate"];
 	onlyKeys(core, keys, source, "core");
@@ -602,27 +602,39 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 
 function validateAddon(value, source, name, extraField, requireExtraForDeploy) {
 	const component = object(value, source, name);
-	const allowed = ["mode", "address", ...(extraField ? [extraField] : []), ...(name === "partyB" ? ["adlEnabled"] : [])];
+	const isPartyB = name === "partyB";
+	const allowed = ["mode", "address", ...(extraField ? [extraField] : []), ...(isPartyB ? ["adlEnabled", "operators"] : [])];
 	onlyKeys(component, allowed, source, name);
-	const requiredFields = ["mode", ...(name === "partyB" ? ["adlEnabled"] : [])];
+	const requiredFields = ["mode", ...(isPartyB ? ["adlEnabled"] : [])];
 	required(component, requiredFields, source, name);
 	enumValue(component.mode, COMPONENT_MODES, source, `${name}.mode`);
-	if (name === "partyB") boolean(component.adlEnabled, source, "partyB.adlEnabled");
+	if (isPartyB) boolean(component.adlEnabled, source, "partyB.adlEnabled");
 
 	if (component.mode === "reuse") {
 		required(component, ["address"], source, name);
 		address(component.address, source, `${name}.address`);
 		if (extraField && component[extraField] !== undefined) fail(source, `${name}.${extraField}`, "must be omitted when mode is reuse");
+		if (isPartyB && component.operators !== undefined) fail(source, "partyB.operators", "must be omitted when mode is reuse");
 	} else if (component.mode === "deploy") {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
-		if (extraField && requireExtraForDeploy) {
+		const requiresExtraField = requireExtraForDeploy && !(isPartyB && extraField === "signer");
+		if (extraField && requiresExtraField) {
 			required(component, [extraField], source, name);
+		}
+		// An optional extra field must still be a valid address when present — a malformed value
+		// would otherwise only surface at the live deployment step, after earlier transactions ran.
+		if (extraField && component[extraField] !== undefined) {
 			address(component[extraField], source, `${name}.${extraField}`);
+		}
+		if (isPartyB) {
+			required(component, ["operators"], source, name);
+			uniqueAddresses(component.operators, source, "partyB.operators");
 		}
 	} else {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is skip");
 		if (extraField && component[extraField] !== undefined) fail(source, `${name}.${extraField}`, "must be omitted when mode is skip");
-		if (name === "partyB" && component.adlEnabled !== false) fail(source, "partyB.adlEnabled", "must be false when mode is skip");
+		if (isPartyB && component.operators !== undefined) fail(source, "partyB.operators", "must be omitted when mode is skip");
+		if (isPartyB && component.adlEnabled !== false) fail(source, "partyB.adlEnabled", "must be false when mode is skip");
 	}
 }
 
@@ -652,11 +664,12 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 		"symbolManager",
 		"expressProvider",
 		"gaslessLayer",
+		"liquidator",
 	];
 	onlyKeys(recipe, rootKeys, source, "recipe");
 	required(
 		recipe,
-		rootKeys.filter(key => key !== "$schema" && key !== "create2"),
+		rootKeys.filter(key => key !== "$schema" && key !== "create2" && key !== "liquidator"),
 		source,
 		"recipe",
 	);
@@ -746,6 +759,30 @@ export function validateDeploymentRecipe(value, source = "deployment recipe") {
 	validateAddon(recipe.symbolManager, source, "symbolManager", "operator", true);
 	validateExpressProvider(recipe.expressProvider, source, "expressProvider");
 	validateGaslessLayer(recipe.gaslessLayer, source, "gaslessLayer");
+	// SymmioLiquidator is a standalone UUPS proxy over the core diamond rather than a
+	// component target, so it is optional at the root and its admin defaults to
+	// governance.admin when the section omits one.
+	if (recipe.liquidator !== undefined) {
+		const liquidator = object(recipe.liquidator, source, "liquidator");
+		onlyKeys(liquidator, ["mode", "address", "admin", "operators"], source, "liquidator");
+		required(liquidator, ["mode"], source, "liquidator");
+		enumValue(liquidator.mode, COMPONENT_MODES, source, "liquidator.mode");
+		if (liquidator.mode === "deploy") {
+			if (liquidator.address !== undefined) fail(source, "liquidator.address", "must be omitted when mode is deploy");
+			if (liquidator.admin !== undefined) address(liquidator.admin, source, "liquidator.admin");
+			uniqueAddresses(liquidator.operators, source, "liquidator.operators");
+		} else if (liquidator.mode === "reuse") {
+			required(liquidator, ["address"], source, "liquidator");
+			address(liquidator.address, source, "liquidator.address");
+			for (const field of ["admin", "operators"]) {
+				if (liquidator[field] !== undefined) fail(source, `liquidator.${field}`, "must be omitted when mode is reuse");
+			}
+		} else {
+			for (const field of ["address", "admin", "operators"]) {
+				if (liquidator[field] !== undefined) fail(source, `liquidator.${field}`, "must be omitted when mode is skip");
+			}
+		}
+	}
 
 	return JSON.parse(JSON.stringify(recipe));
 }
@@ -963,12 +1000,52 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 		for (const name of DEPLOYMENT_COMPONENTS.slice(1)) {
 			if (recipe[name].mode === "reuse") unsupportedMode(name, "deploy or skip");
 		}
+		// A reused liquidator is bound to a pre-existing core, which a full run cannot prove against
+		// the brand-new core it deploys — the same rule the required add-ons follow above.
+		if (recipe.liquidator?.mode === "reuse") unsupportedMode("liquidator", "deploy or skip");
+	}
+
+	const components = selectedNames.map(name => ({
+		name,
+		mode: recipe[name].mode,
+		dependsOn: name === "core" ? [] : ["core"],
+		...(name === "partyB" && recipe.partyB.mode === "deploy"
+			? {
+					actions: recipe.partyB.operators.map(operator => ({
+						id: `grant-trusted-operator-${operator.toLowerCase()}`,
+						target: "SymmioPartyB",
+						operation: "grantRole",
+						role: "TRUSTED_ROLE",
+						account: operator,
+					})),
+				}
+			: {}),
+	}));
+	// The liquidator is an optional add-on outside DEPLOYMENT_COMPONENTS, but a declared one executes
+	// a real deployment transaction in full runs — the plan must not omit it.
+	if (!only && recipe.liquidator !== undefined) {
+		const actions =
+			recipe.liquidator.mode === "deploy"
+				? [
+						{ id: "deploy-proxy", target: "SymmioLiquidator", operation: "deploy" },
+						...recipe.liquidator.operators.map(operator => ({
+							id: `grant-operator-${operator.toLowerCase()}`,
+							target: "SymmioLiquidator",
+							operation: "grantRole",
+							role: "OPERATOR_ROLE",
+							account: operator,
+						})),
+						{ id: "grant-core-liquidator-role", target: "core", operation: "grantRole", role: "LIQUIDATOR_ROLE" },
+						{ id: "grant-core-partyb-liquidator-role", target: "core", operation: "grantRole", role: "PARTYB_LIQUIDATOR_ROLE" },
+					]
+				: [];
+		components.push({ name: "liquidator", mode: recipe.liquidator.mode, dependsOn: ["core"], actions });
 	}
 
 	return {
 		network: { ...recipe.network },
 		only: only ?? null,
-		components: selectedNames.map(name => ({ name, mode: recipe[name].mode, dependsOn: name === "core" ? [] : ["core"] })),
+		components,
 	};
 }
 
@@ -993,7 +1070,8 @@ export function recipeEnvironment(recipeValue) {
 		COLLATERAL_ADDRESS: deployCore && core.collateral?.mode === "reuse" ? core.collateral.address : "",
 		DEPLOY_PARTYB: String(recipe.partyB.mode === "deploy"),
 		SET_ADL_ENABLED: String(recipe.partyB.mode === "deploy" && recipe.partyB.adlEnabled),
-		PARTYB_SIGNER: recipe.partyB.mode === "deploy" ? recipe.partyB.signer : "",
+		PARTYB_SIGNER: recipe.partyB.mode === "deploy" ? (recipe.partyB.signer ?? "") : "",
+		PARTYB_OPERATORS: recipe.partyB.mode === "deploy" ? recipe.partyB.operators.join(",") : "",
 		DEPLOY_SYMBOL_MANAGER: String(recipe.symbolManager.mode === "deploy"),
 		SYMBOL_MANAGER_OPERATOR: recipe.symbolManager.mode === "deploy" ? recipe.symbolManager.operator : "",
 		REGISTER_DUMMY_AFFILIATE: String(deployCore && core.registerDummyAffiliate === true),

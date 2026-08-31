@@ -14,6 +14,8 @@ const addresses = {
 	instantLayer: "0x3000000000000000000000000000000000000003",
 	symmioPartyB: "0x4000000000000000000000000000000000000004",
 	symbolManager: "0x5000000000000000000000000000000000000005",
+	symmioLiquidator: "0x6000000000000000000000000000000000000006",
+	symmioLiquidatorImplementation: "0x7000000000000000000000000000000000000007",
 }
 
 describe("deployment verification binding", function () {
@@ -34,13 +36,44 @@ describe("deployment verification binding", function () {
 					symbolManagerOperator: "",
 				},
 			},
-			{ partyB: "", symbolManager: "", symbolManagerOperator: "", liquidator: "" },
+			{ partyB: "", symbolManager: "", symbolManagerOperator: "", liquidator: "", liquidatorImplementation: "" },
 		)
 
 		expect(loaded.partyB).to.equal(undefined)
 		expect(loaded.symbolManager).to.equal(undefined)
 		expect(loaded.symbolManagerOperator).to.equal(undefined)
+		expect(loaded.partyBOperators).to.equal(undefined)
 		expect(loaded.liquidator).to.equal(undefined)
+		expect(loaded.liquidatorImplementation).to.equal(undefined)
+	})
+
+	it("loads the recipe-bound liquidator admin, operators, proxy and implementation", function () {
+		const loaded = loadAddressesFromReport(
+			{
+				addresses,
+				config: {
+					admin: addresses.diamond,
+					liquidatorAdmin: addresses.accountLayerDiamond,
+					liquidatorOperators: [addresses.instantLayer],
+				},
+			},
+			{},
+		)
+		expect(loaded.liquidator).to.equal(addresses.symmioLiquidator)
+		expect(loaded.liquidatorImplementation).to.equal(addresses.symmioLiquidatorImplementation)
+		expect(loaded.liquidatorAdmin).to.equal(addresses.accountLayerDiamond)
+		expect(loaded.liquidatorOperators).to.deep.equal([addresses.instantLayer])
+	})
+
+	it("loads recipe-bound PartyB trusted operators", function () {
+		const loaded = loadAddressesFromReport(
+			{
+				addresses,
+				config: { admin: addresses.diamond, partyBOperators: [addresses.instantLayer] },
+			},
+			{},
+		)
+		expect(loaded.partyBOperators).to.deep.equal([addresses.instantLayer])
 	})
 
 	it("uses the reviewed inline protocol config for recipe-bound health checks", function () {
@@ -79,7 +112,7 @@ describe("deployment verification binding", function () {
 			checks: { health: "passed" },
 			recipe: {
 				name: "arbitrum-release",
-				path: "deployments/arbitrum.json",
+				path: "deployment-recipes/arbitrum.json",
 				digest: active.digest,
 				components: { core: "deploy", partyB: "deploy", symbolManager: "skip", expressProvider: "skip", gaslessLayer: "skip" },
 			},
@@ -103,7 +136,7 @@ describe("deployment verification binding", function () {
 	it("refuses scoped verification records that do not cover the reported deployment", function () {
 		const report = {
 			addresses,
-			config: { partyBMode: "deploy", symbolManagerMode: "deploy", collateralAddress: addresses.diamond },
+			config: { partyBMode: "deploy", symbolManagerMode: "deploy", liquidatorMode: "deploy", collateralAddress: addresses.diamond },
 		}
 		const records = Object.values(addresses).map((address, index) => ({
 			name: `Contract${index}`,
@@ -117,5 +150,11 @@ describe("deployment verification binding", function () {
 				report,
 			),
 		).to.throw("PartyB")
+		expect(() =>
+			assertVerificationRecordsCoverReport(
+				records.filter(record => record.address !== addresses.symmioLiquidatorImplementation),
+				report,
+			),
+		).to.throw("SymmioLiquidator implementation")
 	})
 })

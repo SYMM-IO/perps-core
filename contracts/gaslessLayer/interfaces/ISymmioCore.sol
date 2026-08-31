@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 /// @title ISymmioCore
 /// @notice Minimal surface of the Symmio core diamond used by the gateway.
@@ -21,6 +21,12 @@ interface ISymmioCore {
 
 	/// @notice Set the signer's standing allowance and fee multiplier for each charger.
 	function approveOperationalFeeWithMultiplier(address[] calldata chargers, uint256[] calldata amounts, uint256[] calldata feeMultipliers) external;
+
+	/// @notice Free (deposited, unallocated) collateral balance of `user` in 18 decimals.
+	function balanceOf(address user) external view returns (uint256);
+
+	/// @notice Allocated (margin) balance of partyA `partyA` in 18 decimals. Non-partyA accounts return 0.
+	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
 	/// @notice Remaining operational-fee budget and priority multiplier this charger can draw from `payer`.
 	/// @dev Matches perps-core v0.8.6 ViewFacet.getOperationalFeeAllowance. `feeMultiplier` uses

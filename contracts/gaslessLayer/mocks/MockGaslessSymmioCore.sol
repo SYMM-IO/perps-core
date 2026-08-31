@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -14,11 +14,13 @@ contract MockGaslessSymmioCore is ISymmioCore {
 	address public collateralToken;
 	bool public forceChargeFailure;
 	bool public enforceOperationalFeeAllowance;
-	bool public legacyAllowanceView;
+	bool public enforceBalances;
 	address public instantLayer;
 	address public signerOverride;
 
 	mapping(address => uint256) public accountBalance;
+	mapping(address => uint256) public freeBalances;
+	mapping(address => uint256) public allocatedBalances;
 	mapping(address => uint256) public operationalFeesCharged;
 	mapping(address => uint256) public operationalFeeChargeCount;
 	mapping(address => mapping(address => uint256)) public operationalFeeAllowances;
@@ -38,8 +40,11 @@ contract MockGaslessSymmioCore is ISymmioCore {
 		enforceOperationalFeeAllowance = value;
 	}
 
-	function setLegacyAllowanceView(bool value) external {
-		legacyAllowanceView = value;
+	/// @notice Mirror the real core's balance behavior: charges draw free balance first, then allocated
+	///         margin, and revert when both cannot cover the amount. Off by default so routing-focused
+	///         tests can stay balance-agnostic.
+	function setEnforceBalances(bool value) external {
+		enforceBalances = value;
 	}
 
 	function setInstantLayer(address value) external {
@@ -55,6 +60,25 @@ contract MockGaslessSymmioCore is ISymmioCore {
 		operationalFeeMultipliers[payer][charger] = feeMultiplier;
 	}
 
+	/// @notice Test helper mirroring core free/allocated balances read by the gateway's payer-capacity check.
+	function setCoreBalances(address account, uint256 freeBalance, uint256 allocatedBalance) external {
+		freeBalances[account] = freeBalance;
+		allocatedBalances[account] = allocatedBalance;
+	}
+
+	/// @notice Test helper to set a payer's allowance directly (approveOperationalFee uses msg.sender as payer).
+	function setOperationalFeeAllowanceDirect(address payer, address charger, uint256 amount) external {
+		operationalFeeAllowances[payer][charger] = amount;
+	}
+
+	function balanceOf(address user) external view returns (uint256) {
+		return freeBalances[user];
+	}
+
+	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256) {
+		return allocatedBalances[partyA];
+	}
+
 	function getCollateral() external view returns (address) {
 		return collateralToken;
 	}
@@ -62,6 +86,8 @@ contract MockGaslessSymmioCore is ISymmioCore {
 	function depositFor(address account, uint256 amount) external {
 		IERC20(collateralToken).safeTransferFrom(msg.sender, address(this), amount);
 		accountBalance[account] += amount;
+		// Keep the balance views coherent with deposits: deposited collateral is free balance on core.
+		freeBalances[account] += amount;
 	}
 
 	function chargeOperationalFee(address payer, uint256 amount) external {
@@ -70,6 +96,14 @@ contract MockGaslessSymmioCore is ISymmioCore {
 			uint256 allowance = operationalFeeAllowances[payer][msg.sender];
 			require(allowance >= amount, "MockCore: insufficient allowance");
 			operationalFeeAllowances[payer][msg.sender] = allowance - amount;
+		}
+		if (enforceBalances) {
+			uint256 free = freeBalances[payer];
+			uint256 freeUsed = amount <= free ? amount : free;
+			uint256 allocatedUsed = amount - freeUsed;
+			require(allocatedBalances[payer] >= allocatedUsed, "MockCore: insufficient balance");
+			freeBalances[payer] = free - freeUsed;
+			allocatedBalances[payer] -= allocatedUsed;
 		}
 		operationalFeesCharged[payer] += amount;
 		operationalFeeChargeCount[payer]++;
@@ -103,22 +137,6 @@ contract MockGaslessSymmioCore is ISymmioCore {
 		address charger
 	) external view returns (uint256 allowance, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier) {
 		uint256 storedMultiplier = operationalFeeMultipliers[payer][charger];
-		if (legacyAllowanceView) {
-			uint256 legacyAllowance = enforceOperationalFeeAllowance ? operationalFeeAllowances[payer][charger] : type(uint256).max;
-			uint256 legacyCharged = operationalFeesCharged[payer];
-			uint256 legacyRemaining = legacyAllowance > legacyCharged ? legacyAllowance - legacyCharged : 0;
-			uint256 legacyMultiplier = storedMultiplier == 0 ? 10000 : storedMultiplier;
-			assembly ("memory-safe") {
-				let response := mload(0x40)
-				mstore(response, legacyAllowance)
-				mstore(add(response, 32), legacyCharged)
-				mstore(add(response, 64), legacyRemaining)
-				mstore(add(response, 96), 0)
-				mstore(add(response, 128), 0)
-				mstore(add(response, 160), legacyMultiplier)
-				return(response, 192)
-			}
-		}
 		if (!enforceOperationalFeeAllowance) {
 			return (type(uint256).max, 0, 0, storedMultiplier == 0 ? 10000 : storedMultiplier);
 		}

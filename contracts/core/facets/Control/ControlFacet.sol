@@ -185,6 +185,17 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit SetSolverFeeReceiver(partyB, receiver);
 	}
 
+	/// @notice Sets the receiver of a Party B's solver fees for one arbitrary tag.
+	/// @dev The raw tag is hashed for storage. A zero receiver clears the tag override, after which the
+	///      Party B's default solver fee receiver applies. Authorization matches setSolverFeeReceiver.
+	function setSolverFeeReceiverForTag(address partyB, bytes32 tag, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
+		MAStorage.layout().solverFeeReceiversByTag[partyB][tag] = receiver;
+		emit SetSolverFeeReceiverForTag(partyB, receiver, tag);
+	}
+
 	/// @notice Sets the metadata for a Party B, including display name and other identifying information.
 	/// @param partyB The address of the Party B to set metadata for.
 	/// @param metadata The EntityMetadata struct containing the Party B's metadata.
@@ -255,18 +266,14 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	}
 
 	/// @notice Sets or clears a UPNL signature validity override for one Muon function category.
-	/// @dev Nonzero values override the global UPNL validity. Passing zero clears the override and falls back to setMuonConfig.
+	/// @dev A zero value means the override is unset, so verification uses the global UPNL validity from setMuonConfig.
 	/// @param func The Muon function category to configure.
 	/// @param upnlValidTime Override duration in seconds, or zero to clear the override.
 	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external onlyRole(LibAccessibility.MUON_SETTER_ROLE) {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
-		if (upnlValidTime == 0) {
-			delete muonLayout.upnlValidTimeByFunction[func];
-			emit SetMuonFunctionUpnlValidTime(func, false, 0);
-			return;
-		}
+		// Zero is the unset sentinel; the validity resolver then falls back to the global value.
 		muonLayout.upnlValidTimeByFunction[func] = upnlValidTime;
-		emit SetMuonFunctionUpnlValidTime(func, true, upnlValidTime);
+		emit SetMuonFunctionUpnlValidTime(func, upnlValidTime);
 	}
 
 	/// @notice Sets the Muon application ID used to identify this protocol in the Muon oracle network.

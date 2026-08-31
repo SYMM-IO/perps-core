@@ -2,6 +2,8 @@ import { expect } from "chai"
 
 import { ensureCreate2Factory } from "../../tasks/deploy/create2Factory.js"
 import { deployDiamond } from "../../tasks/deploy/diamond.js"
+import { deploySymmioPartyB } from "../../tasks/deploy/partyB.js"
+import { deploySignatureVerifier } from "../../tasks/deploy/signatureVerifier.js"
 import { resetDeploymentTransactionJournal } from "../../tasks/deploy/tx.js"
 import { createVanityContext } from "../../tasks/deploy/vanityDeploy.js"
 import { buildVanityPlan } from "../../tasks/deploy/vanityPlan.js"
@@ -68,6 +70,41 @@ describe("vanity address deployment", function () {
 		const diamond = await deployDiamond(hre, { logData: false, reportGas: false, vanity: null })
 		const loupe = await ethers.getContractAt("IDiamondLoupe", await diamond.getAddress())
 		expect((await loupe.facets()).length).to.be.greaterThan(0)
+	})
+
+	it("mines the proxy address for an upgradeable peripheral without giving the factory authority", async function () {
+		// The proxy is the address integrations hold, so the peripherals pattern applies to it.
+		const plan = buildVanityPlan({ factoryAddress, groups: { peripherals: { prefix: "a" } } })!
+		const vanity = createVanityContext(ethers, plan)
+		const [deployer, admin] = await ethers.getSigners()
+
+		const partyB = await deploySymmioPartyB(hre, {
+			symmioAddress: deployer.address,
+			admin: admin.address,
+			logData: false,
+			vanity,
+		})
+
+		const address = await partyB.getAddress()
+		expect(address.toLowerCase().startsWith("0xa"), `${address} does not start with a`).to.be.true
+		// A CREATE2 proxy runs its constructor — and therefore its initializer delegatecall —
+		// with the factory as msg.sender. Every role must still land on the declared admin.
+		const DEFAULT_ADMIN_ROLE = ethers.ZeroHash
+		expect(await partyB.hasRole(DEFAULT_ADMIN_ROLE, admin.address), "admin lost DEFAULT_ADMIN_ROLE").to.be.true
+		expect(await partyB.hasRole(DEFAULT_ADMIN_ROLE, factoryAddress), "factory gained DEFAULT_ADMIN_ROLE").to.be.false
+		expect(await partyB.hasRole(DEFAULT_ADMIN_ROLE, deployer.address), "deployer gained DEFAULT_ADMIN_ROLE").to.be.false
+	})
+
+	it("mines a non-proxy peripheral too", async function () {
+		const plan = buildVanityPlan({ factoryAddress, groups: { peripherals: { prefix: "b" } } })!
+		const vanity = createVanityContext(ethers, plan)
+		const [, admin] = await ethers.getSigners()
+
+		const verifier = await deploySignatureVerifier(hre, { admin: admin.address, logData: false, vanity })
+
+		const address = await verifier.getAddress()
+		expect(address.toLowerCase().startsWith("0xb"), `${address} does not start with b`).to.be.true
+		expect(await verifier.hasRole(ethers.ZeroHash, admin.address)).to.be.true
 	})
 })
 

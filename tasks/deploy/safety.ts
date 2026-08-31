@@ -54,8 +54,30 @@ export interface SafetyViolation {
 	remedy: string
 }
 
+/**
+ * Chains that exist only for development. Everything else is treated as value-bearing.
+ *
+ * The guards used to key off KNOWN_MAINNET_CHAIN_IDS alone, which is fail-open: a chain
+ * added to hardhat.config.ts but forgotten here silently accepted a mock verifier, fake
+ * collateral and a published deployer key. Defaulting to "protected" means the worst case
+ * for a new chain is an explicit override, not a compromised protocol.
+ */
+export const DEVELOPMENT_CHAIN_IDS = new Set<number>([
+	31337, // Hardhat / localhost
+	1337, // legacy local JSON-RPC nodes
+])
+
 export function isKnownMainnet(chainId: number | bigint): boolean {
 	return KNOWN_MAINNET_CHAIN_IDS.has(Number(chainId))
+}
+
+/**
+ * Whether production guards apply. True for every chain that is not a local development
+ * node, including chains missing from KNOWN_MAINNET_CHAIN_IDS and the fork rehearsals that
+ * inherit an upstream chain id.
+ */
+export function requiresProductionSafety(chainId: number | bigint): boolean {
+	return !DEVELOPMENT_CHAIN_IDS.has(Number(chainId))
 }
 
 /**
@@ -89,7 +111,7 @@ export function assertStandaloneDeploymentTaskAllowed(
  * simulated network as a warning rather than a stop.
  */
 export function collectMainnetSafetyViolations(chainId: number | bigint, deployerAddress: string, config: MainnetSafetyConfig): SafetyViolation[] {
-	if (!isKnownMainnet(chainId)) return []
+	if (!requiresProductionSafety(chainId)) return []
 
 	const violations: SafetyViolation[] = []
 

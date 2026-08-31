@@ -2210,30 +2210,36 @@
 		const short = optionalNumber(position.SHORT, position.short);
 		const openLimit = optionalNumber(opening.LIMIT, opening.limit);
 		const openMarket = optionalNumber(opening.MARKET, opening.market);
+		const openBestEffort = optionalNumber(opening.MARKET_BEST_EFFORT, opening.marketBestEffort);
 		const closeLimit = optionalNumber(closing.LIMIT, closing.limit);
 		const closeMarket = optionalNumber(closing.MARKET, closing.market);
+		const closeBestEffort = optionalNumber(closing.MARKET_BEST_EFFORT, closing.marketBestEffort);
 		const split = optionalNumber(pick(partialOpen, "splits", "splitOpens"));
 		const activeSplit = optionalNumber(pick(partialOpen, "activePositions", "active"));
 		const waiting = optionalNumber(pick(partialOpen, "waitingRemainders", "remainders"));
 		const partialRequests = optionalNumber(pick(quotes, "partialCloseRequested", "partialCloseRequests"));
 		const partiallyClosed = optionalNumber(pick(quotes, "partiallyClosed", "partialClosed"));
 		const pair = (left, right) => (left === undefined || right === undefined ? "—" : `${compactNumber(left)} / ${compactNumber(right)}`);
+		const triplet = (first, second, third) =>
+			first === undefined || second === undefined || third === undefined
+				? "—"
+				: `${compactNumber(first)} / ${compactNumber(second)} / ${compactNumber(third)}`;
 		const ratioOf = (left, right) => (left === undefined || right === undefined ? undefined : left + right === 0 ? 0 : left / (left + right));
 		const knownNumber = value => (value === undefined ? "—" : compactNumber(value));
 		dom["mix-grid"].replaceChildren(
 			mixBlock("Long / short", pair(long, short), "All observed quotes", ratioOf(long, short)),
 			mixBlock(
-				"Opening limit / market",
-				pair(openLimit, openMarket),
+				"Opening limit / market / best effort",
+				triplet(openLimit, openMarket, openBestEffort),
 				"First-seen order mode",
-				ratioOf(openLimit, openMarket),
+				ratioOf(openLimit, openMarket === undefined || openBestEffort === undefined ? undefined : openMarket + openBestEffort),
 				cssColor("--cyan"),
 			),
 			mixBlock(
-				"Closing limit / market",
-				pair(closeLimit, closeMarket),
+				"Closing limit / market / best effort",
+				triplet(closeLimit, closeMarket, closeBestEffort),
 				"Live close requests only",
-				ratioOf(closeLimit, closeMarket),
+				ratioOf(closeLimit, closeMarket === undefined || closeBestEffort === undefined ? undefined : closeMarket + closeBestEffort),
 				cssColor("--amber"),
 			),
 			mixBlock(

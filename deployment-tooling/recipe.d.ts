@@ -88,10 +88,30 @@ export interface DeploymentRecipe {
 		setupInstantLayerTemplates?: boolean
 		registerDummyAffiliate?: boolean
 	}
-	partyB: { mode: ComponentMode; address?: string; signer?: string; adlEnabled: boolean }
+	partyB: {
+		mode: ComponentMode
+		address?: string
+		/** Optional ERC-1271 signer. Omission leaves signer() at address(0). */
+		signer?: string
+		/** Routine execution accounts. Deploy mode grants each account TRUSTED_ROLE. */
+		operators?: string[]
+		adlEnabled: boolean
+	}
 	symbolManager: { mode: ComponentMode; address?: string; operator?: string }
 	expressProvider: ExpressProviderRecipe
 	gaslessLayer: GaslessLayerRecipe
+	/** Optional; absent means the SymmioLiquidator proxy is not part of the run. */
+	liquidator?: LiquidatorRecipe
+}
+
+export interface LiquidatorRecipe {
+	mode: ComponentMode
+	/** Existing proxy address; required when mode is reuse, forbidden otherwise. */
+	address?: string
+	/** Defaults to governance.admin when omitted on a deploy. */
+	admin?: string
+	/** Accounts allowed to execute liquidation calls; required and non-empty on deploy. */
+	operators?: string[]
 }
 
 export interface GaslessLayerRecipe {
@@ -203,7 +223,13 @@ export function createDeploymentPlan(
 ): {
 	network: DeploymentRecipe["network"]
 	only: (typeof DEPLOYMENT_COMPONENTS)[number] | null
-	components: Array<{ name: (typeof DEPLOYMENT_COMPONENTS)[number]; mode: ComponentMode; dependsOn: Array<"core"> }>
+	// "liquidator" is an optional add-on outside DEPLOYMENT_COMPONENTS; full-run plans include it when declared.
+	components: Array<{
+		name: (typeof DEPLOYMENT_COMPONENTS)[number] | "liquidator"
+		mode: ComponentMode
+		dependsOn: Array<"core">
+		actions?: Array<{ id: string; target: string; operation: string; role?: string; account?: string }>
+	}>
 }
 export function recipeEnvironment(recipe: DeploymentRecipe): {
 	env: Record<string, string>

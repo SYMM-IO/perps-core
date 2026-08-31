@@ -5,7 +5,7 @@
 // protocol values/templates, both diamonds, integrations, roles, ownership and optional
 // components. Delegating to it means an unreadable/unknown probe is a failed check rather
 // than a warning followed by a false-green "looks healthy" verdict.
-import { createDeploymentPlan } from "../../deployment/recipe.js";
+import { createDeploymentPlan } from "../../deployment-tooling/recipe.js";
 import { deploymentCheckpointPath, explorerAddressUrl, isLiveMainnet, readCheckpoint, readDeploymentReport, resolveNetwork } from "../lib/context.js";
 import { hardhat } from "../lib/hardhat.js";
 import {
@@ -262,6 +262,7 @@ function componentExpectedConfig(recipeContext, component) {
 		return {
 			admin,
 			signer: recipeContext.recipe.partyB.signer,
+			operators: recipeContext.recipe.partyB.operators,
 			adlEnabled: recipeContext.recipe.partyB.adlEnabled,
 		};
 	}
@@ -290,6 +291,7 @@ function showComponentStatusReport(report, reportPath, checkpointPath, networkNa
 		...(report.component === "partyB"
 			? [
 					["signer", report.config.signer],
+					["operators", report.config.operators.join(", ")],
 					["ADL enabled", String(report.config.adlEnabled)],
 				]
 			: report.component === "symbolManager"

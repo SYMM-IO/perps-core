@@ -2,7 +2,7 @@ import type { ContractTransactionResponse } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment/recipe.js"
+import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment-tooling/recipe.js"
 import { ControlFacet } from "../../src/types/index.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
@@ -24,6 +24,7 @@ import {
 	createDeploymentManifest,
 	assertCheckpointManifest,
 	assertCheckpointContractsHaveCode,
+	acquireCheckpointLock,
 } from "./checkpoint.js"
 import {
 	deployAndConfigureExpressProvider,
@@ -42,6 +43,7 @@ import type { GaslessLayerResolvedConfig } from "./gaslessLayer.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
+import { deploySymmioLiquidator } from "./liquidator.js"
 import { logger } from "./logger.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
@@ -62,7 +64,7 @@ import {
 	validateProtocolConfig,
 } from "./protocolConfig.js"
 import { activeDeploymentRecipe } from "./recipeRuntime.js"
-import { assertMainnetSafe, isKnownMainnet } from "./safety.js"
+import { assertMainnetSafe, requiresProductionSafety } from "./safety.js"
 import { deploySignatureVerifier } from "./signatureVerifier.js"
 import { deployStablecoin } from "./stablecoin.js"
 import { deploySymbolManager, grantSymbolManagerDiamondRoles, grantSymbolManagerOperatorRoles } from "./symbolManager.js"
@@ -103,6 +105,7 @@ interface SystemDeploymentReport {
 			symbolManager: ComponentMode
 			expressProvider: ComponentMode
 			gaslessLayer: ComponentMode
+			liquidator?: ComponentMode
 		}
 	}
 	lifecycle: "validating" | "pending_handover" | "complete" | "failed"
@@ -124,6 +127,7 @@ interface SystemDeploymentReport {
 		collateralAddress: string
 		deployPartyB: boolean
 		setAdlEnabled: boolean
+		partyBOperators: string[]
 		deploySymbolManager: boolean
 		symbolManagerOperator: string
 		registerDummyAffiliate: boolean
@@ -143,6 +147,9 @@ interface SystemDeploymentReport {
 		expressProviderMode?: ComponentMode
 		gaslessLayerMode?: ComponentMode
 		gaslessLayer?: Omit<GaslessLayerResolvedConfig, "address" | "implementation">
+		liquidatorMode?: ComponentMode
+		liquidatorAdmin?: string
+		liquidatorOperators?: string[]
 	}
 	summary: {
 		totalDeploymentGroups: number
@@ -208,6 +215,8 @@ interface DeployedContracts {
 	expressProvider?: string
 	gaslessLayer?: string
 	gaslessLayerImplementation?: string
+	symmioLiquidator?: string
+	symmioLiquidatorImplementation?: string
 }
 
 type ExpressProviderStepResult = {
@@ -221,6 +230,13 @@ type GaslessLayerStepResult = {
 	address: string
 	implementation: string
 	records: Array<{ name: string; address: string; constructorArguments: unknown[]; libraries?: Record<string, string> }>
+	manualActions: SafeManualAction[]
+	checks: ComponentHealthCheck[]
+}
+
+type LiquidatorStepResult = {
+	address: string
+	implementation?: string
 	manualActions: SafeManualAction[]
 	checks: ComponentHealthCheck[]
 }
@@ -273,6 +289,10 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 	const registerDummyAffiliate = parseBooleanSetting(source.REGISTER_DUMMY_AFFILIATE, "REGISTER_DUMMY_AFFILIATE", false)
 	// Optional signer address for SymmioPartyB (ERC-1271 signature verification)
 	const partyBSigner = source.PARTYB_SIGNER || ""
+	const partyBOperators = (source.PARTYB_OPERATORS || "")
+		.split(",")
+		.map(operator => operator.trim())
+		.filter(Boolean)
 	// Optional operator address that will receive SYMBOL_ADDER_ROLE + SYMBOL_REMOVER_ROLE on the SymbolManager
 	const symbolManagerOperator = source.SYMBOL_MANAGER_OPERATOR || ""
 	// Setup InstantLayer templates (default: true, set to "false" to skip)
@@ -313,6 +333,7 @@ export function deploymentConfigFromSource(source: Record<string, string | undef
 		symbolManagerOperator,
 		registerDummyAffiliate,
 		partyBSigner,
+		partyBOperators,
 		setupInstantLayerTemplates,
 		signatureVerifierAddress,
 		deployMockVerifier,
@@ -372,7 +393,7 @@ export async function validateDeploymentConfig(
 	// makes non-zero soft liquidations revert. Known-mainnet deployments and their fork
 	// rehearsals must therefore supply reviewed values explicitly. Local/test networks use
 	// the admin and the cross-chain reviewed 100e18 cap as convenient fixture defaults.
-	if (isKnownMainnet(chainId)) {
+	if (requiresProductionSafety(chainId)) {
 		if (!config.liquidationInsuranceVault) throw new Error("LIQUIDATION_INSURANCE_VAULT is required for known-mainnet deployments and rehearsals")
 		if (!config.maxLiquidationProfitPerPosition) {
 			throw new Error("MAX_LIQUIDATION_PROFIT_PER_POSITION is required for known-mainnet deployments and rehearsals")
@@ -397,11 +418,18 @@ export async function validateDeploymentConfig(
 		config.signatureVerifierAddress = requireAddress(ethers, config.signatureVerifierAddress, "MUON_SIGNATURE_VERIFIER_ADDRESS")
 	}
 	if (config.partyBSigner) config.partyBSigner = requireAddress(ethers, config.partyBSigner, "PARTYB_SIGNER")
-	if (config.deployPartyB && !config.partyBSigner) {
-		throw new Error("PARTYB_SIGNER is required when DEPLOY_PARTYB=true; refusing to deploy a PartyB that cannot validate operational signatures")
+	config.partyBOperators = config.partyBOperators.map((operator, index) => requireAddress(ethers, operator, `PARTYB_OPERATORS[${index}]`))
+	if (new Set(config.partyBOperators.map(operator => operator.toLowerCase())).size !== config.partyBOperators.length) {
+		throw new Error("PARTYB_OPERATORS contains duplicate addresses")
+	}
+	if (config.deployPartyB && config.partyBOperators.length === 0) {
+		throw new Error("PARTYB_OPERATORS is required when DEPLOY_PARTYB=true; refusing to deploy a PartyB without a TRUSTED_ROLE operator")
 	}
 	if (!config.deployPartyB && config.partyBSigner) {
 		throw new Error("PARTYB_SIGNER is set while DEPLOY_PARTYB=false; remove it or enable PartyB explicitly")
+	}
+	if (!config.deployPartyB && config.partyBOperators.length > 0) {
+		throw new Error("PARTYB_OPERATORS is set while DEPLOY_PARTYB=false; remove it or enable PartyB explicitly")
 	}
 	if (config.symbolManagerOperator) {
 		config.symbolManagerOperator = requireAddress(ethers, config.symbolManagerOperator, "SYMBOL_MANAGER_OPERATOR")
@@ -714,6 +742,11 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot safely reuse PartyB or SymbolManager while deploying a brand-new core, because their core binding cannot be proven before the new core address exists. Use mode=deploy/skip, or deploy the add-on separately against core.fromReport.",
 					)
 				}
+				if (recipe.liquidator?.mode === "reuse") {
+					throw new Error(
+						"LIVE_TARGET_UNSUPPORTED: deploy:system cannot reuse a SymmioLiquidator while deploying a brand-new core — the reused proxy is bound to a pre-existing core. Use mode=deploy/skip, or use ./symmio and choose the guarded SymmioLiquidator task.",
+					)
+				}
 				verify = recipe.execution.verify
 				logData = true
 			}
@@ -772,10 +805,16 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			setCheckpointSimulated(isSimulatedNetwork)
 			assertDeploymentRecordPolicy(chainId, isSimulatedNetwork, logData)
 
+			// One deployment per chain at a time. Without this, two runs interleave last-wins
+			// checkpoint writes while both broadcast, and neither can be reconciled afterwards.
+			const checkpointLock = acquireCheckpointLock(Number(chainId))
+			const releaseCheckpointLock = () => checkpointLock.release()
+			process.once("exit", releaseCheckpointLock)
+
 			// A production chain must have an explicit, reviewed config. Built-in defaults are
 			// retained only for local development: silently applying them to a live chain is not
 			// a safe deployment mode. Fork rehearsals enforce the same requirement.
-			if (!recipe && isKnownMainnet(chainId) && !hasChainProtocolConfig(chainId)) {
+			if (!recipe && requiresProductionSafety(chainId) && !hasChainProtocolConfig(chainId)) {
 				throw new Error(
 					`Missing required protocol config tasks/config/protocol-${Number(chainId)}.json for mainnet chainId ${Number(chainId)}. ` +
 						"Create and review the chain-specific parameters and InstantLayer templates before deploying or rehearsing.",
@@ -810,6 +849,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								symbolManager: recipeRuntime.recipe.symbolManager.mode,
 								expressProvider: recipeRuntime.recipe.expressProvider.mode,
 								gaslessLayer: recipeRuntime.recipe.gaslessLayer.mode,
+								liquidator: recipeRuntime.recipe.liquidator?.mode,
 							},
 						}
 					: undefined,
@@ -925,6 +965,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			logger.info(`Deploy PartyB: ${config.deployPartyB}`)
 			logger.info(`Set ADL Enabled: ${config.setAdlEnabled}`)
 			logger.info(`PartyB Signer: ${config.partyBSigner || "(not set)"}`)
+			logger.info(`PartyB Operators: ${config.partyBOperators.join(", ") || "(not set)"}`)
 			logger.info(`Deploy SymbolManager: ${config.deploySymbolManager}`)
 			logger.info(`SymbolManager Operator: ${config.symbolManagerOperator || "(not set)"}`)
 			logger.info(`Register Dummy Affiliate: ${config.registerDummyAffiliate}`)
@@ -953,10 +994,32 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 			const deployedContracts: DeployedContracts = vanityPlan ? { create2Factory: vanityPlan.factoryAddress } : {}
 			let expressProviderResult: ExpressProviderStepResult | undefined
 			let gaslessLayerResult: GaslessLayerStepResult | undefined
+			let liquidatorResult: LiquidatorStepResult | undefined
 
 			// HyperEVM (chainId 999 mainnet, 998 testnet) requires big blocks for facet deployment
 			const isHyperEVM = !isSimulatedNetwork && (Number(chainId) === 999 || Number(chainId) === 998)
 			let bigBlocksEnabled = false
+			/**
+			 * Contract creation on HyperEVM needs the big-block gas limit. Steps that create
+			 * contracts after the main deployment phase (ExpressProvider, GaslessLayer) must
+			 * re-enter it, otherwise their diamond/proxy creations can exceed the small-block
+			 * limit and fail mid-run. Toggling is idempotent and skipped off HyperEVM.
+			 */
+			const withHyperEVMBigBlocks = async <T>(label: string, action: () => Promise<T>): Promise<T> => {
+				if (!isHyperEVM || bigBlocksEnabled) return action()
+				logger.info(`Re-enabling HyperEVM big blocks for ${label} contract creation...`)
+				bigBlocksEnabled = true
+				await setHyperEVMBigBlocks(hre, true)
+				try {
+					return await action()
+				} finally {
+					if (bigBlocksEnabled) {
+						await setHyperEVMBigBlocks(hre, false)
+						bigBlocksEnabled = false
+						logger.info(`Disabled HyperEVM big blocks after ${label}.`)
+					}
+				}
+			}
 			let deploymentError: unknown
 			let deploymentStepOrder = 0
 			bindDeploymentTransactionWriteAhead(record => persistSubmittedTransaction(checkpoint, record))
@@ -1113,6 +1176,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									admin: deployerAddress,
 									logData,
 									checkpoint,
+									vanity,
 								})
 								deployedContracts.signatureVerifier = await signatureVerifier.getAddress()
 								logger.info(`MuonSignatureVerifier deployed at: ${deployedContracts.signatureVerifier}`)
@@ -1187,6 +1251,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								admin: deployerAddress,
 								logData,
 								checkpoint,
+								vanity,
 							})
 							deployedContracts.instantLayer = await instantLayer.getAddress()
 							logger.info(`InstantLayer deployed at: ${deployedContracts.instantLayer}`)
@@ -1224,6 +1289,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									admin: deployerAddress,
 									logData,
 									checkpoint,
+									vanity,
 								})
 								deployedContracts.symmioPartyB = await symmioPartyB.getAddress()
 								logger.info(`SymmioPartyB deployed at: ${deployedContracts.symmioPartyB}`)
@@ -1262,6 +1328,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									admin: config.admin,
 									logData,
 									checkpoint,
+									vanity,
 								})
 								deployedContracts.symbolManager = await symbolManager.getAddress()
 								logger.info(`SymmioSymbolManager deployed at: ${deployedContracts.symbolManager}`)
@@ -1287,7 +1354,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					})
 				}
 
-				// All contracts are deployed — switch back to fast blocks for setup/config calls
+				// Core contract deployment is done — switch back to fast blocks for the setup and
+				// configuration calls that follow. ExpressProvider and GaslessLayer still create
+				// contracts further down, so they re-enter big blocks around their own steps.
 				if (bigBlocksEnabled) {
 					logger.info("Contract deployment complete — disabling big blocks for setup phase...")
 					await setHyperEVMBigBlocks(hre, false)
@@ -1392,7 +1461,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									},
 									deployerAddress,
 								)
-								const result = await deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity)
+								const result = await withHyperEVMBigBlocks("ExpressProvider", () =>
+									deployAndConfigureExpressProvider(hre, checkpoint, resolved, deployer, vanity),
+								)
 								deployedContracts.expressProvider = result.address
 								expressProviderResult = result
 								// verify:all reads this file, so write it before the health gate can throw.
@@ -1444,7 +1515,9 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									deployerAddress,
 								)
 								config.gaslessLayer = resolved
-								const result = await deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, vanity)
+								const result = await withHyperEVMBigBlocks("GaslessLayer", () =>
+									deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, vanity),
+								)
 								deployedContracts.gaslessLayer = result.address
 								deployedContracts.gaslessLayerImplementation = result.implementation
 								gaslessLayerResult = result
@@ -1464,6 +1537,158 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								logger.error(`Failed to deploy GaslessLayer: ${err.message}`)
 								deploymentResults.push({
 									contract: "GaslessLayer",
+									address: "N/A",
+									status: "failed",
+									error: err.message,
+									timestamp: new Date().toISOString(),
+								})
+								throw err
+							}
+							logger.info()
+						},
+					})
+				}
+
+				if (recipe?.liquidator?.mode === "deploy") {
+					await runDeploymentStep(checkpoint, {
+						id: "symmioLiquidator",
+						title: "Deploying SymmioLiquidator",
+						order: ++deploymentStepOrder,
+						run: async () => {
+							try {
+								const wasAlreadyDeployed = !!checkpoint.contracts.symmioLiquidator
+								const liquidatorAdmin = recipe.liquidator!.admin ?? config.admin
+								const operators = recipe.liquidator!.operators!
+								// A fresh proxy starts under the deployment signer so its complete role setup can
+								// be journaled before control is handed to governance. On a legacy checkpoint the
+								// helper reuses the existing proxy and this initializer argument is ignored.
+								const liquidator = await withHyperEVMBigBlocks("SymmioLiquidator", () =>
+									deploySymmioLiquidator(hre, {
+										symmioAddress: deployedContracts.diamond!,
+										admin: wasAlreadyDeployed ? liquidatorAdmin : deployerAddress,
+										logData,
+										checkpoint,
+									}),
+								)
+								const address = await liquidator.getAddress()
+								deployedContracts.symmioLiquidator = address
+								deployedContracts.symmioLiquidatorImplementation = checkpoint.contracts.symmioLiquidator?.implementation
+								logger.info(`SymmioLiquidator deployed at: ${address}`)
+
+								const manualActions: SafeManualAction[] = []
+								const checks: ComponentHealthCheck[] = []
+								const defaultAdminRole = await liquidator.DEFAULT_ADMIN_ROLE()
+								const managerRole = await liquidator.MANAGER_ROLE()
+								const operatorRole = await liquidator.OPERATOR_ROLE()
+								const deployerCanAdmin = await liquidator.hasRole(defaultAdminRole, deployerAddress)
+								if (deployerCanAdmin) {
+									for (const [roleName, role, account] of [
+										["DEFAULT_ADMIN_ROLE", defaultAdminRole, liquidatorAdmin],
+										["MANAGER_ROLE", managerRole, liquidatorAdmin],
+										...operators.map(operator => ["OPERATOR_ROLE", operatorRole, operator]),
+									] as Array<[string, string, string]>) {
+										if (!(await liquidator.hasRole(role, account))) {
+											await liquidator.connect(deployer).grantRole.staticCall(role, account)
+											await send(liquidator.connect(deployer).grantRole(role, account), `grant SymmioLiquidator ${roleName} to ${account}`)
+										}
+									}
+									if (deployerAddress.toLowerCase() !== liquidatorAdmin.toLowerCase()) {
+										for (const [roleName, role] of [
+											["MANAGER_ROLE", managerRole],
+											["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+										] as Array<[string, string]>) {
+											if (await liquidator.hasRole(role, deployerAddress)) {
+												await send(
+													liquidator.connect(deployer).renounceRole(role, deployerAddress),
+													`renounce SymmioLiquidator ${roleName} from deployer`,
+												)
+											}
+										}
+									}
+								} else {
+									if (!(await liquidator.hasRole(defaultAdminRole, liquidatorAdmin))) {
+										throw new Error(`SymmioLiquidator has neither deployer nor configured admin ${liquidatorAdmin} as DEFAULT_ADMIN_ROLE`)
+									}
+									for (const [roleName, role, account] of [
+										["MANAGER_ROLE", managerRole, liquidatorAdmin],
+										...operators.map(operator => ["OPERATOR_ROLE", operatorRole, operator]),
+									] as Array<[string, string, string]>) {
+										if (!(await liquidator.hasRole(role, account))) {
+											manualActions.push({
+												to: address,
+												value: "0",
+												data: liquidator.interface.encodeFunctionData("grantRole", [role, account]),
+												description: `Grant ${roleName} on SymmioLiquidator to ${account}`,
+											})
+										}
+									}
+									if (manualActions.length > 0 && liquidatorAdmin.toLowerCase() !== config.admin.toLowerCase()) {
+										throw new Error(
+											`Legacy SymmioLiquidator repair requires its configured admin ${liquidatorAdmin}; the deployment Safe is ${config.admin}. ` +
+												"Use ./symmio with the liquidator admin authority, then resume this deployment.",
+										)
+									}
+								}
+								if (deployerAddress.toLowerCase() !== liquidatorAdmin.toLowerCase()) {
+									for (const [roleName, role] of [
+										["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+										["MANAGER_ROLE", managerRole],
+									] as Array<[string, string]>) {
+										if (await liquidator.hasRole(role, deployerAddress)) {
+											throw new Error(`Deployer still holds SymmioLiquidator ${roleName} after role handover`)
+										}
+									}
+								}
+
+								const liquidatorCoreView = await ethers.getContractAt(
+									"contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
+									deployedContracts.diamond!,
+								)
+								const liquidatorCoreControl = await ethers.getContractAt(
+									"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+									deployedContracts.diamond!,
+								)
+								for (const roleName of ["LIQUIDATOR_ROLE", "PARTYB_LIQUIDATOR_ROLE"]) {
+									const role = ethers.id(roleName)
+									if (!(await liquidatorCoreView.hasRole(address, role))) {
+										await liquidatorCoreControl.connect(deployer).grantRole.staticCall(address, role)
+										await send(liquidatorCoreControl.connect(deployer).grantRole(address, role), `grant core ${roleName} to SymmioLiquidator`)
+										logger.info(`Granted core ${roleName} to SymmioLiquidator`)
+									}
+									if (!(await liquidatorCoreView.hasRole(address, role))) {
+										throw new Error(`Core ${roleName} grant post-check failed for SymmioLiquidator ${address}`)
+									}
+									checks.push({ check: `Core ${roleName}`, status: "passed", expected: address, actual: address })
+								}
+
+								for (const [label, role, account] of [
+									["configured admin DEFAULT_ADMIN_ROLE", defaultAdminRole, liquidatorAdmin],
+									["configured admin MANAGER_ROLE", managerRole, liquidatorAdmin],
+									...operators.map(operator => [`operator ${operator}`, operatorRole, operator]),
+								] as Array<[string, string, string]>) {
+									checks.push({
+										check: `SymmioLiquidator ${label}`,
+										status: (await liquidator.hasRole(role, account)) ? "passed" : "pending",
+										expected: account,
+									})
+								}
+								liquidatorResult = {
+									address,
+									implementation: deployedContracts.symmioLiquidatorImplementation,
+									manualActions,
+									checks,
+								}
+
+								deploymentResults.push({
+									contract: "SymmioLiquidator",
+									address,
+									status: wasAlreadyDeployed ? "skipped" : "success",
+									timestamp: new Date().toISOString(),
+								})
+							} catch (err: any) {
+								logger.error(`Failed to deploy SymmioLiquidator: ${err.message}`)
+								deploymentResults.push({
+									contract: "SymmioLiquidator",
 									address: "N/A",
 									status: "failed",
 									error: err.message,
@@ -1618,6 +1843,13 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				for (const check of gaslessLayerResult?.checks || []) {
 					if (check.status === "pending") manualActions.push(`GaslessLayer check still pending: ${check.check}`)
 				}
+				for (const action of liquidatorResult?.manualActions || []) {
+					manualActions.push(`${config.admin} executes: ${action.description} (to ${action.to}, data ${action.data})`)
+					safeActions.push(action)
+				}
+				for (const check of liquidatorResult?.checks || []) {
+					if (check.status === "pending") manualActions.push(`SymmioLiquidator check still pending: ${check.check}`)
+				}
 
 				const handoverPending = manualActions.length > 0
 				checkpoint.step = handoverPending ? "pending_handover" : "complete"
@@ -1648,6 +1880,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									symbolManager: recipeRuntime.recipe.symbolManager.mode,
 									expressProvider: recipeRuntime.recipe.expressProvider.mode,
 									gaslessLayer: recipeRuntime.recipe.gaslessLayer.mode,
+									liquidator: recipeRuntime.recipe.liquidator?.mode,
 								},
 							}
 						: undefined,
@@ -1672,6 +1905,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						fromReport: true,
 						allowPendingOwnership: pendingOwnership.length > 0,
 						allowPendingAdminActions: pendingSymbolManagerRoles.length > 0,
+						allowPendingLiquidatorActions: (liquidatorResult?.manualActions.length || 0) > 0,
 					})
 					report.checks.health = "passed"
 					report.updatedAt = new Date().toISOString()
@@ -1768,6 +2002,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				throw error
 			} finally {
 				clearDeploymentTransactionWriteAhead()
+				process.removeListener("exit", releaseCheckpointLock)
+				releaseCheckpointLock()
 				if (bigBlocksEnabled) {
 					try {
 						logger.info("Cleaning up HyperEVM big-block mode after an interrupted deployment...")
@@ -2320,6 +2556,19 @@ async function setupSystem(
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("TRUSTED_ROLE"), config.admin), "grantRole")
 		})
 
+		await checkpointedBatch(
+			checkpoint,
+			"setup.pbTrustedOperators",
+			config.partyBOperators,
+			"Granting SymmioPartyB TRUSTED_ROLE to {item}",
+			async operator => {
+				const trustedRole = roleHash("TRUSTED_ROLE")
+				if (!(await symmioPartyB.hasRole(trustedRole, operator))) {
+					await send(symmioPartyB.connect(deployer).grantRole(trustedRole, operator), `grantRole(PartyB operator ${operator})`)
+				}
+			},
+		)
+
 		await checkpointedStep(checkpoint, "setup.pbManagerRole", "Granting MANAGER_ROLE to admin on SymmioPartyB", async () => {
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin), "grantRole")
 		})
@@ -2819,6 +3068,7 @@ function generateReport(
 			collateralAddress: config.collateralAddress,
 			deployPartyB: config.deployPartyB,
 			setAdlEnabled: config.setAdlEnabled,
+			partyBOperators: config.partyBOperators,
 			deploySymbolManager: config.deploySymbolManager,
 			symbolManagerOperator: config.symbolManagerOperator,
 			registerDummyAffiliate: config.registerDummyAffiliate,
@@ -2838,6 +3088,9 @@ function generateReport(
 			expressProviderMode: config.expressProviderMode,
 			gaslessLayerMode: config.gaslessLayerMode,
 			gaslessLayer: config.gaslessLayer,
+			liquidatorMode: activeDeploymentRecipe?.recipe.liquidator?.mode ?? "skip",
+			liquidatorAdmin: activeDeploymentRecipe?.recipe.liquidator?.admin ?? config.admin,
+			liquidatorOperators: activeDeploymentRecipe?.recipe.liquidator?.operators ?? [],
 		},
 		summary: {
 			totalDeploymentGroups: deployments.length,
@@ -2879,6 +3132,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	if (deployedContracts.expressProvider) logger.info(`ExpressProvider:      ${deployedContracts.expressProvider}`)
 	if (deployedContracts.gaslessLayer) logger.info(`GaslessLayer:         ${deployedContracts.gaslessLayer}`)
 	if (deployedContracts.gaslessLayerImplementation) logger.info(`GaslessLayer Impl:    ${deployedContracts.gaslessLayerImplementation}`)
+	if (deployedContracts.symmioLiquidator) logger.info(`SymmioLiquidator:     ${deployedContracts.symmioLiquidator}`)
 	logger.info()
 
 	logger.info("CONFIGURATION")
@@ -2890,6 +3144,7 @@ function displayReport(report: SystemDeploymentReport, deployedContracts: Deploy
 	logger.info(`Soft Penalty Collector:      ${report.config.softLiquidationPenaltyCollector}`)
 	logger.info(`Deploy PartyB:               ${report.config.deployPartyB}`)
 	logger.info(`Set ADL Enabled:             ${report.config.setAdlEnabled}`)
+	logger.info(`PartyB Operators:            ${report.config.partyBOperators.join(", ") || "(not set)"}`)
 	logger.info(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
 	logger.info(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
 	logger.info(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)

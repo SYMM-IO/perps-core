@@ -4,12 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
-import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
@@ -19,7 +19,7 @@ import { IMultiAccount } from "../../core/interfaces/IMultiAccount.sol";
 
 /// @notice Multi-account manager that deploys and manages PartyA sub-accounts for users
 contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, AccessControlUpgradeable, UUPSUpgradeable {
-	using SafeERC20Upgradeable for IERC20Upgradeable;
+	using SafeERC20 for IERC20;
 
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -57,7 +57,6 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 	function initialize(address admin, address symmioAddress_, bytes memory accountImplementation_) public initializer {
 		__Pausable_init();
 		__AccessControl_init();
-		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(PAUSER_ROLE, admin);
@@ -209,8 +208,8 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 	/// @param amount The amount of funds to deposit
 	function depositForAccount(address account, uint256 amount) external onlyOwner(account, msg.sender) whenNotPaused {
 		address collateral = ISymmio(symmioAddress).getCollateral();
-		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20Upgradeable(collateral).safeApprove(symmioAddress, amount);
+		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20(collateral).forceApprove(symmioAddress, amount);
 		ISymmio(symmioAddress).depositFor(account, amount);
 		emit DepositForAccount(msg.sender, account, amount);
 	}
@@ -220,8 +219,8 @@ contract MultiAccount is IMultiAccount, Initializable, PausableUpgradeable, Acce
 	/// @param amount The amount of funds to deposit and allocate
 	function depositAndAllocateForAccount(address account, uint256 amount) external onlyOwner(account, msg.sender) whenNotPaused {
 		address collateral = ISymmio(symmioAddress).getCollateral();
-		IERC20Upgradeable(collateral).safeTransferFrom(msg.sender, address(this), amount);
-		IERC20Upgradeable(collateral).safeApprove(symmioAddress, amount);
+		IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+		IERC20(collateral).forceApprove(symmioAddress, amount);
 		ISymmio(symmioAddress).depositFor(account, amount);
 		uint256 amountWith18Decimals = (amount * 1e18) / (10 ** IERC20Metadata(collateral).decimals());
 		bytes memory _callData = abi.encodeWithSignature("allocate(uint256)", amountWith18Decimals);

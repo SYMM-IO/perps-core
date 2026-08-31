@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import type { DeploymentRecipe } from "../../deployment/recipe.js"
+import type { DeploymentRecipe } from "../../deployment-tooling/recipe.js"
 import { deploymentConfigFromSource, resolveDeploymentProtocolConfig } from "../../tasks/deploy/deployAll.js"
 import { DEFAULT_PROTOCOL_CONFIG } from "../../tasks/deploy/protocolConfig.js"
 import { assertExpectedRecipeDigest } from "../../tasks/deploy/recipeRuntime.js"
@@ -9,7 +9,7 @@ function recipe(): DeploymentRecipe {
 	return {
 		name: "task-mapping-test",
 		core: { protocol: structuredClone(DEFAULT_PROTOCOL_CONFIG) },
-		partyB: { mode: "deploy" },
+		partyB: { mode: "deploy", operators: ["0x7000000000000000000000000000000000000007"] },
 		symbolManager: { mode: "skip" },
 		expressProvider: { mode: "skip" },
 		gaslessLayer: { mode: "skip" },
@@ -41,6 +41,7 @@ describe("deploy:system recipe mapping", function () {
 					DEPLOY_PARTYB: "true",
 					SET_ADL_ENABLED: "true",
 					PARTYB_SIGNER: "0x6000000000000000000000000000000000000006",
+					PARTYB_OPERATORS: "0x7000000000000000000000000000000000000007",
 					DEPLOY_SYMBOL_MANAGER: "false",
 					REGISTER_DUMMY_AFFILIATE: "false",
 					SETUP_INSTANT_LAYER_TEMPLATES: "true",
@@ -54,6 +55,7 @@ describe("deploy:system recipe mapping", function () {
 			expect(config.admin).to.equal("0x1000000000000000000000000000000000000001")
 			expect(config.adminWasExplicit).to.equal(true)
 			expect(config.deployPartyB).to.equal(true)
+			expect(config.partyBOperators).to.deep.equal(["0x7000000000000000000000000000000000000007"])
 			expect(config.partyBMode).to.equal("deploy")
 			expect(config.deploySymbolManager).to.equal(false)
 			expect(config.symbolManagerMode).to.equal("skip")

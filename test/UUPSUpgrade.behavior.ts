@@ -49,7 +49,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await feeDistributor.connect(admin).upgradeTo(await newImpl.getAddress())
+				await feeDistributor.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				const implAfter = await getImplementation(proxyAddr)
 				expect(implAfter).to.not.equal(implBefore)
@@ -61,7 +61,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await expect(feeDistributor.connect(nonAdmin).upgradeTo(await newImpl.getAddress())).to.be.reverted
+				await expect(feeDistributor.connect(nonAdmin).upgradeToAndCall(await newImpl.getAddress(), "0x")).to.be.reverted
 			})
 
 			it("state persists after upgrade", async function () {
@@ -70,7 +70,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const NewFactory = await ethers.getContractFactory("SymmioFeeDistributor")
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
-				await feeDistributor.connect(admin).upgradeTo(await newImpl.getAddress())
+				await feeDistributor.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				expect(await feeDistributor.symmioAddress()).to.equal(symmioAddr)
 			})
@@ -93,7 +93,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await multiAccount.connect(admin).upgradeTo(await newImpl.getAddress())
+				await multiAccount.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				const implAfter = await getImplementation(proxyAddr)
 				expect(implAfter).to.not.equal(implBefore)
@@ -105,7 +105,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await expect(multiAccount.connect(nonAdmin).upgradeTo(await newImpl.getAddress())).to.be.reverted
+				await expect(multiAccount.connect(nonAdmin).upgradeToAndCall(await newImpl.getAddress(), "0x")).to.be.reverted
 			})
 
 			it("state persists after upgrade", async function () {
@@ -114,7 +114,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const NewFactory = await ethers.getContractFactory("MultiAccount")
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
-				await multiAccount.connect(admin).upgradeTo(await newImpl.getAddress())
+				await multiAccount.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				expect(await multiAccount.saltCounter()).to.equal(saltBefore)
 			})
@@ -136,7 +136,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await symmioPartyB.connect(admin).upgradeTo(await newImpl.getAddress())
+				await symmioPartyB.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				const implAfter = await getImplementation(proxyAddr)
 				expect(implAfter).to.not.equal(implBefore)
@@ -148,7 +148,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await expect(symmioPartyB.connect(nonAdmin).upgradeTo(await newImpl.getAddress())).to.be.reverted
+				await expect(symmioPartyB.connect(nonAdmin).upgradeToAndCall(await newImpl.getAddress(), "0x")).to.be.reverted
 			})
 
 			it("state persists after upgrade", async function () {
@@ -157,7 +157,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const NewFactory = await ethers.getContractFactory("SymmioPartyB")
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
-				await symmioPartyB.connect(admin).upgradeTo(await newImpl.getAddress())
+				await symmioPartyB.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				expect(await symmioPartyB.symmioAddress()).to.equal(symmioAddr)
 			})
@@ -179,7 +179,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await relayer.connect(admin).upgradeTo(await newImpl.getAddress())
+				await relayer.connect(admin).upgradeToAndCall(await newImpl.getAddress(), "0x")
 
 				const implAfter = await getImplementation(proxyAddr)
 				expect(implAfter).to.not.equal(implBefore)
@@ -191,7 +191,7 @@ export function shouldBehaveLikeUUPSUpgradeable() {
 				const newImpl = await NewFactory.deploy()
 				await newImpl.waitForDeployment()
 
-				await expect(relayer.connect(nonAdmin).upgradeTo(await newImpl.getAddress())).to.be.reverted
+				await expect(relayer.connect(nonAdmin).upgradeToAndCall(await newImpl.getAddress(), "0x")).to.be.reverted
 			})
 		})
 	})

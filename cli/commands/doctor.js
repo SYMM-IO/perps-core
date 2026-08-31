@@ -66,6 +66,25 @@ function isNonZeroAddress(value) {
 	return isAddress(value) && value.toLowerCase() !== ZERO_ADDRESS;
 }
 
+function runtimeAddressList(value) {
+	return String(value || "")
+		.split(",")
+		.map(entry => entry.trim())
+		.filter(Boolean);
+}
+
+function partyBOperatorProblems(value) {
+	const operators = runtimeAddressList(value);
+	if (operators.length === 0) return [["PARTYB_OPERATORS is required when DEPLOY_PARTYB=true", "set at least one PartyB TRUSTED_ROLE operator"]];
+	if (operators.some(operator => !isNonZeroAddress(operator))) {
+		return [["PARTYB_OPERATORS contains an invalid or zero address", value]];
+	}
+	if (new Set(operators.map(operator => operator.toLowerCase())).size !== operators.length) {
+		return [["PARTYB_OPERATORS contains duplicate addresses", "remove duplicate PartyB operators"]];
+	}
+	return [];
+}
+
 export function isMainnetAdminDeployer(admin, deployerAddress, mainnet) {
 	return Boolean(mainnet && admin && deployerAddress && admin.toLowerCase() === deployerAddress.toLowerCase());
 }
@@ -75,10 +94,12 @@ export function deploymentComponentProblems(env) {
 	const deploySymbolManager = enabledByDefault(env, "DEPLOY_SYMBOL_MANAGER", true);
 	const problems = [];
 	if (deployPartyB) {
-		if (!env.PARTYB_SIGNER) problems.push(["PARTYB_SIGNER is required when DEPLOY_PARTYB=true", "set the production ERC-1271 signer address"]);
-		else if (!isNonZeroAddress(env.PARTYB_SIGNER)) problems.push(["PARTYB_SIGNER is not a valid non-zero address", env.PARTYB_SIGNER]);
+		if (env.PARTYB_SIGNER && !isNonZeroAddress(env.PARTYB_SIGNER))
+			problems.push(["PARTYB_SIGNER is not a valid non-zero address", env.PARTYB_SIGNER]);
+		problems.push(...partyBOperatorProblems(env.PARTYB_OPERATORS));
 	} else {
 		if (env.PARTYB_SIGNER) problems.push(["PARTYB_SIGNER is set while DEPLOY_PARTYB=false", "remove it or enable PartyB"]);
+		if (env.PARTYB_OPERATORS) problems.push(["PARTYB_OPERATORS is set while DEPLOY_PARTYB=false", "remove it or enable PartyB"]);
 		if (env.SET_ADL_ENABLED === "true")
 			problems.push(["SET_ADL_ENABLED=true while DEPLOY_PARTYB=false", "ADL configuration has no PartyB target"]);
 	}
@@ -179,8 +200,9 @@ export function deploymentComponentProblemsForSelection(env, only) {
 	if (!only) return deploymentComponentProblems(env);
 	const problems = [];
 	if (only === "partyB") {
-		if (!env.PARTYB_SIGNER) problems.push(["PARTYB_SIGNER is required when DEPLOY_PARTYB=true", "set the production ERC-1271 signer address"]);
-		else if (!isNonZeroAddress(env.PARTYB_SIGNER)) problems.push(["PARTYB_SIGNER is not a valid non-zero address", env.PARTYB_SIGNER]);
+		if (env.PARTYB_SIGNER && !isNonZeroAddress(env.PARTYB_SIGNER))
+			problems.push(["PARTYB_SIGNER is not a valid non-zero address", env.PARTYB_SIGNER]);
+		problems.push(...partyBOperatorProblems(env.PARTYB_OPERATORS));
 		return { deployPartyB: true, deploySymbolManager: false, problems };
 	}
 	if (only === "symbolManager") {
@@ -608,6 +630,9 @@ export async function doctor(args, runtime = {}) {
 	const deployPartyB = componentConfig.deployPartyB;
 	if (deployPartyB) {
 		if (isNonZeroAddress(env.PARTYB_SIGNER)) r.ok("PartyB signer configured", env.PARTYB_SIGNER);
+		else r.info("PartyB signer not configured", "ERC-1271 signatures remain disabled until governance sets one");
+		const partyBOperators = runtimeAddressList(env.PARTYB_OPERATORS);
+		if (partyBOperators.length > 0) r.ok(`PartyB TRUSTED_ROLE operators configured (${partyBOperators.length})`, partyBOperators.join(", "));
 	} else {
 		r.info("PartyB deployment disabled");
 	}

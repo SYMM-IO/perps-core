@@ -68,11 +68,11 @@ test("recipe verification is authoritative and can only be further disabled off 
 });
 
 test("recipe deployments pass an absolute recipe path and disable dotenv loading", () => {
-	const recipeContext = { path: "/repo/deployments/arbitrum.json", digest: "recipe-digest" };
+	const recipeContext = { path: "/repo/deployment-recipes/arbitrum.json", digest: "recipe-digest" };
 	assert.deepEqual(deploymentBuildInvocation(recipeContext), {
 		args: ["--build-profile", "production", "build"],
 		env: {
-			SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployments/arbitrum.json",
+			SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployment-recipes/arbitrum.json",
 			SYMMIO_DEPLOYMENT_RECIPE_DIGEST: "recipe-digest",
 			DOTENV_CONFIG_PATH: "/dev/null",
 			SYMMIO_RECIPE_READ_ONLY: "true",
@@ -91,7 +91,7 @@ test("recipe deployments pass an absolute recipe path and disable dotenv loading
 			args: [
 				"deploy:component",
 				"--recipe",
-				"/repo/deployments/arbitrum.json",
+				"/repo/deployment-recipes/arbitrum.json",
 				"--component",
 				"partyB",
 				"--fresh",
@@ -103,7 +103,7 @@ test("recipe deployments pass an absolute recipe path and disable dotenv loading
 			],
 			env: {
 				DEPLOY_LOG_LEVEL: "minimal",
-				SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployments/arbitrum.json",
+				SYMMIO_DEPLOYMENT_RECIPE: "/repo/deployment-recipes/arbitrum.json",
 				SYMMIO_DEPLOYMENT_RECIPE_DIGEST: "recipe-digest",
 				DOTENV_CONFIG_PATH: "/dev/null",
 			},
@@ -157,18 +157,19 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 		chainId: 42161,
 		recipeName: "add-partyb",
 		recipeDigest: "abc123",
-		recipePath: "/repo/deployments/add-partyb.json",
+		recipePath: "/repo/deployment-recipes/add-partyb.json",
 		live: true,
 		config: {
 			admin: "0x4000000000000000000000000000000000000004",
 			signer: "0x5000000000000000000000000000000000000005",
+			operators: ["0x6000000000000000000000000000000000000006"],
 			adlEnabled: true,
 		},
 	};
 	const report = {
 		schemaVersion: 1,
 		deploymentId: "component-1",
-		recipe: { name: "add-partyb", digest: "abc123", path: "/repo/deployments/add-partyb.json" },
+		recipe: { name: "add-partyb", digest: "abc123", path: "/repo/deployment-recipes/add-partyb.json" },
 		component: "partyB",
 		network: "arbitrum",
 		chainId: 42161,
@@ -179,6 +180,7 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 		config: {
 			admin: "0x4000000000000000000000000000000000000004",
 			signer: "0x5000000000000000000000000000000000000005",
+			operators: ["0x6000000000000000000000000000000000000006"],
 			adlEnabled: true,
 		},
 		verification: {
@@ -209,7 +211,7 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 	};
 	assert.equal(validateComponentReport(report, expected), report);
 	assert.equal(
-		validateComponentReport({ ...report, recipe: { ...report.recipe, path: "deployments/add-partyb.json" } }, expected).deploymentId,
+		validateComponentReport({ ...report, recipe: { ...report.recipe, path: "deployment-recipes/add-partyb.json" } }, expected).deploymentId,
 		"component-1",
 	);
 	assert.throws(() => validateComponentReport({ ...report, lifecycle: "validating" }, expected), /successful lifecycle/);
@@ -222,6 +224,17 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 	assert.throws(
 		() => validateComponentReport({ ...report, config: { ...report.config, signer: "0x6000000000000000000000000000000000000006" } }, expected),
 		/config.signer/,
+	);
+	const { signer: _expectedSigner, ...expectedConfigWithoutSigner } = expected.config;
+	const { signer: _reportSigner, ...reportConfigWithoutSigner } = report.config;
+	const expectedWithoutSigner = { ...expected, config: expectedConfigWithoutSigner };
+	const reportWithoutSigner = { ...report, config: reportConfigWithoutSigner };
+	assert.equal(validateComponentReport(reportWithoutSigner, expectedWithoutSigner), reportWithoutSigner);
+	assert.throws(() => validateComponentReport(report, expectedWithoutSigner), /config.signer/);
+	assert.throws(
+		() =>
+			validateComponentReport({ ...report, config: { ...report.config, operators: ["0x7000000000000000000000000000000000000007"] } }, expected),
+		/config.operators/,
 	);
 	assert.throws(
 		() => validateComponentReport({ ...report, verification: { ...report.verification, records: [] } }, expected),
@@ -398,7 +411,7 @@ test("deployment handoff requires both diamonds and the real SymbolManager addre
 	);
 
 	const recipeContext = {
-		path: "/repo/deployments/release.json",
+		path: "/repo/deployment-recipes/release.json",
 		digest: "digest-1",
 		recipe: {
 			name: "release",
@@ -413,7 +426,7 @@ test("deployment handoff requires both diamonds and the real SymbolManager addre
 		...report,
 		recipe: {
 			name: "release",
-			path: "/repo/deployments/release.json",
+			path: "/repo/deployment-recipes/release.json",
 			digest: "digest-1",
 			components: { core: "deploy", partyB: "deploy", symbolManager: "deploy", expressProvider: "skip", gaslessLayer: "skip" },
 		},

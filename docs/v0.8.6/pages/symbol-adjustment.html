@@ -40,9 +40,15 @@
 
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#orientation">Start here</a>
 				<a class="toc-link level-2" href="#problem">The unit-basis problem</a>
 				<a class="toc-link level-2" href="#vocabulary">Basis and factor vocabulary</a>
+				<a class="toc-link level-3" href="#two-bases">Two ways to say &ldquo;one unit&rdquo;</a>
+				<a class="toc-link level-3" href="#three-factors">Three factors, three questions</a>
+				<a class="toc-link level-3" href="#compounding">How factors compound</a>
+				<a class="toc-link level-3" href="#freeze-meaning">Freeze is computed, not stored</a>
 				<a class="toc-link level-2" href="#example">One split, two route outcomes</a>
+				<a class="toc-link level-3" href="#route-comparison">What each route leaves you with</a>
 				<a class="toc-link level-2" href="#lifecycle">What happens after scheduling</a>
 				<a class="toc-link level-3" href="#active-route">Adjusted-price route without quote rewrites</a>
 				<a class="toc-link level-3" href="#physical-route">Physical route with quote restatement</a>
@@ -77,6 +83,75 @@
 				</header>
 
 				<article class="doc-article" id="full-document">
+					<h2 id="orientation">Start here</h2>
+					<p>
+						A venue sometimes changes how many units a symbol trades in. A 4:1 split turns one unit into four, a 1:10 reverse split turns
+						ten into one, and a rebase moves the count some other way. The position is worth exactly what it was worth a second earlier.
+						What changed is the vocabulary: every quantity and price Core has in storage is now written in the old units, while the venue
+						feed has started speaking the new ones. This page is about never letting those two vocabularies mix.
+					</p>
+					<p>Core gives Operations two ways to handle that, and most of this page is the detail of each:</p>
+					<ul>
+						<li>
+							<strong>Translate.</strong> Leave stored quotes alone and have every incoming venue price multiplied by a stored
+							<em>factor</em> so it lands back in the old units. One transaction, trading resumes immediately, and in exchange every
+							integration must keep translating for as long as that factor is active. This is the <strong>adjusted-price route</strong>.
+						</li>
+						<li>
+							<strong>Rewrite.</strong> Freeze trading on the symbol and convert the stored quotes themselves into the new units, then
+							resume with no translation anywhere. Correct at rest, at the cost of a real maintenance window. This is the
+							<strong>physical route</strong>.
+						</li>
+					</ul>
+					<p>
+						Scheduling an adjustment does not commit to either one. Operations picks the route after the venue outcome is known, and can
+						take the adjusted-price route first and the physical route later.
+					</p>
+					<h3>Who does what</h3>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Name</th>
+									<th>Role on this page</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Muon</td>
+									<td>
+										The off-chain oracle and signature service. It supplies prices and UPNL values, and it decides which unit
+										basis those values are expressed in. Core verifies the signature, never the basis.
+									</td>
+								</tr>
+								<tr>
+									<td>PartyA</td>
+									<td>The trader.</td>
+								</tr>
+								<tr>
+									<td>PartyB</td>
+									<td>
+										The solver or hedger on the other side. It owns its quotes: during a window it can rewrite its own, and it is
+										the only caller at all for emergency-closing them.
+									</td>
+								</tr>
+								<tr>
+									<td>Symbol manager</td>
+									<td>
+										An address holding <code>SYMBOL_MANAGER_ROLE</code>. Every lifecycle call here is manager-only unless noted.
+									</td>
+								</tr>
+								<tr>
+									<td>Operations</td>
+									<td>
+										This page's word for the people and systems coordinating that role, Muon's timing, and the off-chain book and
+										inventory checks. Core enforces none of this coordination.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
 					<h2 id="problem">The unit-basis problem</h2>
 					<p>
 						A unit-changing venue event changes quantity and price together. A 4:1 split turns one old unit into four new units, while the
@@ -87,92 +162,130 @@
 						<code>400</code>, comparing it with the venue's new-unit price of <code>100</code> produces a false loss. The same mismatch
 						would affect notional, funding per unit, liquidation prices, and any signature that carries a price or UPNL.
 					</p>
-					<p>Core maintains one invariant:</p>
-					<pre><code class="language-text">Every quantity and every price or per-unit rate used with it must use the same unit basis.</code></pre>
+					<aside class="callout callout-invariant">
+						<strong>The one invariant.</strong>
+						Every quantity and every price or per-unit rate used with it must use the same unit basis. Both routes exist only to keep that
+						true; everything else on this page is a consequence of it.
+					</aside>
 					<p>
-						Two routes maintain that invariant. On the adjusted-price route, Core leaves quote storage alone and only stores and exposes
-						the factor. Muon and PartyB integrations must convert external prices and funding inputs back to the stored quote basis. On
-						the physical route, Core freezes execution and converts eligible quote storage to the venue's new basis. The mechanism covers
-						splits, reverse splits, and quantity rebases. It does not model cash dividends, spin-offs, mergers, ticker migrations, or
-						normal price moves.
+						The two routes keep the invariant in opposite ways. On the adjusted-price route, Core leaves quote storage alone and only
+						stores and exposes the factor, so Muon and PartyB integrations carry the burden of converting external prices and funding
+						inputs back to the stored quote basis. On the physical route, Core freezes execution and converts eligible quote storage to
+						the venue's new basis, after which nobody converts anything.
+					</p>
+					<p>
+						The mechanism covers splits, reverse splits, and quantity rebases. It does not model cash dividends, spin-offs, mergers,
+						ticker migrations, or normal price moves.
 					</p>
 
 					<h2 id="vocabulary">Basis and factor vocabulary</h2>
+
+					<h3 id="two-bases">Two ways to say &ldquo;one unit&rdquo;</h3>
 					<p>
 						The venue feed reports a price in the units currently traded by the venue. This page calls that the <em>raw venue basis</em>.
 						A quote's fields use the units currently held in Core storage. This is the <em>stored quote basis</em>. They are the same
 						before an adjustment and after a complete physical restatement. They differ while an adjustment factor is active.
 					</p>
+
+					<h3 id="three-factors">Three factors, three questions</h3>
+					<p>
+						A <code>factor</code> is one venue event written as new units per old unit, scaled by <code>1e18</code>. A 4:1 split is
+						<code>4e18</code>; a 1:10 reverse split is <code>0.1e18</code>. Core stores the latest step it was told about, and the range
+						it accepts is <code>[1e16, 100e18]</code> excluding <code>1e18</code> itself.
+					</p>
+					<p>
+						Three different numbers are built from those steps, and they are easy to confuse because in the simple case they are all the
+						same. They differ only in <em>which events they include</em>, and each one answers its own question:
+					</p>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Term</th>
-									<th>Meaning</th>
+									<th>The question</th>
+									<th>The number</th>
+									<th>What it includes</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td><code>factor</code></td>
+									<td>What must external prices multiply by right now?</td>
+									<td>Active factor &mdash; <code>getCumulativeFactor</code></td>
 									<td>
-										The latest scheduled new-units-per-old-unit multiplier, scaled by <code>1e18</code>. A 4:1 split is
-										<code>4e18</code>; a 1:10 reverse split is <code>0.1e18</code>.
+										Every confirmed event that quote storage has not absorbed. Raw zero in storage means unset, and this view
+										reports it as <code>1e18</code>.
 									</td>
 								</tr>
 								<tr>
-									<td>Active factor</td>
+									<td>What would they multiply by once the pending step is confirmed?</td>
+									<td>Prospective factor &mdash; <code>getProspectiveCumulativeFactor</code></td>
 									<td>
-										<code>getCumulativeFactor</code>. It is the product of confirmed factors that external prices must apply
-										because quote storage has not absorbed them. Raw zero storage means unset and this view returns
-										<code>1e18</code>.
+										The active factor compounded with the <code>SCHEDULED</code> step, while one is in flight. With no step in
+										flight it equals the active factor.
 									</td>
 								</tr>
 								<tr>
-									<td>Prospective factor</td>
-									<td>
-										<code>getProspectiveCumulativeFactor</code>. While a step is <code>SCHEDULED</code>, it is the active factor
-										compounded with the scheduled <code>factor</code>. Otherwise it equals the active factor.
-									</td>
-								</tr>
-								<tr>
+									<td>What is this restatement window converting storage by?</td>
 									<td><code>restatementFactor</code></td>
 									<td>
-										The factor selected when a physical restatement window opens. Direct restatement selects the prospective
-										factor. A later restatement selects the active factor.
-									</td>
-								</tr>
-								<tr>
-									<td>Freeze</td>
-									<td>
-										A computed condition, not a lifecycle state. The symbol is frozen while <code>restating</code> is true, or
-										while state is <code>SCHEDULED</code> and <code>block.timestamp &gt;= effectiveTimestamp</code>.
-									</td>
-								</tr>
-								<tr>
-									<td>Physical restatement</td>
-									<td>
-										A maintenance window in which eligible stored quotes are rewritten to the raw venue basis, current funding
-										rates are paused and rebased, and <code>basisVersion</code> advances on finalization.
+										Fixed when <code>startRestatement</code> runs. A direct restatement selects the prospective factor; a
+										restatement opened later selects the active factor.
 									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<p>Factors compound with floor rounding:</p>
-					<pre><code class="language-text">prospectiveFactor = floor(activeFactor * scheduledFactor / 1e18)</code></pre>
 					<p>
-						For example, a confirmed <code>2e18</code> factor followed by a scheduled <code>3e18</code> step gives a prospective factor of
-						<code>6e18</code>. Direct restatement uses <code>6e18</code> while the active factor remains <code>2e18</code>. Confirmation
-						would instead make <code>6e18</code> active. Scheduling does not calculate the prospective product. It can therefore accept a
-						step whose product later floors to zero or whose quotient exceeds <code>uint256</code>. The prospective getter reports zero,
-						but it reverts on overflow. Confirmation, direct start, and preview reject zero and also propagate an overflow revert. Tests
-						reach one wei after nine successive <code>0.01x</code> confirmations, schedule the tenth step, and reject its confirmation.
+						A worked sequence makes the difference concrete. A 2:1 split has already been confirmed, and a 3:1 split has just been
+						scheduled:
+					</p>
+					<pre><code class="language-text">active factor      = 2e18   external prices multiply by 2 today
+scheduled step     = 3e18   known, but not yet in effect for anyone
+prospective factor = 6e18   floor(2e18 * 3e18 / 1e18)
+
+then, depending on what Operations does next:
+  confirmPriceAdjusted  ->  6e18 becomes the active factor; storage untouched
+  startRestatement      ->  restatementFactor = 6e18; the active factor stays 2e18
+  cancelAdjustment      ->  the 3:1 step is dropped; the active factor stays 2e18</code></pre>
+					<p>
+						Note the third line of that outcome list: cancelling a step never reaches back and undoes an earlier confirmed one. An active
+						factor survives scheduling, cancellation, and everything else until a physical restatement absorbs it into storage.
 					</p>
 
+					<h3 id="compounding">How factors compound</h3>
+					<pre><code class="language-text">prospectiveFactor = floor(activeFactor * scheduledFactor / 1e18)</code></pre>
 					<p>
-						Muon is the off-chain oracle and signature service. PartyA is the trader, and PartyB is the solver or hedger. An address with
-						<code>SYMBOL_MANAGER_ROLE</code> makes the lifecycle calls. This page uses <em>Operations</em> for the people and systems
-						coordinating that role, Muon, and the off-chain inventory checks.
+						Flooring is deliberate and it is the source of most of the edge cases further down the page: a confirmed
+						<code>2e18</code> factor followed by a scheduled <code>3e18</code> step gives exactly <code>6e18</code>, but repeated reverse
+						splits grind the product downward one truncation at a time.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Scheduling never computes the product.</strong>
+						<code>scheduleAdjustment</code> range-checks the single step in isolation, so it can accept one whose product with the active
+						factor later floors to zero or exceeds <code>uint256</code>. The prospective getter reports zero in the first case and reverts
+						in the second. Confirmation, direct start, and preview all reject a zero product and propagate the overflow revert &mdash;
+						which means the failure surfaces after the symbol has already frozen. Tests reach a prospective factor of one wei after nine
+						successive <code>0.01x</code> confirmations, schedule a tenth step, and are then unable to confirm it. Compute the intended
+						product yourself before scheduling.
+					</aside>
+
+					<h3 id="freeze-meaning">Freeze is computed, not stored</h3>
+					<p>
+						There is no <code>FROZEN</code> lifecycle state and no keeper transaction that sets one. Core evaluates a predicate on every
+						affected call:
+					</p>
+					<pre><code class="language-text">frozen = restating || (state == SCHEDULED && block.timestamp &gt;= effectiveTimestamp)</code></pre>
+					<p>
+						So a symbol freezes by itself the moment its effective time arrives, with nobody sending a transaction, and it unfreezes only
+						when something makes the predicate false: confirmation, cancellation, or finalizing a restatement window. Note that aborting a
+						window is not on that list &mdash; an abort clears <code>restating</code>, but on the direct route the state is still an
+						effective <code>SCHEDULED</code>, so the symbol stays frozen. <code>isSymbolFrozen(symbolId)</code> evaluates the predicate
+						live. A freeze is also not a symbol-wide pause &mdash; it blocks <a href="#boundaries">a specific list of paths</a>, and
+						several quote mutations stay callable throughout.
+					</p>
+					<p>
+						One more term before the routes. <em>Physical restatement</em> is the name of the maintenance window itself: eligible stored
+						quotes are rewritten to the raw venue basis, current funding rates are paused and later rebased, and <code>basisVersion</code>
+						advances when the window finalizes.
 					</p>
 
 					<h2 id="example">One split, two route outcomes</h2>
@@ -199,6 +312,73 @@ funding amount = 1 * 8 = 8</code></pre>
 						as <code>8 / 4 = 2</code> per new unit. The products remain <code>4 * 100 = 400</code> notional and
 						<code>4 * 2 = 8</code> funding. After finalization, Muon can use the raw <code>100</code> price without conversion.
 					</p>
+					<h3 id="route-comparison">What each route leaves you with</h3>
+					<div class="table-wrap">
+						<table class="comparison-table">
+							<colgroup>
+								<col />
+								<col />
+								<col />
+							</colgroup>
+							<thead>
+								<tr>
+									<th></th>
+									<th>Adjusted-price route</th>
+									<th>Physical route</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Stored quote fields</td>
+									<td>Untouched. Still on the old unit basis.</td>
+									<td>Rewritten in batches to the venue's new unit basis.</td>
+								</tr>
+								<tr>
+									<td>What Muon publishes</td>
+									<td>Raw venue price multiplied by the factor, for as long as that factor stays active.</td>
+									<td>Raw venue prices again, once the window has finalized.</td>
+								</tr>
+								<tr>
+									<td>PartyB <code>marketPrices</code></td>
+									<td>Old-unit adjusted. Core neither converts nor validates this input.</td>
+									<td>Raw venue units after finalization.</td>
+								</tr>
+								<tr>
+									<td>Funding rates</td>
+									<td>Untouched, still per old unit.</td>
+									<td>Paused per PartyB during the window, then divided by <code>restatementFactor</code> at finalization.</td>
+								</tr>
+								<tr>
+									<td>Trading</td>
+									<td>Resumes the moment <code>confirmPriceAdjusted</code> lands.</td>
+									<td>Suspended for the whole window, which spans several transactions and phases.</td>
+								</tr>
+								<tr>
+									<td>Cost to run</td>
+									<td>One manager transaction, after off-chain verification that the feed basis really did change.</td>
+									<td>
+										A multi-phase operation: PartyB preparation, dust cleanup, rewrite batches, a signature-expiry wait,
+										finalization, and funding restoration.
+									</td>
+								</tr>
+								<tr>
+									<td>What you owe afterwards</td>
+									<td>Every integration must keep translating until a restatement absorbs the factor.</td>
+									<td>Nothing. <code>basisVersion</code> advances and conversion disappears from the system.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The panel below runs the same arithmetic Core does, on numbers you choose. It is the quickest way to check a specific quote
+						against the conversion rules described later in <a href="#rewrite-conversion">Conversion arithmetic and fields</a>.
+					</p>
+					<section
+						class="tool-panel"
+						id="conversion-calculator"
+						data-symbol-adjustment-tool
+						aria-label="Factor and quote conversion calculator"
+					></section>
 
 					<h2 id="lifecycle">What happens after scheduling</h2>
 					<p>
@@ -485,14 +665,24 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 					</p>
 
 					<h3 id="physical-route">Physical route with quote restatement</h3>
+					<p>There are two moments a physical restatement can begin, and they differ only in which factor the window locks in:</p>
+					<ul>
+						<li>
+							<strong>Directly</strong>, from an effective <code>SCHEDULED</code> step. The window selects the prospective factor, but
+							does not activate it in <code>cumulativeFactor</code> &mdash; storage absorbs it instead.
+						</li>
+						<li><strong>Later</strong>, while a non-1x active factor exists. The window selects that active factor.</li>
+					</ul>
 					<p>
-						Physical restatement can start directly from an effective <code>SCHEDULED</code> step or later while a non-1x active factor
-						exists. The direct route selects the prospective factor but does not activate it in <code>cumulativeFactor</code>. The later
-						route selects the active factor. In both cases, <code>startRestatement</code> increments <code>restatementEpoch</code>, sets
-						<code>restating</code>, saves <code>restatementFactor</code>, and records one funding cutoff. It does not scan the PartyB
-						registry. It always opens <code>FUNDING_PREPARATION</code>. Operations supplies every involved PartyB in bounded batches so
-						Core can snapshot open-position totals and, when accumulated funding is active, checkpoint funding rates. Operations then
-						seals the submitted manifest before quote processing becomes available.
+						Either way, <code>startRestatement</code> does the same small amount of work: it increments <code>restatementEpoch</code>,
+						sets <code>restating</code>, saves <code>restatementFactor</code>, and records one funding cutoff. It is worth being explicit
+						about what it does <em>not</em> do, because this is a common wrong assumption: it never scans the PartyB registry and never
+						snapshots anything on its own.
+					</p>
+					<p>
+						It always opens <code>FUNDING_PREPARATION</code> instead, and waits. Operations supplies every involved PartyB in bounded
+						batches so Core can snapshot open-position totals and, when accumulated funding is active, checkpoint funding rates.
+						Operations then seals the submitted manifest, and only then does quote processing become available.
 					</p>
 					<p>
 						<code>startRestatement</code> can also be called from <code>CANCELLED</code> when an older non-1x factor is still active. For
@@ -683,28 +873,54 @@ else:
 						effects, not part of the nine-field unit conversion.
 					</p>
 					<p>
-						A reverse split can make a very small raw amount disappear when multiplication is rounded down. The examples below use a
-						<code>0.01x</code> factor. The numbers are raw 18-decimal amount integers, so one unit in these examples means one amount wei.
+						A reverse split can make a very small raw amount disappear when multiplication is rounded down, and Core would rather refuse
+						the conversion than silently erase a field. Four checks guard that. The examples below all use a <code>0.01x</code> factor,
+						and the numbers are raw 18-decimal amount integers, so one unit here means one amount wei.
 					</p>
-					<ul>
-						<li>
-							<strong>The entire position would disappear.</strong> A quantity of <code>99</code> becomes
-							<code>floor(99 * 0.01) = 0</code>. Core rejects the conversion instead of storing a zero-quantity position.
-						</li>
-						<li>
-							<strong>Recorded closed quantity would disappear.</strong> A nonzero <code>closedAmount</code> of <code>1</code> becomes
-							<code>floor(1 * 0.01) = 0</code>. Core rejects the conversion instead of erasing the closed history.
-						</li>
-						<li>
-							<strong>The remaining open quantity would disappear.</strong> A quote with <code>quantity = 101</code> and
-							<code>closedAmount = 100</code> has one amount wei still open. After conversion, both values become <code>1</code>,
-							leaving no open amount. Core requires the new quantity to remain greater than the new closed amount.
-						</li>
-						<li>
-							<strong>A pending close request would disappear.</strong> A nonzero <code>quantityToClose</code> of <code>1</code> becomes
-							<code>0</code>. Core rejects the conversion instead of retaining a close request for zero quantity.
-						</li>
-					</ul>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>What would disappear</th>
+									<th>Example at <code>0.01x</code></th>
+									<th>The rule Core enforces</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>The entire position</td>
+									<td><code>quantity = 99</code> &rarr; <code>floor(99 * 0.01) = 0</code></td>
+									<td>The converted quantity must be greater than zero. Core will not store a zero-quantity position.</td>
+								</tr>
+								<tr>
+									<td>Recorded closed quantity</td>
+									<td><code>closedAmount = 1</code> &rarr; <code>floor(1 * 0.01) = 0</code></td>
+									<td>A nonzero <code>closedAmount</code> must stay nonzero, so the closed history is not erased.</td>
+								</tr>
+								<tr>
+									<td>The remaining open quantity</td>
+									<td>
+										<code>quantity = 101</code> and <code>closedAmount = 100</code>, one amount wei still open, both convert to
+										<code>1</code>
+									</td>
+									<td>The converted quantity must stay strictly greater than the converted closed amount.</td>
+								</tr>
+								<tr>
+									<td>A pending close request</td>
+									<td><code>quantityToClose = 1</code> &rarr; <code>0</code></td>
+									<td>
+										A nonzero <code>quantityToClose</code> must stay nonzero. Core will not keep a close request for zero
+										quantity.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						A quote that trips any of these is <em>unrestatable</em>. It cannot be rewritten, so it has to leave the book another way,
+						which is what the dust exception below is for. The <a href="#conversion-calculator">calculator above</a> reports which of the
+						four rules a given quote trips.
+					</p>
 					<aside class="callout callout-risk">
 						<strong>PartyB closes an unrestatable quote; Operations does not wait for PartyA.</strong>
 						<p>
@@ -819,14 +1035,26 @@ dust            = 30 - 28 = 2</code></pre>
 							</tbody>
 						</table>
 					</div>
-					<p>
-						During the gap after a scheduled adjustment becomes effective but before confirmation or <code>startRestatement</code>, no
-						window is open and these views still apply only the active factor. They ignore the scheduled prospective factor. Their result
-						is therefore not normalized to the post-event venue basis during this gap. To normalize it, convert raw
-						<code>getQuote</code> storage once with <code>getProspectiveCumulativeFactor</code>. Do not apply the full prospective factor
-						to a venue-unit view that already includes an older active factor. Otherwise, suppress affected output until Operations
-						confirms a route transition.
-					</p>
+					<aside class="callout callout-risk">
+						<strong>The venue-unit views have one blind spot.</strong>
+						<p>
+							Between the moment a scheduled adjustment becomes effective and the moment Operations either confirms it or opens a
+							window, no window is open. The views fall back to the active factor and ignore the scheduled step entirely, so their
+							output during that gap is not on the post-event venue basis.
+						</p>
+						<p>Two responses are safe, and the obvious third one is not:</p>
+						<ul>
+							<li>
+								<strong>Safe.</strong> Read raw <code>getQuote</code> storage and convert it once with
+								<code>getProspectiveCumulativeFactor</code>.
+							</li>
+							<li><strong>Safe.</strong> Suppress the affected output until Operations confirms a route transition.</li>
+							<li>
+								<strong>Wrong.</strong> Multiplying the venue-unit view by the full prospective factor. That view has already applied
+								the older active factor, so the older step would be counted twice.
+							</li>
+						</ul>
+					</aside>
 					<p>
 						The views do not filter by quote status. When the selected factor is not <code>1e18</code>, they use the same conversion and
 						underflow checks as preview. A fully closed quote reverts because its converted quantity is not greater than its converted
@@ -841,12 +1069,15 @@ dust            = 30 - 28 = 2</code></pre>
 
 					<h2 id="funding">Funding across the window</h2>
 					<p>
-						A physical restatement changes quote quantities. Current funding rates are per-unit values, so the same rate cannot be used
-						with old-unit and new-unit quantities. Operations first supplies every involved PartyB. Core snapshots that PartyB's total
-						LONG and SHORT open quantities and, when accumulated funding is active, saves and pauses its current rates. Preparation is
-						then sealed: quote processing cannot introduce a previously omitted PartyB. Before the window closes, Core requires every
-						snapshotted old-basis quantity to be consumed and restores every saved rate. It rebases rates only when the restatement is
-						finalized.
+						A physical restatement changes quote quantities, and current funding rates are per-unit values. The same rate therefore cannot
+						be used with old-unit and new-unit quantities, which is why funding gets its own multi-step dance around the rewrite.
+					</p>
+					<p>
+						Operations first supplies every involved PartyB. For each one, Core snapshots that PartyB's total LONG and SHORT open
+						quantities and, when accumulated funding is active, saves and pauses its current rates. Preparation is then sealed, so quote
+						processing cannot introduce a PartyB that was left out. Before the window closes, Core requires every snapshotted old-basis
+						quantity to have been consumed, and it restores every saved rate. Rates are rebased only when the restatement finalizes
+						&mdash; an abort puts them back exactly as they were.
 					</p>
 					<pre><code class="language-text">open window → snapshot PartyB inventory and funding → seal manifest → resolve old-basis quantities → restore funding → close window</code></pre>
 

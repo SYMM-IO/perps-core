@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.36;
 
 import {
 	ISymmioAccountLayer,
@@ -68,10 +68,11 @@ contract MockAccountLayer is ISymmioAccountLayer {
 		emit VirtualAccountConfigured(virtualAccount, parentAccount, true);
 	}
 
-	/// @notice Test helper to clear a virtual-account mapping.
+	/// @notice Test helper mirroring real VA deletion: isExists flips off, parentAccount survives on the
+	///         record (the account layer pools deleted VAs per parent for reuse).
 	function clearVirtualAccount(address virtualAccount) external {
-		delete virtualAccounts[virtualAccount];
-		emit VirtualAccountConfigured(virtualAccount, address(0), false);
+		virtualAccounts[virtualAccount].isExists = false;
+		emit VirtualAccountConfigured(virtualAccount, virtualAccounts[virtualAccount].parentAccount, false);
 	}
 
 	/// @notice Test helper to force created accounts to a different owner.

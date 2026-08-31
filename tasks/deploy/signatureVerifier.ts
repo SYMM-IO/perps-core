@@ -10,10 +10,13 @@ import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.
 import { logger } from "./logger.js"
 import { confirmDeployment } from "./tx.js"
 import { loadUpgradeConfigShared } from "./upgradeConfig.js"
+import { deployContract, type VanityContext } from "./vanityDeploy.js"
 
 const DEFAULT_UPGRADE_CONFIG_FILE = "./tasks/config/upgrade.json"
 
 type DeploySignatureVerifierArgs = {
+	/** Present when the owning deployment mines CREATE2 addresses; null for standalone runs. */
+	vanity?: VanityContext | null
 	admin?: string
 	logData?: boolean
 	checkpoint?: DeploymentCheckpoint
@@ -22,7 +25,7 @@ type DeploySignatureVerifierArgs = {
 
 export async function deploySignatureVerifier(
 	hre: any,
-	{ admin, logData = true, checkpoint, updateUpgradeConfig = false }: DeploySignatureVerifierArgs = {},
+	{ admin, logData = true, checkpoint, updateUpgradeConfig = false, vanity }: DeploySignatureVerifierArgs = {},
 ) {
 	const { ethers } = await getConnection(hre)
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.signatureVerifier")
@@ -44,12 +47,14 @@ export async function deploySignatureVerifier(
 	}
 
 	const factory = await ethers.getContractFactory("MuonSignatureVerifier")
-	const contract = await factory.connect(deployer).deploy(resolvedAdmin)
-	const address = await confirmDeployment(
-		contract,
-		"MuonSignatureVerifier",
-		checkpointDeployment(checkpoint, "contracts.signatureVerifier", [resolvedAdmin]),
-	)
+	const { address } = await deployContract(vanity || null, {
+		key: "peripherals/MuonSignatureVerifier",
+		component: "contracts.signatureVerifier",
+		label: "MuonSignatureVerifier",
+		factory: factory.connect(deployer),
+		constructorArgs: [resolvedAdmin],
+		checkpoint,
+	})
 	logger.deployed("MuonSignatureVerifier", address)
 
 	// Save checkpoint
@@ -67,7 +72,7 @@ export async function deploySignatureVerifier(
 		logger.debug("Deployed addresses written to JSON file")
 	}
 
-	return contract
+	return ethers.getContractAt("MuonSignatureVerifier", address)
 }
 
 function writeSignatureVerifierRecord(address: string, admin: string): void {

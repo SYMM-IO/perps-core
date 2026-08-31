@@ -15,7 +15,8 @@ interface ISymmio {
 	/// @notice Order type
 	enum OrderType {
 		LIMIT,
-		MARKET
+		MARKET,
+		MARKET_BEST_EFFORT
 	}
 
 	/// @notice Fee configuration for an affiliate and symbol pair
