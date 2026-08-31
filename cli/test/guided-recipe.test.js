@@ -16,7 +16,7 @@ import test from "node:test";
 const ACCOUNTS = Array.from({ length: 8 }, (_, index) => `0x${String(index + 1).padStart(40, "0")}`);
 const PRIVATE_KEY = `0x${"11".repeat(32)}`;
 
-function fakeUi({ keystore, network = "fork-arbitrum", overrides = [] }) {
+function fakeUi({ keystore, network = "fork-arbitrum", overrides = [], omitPartyBSigner = false }) {
 	const prompts = [];
 	return {
 		prompts,
@@ -41,6 +41,7 @@ function fakeUi({ keystore, network = "fork-arbitrum", overrides = [] }) {
 		text: async options => {
 			prompts.push({ type: "text", ...options });
 			if (/keystore key/i.test(options.message)) return "NEW_DEPLOYER";
+			if (omitPartyBSigner && options.message === "PartyB signer (optional)") return "";
 			return /app ID|public-key X|maximum debt/i.test(options.message) ? "1" : "0x1111111111111111111111111111111111111111";
 		},
 		password: async options => {
@@ -78,6 +79,17 @@ test("environment secret references remain available for fork-only operation", a
 	assert.equal(recipe.secrets.rpc, "env://RPC_ARBITRUM");
 });
 
+test("guided PartyB setup allows the ERC-1271 signer to remain unset", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-no-partyb-signer-"));
+	const ui = fakeUi({ keystore: false, overrides: ["components"], omitPartyBSigner: true });
+	const input = await prepareDeploymentRecipe({ root, ui });
+	const recipe = JSON.parse(fs.readFileSync(input.config, "utf8"));
+	assert.equal(recipe.partyB.signer, undefined);
+	assert.ok(recipe.partyB.operators.length > 0);
+	assert.match(recipeReviewText(recipe), /PartyB signer: not configured/);
+	assert.doesNotThrow(() => validateDeploymentRecipe(recipe));
+});
+
 test("persistent local preparation discovers unlocked accounts and needs no JSON or secret input", async () => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-local-"));
 	const ui = fakeUi({ network: "localhost" });
@@ -89,6 +101,7 @@ test("persistent local preparation discovers unlocked accounts and needs no JSON
 	assert.equal(recipe.core.muon.mode, "mock");
 	assert.equal(recipe.governance.admin, ACCOUNTS[1]);
 	assert.equal(recipe.partyB.signer, ACCOUNTS[2]);
+	assert.deepEqual(recipe.partyB.operators, [ACCOUNTS[4]]);
 	assert.equal(recipe.symbolManager.operator, ACCOUNTS[3]);
 	assert.equal(recipe.expressProvider.roles.OPERATOR_ROLE[0], ACCOUNTS[4]);
 	assert.equal(recipe.gaslessLayer.treasury, ACCOUNTS[1]);
@@ -108,6 +121,7 @@ test("local defaults remain fully reviewable without exposing a secret", () => {
 	assert.match(review, /TARGET\nlocalhost • chain 31337 • local/);
 	assert.match(review, /no secret reference is stored/i);
 	assert.match(review, /OWNERSHIP/);
+	assert.match(review, new RegExp(`PartyB operators: ${ACCOUNTS[4]}`));
 	assert.match(review, /Express roles:/);
 	assert.match(review, /Gasless treasury:/);
 	assert.match(review, /Gasless relayers:/);

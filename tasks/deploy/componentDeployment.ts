@@ -93,6 +93,7 @@ export interface ComponentDeploymentReport {
 	config: {
 		admin: string
 		signer?: string
+		operators?: string[]
 		adlEnabled?: boolean
 		operator?: string
 		/**
@@ -181,7 +182,8 @@ export async function inspectPartyBPostState(
 		address: string
 		implementation: string
 		admin: string
-		signer: string
+		signer?: string
+		operators: string[]
 		adlEnabled: boolean
 		core: string
 		instantLayer: string
@@ -190,7 +192,8 @@ export async function inspectPartyBPostState(
 	const address = ethers.getAddress(input.address)
 	const implementation = ethers.getAddress(input.implementation)
 	const admin = ethers.getAddress(input.admin)
-	const signer = ethers.getAddress(input.signer)
+	const signer = input.signer ? ethers.getAddress(input.signer) : ethers.ZeroAddress
+	const operators = input.operators.map(operator => ethers.getAddress(operator))
 	const core = ethers.getAddress(input.core)
 	const instantLayerAddress = ethers.getAddress(input.instantLayer)
 	const contract = await ethers.getContractAt("SymmioPartyB", address)
@@ -225,6 +228,7 @@ export async function inspectPartyBPostState(
 		instantLayer.hasRole(await instantLayer.OPERATOR_ROLE(), address),
 		...localRoles.map(role => contract.hasRole(role, admin)),
 	])
+	const operatorRoles = await Promise.all(operators.map(operator => contract.hasRole(trustedRole, operator)))
 	const storedImplementation = ethers.getAddress(`0x${implementationStorage.slice(-40)}`)
 	const manualActions: SafeManualAction[] = []
 	if (!registered) {
@@ -259,6 +263,9 @@ export async function inspectPartyBPostState(
 	check("signer", ethers.getAddress(configuredSigner) === signer, signer, configuredSigner)
 	check("InstantLayer multicast whitelist", multicastWhitelisted, "true", String(multicastWhitelisted))
 	check("InstantLayer TRUSTED_ROLE", trusted, "true", String(trusted))
+	for (const [index, operator] of operators.entries()) {
+		check(`PartyB operator TRUSTED_ROLE ${operator}`, operatorRoles[index], "true", String(operatorRoles[index]))
+	}
 	for (const [index, role] of localRoles.entries()) check(`final admin role ${role}`, adminRoles[index], "true", String(adminRoles[index]))
 	check("core PartyB registration", registered, "true", String(registered), !registered)
 	check("core ADL setting", adl === input.adlEnabled, String(input.adlEnabled), String(adl), adl !== input.adlEnabled)
@@ -752,6 +759,13 @@ async function requireAddress(ethers: any, value: unknown, label: string): Promi
 	return ethers.getAddress(value)
 }
 
+async function requireUniqueAddresses(ethers: any, value: unknown, label: string): Promise<string[]> {
+	if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must be a non-empty address array`)
+	const addresses = await Promise.all(value.map((entry, index) => requireAddress(ethers, entry, `${label}[${index}]`)))
+	if (new Set(addresses.map(entry => entry.toLowerCase())).size !== addresses.length) throw new Error(`${label} contains duplicate addresses`)
+	return addresses
+}
+
 export async function deployAndConfigureGaslessLayer(
 	hre: any,
 	checkpoint: DeploymentCheckpoint,
@@ -1054,7 +1068,8 @@ async function executePartyB(
 }> {
 	const { ethers } = await getConnection(hre)
 	const admin = await requireAddress(ethers, input.componentConfig.admin || input.coreReport.config.admin, "partyB.admin")
-	const signer = await requireAddress(ethers, input.componentConfig.signer, "partyB.signer")
+	const signer = input.componentConfig.signer ? await requireAddress(ethers, input.componentConfig.signer, "partyB.signer") : undefined
+	const operators = await requireUniqueAddresses(ethers, input.componentConfig.operators, "partyB.operators")
 	const core = input.coreReport.addresses.diamond
 	const instantLayerAddress = input.coreReport.addresses.instantLayer
 	const adlEnabled = input.componentConfig.adlEnabled === true
@@ -1100,7 +1115,10 @@ async function executePartyB(
 
 	const setterRole = roleHash("SETTER_ROLE")
 	const currentSigner = ethers.getAddress(await contract.signer())
-	if (currentSigner !== signer) {
+	if (!signer && currentSigner !== ethers.ZeroAddress) {
+		throw new Error(`CONFLICTING_STATE: SymmioPartyB signer is ${currentSigner}, but partyB.signer is omitted and must remain unset`)
+	}
+	if (signer && currentSigner !== signer) {
 		if (!(await contract.hasRole(setterRole, deployer.address))) {
 			if (!(await contract.hasRole(defaultAdminRole, deployer.address))) {
 				throw new Error(
@@ -1117,6 +1135,11 @@ async function executePartyB(
 	const trustedRole = roleHash("TRUSTED_ROLE")
 	if (!(await contract.hasRole(trustedRole, instantLayerAddress))) {
 		await send(contract.connect(deployer).grantRole(trustedRole, instantLayerAddress), "grant SymmioPartyB TRUSTED_ROLE to InstantLayer")
+	}
+	for (const operator of operators) {
+		if (!(await contract.hasRole(trustedRole, operator))) {
+			await send(contract.connect(deployer).grantRole(trustedRole, operator), `grant SymmioPartyB TRUSTED_ROLE to operator ${operator}`)
+		}
 	}
 
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
@@ -1181,6 +1204,7 @@ async function executePartyB(
 		implementation,
 		admin,
 		signer,
+		operators,
 		adlEnabled,
 		core,
 		instantLayer: instantLayerAddress,
@@ -2001,7 +2025,8 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 	// Validate component-local inputs and every external authority before checkpoint
 	// mutation or contract creation. Later helpers normalize the same values again.
 	await requireAddress(ethers, input.componentConfig.admin || input.coreReport.config.admin, `${input.component}.admin`)
-	if (input.component === "partyB") await requireAddress(ethers, input.componentConfig.signer, "partyB.signer")
+	if (input.component === "partyB" && input.componentConfig.signer) await requireAddress(ethers, input.componentConfig.signer, "partyB.signer")
+	if (input.component === "partyB") await requireUniqueAddresses(ethers, input.componentConfig.operators, "partyB.operators")
 	if (input.component === "symbolManager") await requireAddress(ethers, input.componentConfig.operator, "symbolManager.operator")
 	if (input.component === "partyB" && typeof input.componentConfig.adlEnabled !== "boolean") {
 		throw new Error(`partyB.adlEnabled must be a boolean; received ${JSON.stringify(input.componentConfig.adlEnabled)}`)
@@ -2015,7 +2040,8 @@ export async function executeComponentDeployment(hre: any, input: ComponentExecu
 	if (input.component === "partyB") {
 		publicConfig = {
 			admin: componentAdmin,
-			signer: ethers.getAddress(input.componentConfig.signer),
+			...(input.componentConfig.signer ? { signer: ethers.getAddress(input.componentConfig.signer) } : {}),
+			operators: await requireUniqueAddresses(ethers, input.componentConfig.operators, "partyB.operators"),
 			adlEnabled: input.componentConfig.adlEnabled as boolean,
 		}
 	} else if (input.component === "symbolManager") {

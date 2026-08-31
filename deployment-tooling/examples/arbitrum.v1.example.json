@@ -124,7 +124,7 @@
 	},
 	"partyB": {
 		"mode": "deploy",
-		"signer": "REPLACE_WITH_PARTY_B_SIGNER_ADDRESS",
+		"operators": ["REPLACE_WITH_PARTY_B_OPERATOR_ADDRESS"],
 		"adlEnabled": false
 	},
 	"symbolManager": {

@@ -602,20 +602,23 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 
 function validateAddon(value, source, name, extraField, requireExtraForDeploy) {
 	const component = object(value, source, name);
-	const allowed = ["mode", "address", ...(extraField ? [extraField] : []), ...(name === "partyB" ? ["adlEnabled"] : [])];
+	const isPartyB = name === "partyB";
+	const allowed = ["mode", "address", ...(extraField ? [extraField] : []), ...(isPartyB ? ["adlEnabled", "operators"] : [])];
 	onlyKeys(component, allowed, source, name);
-	const requiredFields = ["mode", ...(name === "partyB" ? ["adlEnabled"] : [])];
+	const requiredFields = ["mode", ...(isPartyB ? ["adlEnabled"] : [])];
 	required(component, requiredFields, source, name);
 	enumValue(component.mode, COMPONENT_MODES, source, `${name}.mode`);
-	if (name === "partyB") boolean(component.adlEnabled, source, "partyB.adlEnabled");
+	if (isPartyB) boolean(component.adlEnabled, source, "partyB.adlEnabled");
 
 	if (component.mode === "reuse") {
 		required(component, ["address"], source, name);
 		address(component.address, source, `${name}.address`);
 		if (extraField && component[extraField] !== undefined) fail(source, `${name}.${extraField}`, "must be omitted when mode is reuse");
+		if (isPartyB && component.operators !== undefined) fail(source, "partyB.operators", "must be omitted when mode is reuse");
 	} else if (component.mode === "deploy") {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is deploy");
-		if (extraField && requireExtraForDeploy) {
+		const requiresExtraField = requireExtraForDeploy && !(isPartyB && extraField === "signer");
+		if (extraField && requiresExtraField) {
 			required(component, [extraField], source, name);
 		}
 		// An optional extra field must still be a valid address when present — a malformed value
@@ -623,10 +626,15 @@ function validateAddon(value, source, name, extraField, requireExtraForDeploy) {
 		if (extraField && component[extraField] !== undefined) {
 			address(component[extraField], source, `${name}.${extraField}`);
 		}
+		if (isPartyB) {
+			required(component, ["operators"], source, name);
+			uniqueAddresses(component.operators, source, "partyB.operators");
+		}
 	} else {
 		if (component.address !== undefined) fail(source, `${name}.address`, "must be omitted when mode is skip");
 		if (extraField && component[extraField] !== undefined) fail(source, `${name}.${extraField}`, "must be omitted when mode is skip");
-		if (name === "partyB" && component.adlEnabled !== false) fail(source, "partyB.adlEnabled", "must be false when mode is skip");
+		if (isPartyB && component.operators !== undefined) fail(source, "partyB.operators", "must be omitted when mode is skip");
+		if (isPartyB && component.adlEnabled !== false) fail(source, "partyB.adlEnabled", "must be false when mode is skip");
 	}
 }
 
@@ -997,7 +1005,22 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 		if (recipe.liquidator?.mode === "reuse") unsupportedMode("liquidator", "deploy or skip");
 	}
 
-	const components = selectedNames.map(name => ({ name, mode: recipe[name].mode, dependsOn: name === "core" ? [] : ["core"] }));
+	const components = selectedNames.map(name => ({
+		name,
+		mode: recipe[name].mode,
+		dependsOn: name === "core" ? [] : ["core"],
+		...(name === "partyB" && recipe.partyB.mode === "deploy"
+			? {
+					actions: recipe.partyB.operators.map(operator => ({
+						id: `grant-trusted-operator-${operator.toLowerCase()}`,
+						target: "SymmioPartyB",
+						operation: "grantRole",
+						role: "TRUSTED_ROLE",
+						account: operator,
+					})),
+				}
+			: {}),
+	}));
 	// The liquidator is an optional add-on outside DEPLOYMENT_COMPONENTS, but a declared one executes
 	// a real deployment transaction in full runs — the plan must not omit it.
 	if (!only && recipe.liquidator !== undefined) {
@@ -1047,7 +1070,8 @@ export function recipeEnvironment(recipeValue) {
 		COLLATERAL_ADDRESS: deployCore && core.collateral?.mode === "reuse" ? core.collateral.address : "",
 		DEPLOY_PARTYB: String(recipe.partyB.mode === "deploy"),
 		SET_ADL_ENABLED: String(recipe.partyB.mode === "deploy" && recipe.partyB.adlEnabled),
-		PARTYB_SIGNER: recipe.partyB.mode === "deploy" ? recipe.partyB.signer : "",
+		PARTYB_SIGNER: recipe.partyB.mode === "deploy" ? (recipe.partyB.signer ?? "") : "",
+		PARTYB_OPERATORS: recipe.partyB.mode === "deploy" ? recipe.partyB.operators.join(",") : "",
 		DEPLOY_SYMBOL_MANAGER: String(recipe.symbolManager.mode === "deploy"),
 		SYMBOL_MANAGER_OPERATOR: recipe.symbolManager.mode === "deploy" ? recipe.symbolManager.operator : "",
 		REGISTER_DUMMY_AFFILIATE: String(deployCore && core.registerDummyAffiliate === true),

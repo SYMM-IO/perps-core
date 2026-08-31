@@ -442,16 +442,26 @@
 				"mode": { "$ref": "#/$defs/componentMode" },
 				"address": { "$ref": "#/$defs/address" },
 				"signer": { "$ref": "#/$defs/address" },
+				"operators": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "$ref": "#/$defs/address" }
+				},
 				"adlEnabled": { "type": "boolean" }
 			},
 			"allOf": [
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "deploy" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["signer"], "not": { "type": "object", "required": ["address"] } }
+					"then": { "type": "object", "required": ["operators"], "not": { "type": "object", "required": ["address"] } }
 				},
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "reuse" } }, "required": ["mode"] },
-					"then": { "type": "object", "required": ["address"], "not": { "type": "object", "required": ["signer"] } }
+					"then": {
+						"type": "object",
+						"required": ["address"],
+						"not": { "anyOf": [{ "required": ["signer"] }, { "required": ["operators"] }] }
+					}
 				},
 				{
 					"if": { "type": "object", "properties": { "mode": { "const": "skip" } }, "required": ["mode"] },
@@ -461,7 +471,8 @@
 						"not": {
 							"anyOf": [
 								{ "type": "object", "required": ["address"] },
-								{ "type": "object", "required": ["signer"] }
+								{ "type": "object", "required": ["signer"] },
+								{ "type": "object", "required": ["operators"] }
 							]
 						}
 					}

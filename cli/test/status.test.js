@@ -113,6 +113,7 @@ const componentReport = {
 	config: {
 		admin: "0x4000000000000000000000000000000000000004",
 		signer: "0x5000000000000000000000000000000000000005",
+		operators: ["0x7000000000000000000000000000000000000007"],
 		adlEnabled: true,
 	},
 	coreDependency: {
@@ -144,6 +145,7 @@ const componentExpected = {
 	config: {
 		admin: "0x4000000000000000000000000000000000000004",
 		signer: "0x5000000000000000000000000000000000000005",
+		operators: ["0x7000000000000000000000000000000000000007"],
 		adlEnabled: true,
 	},
 	coreReportPath: "/repo/tasks/data/42161/deployment-report.json",

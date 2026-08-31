@@ -42,6 +42,7 @@ describe("deployment verification binding", function () {
 		expect(loaded.partyB).to.equal(undefined)
 		expect(loaded.symbolManager).to.equal(undefined)
 		expect(loaded.symbolManagerOperator).to.equal(undefined)
+		expect(loaded.partyBOperators).to.equal(undefined)
 		expect(loaded.liquidator).to.equal(undefined)
 		expect(loaded.liquidatorImplementation).to.equal(undefined)
 	})
@@ -62,6 +63,17 @@ describe("deployment verification binding", function () {
 		expect(loaded.liquidatorImplementation).to.equal(addresses.symmioLiquidatorImplementation)
 		expect(loaded.liquidatorAdmin).to.equal(addresses.accountLayerDiamond)
 		expect(loaded.liquidatorOperators).to.deep.equal([addresses.instantLayer])
+	})
+
+	it("loads recipe-bound PartyB trusted operators", function () {
+		const loaded = loadAddressesFromReport(
+			{
+				addresses,
+				config: { admin: addresses.diamond, partyBOperators: [addresses.instantLayer] },
+			},
+			{},
+		)
+		expect(loaded.partyBOperators).to.deep.equal([addresses.instantLayer])
 	})
 
 	it("uses the reviewed inline protocol config for recipe-bound health checks", function () {

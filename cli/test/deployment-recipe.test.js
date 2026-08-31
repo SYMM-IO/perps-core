@@ -113,6 +113,23 @@ test("recipe validation is strict at every layer and enforces conditional addres
 	reuseWithoutAddress.partyB = { mode: "reuse", adlEnabled: false };
 	assert.throws(() => validateDeploymentRecipe(reuseWithoutAddress), /partyB\.address is required/);
 
+	const deployWithoutOperators = localRecipe();
+	deployWithoutOperators.partyB = { mode: "deploy", signer: B, adlEnabled: false };
+	assert.throws(() => validateDeploymentRecipe(deployWithoutOperators), /partyB\.operators is required/);
+
+	const deployWithoutSigner = localRecipe();
+	deployWithoutSigner.partyB = { mode: "deploy", operators: [D], adlEnabled: false };
+	assert.equal(validateDeploymentRecipe(deployWithoutSigner).partyB.signer, undefined);
+	assert.equal(recipeEnvironment(deployWithoutSigner).env.PARTYB_SIGNER, "");
+
+	const duplicateOperators = localRecipe();
+	duplicateOperators.partyB = { mode: "deploy", signer: B, operators: [D, D.toLowerCase()], adlEnabled: false };
+	assert.throws(() => validateDeploymentRecipe(duplicateOperators), /partyB\.operators\[1\] duplicates an earlier address/);
+
+	const reusedWithOperators = localRecipe();
+	reusedWithOperators.partyB = { mode: "reuse", address: D, operators: [B], adlEnabled: false };
+	assert.throws(() => validateDeploymentRecipe(reusedWithOperators), /partyB\.operators must be omitted when mode is reuse/);
+
 	const deployWithAddress = localRecipe();
 	deployWithAddress.expressProvider = { mode: "deploy", address: D };
 	assert.throws(() => validateDeploymentRecipe(deployWithAddress), /expressProvider\.address must be omitted when mode is deploy/);
@@ -264,12 +281,19 @@ test("secret references are metadata only and live recipes require infrastructur
 
 test("planner supports one-go and component-only runs without silently deploying dependencies", () => {
 	const recipe = localRecipe();
-	recipe.partyB = { mode: "deploy", signer: B, adlEnabled: true };
+	recipe.partyB = { mode: "deploy", signer: B, operators: [D], adlEnabled: true };
 	recipe.symbolManager = { mode: "deploy", operator: C };
+	const operatorAction = {
+		id: `grant-trusted-operator-${D.toLowerCase()}`,
+		target: "SymmioPartyB",
+		operation: "grantRole",
+		role: "TRUSTED_ROLE",
+		account: D,
+	};
 
 	assert.deepEqual(createDeploymentPlan(recipe).components, [
 		{ name: "core", mode: "deploy", dependsOn: [] },
-		{ name: "partyB", mode: "deploy", dependsOn: ["core"] },
+		{ name: "partyB", mode: "deploy", dependsOn: ["core"], actions: [operatorAction] },
 		{ name: "symbolManager", mode: "deploy", dependsOn: ["core"] },
 		{ name: "expressProvider", mode: "skip", dependsOn: ["core"] },
 		{ name: "gaslessLayer", mode: "skip", dependsOn: ["core"] },
@@ -279,7 +303,7 @@ test("planner supports one-go and component-only runs without silently deploying
 	onlyRecipe.core.fromReport = "reports/core.json";
 	assert.deepEqual(createDeploymentPlan(onlyRecipe, { only: "partyB" }).components, [
 		{ name: "core", mode: "reuse", dependsOn: [] },
-		{ name: "partyB", mode: "deploy", dependsOn: ["core"] },
+		{ name: "partyB", mode: "deploy", dependsOn: ["core"], actions: [operatorAction] },
 	]);
 	assert.throws(
 		() => createDeploymentPlan(onlyRecipe, { only: "expressProvider" }),
@@ -287,7 +311,7 @@ test("planner supports one-go and component-only runs without silently deploying
 	);
 
 	const missingProof = localRecipe();
-	missingProof.partyB = { mode: "deploy", signer: B, adlEnabled: false };
+	missingProof.partyB = { mode: "deploy", signer: B, operators: [D], adlEnabled: false };
 	assert.throws(
 		() => createDeploymentPlan(missingProof, { only: "partyB" }),
 		error => error.code === "CORE_DEPENDENCY_UNPROVEN",
@@ -296,7 +320,7 @@ test("planner supports one-go and component-only runs without silently deploying
 	const reusedCore = localRecipe();
 	reusedCore.core.mode = "reuse";
 	reusedCore.core.fromReport = "reports/core.json";
-	reusedCore.partyB = { mode: "deploy", signer: B, adlEnabled: false };
+	reusedCore.partyB = { mode: "deploy", signer: B, operators: [D], adlEnabled: false };
 	assert.throws(
 		() => createDeploymentPlan(reusedCore),
 		error => error.code === "TARGET_MODE_UNSUPPORTED",

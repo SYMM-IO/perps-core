@@ -1831,7 +1831,7 @@ async function verifyInstantLayerFull(
 async function verifyPartyBFull(
 	ethers: any,
 	partyBAddress: string,
-	addresses: { diamond?: string; instantLayer?: string; admin?: string },
+	addresses: { diamond?: string; instantLayer?: string; admin?: string; partyBOperators?: string[] },
 	results: VerificationResult[],
 	deployerAddress: string,
 ) {
@@ -1924,6 +1924,9 @@ async function verifyPartyBFull(
 
 	if (addresses.instantLayer) {
 		await checkRole(results, cat, partyB, addresses.instantLayer, "TRUSTED_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioPartyB" })
+	}
+	for (const operator of addresses.partyBOperators || []) {
+		await checkRole(results, cat, partyB, operator, "TRUSTED_ROLE", ethers, { ozStyle: true, contractLabel: "SymmioPartyB" })
 	}
 
 	console.log("")
@@ -2179,6 +2182,9 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 		gaslessLayerImplementation: existing.gaslessLayerImplementation || checkpoint.contracts?.gaslessLayer?.implementation?.address,
 		liquidator: existing.liquidator || checkpoint.contracts?.symmioLiquidator?.address,
 		liquidatorImplementation: existing.liquidatorImplementation || checkpoint.contracts?.symmioLiquidator?.implementation,
+		liquidatorAdmin: existing.liquidatorAdmin,
+		liquidatorOperators: existing.liquidatorOperators,
+		partyBOperators: existing.partyBOperators,
 		collateral: existing.collateral || checkpoint.contracts?.collateral?.address,
 		signatureVerifier: existing.signatureVerifier || checkpoint.contracts?.signatureVerifier?.address,
 		admin: existing.admin,
@@ -2200,6 +2206,7 @@ export function loadAddressesFromReport(report: any, existing: any) {
 		liquidatorImplementation: existing.liquidatorImplementation || report.addresses?.symmioLiquidatorImplementation || undefined,
 		liquidatorAdmin: existing.liquidatorAdmin || report.config?.liquidatorAdmin || undefined,
 		liquidatorOperators: existing.liquidatorOperators || report.config?.liquidatorOperators || undefined,
+		partyBOperators: existing.partyBOperators || report.config?.partyBOperators || undefined,
 		collateral: existing.collateral || report.addresses?.collateral || undefined,
 		signatureVerifier: existing.signatureVerifier || report.addresses?.signatureVerifier || undefined,
 		admin: existing.admin || report.config?.admin || undefined,
@@ -2343,6 +2350,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				liquidatorImplementation?: string
 				liquidatorAdmin?: string
 				liquidatorOperators?: string[]
+				partyBOperators?: string[]
 				collateral?: string
 				signatureVerifier?: string
 				admin?: string
@@ -2360,6 +2368,7 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				liquidatorImplementation: undefined,
 				liquidatorAdmin: undefined,
 				liquidatorOperators: undefined,
+				partyBOperators: undefined,
 				collateral: args.collateral || undefined,
 				signatureVerifier: args.signatureVerifier || undefined,
 				admin: args.admin || undefined,
@@ -2481,6 +2490,13 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 				if (
 					args.fromReport &&
+					(reportConfig?.partyBMode ? reportConfig.partyBMode !== "skip" : reportConfig?.deployPartyB === true) &&
+					(!Array.isArray(addresses.partyBOperators) || addresses.partyBOperators.length === 0)
+				) {
+					throw new Error("partyB operators are missing from a report that declares deployPartyB=true")
+				}
+				if (
+					args.fromReport &&
 					(reportConfig?.symbolManagerMode ? reportConfig.symbolManagerMode !== "skip" : reportConfig?.deploySymbolManager === true) &&
 					!addresses.symbolManager
 				) {
@@ -2505,13 +2521,14 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 			}
 			for (const [field, value] of Object.entries(addresses)) {
 				if (value === undefined) continue
-				if (field === "liquidatorOperators") {
+				if (field === "liquidatorOperators" || field === "partyBOperators") {
 					if (
 						!Array.isArray(value) ||
 						value.some(operator => typeof operator !== "string" || !ethers.isAddress(operator) || operator === ethers.ZeroAddress)
 					) {
-						throw new Error("liquidatorOperators must contain valid non-zero addresses")
+						throw new Error(`${field} must contain valid non-zero addresses`)
 					}
+					if (new Set(value.map(operator => operator.toLowerCase())).size !== value.length) throw new Error(`${field} contains duplicate addresses`)
 					continue
 				}
 				if (field === "partyB") continue
@@ -2553,6 +2570,9 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 				}
 			} else {
 				console.log(`${c.dim}  PartyB         (not set)${c.reset}`)
+			}
+			for (let i = 0; i < (addresses.partyBOperators || []).length; i++) {
+				console.log(`${c.dim}  PartyB Operator [${i}] ${c.reset}${addresses.partyBOperators![i]}`)
 			}
 			console.log(`${c.dim}  Liquidator     ${c.reset}${addresses.liquidator || `${c.dim}(not set)${c.reset}`}`)
 			if (operators.length > 0) {

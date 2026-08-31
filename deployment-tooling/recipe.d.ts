@@ -88,7 +88,15 @@ export interface DeploymentRecipe {
 		setupInstantLayerTemplates?: boolean
 		registerDummyAffiliate?: boolean
 	}
-	partyB: { mode: ComponentMode; address?: string; signer?: string; adlEnabled: boolean }
+	partyB: {
+		mode: ComponentMode
+		address?: string
+		/** Optional ERC-1271 signer. Omission leaves signer() at address(0). */
+		signer?: string
+		/** Routine execution accounts. Deploy mode grants each account TRUSTED_ROLE. */
+		operators?: string[]
+		adlEnabled: boolean
+	}
 	symbolManager: { mode: ComponentMode; address?: string; operator?: string }
 	expressProvider: ExpressProviderRecipe
 	gaslessLayer: GaslessLayerRecipe

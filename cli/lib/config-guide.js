@@ -26,6 +26,7 @@ export const RECIPE_FIELD_BY_RUNTIME_KEY = Object.freeze({
 	MUON_SIGNATURE_VERIFIER_ADDRESS: "core.muon.address",
 	MUON_UPNL_VALID_TIME: "core.muon.upnlValidTime",
 	NEW_DEPLOYER: "secrets.deployer",
+	PARTYB_OPERATORS: "partyB.operators",
 	PARTYB_SIGNER: "partyB.signer",
 	REGISTER_DUMMY_AFFILIATE: "core.registerDummyAffiliate",
 	RPC_ARBITRUM: "secrets.rpc",
