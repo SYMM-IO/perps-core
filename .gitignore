@@ -73,3 +73,10 @@ AGENTS.md
 
 # Guided-deployment recipe backups written next to the recipe on every re-review.
 deployments/*.backup-*
+
+# Local deployment, upgrade, and operator artifacts.
+/scripts/upgrade/output/
+/scripts/liquidator/output/
+/scripts/upgrade/config/
+/tasks/data/
+/deployments/
