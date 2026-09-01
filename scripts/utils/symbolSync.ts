@@ -133,8 +133,8 @@ export function parseSymbolSyncConfig(value: unknown): SymbolSyncConfig {
 	const execution = requiredObject(root.execution, "execution")
 	const output = requiredObject(root.output, "output")
 	const batchSize = execution.batchSize === "all" ? "all" : Number(execution.batchSize)
-	if (batchSize !== "all" && (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 25)) {
-		throw new Error('execution.batchSize must be "all" or an integer between 1 and 25')
+	if (batchSize !== "all" && (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 50)) {
+		throw new Error('execution.batchSize must be "all" or an integer between 1 and 50')
 	}
 	if (execution.preserveValidation !== true) throw new Error("execution.preserveValidation must be true for exact-ID synchronization")
 
