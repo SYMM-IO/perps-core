@@ -1,13 +1,23 @@
 # Ordered symbol synchronization
 
-These scripts copy a complete ordered symbol catalog between v0.8.6 Core Diamonds through the target `SymmioSymbolManager`.
+These scripts copy a complete ordered symbol catalog between compatible Core Diamonds through the target `SymmioSymbolManager`.
 They are intended for exact ID parity, not name-based deduplication.
 
-The checked-in configuration targets:
+The checked-in configurations target:
 
-- HyperEVM Core `0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB` on chain `999`.
-- Arbitrum Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09` and Symbol Manager
-  `0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c` on chain `42161`.
+- `hyperevm-to-arbitrum.json`: HyperEVM v0.8.6 Core `0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB` to Arbitrum
+  v0.8.6 Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09` through Symbol Manager
+  `0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c`.
+- `hyperevm-to-arbitrum-v0.8.5.json`: HyperEVM v0.8.5 Core `0x57331038c21982116EE9b0906E4a5c5cB52dcE2e` to Arbitrum
+  v0.8.5 Core `0x8F06459f184553e5d04F07F868720BDaCAB39395` through Symbol Manager
+  `0x5D1E5DD0463DcE32c6502E0fC98b2081cBa55c73`.
+
+Both flows use HyperEVM chain `999` and Arbitrum One chain `42161`. Select the configuration matching the Core version; their snapshots and
+assignment reports use separate output paths.
+
+The v0.8.5 configuration is also a compatibility/audit gate for the legacy Arbitrum catalog. When it was introduced, the live Arbitrum Core
+already contained a larger, nonmatching catalog, so exact-ID assignment was blocked. Do not run assignment for this pair unless a newly fetched
+snapshot reports `ready` or `complete`; appending the HyperEVM catalog under new Arbitrum IDs is a different migration strategy.
 
 RPC URLs and signer secrets do not belong in the JSON inputs. The scripts use the named Hardhat networks, so configure `RPC_HYPEREVM`,
 `RPC_ARBITRUM`, and the signer through the existing environment or encrypted Hardhat keystore flow.
