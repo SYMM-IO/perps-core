@@ -98,6 +98,41 @@ test("config parsing normalizes chain IDs and addresses and refuses escaping out
 	assert.throws(() => parseSymbolSyncConfig({ ...parsed, output: { ...parsed.output, snapshot: "../snapshot.json" } }), /must stay inside/)
 })
 
+test("all batch size consumes the live symbol capacity", () => {
+	const parsed = parseSymbolSyncConfig({
+		apiVersion: SYMBOL_SYNC_CONFIG_API,
+		name: "test",
+		source: { network: "hyperevm", chainId: "999", core: "0x1111111111111111111111111111111111111111" },
+		target: {
+			network: "arbitrum",
+			chainId: "42161",
+			core: "0x2222222222222222222222222222222222222222",
+			symbolManager: "0x3333333333333333333333333333333333333333",
+		},
+		execution: { batchSize: "all", preserveValidation: true },
+		output: { snapshot: "scripts/output/snapshot.json", assignmentReport: "scripts/output/report.json" },
+	})
+	assert.equal(parsed.execution.batchSize, "all")
+
+	const source = [symbol(1), symbol(2), symbol(3, { isValid: false }), symbol(4)]
+	const window = buildSymbolSyncWindow(
+		analyzeExactIdSync(source, [symbol(1)]),
+		{ symbolAddition: 100n, validationState: 100n },
+		{ symbolAddition: 0n, validationState: 0n },
+		1_000n,
+		1_001n,
+		parsed.execution.batchSize,
+	)
+	assert.deepEqual(
+		window.additions.map(value => value.symbolId),
+		["2", "3", "4"],
+	)
+	assert.deepEqual(
+		window.deactivateAdded.map(value => value.symbolId),
+		["3"],
+	)
+})
+
 test("snapshot digests are stable and detect edits", () => {
 	const value = withDigest({ apiVersion: "test", symbols: [symbol(1)] })
 	assert.equal(verifyDigest(value, "snapshot"), value.digest)
