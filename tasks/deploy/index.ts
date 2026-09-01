@@ -6,6 +6,7 @@ import { deployAllTask } from "./deployAll.js"
 import { deployComponentTask } from "./deployComponent.js"
 import { diamondTask } from "./diamond.js"
 import { feeDistributorTask } from "./feeDistributor.js"
+import { executeGovernanceHandoverTask } from "./governanceHandover.js"
 import { enableBigBlocksTask, disableBigBlocksTask } from "./hyperevm.js"
 import { instantLayerTask } from "./instantLayer.js"
 import { liquidatorTask } from "./liquidator.js"
@@ -33,6 +34,7 @@ export const deployTasks = [
 	disableBigBlocksTask,
 	enableBigBlocksTask,
 	feeDistributorTask,
+	executeGovernanceHandoverTask,
 	instantLayerTask,
 	liquidatorTask,
 	completeLocalHandoverTask,

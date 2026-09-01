@@ -203,6 +203,14 @@ test("GaslessLayer guided editing covers selector-specific fee overrides", async
 	assert.doesNotThrow(() => validateDeploymentRecipe(recipe));
 });
 
+test("guided tests use an explicit deployment-report fixture", () => {
+	const fixture = path.resolve("cli/test/fixtures/arbitrum-deployment-report.json");
+	assert.equal(fs.existsSync(fixture), true);
+	const report = JSON.parse(fs.readFileSync(fixture, "utf8"));
+	assert.equal(report.chainId, 42161);
+	assert.ok(report.addresses.expressProvider);
+});
+
 test("ExpressProvider patch sections are edited interactively and can declare role revocations", async () => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-patch-"));
 	const source = JSON.parse(fs.readFileSync(path.resolve("deployment-tooling/examples/arbitrum.v1.example.json"), "utf8"));
@@ -211,7 +219,7 @@ test("ExpressProvider patch sections are edited interactively and can declare ro
 	fs.mkdirSync(path.dirname(recipePath), { recursive: true });
 	fs.writeFileSync(recipePath, `${JSON.stringify(recipe, null, 2)}\n`);
 
-	const report = JSON.parse(fs.readFileSync(path.resolve("tasks/data/42161/deployment-report.json"), "utf8"));
+	const report = JSON.parse(fs.readFileSync(path.resolve("cli/test/fixtures/arbitrum-deployment-report.json"), "utf8"));
 	report.network = "localhost";
 	report.chainId = 31337;
 	report.live = false;

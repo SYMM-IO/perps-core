@@ -1,9 +1,9 @@
 import { activeDescription, homeOptions, taskSummary } from "../app.js";
-import { readDeploymentReport } from "../lib/context.js";
 import { HELP_TEXT, runCli } from "../symmio.js";
 import { catalog } from "../task-runner.js";
 import { TASK_DEFINITIONS, checklistExplorerVerification } from "../tasks/registry.js";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -51,9 +51,7 @@ test("home menu ordering is exact and active actions stay visibly disabled", () 
 	assert.equal(active[5].disabled, false);
 });
 
-test("completed deployment reports are described as history, not active task state", () => {
-	const arbitrumReport = readDeploymentReport(42161);
-	assert.equal(arbitrumReport.lifecycle, "complete");
+test("idle state describes deployment reports as history, not active task state", () => {
 	assert.match(activeDescription(null), /No active task/);
 	assert.match(activeDescription(null), /Completed deployment reports remain in history/);
 });
@@ -101,9 +99,25 @@ test("the deployment checklist requires explorer success live and an explicit no
 	assert.equal(checklistExplorerVerification(context("local"), { checks: { verificationPolicy: "required", verification: "passed" } }), false);
 });
 
+test("operator docs explain classified governance handover and the readable report", () => {
+	const documentation = ["cli/README.md", "docs/deployment.md", "docs/deployment-guide.html"]
+		.map(file => fs.readFileSync(path.resolve(file), "utf8"))
+		.join("\n");
+	for (const phrase of [
+		"Ledger hardware wallet",
+		"Hardhat keystore wallet",
+		"Safe Transaction Builder",
+		"deployment-summary.md",
+		"Handover required",
+	]) {
+		assert.match(documentation, new RegExp(phrase, "i"));
+	}
+	assert.match(documentation, /tasks\/data\/.*ignored.*local evidence/is);
+});
+
 test("full deployment plans give every contract batch entry a unique stable id", async () => {
 	const definition = TASK_DEFINITIONS.find(item => item.id === "deploy.full");
-	assert.equal(definition.version, 3);
+	assert.equal(definition.version, 4);
 	for (const mode of ["local", "fork", "live"]) {
 		const plan = await definition.plan({}, { mode });
 		const items = plan.flatMap(step => step.items || []);

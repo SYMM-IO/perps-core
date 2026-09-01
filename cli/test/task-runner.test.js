@@ -293,6 +293,42 @@ test("a resumable workflow binds every signer used by an intentional multi-autho
 	assert.equal((await runner.resumeActive()).status, "completed");
 });
 
+test("a task binds a governance signer without changing its input hash", async () => {
+	const deployerSelection = {
+		mode: SIGNER_MODES.LOCAL_NODE,
+		address: "0x1111111111111111111111111111111111111111",
+	};
+	const governance = {
+		mode: SIGNER_MODES.LEDGER,
+		address: "0x2222222222222222222222222222222222222222",
+		derivation: "ledger-live",
+	};
+	let attempts = 0;
+	const run = async ctx => {
+		assert.deepEqual(ctx.bindSigner("governance", governance), governance);
+		if (attempts++ === 0) throw new Error("pause after governance binding");
+		assert.deepEqual(ctx.getSigner("governance"), governance);
+	};
+	const { root, runner } = runnerFor(mutating({ run, handler: run }));
+	const paused = await runner.start("maintenance.test", { input: { signer: deployerSelection } });
+	assert.equal(paused.status, "paused");
+	const state = JSON.parse(fs.readFileSync(path.join(root, ".symmio/tasks/active.json"), "utf8"));
+	assert.deepEqual(state.signing.governance, governance);
+	assert.equal((await runner.resumeActive()).status, "completed");
+});
+
+test("a task refuses to change an already-bound governance signer", async () => {
+	const first = { mode: SIGNER_MODES.LEDGER, address: "0x2222222222222222222222222222222222222222", derivation: "ledger-live" };
+	const second = { mode: SIGNER_MODES.LEDGER, address: "0x3333333333333333333333333333333333333333", derivation: "ledger-live" };
+	const run = async ctx => {
+		ctx.bindSigner("governance", first);
+		ctx.bindSigner("governance", second);
+	};
+	const result = await runnerFor(mutating({ run, handler: run })).runner.start("maintenance.test");
+	assert.equal(result.status, "paused");
+	assert.match(result.lastError, /governance signer binding changed/);
+});
+
 test("a known reverted transaction remains journaled while its stable step resumes safely", async () => {
 	const revertedHash = `0x${"4".repeat(64)}`;
 	const replacementHash = `0x${"5".repeat(64)}`;

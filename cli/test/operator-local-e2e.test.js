@@ -8,6 +8,7 @@
 //   npm run test:cli:e2e
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -34,6 +35,8 @@ test(
 	"the menu-only flow deploys the full system against a persistent local node",
 	{ timeout: 20 * 60_000, skip: process.env.SYMMIO_LOCAL_E2E !== "true" ? "set SYMMIO_LOCAL_E2E=true to run" : false },
 	async () => {
+		const recipePath = path.resolve("deployment-recipes/localhost.json");
+		const originalRecipe = await fs.readFile(recipePath);
 		const node = spawn("./node_modules/.bin/hardhat", ["node"], { cwd: process.cwd(), stdio: "ignore" });
 		try {
 			assert.ok(await rpcReady(120_000), `no JSON-RPC endpoint at ${RPC_URL}`);
@@ -53,10 +56,14 @@ test(
 			const plain = screen.replace(ANSI, "");
 			assert.equal(code, 0, `${diagnostics}\n${plain.slice(-4000)}`);
 			assert.match(plain, /Full SYMMIO system completed/);
+			assert.match(plain, /DEPLOYMENT COMPLETE/);
+			assert.match(plain, /IMPORTANT ADDRESSES/);
+			assert.match(plain, /Governance admin \(EOA\)/);
 			// The progress bar must actually finish, not stall at the contract budget.
 			assert.match(plain, /Progress\s+(\d+)\/\1 completed/);
 		} finally {
 			node.kill("SIGTERM");
+			await fs.writeFile(recipePath, originalRecipe);
 		}
 	},
 );
