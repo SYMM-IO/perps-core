@@ -29,10 +29,11 @@ transactions, so there is a short interval in which the newly added entries are 
 the missing deactivation on resume if the process stops between them. Operators who require atomic add-and-deactivate semantics must execute
 the generated actions as one reviewed Safe multisend from a Safe that already holds both manager roles.
 
-The target manager's live daily limits remain authoritative. The checked-in config uses `batchSize: "all"`, which consumes all currently
-available addition capacity while reserving validation capacity for source-invalid symbols. If either live limit is smaller than the missing
-catalog, the script stops at that limit and resumes safely on the next run. A stale on-chain counter is treated as zero only after
-`lastResetTimestamp + 24 hours`, matching the manager's next mutating call.
+The target manager's live daily limits remain authoritative. A config can use a bounded batch size up to `50` or `batchSize: "all"`, which
+consumes all currently available addition capacity while reserving validation capacity for source-invalid symbols. The cross-version
+HyperEVM v0.8.5 to Arbitrum v0.8.6 config uses `50` to keep its large catalog migration below the practical transaction gas ceiling. If either
+live limit is smaller than the missing catalog, the script stops at that limit and resumes safely on the next run. A stale on-chain counter is
+treated as zero only after `lastResetTimestamp + 24 hours`, matching the manager's next mutating call.
 
 ## 1. Fetch and compare
 

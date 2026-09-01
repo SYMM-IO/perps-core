@@ -98,6 +98,24 @@ test("config parsing normalizes chain IDs and addresses and refuses escaping out
 	assert.throws(() => parseSymbolSyncConfig({ ...parsed, output: { ...parsed.output, snapshot: "../snapshot.json" } }), /must stay inside/)
 })
 
+test("config parsing accepts the maximum bounded batch size", () => {
+	const config = {
+		apiVersion: SYMBOL_SYNC_CONFIG_API,
+		name: "test",
+		source: { network: "hyperevm", chainId: "999", core: "0x1111111111111111111111111111111111111111" },
+		target: {
+			network: "arbitrum",
+			chainId: "42161",
+			core: "0x2222222222222222222222222222222222222222",
+			symbolManager: "0x3333333333333333333333333333333333333333",
+		},
+		execution: { batchSize: 50, preserveValidation: true },
+		output: { snapshot: "scripts/output/snapshot.json", assignmentReport: "scripts/output/report.json" },
+	}
+	assert.equal(parseSymbolSyncConfig(config).execution.batchSize, 50)
+	assert.throws(() => parseSymbolSyncConfig({ ...config, execution: { ...config.execution, batchSize: 51 } }), /between 1 and 50/)
+})
+
 test("all batch size consumes the live symbol capacity", () => {
 	const parsed = parseSymbolSyncConfig({
 		apiVersion: SYMBOL_SYNC_CONFIG_API,

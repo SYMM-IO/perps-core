@@ -13,7 +13,7 @@
 		"symbolManager": "0x3FB153ee0a18B2726a54E132C173AC73D8c05e20"
 	},
 	"execution": {
-		"batchSize": "all",
+		"batchSize": 50,
 		"preserveValidation": true
 	},
 	"output": {
