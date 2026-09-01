@@ -48,7 +48,7 @@ export type SymbolSyncConfig = {
 		symbolManager: string
 	}
 	execution: {
-		batchSize: number
+		batchSize: number | "all"
 		preserveValidation: true
 	}
 	output: {
@@ -132,9 +132,9 @@ export function parseSymbolSyncConfig(value: unknown): SymbolSyncConfig {
 	const target = requiredObject(root.target, "target")
 	const execution = requiredObject(root.execution, "execution")
 	const output = requiredObject(root.output, "output")
-	const batchSize = Number(execution.batchSize)
-	if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 25) {
-		throw new Error("execution.batchSize must be an integer between 1 and the Symbol Manager daily default of 25")
+	const batchSize = execution.batchSize === "all" ? "all" : Number(execution.batchSize)
+	if (batchSize !== "all" && (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 25)) {
+		throw new Error('execution.batchSize must be "all" or an integer between 1 and 25')
 	}
 	if (execution.preserveValidation !== true) throw new Error("execution.preserveValidation must be true for exact-ID synchronization")
 
@@ -253,10 +253,12 @@ export function buildSymbolSyncWindow(
 	operations: DailyOperationValues,
 	lastResetTimestamp: bigint,
 	blockTimestamp: bigint,
-	batchSize: number,
+	batchSize: number | "all",
 ): SymbolSyncWindow {
 	if (analysis.conflicts.length > 0) throw new Error(`Cannot build a synchronization window with conflicts: ${analysis.conflicts.join("; ")}`)
-	if (!Number.isSafeInteger(batchSize) || batchSize < 1) throw new Error("batchSize must be a positive safe integer")
+	if (batchSize !== "all" && (!Number.isSafeInteger(batchSize) || batchSize < 1)) {
+		throw new Error('batchSize must be "all" or a positive safe integer')
+	}
 	const capacity = effectiveDailyCapacity(limits, operations, lastResetTimestamp, blockTimestamp)
 	let validationRemaining = capacity.validationRemaining
 
@@ -267,9 +269,10 @@ export function buildSymbolSyncWindow(
 
 	const additions: SerializedSymbol[] = []
 	const deactivateAdded: SerializedSymbol[] = []
-	const additionLimit = Number(capacity.additionRemaining < BigInt(batchSize) ? capacity.additionRemaining : BigInt(batchSize))
+	const configuredLimit = batchSize === "all" ? capacity.additionRemaining : BigInt(batchSize)
+	const additionLimit = capacity.additionRemaining < configuredLimit ? capacity.additionRemaining : configuredLimit
 	for (const symbol of analysis.additions) {
-		if (additions.length >= additionLimit) break
+		if (BigInt(additions.length) >= additionLimit) break
 		if (!symbol.isValid && BigInt(deactivateAdded.length) >= validationRemaining) break
 		additions.push(symbol)
 		if (!symbol.isValid) deactivateAdded.push(symbol)
