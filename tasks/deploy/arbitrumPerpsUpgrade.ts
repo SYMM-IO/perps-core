@@ -793,8 +793,8 @@ async function runForkRehearsal(
 		)
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
-		forkReport.lifecycle = "failed"
 		updateStage(forkReport, "forkRehearsal", "failed", { baseBlockNumber, error: message })
+		forkReport.lifecycle = "failed"
 		writeReport(forkOutput, input, forkReport)
 		updateStage(liveReport, "forkRehearsal", "failed", {
 			baseBlockNumber,
