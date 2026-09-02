@@ -130,6 +130,8 @@ function loadFacetState(file: string): FacetDeployment | null {
 }
 
 function assertSourceBinding(input: ArbitrumPerpsUpgradeInput): void {
+	const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim()
+	if (dirty) throw new Error("Upgrade execution requires a clean tracked worktree; the bound source commit has local modifications")
 	const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()
 	if (commit !== input.source.commit) throw new Error(`Upgrade input is bound to commit ${input.source.commit}, but this checkout is ${commit}`)
 	const recipe = loadDeploymentRecipe(input.source.recipe.path)
@@ -222,6 +224,7 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 	const coreFee = role(ethers, ROLE.FEE_ADMIN_ROLE)
 	const accountDefault = role(ethers, ROLE.DEFAULT_ADMIN_ROLE)
 	const accountSetter = role(ethers, ROLE.SETTER_ROLE)
+	const accountSignerSetter = role(ethers, ROLE.SIGNER_SETTER_ROLE)
 	const [
 		blockNumber,
 		coreOwner,
@@ -233,6 +236,7 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 		previousCoreDefault,
 		safeAccountDefault,
 		safeAccountSetter,
+		safeAccountSignerSetterAdmin,
 		previousAccountDefault,
 	] = await Promise.all([
 		ethers.provider.getBlockNumber(),
@@ -245,6 +249,7 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 		coreView.hasRole(previousAdmin, coreDefault),
 		accountView.hasRole(safe, accountDefault),
 		accountView.hasRole(safe, accountSetter),
+		accountView.isRoleAdmin(safe, accountSignerSetter),
 		accountView.hasRole(previousAdmin, accountDefault),
 	])
 	for (const [name, target] of Object.entries({ safe, ...input.contracts })) {
@@ -260,8 +265,8 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 	if (ethers.getAddress(collateral) !== ethers.getAddress(input.contracts.collateral)) {
 		throw new Error(`Core collateral is ${collateral}, expected ${input.contracts.collateral}`)
 	}
-	if ((!safeAccountDefault || !safeAccountSetter) && !previousAccountDefault) {
-		throw new Error(`Prior admin ${previousAdmin} cannot grant the missing AccountLayer authority`)
+	if (!safeAccountSignerSetterAdmin && !previousAccountDefault) {
+		throw new Error(`Prior admin ${previousAdmin} cannot delegate AccountLayer SIGNER_SETTER_ROLE administration`)
 	}
 	if ((!safeCoreDefault || !safeCoreFee) && !safeCoreDefault && !previousCoreDefault && ethers.getAddress(coreOwner) !== ethers.getAddress(safe)) {
 		throw new Error("Neither the Safe nor the prior admin can establish Core authority")
@@ -281,21 +286,12 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 			),
 		)
 	const accountActions: UpgradeAction[] = []
-	if (!safeAccountDefault) {
+	if (!safeAccountSignerSetterAdmin) {
 		accountActions.push(
 			action(
 				input.contracts.accountLayer,
-				accountControl.interface.encodeFunctionData("grantRole", [safe, accountDefault]),
-				`Grant AccountLayer DEFAULT_ADMIN_ROLE to Safe ${safe}`,
-			),
-		)
-	}
-	if (!safeAccountSetter) {
-		accountActions.push(
-			action(
-				input.contracts.accountLayer,
-				accountControl.interface.encodeFunctionData("grantRole", [safe, accountSetter]),
-				`Grant AccountLayer SETTER_ROLE to Safe ${safe}`,
+				accountControl.interface.encodeFunctionData("setRoleAdmin", [safe, accountSignerSetter, true]),
+				`Delegate AccountLayer SIGNER_SETTER_ROLE administration to Safe ${safe}`,
 			),
 		)
 	}
@@ -338,7 +334,12 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 		ownership: { core: coreOwner, accountLayer: accountOwner, expressProvider: expressOwner },
 		authority: {
 			core: { safeDefaultAdmin: safeCoreDefault, safeFeeAdmin: safeCoreFee, previousAdminDefault: previousCoreDefault },
-			accountLayer: { safeDefaultAdmin: safeAccountDefault, safeSetter: safeAccountSetter, previousAdminDefault: previousAccountDefault },
+			accountLayer: {
+				safeSignerSetterRoleAdmin: safeAccountSignerSetterAdmin,
+				safeDefaultAdmin: safeAccountDefault,
+				safeSetter: safeAccountSetter,
+				previousAdminDefault: previousAccountDefault,
+			},
 			currentInstantLayerSafeRoles: oldInstantRoles,
 		},
 		safe: { version, owners, threshold: threshold.toString(), nonce: nonce.toString() },
@@ -769,10 +770,6 @@ async function runForkRehearsal(
 			ethers,
 			async checkpoint => {
 				await inspectAuthority(ethers, input, forkReport)
-				await executeAccountAuthority(ethers, input, forkReport, previousAdmin)
-				await executeActions(safe, (forkReport.safeBatches.authority as any).actions)
-				await inspectAuthority(ethers, input, forkReport)
-				if ((forkReport.safeBatches.authority as any).actions.length) throw new Error("Fork authority bootstrap did not reach its post-state")
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "core", checkpoint)
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "accountLayer", checkpoint)
 				await deployNewInstantLayer(hre, ethers, input, forkReport, checkpoint)
@@ -781,6 +778,12 @@ async function runForkRehearsal(
 				await executeActions(safe, (forkReport.safeBatches.coreCut as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				await executeActions(safe, (forkReport.safeBatches.accountCut as any).actions)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				await executeAccountAuthority(ethers, input, forkReport, previousAdmin)
+				await executeActions(safe, (forkReport.safeBatches.authority as any).actions)
+				await inspectAuthority(ethers, input, forkReport)
+				if ((forkReport.safeBatches.authority as any).actions.length || (forkReport.externalActions.accountAuthority as any).actions.length)
+					throw new Error("Fork post-cut authority handoff did not reach its post-state")
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				await executeActions(safe, (forkReport.safeBatches.wiring as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)

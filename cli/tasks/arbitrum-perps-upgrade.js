@@ -31,9 +31,6 @@ const PLAN = Object.freeze([
 	{ id: "inspect", phase: "prepare", title: "Inspect the live target, ownership, roles, and Safe state" },
 	{ id: "rehearse", phase: "rehearsal", title: "Execute the complete upgrade on the matching Arbitrum fork" },
 	{ id: "authorize", phase: "authorization", title: "Authorize the exact live chain, Safe, input, and report" },
-	{ id: "account-authority", phase: "authority", title: "Grant required AccountLayer authority to the Safe" },
-	{ id: "core-authority", phase: "authority", title: "Execute the Safe Core authority bootstrap batch" },
-	{ id: "verify-authority", phase: "verification", title: "Verify Safe authority from live contract state" },
 	{ id: "deploy-core-facets", phase: "deployment", title: "Deploy or recover the Core facet and library set" },
 	{ id: "deploy-account-facets", phase: "deployment", title: "Deploy or recover the AccountLayer facet and library set" },
 	{ id: "deploy-instant-layer", phase: "deployment", title: "Deploy or recover the new InstantLayer" },
@@ -44,6 +41,13 @@ const PLAN = Object.freeze([
 	{ id: "verify-core-cut", phase: "verification", title: "Verify the Core selector surface from live state" },
 	{ id: "account-cut", phase: "execution", title: "Execute the Safe AccountLayer Diamond-cut batch" },
 	{ id: "verify-account-cut", phase: "verification", title: "Verify the AccountLayer selector surface from live state" },
+	{
+		id: "account-authority",
+		phase: "authority",
+		title: "Delegate AccountLayer SIGNER_SETTER_ROLE administration to the Safe",
+	},
+	{ id: "core-authority", phase: "authority", title: "Execute the Safe Core authority bootstrap batch" },
+	{ id: "verify-authority", phase: "verification", title: "Verify scoped post-cut authority from live contract state" },
 	{ id: "wiring", phase: "execution", title: "Execute the Safe InstantLayer and GaslessLayer wiring batch" },
 	{ id: "verify-wiring", phase: "verification", title: "Verify new InstantLayer and GaslessLayer wiring from live state" },
 	{ id: "canary", phase: "canary", title: "Record a successful production canary before cutover" },
@@ -188,7 +192,7 @@ async function prepareUpgrade({ root, ui }) {
 	);
 
 	const previousAdminSigner = await selectSigner(ui, {
-		role: "Prior AccountLayer administrator",
+		role: "Post-cut AccountLayer SIGNER_SETTER_ROLE administrator",
 		allowedModes: EOA_SIGNER_MODES.filter(mode => mode !== SIGNER_MODES.LOCAL_NODE),
 		initialMode: SIGNER_MODES.KEYSTORE,
 		network: "arbitrum",
@@ -243,7 +247,7 @@ async function reconcileUpgrade(ctx, input) {
 export function createArbitrumPerpsUpgradeTask(common) {
 	return common({
 		id: TASK_ID,
-		version: 2,
+		version: 3,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum Perps Core v0.8.6 upgrade",
@@ -312,7 +316,48 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				if (typedSafe === null) ctx.requestPause();
 				ctx.checkpoint();
 			});
-			await ctx.step("account-authority", PLAN[4].title, async () => {
+			for (const [index, phase] of ["deploy-core-facets", "deploy-account-facets", "deploy-instant-layer", "deploy-gasless-layer"].entries()) {
+				await ctx.step(phase, PLAN[4 + index].title, () =>
+					runPhase(ctx, input, phase, {
+						env: { SYMMIO_ARBITRUM_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) },
+					}),
+				);
+			}
+			await ctx.step("publish", PLAN[8].title, () =>
+				runPhase(ctx, input, "publish", {
+					env: { SYMMIO_ARBITRUM_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) },
+				}),
+			);
+			await ctx.step("plan-governance", PLAN[9].title, async () => {
+				await runPhase(ctx, input, "plan");
+			});
+			await ctx.step("core-cut", PLAN[10].title, () =>
+				dispatchBatch(
+					ctx,
+					input,
+					"coreCut",
+					"Arbitrum Perps Core Diamond cut",
+					"Install the exact reviewed Core selector surface from the pinned source.",
+				),
+			);
+			await ctx.step("verify-core-cut", PLAN[11].title, async () => {
+				const report = await runPhase(ctx, input, "plan");
+				assertNoActions(report, "safeBatches", "coreCut", "Core Diamond cut");
+			});
+			await ctx.step("account-cut", PLAN[12].title, () =>
+				dispatchBatch(
+					ctx,
+					input,
+					"accountCut",
+					"Arbitrum AccountLayer Diamond cut",
+					"Install the exact reviewed AccountLayer selector surface from the pinned source.",
+				),
+			);
+			await ctx.step("verify-account-cut", PLAN[13].title, async () => {
+				const report = await runPhase(ctx, input, "plan");
+				assertNoActions(report, "safeBatches", "accountCut", "AccountLayer Diamond cut");
+			});
+			await ctx.step("account-authority", PLAN[14].title, async () => {
 				await hydrateSigner(input.previousAdminSigner, ctx.ui);
 				await runPhase(ctx, input, "execute-account-authority", {
 					env: {
@@ -322,60 +367,19 @@ export function createArbitrumPerpsUpgradeTask(common) {
 					},
 				});
 			});
-			await ctx.step("core-authority", PLAN[5].title, () =>
+			await ctx.step("core-authority", PLAN[15].title, () =>
 				dispatchBatch(
 					ctx,
 					input,
 					"authority",
 					"Arbitrum Perps Core authority bootstrap",
-					"Grant the reviewed Core administrative roles to the upgrade Safe.",
+					"Grant the reviewed Core administrative roles to the upgrade Safe after both Diamond cuts.",
 				),
 			);
-			await ctx.step("verify-authority", PLAN[6].title, async () => {
+			await ctx.step("verify-authority", PLAN[16].title, async () => {
 				const report = await runPhase(ctx, input, "inspect");
 				assertNoActions(report, "safeBatches", "authority", "Core authority");
-				assertNoActions(report, "externalActions", "accountAuthority", "AccountLayer authority");
-			});
-			for (const [index, phase] of ["deploy-core-facets", "deploy-account-facets", "deploy-instant-layer", "deploy-gasless-layer"].entries()) {
-				await ctx.step(phase, PLAN[7 + index].title, () =>
-					runPhase(ctx, input, phase, {
-						env: { SYMMIO_ARBITRUM_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) },
-					}),
-				);
-			}
-			await ctx.step("publish", PLAN[11].title, () =>
-				runPhase(ctx, input, "publish", {
-					env: { SYMMIO_ARBITRUM_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) },
-				}),
-			);
-			await ctx.step("plan-governance", PLAN[12].title, async () => {
-				await runPhase(ctx, input, "plan");
-			});
-			await ctx.step("core-cut", PLAN[13].title, () =>
-				dispatchBatch(
-					ctx,
-					input,
-					"coreCut",
-					"Arbitrum Perps Core Diamond cut",
-					"Install the exact reviewed Core selector surface from the pinned source.",
-				),
-			);
-			await ctx.step("verify-core-cut", PLAN[14].title, async () => {
-				const report = await runPhase(ctx, input, "plan");
-				assertNoActions(report, "safeBatches", "coreCut", "Core Diamond cut");
-			});
-			await ctx.step("account-cut", PLAN[15].title, () =>
-				dispatchBatch(
-					ctx,
-					input,
-					"accountCut",
-					"Arbitrum AccountLayer Diamond cut",
-					"Install the exact reviewed AccountLayer selector surface from the pinned source.",
-				),
-			);
-			await ctx.step("verify-account-cut", PLAN[16].title, async () => {
-				const report = await runPhase(ctx, input, "plan");
-				assertNoActions(report, "safeBatches", "accountCut", "AccountLayer Diamond cut");
+				assertNoActions(report, "externalActions", "accountAuthority", "Scoped AccountLayer authority");
 			});
 			await ctx.step("wiring", PLAN[17].title, () =>
 				dispatchBatch(
