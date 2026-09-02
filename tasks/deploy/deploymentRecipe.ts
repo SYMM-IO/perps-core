@@ -2,6 +2,7 @@ import type { CoreDependencyReport } from "../../deployment-tooling/recipe.js"
 import { normalizeCheckpointScope } from "./checkpoint.js"
 
 export { loadCoreDependencyReport, parseCoreDependencyReport, type CoreDependencyReport } from "../../deployment-tooling/recipe.js"
+export type { GovernanceAction, SafeManualAction } from "./governanceActions.js"
 
 export type DeploymentTargetMode = "live" | "fork" | "local"
 export type DeploymentComponentName = "partyB" | "symbolManager" | "expressProvider" | "gaslessLayer"
@@ -10,13 +11,6 @@ export interface RecipeNetworkTarget {
 	name: string
 	chainId: number
 	mode: DeploymentTargetMode
-}
-
-export interface SafeManualAction {
-	to: string
-	value: "0"
-	data: string
-	description: string
 }
 
 function dependencyError(message: string): never {

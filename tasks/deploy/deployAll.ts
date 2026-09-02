@@ -2,9 +2,10 @@ import type { ContractTransactionResponse } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
+import { normalizeDeploymentSummary, renderDeploymentMarkdown, renderDeploymentTerminal } from "../../deployment-tooling/deployment-report.js"
 import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment-tooling/recipe.js"
 import { ControlFacet } from "../../src/types/index.js"
-import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
+import { atomicWriteFile, getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import {
 	loadCheckpoint,
@@ -40,6 +41,7 @@ import { assertExpressProviderDeployable, assertRecipeNetworkTarget, type SafeMa
 import { checkpointDeployment, persistSubmittedTransaction, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
 import { deployDiamond } from "./diamond.js"
 import type { GaslessLayerResolvedConfig } from "./gaslessLayer.js"
+import { classifyGovernanceAdmin, governanceAction, type GovernanceAction, type GovernanceAdminClassification } from "./governanceActions.js"
 import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
@@ -163,6 +165,9 @@ interface SystemDeploymentReport {
 	}
 	manualActions?: string[]
 	safeActions?: SafeManualAction[]
+	governanceActions?: GovernanceAction[]
+	governanceAdmin?: GovernanceAdminClassification
+	summaryPath?: string
 	timestamp: string
 	updatedAt: string
 }
@@ -184,6 +189,7 @@ interface SystemDeploymentReport {
  *   INTEGRATION_ADMIN_ROLE registerHook
  *   PARTY_B_MANAGER_ROLE   registerPartyB, setADLEnabled
  *   MUON_SETTER_ROLE       setMuonIds, setMuonConfig
+ *   PROVIDER_ADMIN_ROLE   registerExpressProvider
  */
 export const DEPLOYER_SETUP_ROLES = [
 	"PROTOCOL_CONFIG_ROLE",
@@ -192,6 +198,7 @@ export const DEPLOYER_SETUP_ROLES = [
 	"INTEGRATION_ADMIN_ROLE",
 	"PARTY_B_MANAGER_ROLE",
 	"MUON_SETTER_ROLE",
+	"PROVIDER_ADMIN_ROLE",
 ]
 
 /**
@@ -210,6 +217,7 @@ interface DeployedContracts {
 	accountLayerDiamond?: string
 	instantLayer?: string
 	symmioPartyB?: string
+	symmioPartyBImplementation?: string
 	accountManager?: string
 	symbolManager?: string
 	expressProvider?: string
@@ -1292,6 +1300,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									vanity,
 								})
 								deployedContracts.symmioPartyB = await symmioPartyB.getAddress()
+								deployedContracts.symmioPartyBImplementation = checkpoint.contracts.symmioPartyB?.implementation
 								logger.info(`SymmioPartyB deployed at: ${deployedContracts.symmioPartyB}`)
 								deploymentResults.push({
 									contract: "SymmioPartyB",
@@ -1325,7 +1334,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								const wasAlreadyDeployed = !!checkpoint.contracts.symbolManager
 								const symbolManager = await deploySymbolManager(hre, {
 									symmioAddress: deployedContracts.diamond!,
-									admin: config.admin,
+									admin: deployerAddress,
 									logData,
 									checkpoint,
 									vanity,
@@ -1701,6 +1710,14 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					})
 				}
 
+				if (recipe?.expressProvider.mode === "deploy" && recipe.expressProvider.registerOnCore !== false) {
+					if (!deployedContracts.expressProvider) throw new Error("Fresh ExpressProvider deployment did not return an address")
+					const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", deployedContracts.diamond!)
+					if (!(await coreView.isExpressProviderRegistered(deployedContracts.expressProvider))) {
+						throw new Error("Fresh ExpressProvider was not registered before deployer PROVIDER_ADMIN_ROLE cleanup")
+					}
+				}
+
 				await runDeploymentStep(checkpoint, {
 					id: "transferOwnership",
 					title: "Transferring Diamond ownership to admin",
@@ -1805,24 +1822,51 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					: []
 				const manualActions = pendingOwnership.map(target => `${config.admin} calls acceptOwnership() on ${target.label} ${target.address}`)
 				const ownershipInterface = new ethers.Interface(["function acceptOwnership()"])
-				const roleInterface = new ethers.Interface(["function grantRole(bytes32 role,address account)"])
-				const safeActions: SafeManualAction[] = pendingOwnership.map(target => ({
-					to: target.address,
-					value: "0",
-					data: ownershipInterface.encodeFunctionData("acceptOwnership"),
-					description: `Accept ${target.label} ownership`,
-				}))
+				const diamondOwnerInterface = new ethers.Interface(["function getOwner() view returns (address)"])
+				const expressOwnerInterface = new ethers.Interface(["function owner() view returns (address)"])
+				const roleInterface = new ethers.Interface([
+					"function grantRole(bytes32 role,address account)",
+					"function hasRole(bytes32 role,address account) view returns (bool)",
+				])
+				const governanceActions: GovernanceAction[] = pendingOwnership.map(target =>
+					governanceAction({
+						id: `ownership.${target.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.${target.address.toLowerCase()}`,
+						method: "acceptOwnership()",
+						expectedSigner: config.admin,
+						to: target.address,
+						value: "0",
+						data: ownershipInterface.encodeFunctionData("acceptOwnership"),
+						description: `Accept ${target.label} ownership`,
+						postState: {
+							to: target.address,
+							data: diamondOwnerInterface.encodeFunctionData("getOwner"),
+							expectedResult: diamondOwnerInterface.encodeFunctionResult("getOwner", [config.admin]),
+						},
+					}),
+				)
+				const safeActions: SafeManualAction[] = [...governanceActions]
 				if (pendingSymbolManagerRoles.length > 0 && deployedContracts.symbolManager && config.symbolManagerOperator) {
 					manualActions.push(
 						`${config.admin} grants ${pendingSymbolManagerRoles.join(", ")} on SymbolManager ${deployedContracts.symbolManager} to ${config.symbolManagerOperator}`,
 					)
 					for (const role of pendingSymbolManagerRoles) {
-						safeActions.push({
+						const roleHash = ethers.keccak256(ethers.toUtf8Bytes(role))
+						const action = governanceAction({
+							id: `symbol-manager.operator-role.${role.toLowerCase()}.${config.symbolManagerOperator.toLowerCase()}`,
+							method: "grantRole(bytes32,address)",
+							expectedSigner: config.admin,
 							to: deployedContracts.symbolManager,
 							value: "0",
-							data: roleInterface.encodeFunctionData("grantRole", [ethers.keccak256(ethers.toUtf8Bytes(role)), config.symbolManagerOperator]),
+							data: roleInterface.encodeFunctionData("grantRole", [roleHash, config.symbolManagerOperator]),
 							description: `Grant ${role} on SymbolManager to ${config.symbolManagerOperator}`,
+							postState: {
+								to: deployedContracts.symbolManager,
+								data: roleInterface.encodeFunctionData("hasRole", [roleHash, config.symbolManagerOperator]),
+								expectedResult: roleInterface.encodeFunctionResult("hasRole", [true]),
+							},
 						})
+						governanceActions.push(action)
+						safeActions.push(action)
 					}
 				}
 
@@ -1832,6 +1876,25 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				for (const action of expressProviderResult?.manualActions || []) {
 					manualActions.push(`${config.admin} executes: ${action.description} (to ${action.to}, data ${action.data})`)
 					safeActions.push(action)
+					if (
+						deployedContracts.expressProvider &&
+						action.to.toLowerCase() === deployedContracts.expressProvider.toLowerCase() &&
+						action.data.toLowerCase() === ownershipInterface.encodeFunctionData("acceptOwnership").toLowerCase()
+					) {
+						governanceActions.push(
+							governanceAction({
+								id: `express-provider.ownership.${action.to.toLowerCase()}`,
+								method: "acceptOwnership()",
+								expectedSigner: config.admin,
+								...action,
+								postState: {
+									to: action.to,
+									data: expressOwnerInterface.encodeFunctionData("owner"),
+									expectedResult: expressOwnerInterface.encodeFunctionResult("owner", [config.admin]),
+								},
+							}),
+						)
+					}
 				}
 				for (const check of expressProviderResult?.checks || []) {
 					if (check.status === "pending") manualActions.push(`ExpressProvider check still pending: ${check.check}`)
@@ -1852,6 +1915,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				}
 
 				const handoverPending = manualActions.length > 0
+				const governanceAdmin = await classifyGovernanceAdmin(ethers.provider, config.admin)
 				checkpoint.step = handoverPending ? "pending_handover" : "complete"
 				saveCheckpoint(checkpoint)
 
@@ -1891,6 +1955,8 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				}
 				report.manualActions = manualActions
 				report.safeActions = safeActions
+				report.governanceActions = governanceActions
+				report.governanceAdmin = governanceAdmin
 				// Persist a validating report before either gate runs. Any interruption now leaves
 				// an explicitly incomplete artifact rather than a durable false-green summary.
 				saveReport(report, deployedContracts)
@@ -1963,14 +2029,14 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 				report.lifecycle = handoverPending ? "pending_handover" : "complete"
 				report.updatedAt = new Date().toISOString()
 				report.transactions = checkpoint.transactions || []
-				displayReport(report, deployedContracts, config)
+				displayReport(report, deployedContracts)
 				if (create2FactoryDeployed) logger.info(formatFactoryPinHint(deployedContracts.create2Factory!))
 				saveReport(report, deployedContracts)
 
 				if (handoverPending) {
 					logger.info()
 					logger.info("=".repeat(80))
-					logger.info("AUTOMATED DEPLOYMENT COMPLETE — ADMIN ACTIONS REQUIRED")
+					logger.info("DEPLOYMENT HANDOVER REQUIRED — ADMIN ACTIONS REQUIRED")
 					logger.info("=".repeat(80))
 					for (const target of pendingOwnership) {
 						logger.info(`${target.label}: ${target.address}`)
@@ -2635,12 +2701,9 @@ async function setupSystem(
 		)
 
 		if (config.symbolManagerOperator) {
-			// Delegate to the shared helper rather than duplicating the grants inline. It
-			// checks first whether the deployer actually holds DEFAULT_ADMIN_ROLE on the
-			// SymbolManager — the constructor grants it to `admin` only, so on any deploy
-			// where ADMIN_PUBLIC_KEY differs from the deployer these grants revert. The
-			// helper prints the exact command for the admin to run instead of failing the
-			// whole deployment at its last step.
+			// A fresh SymbolManager is created with temporary deployer admin so all operator
+			// setup completes before the final admin is granted authority and the deployer
+			// renounces it. Reused deployments retain the helper's authority-aware fallback.
 			if (isCompleted(checkpoint, "setup.smOperatorRoles")) {
 				logger.info("  ⏭ SymbolManager operator roles already verified")
 			} else {
@@ -2648,7 +2711,12 @@ async function setupSystem(
 				const result = await grantSymbolManagerOperatorRoles(hre, {
 					symbolManagerAddress: deployedContracts.symbolManager!,
 					operator: config.symbolManagerOperator,
+					finalAdmin: config.admin,
+					renounceTemporaryAdmin: true,
 				})
+				if (config.symbolManagerMode === "deploy" && result.deferred > 0) {
+					throw new Error("Fresh SymbolManager setup deferred roles even though the deployer must hold temporary administration")
+				}
 				checkpoint.progress = checkpoint.progress || {}
 				if (result.deferred > 0) {
 					checkpoint.progress["pending.smOperatorRoles"] = result.missingRoles
@@ -3103,85 +3171,27 @@ function generateReport(
 	}
 }
 
-function displayReport(report: SystemDeploymentReport, deployedContracts: DeployedContracts, config?: { deployMockVerifier?: boolean }): void {
-	logger.info("DEPLOYMENT SUMMARY")
-	logger.info("-".repeat(80))
-	logger.info(`Deployment ID: ${report.deploymentId}`)
-	logger.info(`Lifecycle: ${report.lifecycle}`)
-	logger.info(`Health Check: ${report.checks.health}`)
-	logger.info(`Explorer Verification: ${report.checks.verification} (${report.checks.verificationPolicy})`)
-	logger.info(`Confirmed/Recorded Transactions: ${report.transactions.length}`)
-	logger.info(`Deployment Groups: ${report.summary.totalDeploymentGroups}`)
-	logger.info(`Successful Groups: ${report.summary.successfulDeploymentGroups}`)
-	logger.info(`Skipped/Reused Groups: ${report.summary.skippedOrReusedDeploymentGroups}`)
-	logger.info(`Failed Groups: ${report.summary.failedDeploymentGroups}`)
-	logger.info()
-
-	logger.info("DEPLOYED ADDRESSES")
-	logger.info("-".repeat(80))
-	if (deployedContracts.create2Factory) logger.info(`Create2Factory:       ${deployedContracts.create2Factory}`)
-	if (deployedContracts.collateral) logger.info(`Collateral:           ${deployedContracts.collateral}`)
-	if (deployedContracts.diamond) logger.info(`Diamond:              ${deployedContracts.diamond}`)
-	if (deployedContracts.signatureVerifier)
-		logger.info(`${config?.deployMockVerifier ? "MockMuonSigVerifier" : "MuonSignatureVerifier"}: ${deployedContracts.signatureVerifier}`)
-	if (deployedContracts.accountLayerDiamond) logger.info(`AccountLayerDiamond:  ${deployedContracts.accountLayerDiamond}`)
-	if (deployedContracts.instantLayer) logger.info(`InstantLayer:         ${deployedContracts.instantLayer}`)
-	if (deployedContracts.symmioPartyB) logger.info(`SymmioPartyB:         ${deployedContracts.symmioPartyB}`)
-	if (deployedContracts.symbolManager) logger.info(`SymbolManager:        ${deployedContracts.symbolManager}`)
-	if (deployedContracts.accountManager) logger.info(`AccountManager:       ${deployedContracts.accountManager}`)
-	if (deployedContracts.expressProvider) logger.info(`ExpressProvider:      ${deployedContracts.expressProvider}`)
-	if (deployedContracts.gaslessLayer) logger.info(`GaslessLayer:         ${deployedContracts.gaslessLayer}`)
-	if (deployedContracts.gaslessLayerImplementation) logger.info(`GaslessLayer Impl:    ${deployedContracts.gaslessLayerImplementation}`)
-	if (deployedContracts.symmioLiquidator) logger.info(`SymmioLiquidator:     ${deployedContracts.symmioLiquidator}`)
-	logger.info()
-
-	logger.info("CONFIGURATION")
-	logger.info("-".repeat(80))
-	logger.info(`Admin:                       ${report.config.admin}`)
-	logger.info(`Symmio Fee Receiver:         ${report.config.symmioFeeReceiver}`)
-	logger.info(`Liquidation Insurance Vault: ${report.config.liquidationInsuranceVault}`)
-	logger.info(`Max Liquidation Profit:      ${report.config.maxLiquidationProfitPerPosition}`)
-	logger.info(`Soft Penalty Collector:      ${report.config.softLiquidationPenaltyCollector}`)
-	logger.info(`Deploy PartyB:               ${report.config.deployPartyB}`)
-	logger.info(`Set ADL Enabled:             ${report.config.setAdlEnabled}`)
-	logger.info(`PartyB Operators:            ${report.config.partyBOperators.join(", ") || "(not set)"}`)
-	logger.info(`Deploy SymbolManager:        ${report.config.deploySymbolManager}`)
-	logger.info(`SymbolManager Operator:      ${report.config.symbolManagerOperator || "(not set)"}`)
-	logger.info(`Register Dummy Affiliate:    ${report.config.registerDummyAffiliate}`)
-	logger.info(`Setup InstantLayer Templates: ${report.config.setupInstantLayerTemplates}`)
-	logger.info(`Muon Verifier Mode:           ${report.config.deployMockVerifier ? "mock (local/test only)" : "real"}`)
-	logger.info(`Muon App ID:                 ${report.config.muonAppId || "(not set)"}`)
-	logger.info(`Muon UPNL Valid Time:        ${report.config.muonUpnlValidTime || "(not set)"}`)
-	logger.info(`Muon Price Valid Time:       ${report.config.muonPriceValidTime || "(not set)"}`)
-	logger.info(
-		`Muon UPNL Overrides:         ${
-			(report.config.muonFunctionUpnlValidTimes ?? []).map(({ name, upnlValidTime }) => `${name}=${upnlValidTime}`).join(", ") || "(none)"
-		}`,
-	)
-	logger.info(`Muon Public Key X:           ${report.config.muonPublicKeyX || "(not set)"}`)
-	logger.info(`Muon Public Key Parity:      ${report.config.muonPublicKeyParity || "(not set)"}`)
-	logger.info(
-		`Muon Gateway Signers:        ${report.config.muonGatewaySigners.length > 0 ? report.config.muonGatewaySigners.join(",") : "(not set)"}`,
-	)
-	logger.info(
-		`Muon Function Permissions:   ${report.config.muonFunctionPermissions.length > 0 ? report.config.muonFunctionPermissions.join(",") : report.config.deployMockVerifier ? "(not applicable)" : "(not set)"}`,
-	)
-	logger.info()
-
-	logger.info("=".repeat(80))
-	logger.info(`Report generated at: ${report.timestamp}`)
-	logger.info("=".repeat(80))
+function displayReport(report: SystemDeploymentReport, deployedContracts: DeployedContracts): void {
+	const explorer = report.chainId === 42161 ? "https://arbiscan.io" : undefined
+	const fullReport = { ...report, addresses: deployedContracts, governance: report.governanceAdmin }
+	logger.info(renderDeploymentTerminal(normalizeDeploymentSummary(fullReport, { explorer })).trimEnd())
 }
 
 function saveReport(report: SystemDeploymentReport, deployedContracts: DeployedContracts): void {
 	const filename = "deployment-report.json"
+	const summaryFilename = "deployment-summary.md"
+	report.summaryPath = `${getDataDir()}/${summaryFilename}`
 	const fullReport = {
 		...report,
 		addresses: deployedContracts,
+		governance: report.governanceAdmin,
 	}
 
 	writeData(filename, fullReport)
+	const explorer = report.chainId === 42161 ? "https://arbiscan.io" : undefined
+	atomicWriteFile(report.summaryPath, renderDeploymentMarkdown(normalizeDeploymentSummary(fullReport, { explorer })), 0o600)
 
 	logger.info()
 	logger.info(`Full report saved to: ${getDataDir()}/${filename}`)
+	logger.info(`Readable address report saved to: ${report.summaryPath}`)
 }

@@ -1,9 +1,9 @@
 import { activeDescription, homeOptions, taskSummary } from "../app.js";
-import { readDeploymentReport } from "../lib/context.js";
 import { HELP_TEXT, runCli } from "../symmio.js";
 import { catalog } from "../task-runner.js";
 import { TASK_DEFINITIONS, checklistExplorerVerification } from "../tasks/registry.js";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -51,9 +51,7 @@ test("home menu ordering is exact and active actions stay visibly disabled", () 
 	assert.equal(active[5].disabled, false);
 });
 
-test("completed deployment reports are described as history, not active task state", () => {
-	const arbitrumReport = readDeploymentReport(42161);
-	assert.equal(arbitrumReport.lifecycle, "complete");
+test("idle state describes deployment reports as history, not active task state", () => {
 	assert.match(activeDescription(null), /No active task/);
 	assert.match(activeDescription(null), /Completed deployment reports remain in history/);
 });
@@ -112,9 +110,25 @@ test("the deployment checklist requires explorer success live and an explicit no
 	assert.equal(checklistExplorerVerification(context("local"), { checks: { verificationPolicy: "required", verification: "passed" } }), false);
 });
 
+test("operator docs explain classified governance handover and the readable report", () => {
+	const documentation = ["cli/README.md", "docs/deployment.md", "docs/deployment-guide.html"]
+		.map(file => fs.readFileSync(path.resolve(file), "utf8"))
+		.join("\n");
+	for (const phrase of [
+		"Ledger hardware wallet",
+		"Hardhat keystore wallet",
+		"Safe Transaction Builder",
+		"deployment-summary.md",
+		"Handover required",
+	]) {
+		assert.match(documentation, new RegExp(phrase, "i"));
+	}
+	assert.match(documentation, /tasks\/data\/.*ignored.*local evidence/is);
+});
+
 test("full deployment plans give every contract batch entry a unique stable id", async () => {
 	const definition = TASK_DEFINITIONS.find(item => item.id === "deploy.full");
-	assert.equal(definition.version, 3);
+	assert.equal(definition.version, 4);
 	for (const mode of ["local", "fork", "live"]) {
 		const plan = await definition.plan({}, { mode });
 		const items = plan.flatMap(step => step.items || []);
@@ -123,12 +137,74 @@ test("full deployment plans give every contract batch entry a unique stable id",
 		for (const item of items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
 	}
 	const productionPlan = await definition.plan({}, { mode: "live", config: path.resolve("deployment-recipes/arbitrum-vibe-production.json") });
+	for (const step of productionPlan.filter(step => step.items)) {
+		assert.equal(new Set(step.items).size, step.items.length);
+		for (const item of step.items) assert.match(item, /^[a-z0-9][a-z0-9.-]*$/);
+	}
 	const liveItems = productionPlan.find(step => step.id === "execute").items;
-	assert.ok(liveItems.some(item => item.startsWith("live.partyB.grant-trusted-operator-")));
+	assert.ok(liveItems.some(item => item.startsWith("live.party-b.grant-trusted-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
 	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-partyb-liquidator-role"));
+});
+
+test("standalone deployments expose stable preflight, execution, and post-state verification steps", async () => {
+	const cases = [
+		{
+			id: "deploy.fee-distributor",
+			input: {
+				network: "fork-arbitrum",
+				symmio: "0x1111111111111111111111111111111111111111",
+				admin: "0x2222222222222222222222222222222222222222",
+				receiver: "0x3333333333333333333333333333333333333333",
+				share: "400000000000000000",
+			},
+		},
+		{
+			id: "deploy.multi-account",
+			input: {
+				network: "fork-arbitrum",
+				symmio: "0x1111111111111111111111111111111111111111",
+				admin: "0x2222222222222222222222222222222222222222",
+			},
+		},
+		{ id: "deploy.multicall", input: { network: "fork-arbitrum" } },
+	];
+
+	for (const testCase of cases) {
+		const definition = TASK_DEFINITIONS.find(item => item.id === testCase.id);
+		assert.equal(definition.version, 3);
+		assert.deepEqual(
+			(await definition.plan({}, testCase.input)).map(step => [step.id, step.phase]),
+			[
+				["inspect", "prepare"],
+				["deploy", "execution"],
+				["verify", "verification"],
+			],
+		);
+
+		const steps = [];
+		const processes = [];
+		await definition.run(
+			{
+				step: async (id, title, action) => {
+					steps.push([id, title]);
+					return action();
+				},
+				runProcess: async (command, args) => processes.push([command, args]),
+			},
+			testCase.input,
+		);
+		assert.deepEqual(
+			steps.map(([id]) => id),
+			["inspect", "deploy", "verify"],
+		);
+		assert.equal(processes.length, 3);
+		assert.ok(processes[0][1].includes("preflight"));
+		assert.ok(processes[1][1][0].startsWith("deploy:"));
+		assert.ok(processes[2][1].includes("poststate"));
+	}
 });
 
 test("progress summary is compact at 80 columns and details expose hashes, receipts and gas", () => {

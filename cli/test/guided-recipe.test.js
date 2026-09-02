@@ -16,16 +16,28 @@ import test from "node:test";
 const ACCOUNTS = Array.from({ length: 8 }, (_, index) => `0x${String(index + 1).padStart(40, "0")}`);
 const PRIVATE_KEY = `0x${"11".repeat(32)}`;
 
-function fakeUi({ keystore, network = "fork-arbitrum", overrides = [], omitPartyBSigner = false }) {
+function fakeUi({
+	keystore,
+	network = "fork-arbitrum",
+	overrides = [],
+	omitPartyBSigner = false,
+	existingChoice = "use",
+	selectedRecipePath,
+	signerMode,
+}) {
 	const prompts = [];
 	return {
 		prompts,
-		select: async ({ message, options }) => {
-			prompts.push({ type: "select", message });
+		select: async options => {
+			const { message } = options;
+			prompts.push({ type: "select", ...options });
 			if (message === "Deployment transaction signer") {
+				if (signerMode) return signerMode;
 				if (network === "localhost") return "local-node";
 				return keystore ? "hardhat-keystore" : "private-key";
 			}
+			if (message === "A reviewed recipe already exists for this scope") return existingChoice;
+			if (message === "Which reviewed recipe file do you want to use?") return selectedRecipePath;
 			return network;
 		},
 		multiselect: async options => {
@@ -77,6 +89,50 @@ test("environment secret references remain available for fork-only operation", a
 	assert.equal(recipe.network.mode, "fork");
 	assert.equal(recipe.secrets.deployer, undefined);
 	assert.equal(recipe.secrets.rpc, "env://RPC_ARBITRUM");
+});
+
+test("an existing scope can select any JSON recipe file from deployment-recipes", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-select-recipe-"));
+	const created = await prepareDeploymentRecipe({ root, ui: fakeUi({ keystore: false }) });
+	const selectedRecipePath = path.join(root, "deployment-recipes", "fork-arbitrum-reviewed-alternative.json");
+	const selectedRecipe = JSON.parse(fs.readFileSync(created.config, "utf8"));
+	selectedRecipe.name = "fork-arbitrum-reviewed-alternative";
+	fs.writeFileSync(selectedRecipePath, `${JSON.stringify(selectedRecipe, null, 2)}\n`);
+	fs.writeFileSync(path.join(root, "deployment-recipes", "ignore-me.txt"), "not a recipe\n");
+
+	const ui = fakeUi({ keystore: false, existingChoice: "choose", selectedRecipePath });
+	const input = await prepareDeploymentRecipe({ root, ui });
+	assert.equal(input.config, selectedRecipePath);
+	const selection = ui.prompts.find(prompt => prompt.message === "Which reviewed recipe file do you want to use?");
+	assert.deepEqual(
+		selection.options.map(option => option.label),
+		["deployment-recipes/fork-arbitrum-reviewed-alternative.json", "deployment-recipes/fork-arbitrum.json"],
+	);
+	assert.equal(ui.prompts.filter(prompt => prompt.message === "Deployment transaction signer").length, 1);
+});
+
+test("a selected recipe replaces the earlier network choice before signer selection", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-select-network-"));
+	const localhost = await prepareDeploymentRecipe({
+		root,
+		ui: fakeUi({ network: "localhost" }),
+		discoverAccounts: async () => ACCOUNTS,
+	});
+	await prepareDeploymentRecipe({ root, ui: fakeUi({ keystore: false }) });
+
+	const ui = fakeUi({
+		keystore: false,
+		existingChoice: "choose",
+		selectedRecipePath: localhost.config,
+		signerMode: "local-node",
+	});
+	const input = await prepareDeploymentRecipe({ root, ui });
+	assert.equal(input.config, localhost.config);
+	assert.equal(input.network, "localhost");
+	assert.equal(input.signer.mode, "local-node");
+	const signerPrompt = ui.prompts.find(prompt => prompt.message === "Deployment transaction signer");
+	assert.ok(signerPrompt.options.some(option => option.value === "local-node"));
+	assert.match(ui.prompts.find(prompt => prompt.title === "Deployment target changed").message, /targets localhost/);
 });
 
 test("guided PartyB setup allows the ERC-1271 signer to remain unset", async () => {
@@ -147,6 +203,14 @@ test("GaslessLayer guided editing covers selector-specific fee overrides", async
 	assert.doesNotThrow(() => validateDeploymentRecipe(recipe));
 });
 
+test("guided tests use an explicit deployment-report fixture", () => {
+	const fixture = path.resolve("cli/test/fixtures/arbitrum-deployment-report.json");
+	assert.equal(fs.existsSync(fixture), true);
+	const report = JSON.parse(fs.readFileSync(fixture, "utf8"));
+	assert.equal(report.chainId, 42161);
+	assert.ok(report.addresses.expressProvider);
+});
+
 test("ExpressProvider patch sections are edited interactively and can declare role revocations", async () => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-guided-patch-"));
 	const source = JSON.parse(fs.readFileSync(path.resolve("deployment-tooling/examples/arbitrum.v1.example.json"), "utf8"));
@@ -155,7 +219,7 @@ test("ExpressProvider patch sections are edited interactively and can declare ro
 	fs.mkdirSync(path.dirname(recipePath), { recursive: true });
 	fs.writeFileSync(recipePath, `${JSON.stringify(recipe, null, 2)}\n`);
 
-	const report = JSON.parse(fs.readFileSync(path.resolve("tasks/data/42161/deployment-report.json"), "utf8"));
+	const report = JSON.parse(fs.readFileSync(path.resolve("cli/test/fixtures/arbitrum-deployment-report.json"), "utf8"));
 	report.network = "localhost";
 	report.chainId = 31337;
 	report.live = false;

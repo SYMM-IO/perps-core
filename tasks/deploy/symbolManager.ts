@@ -220,6 +220,8 @@ type GrantOperatorRolesArgs = {
 	symbolManagerAddress: string
 	operator: string
 	roles?: readonly string[]
+	finalAdmin?: string
+	renounceTemporaryAdmin?: boolean
 }
 
 /**
@@ -229,13 +231,20 @@ type GrantOperatorRolesArgs = {
  */
 export async function grantSymbolManagerOperatorRoles(
 	hre: any,
-	{ symbolManagerAddress: rawSm, operator: rawOperator, roles = OPERATOR_ROLES_DEFAULT }: GrantOperatorRolesArgs,
+	{
+		symbolManagerAddress: rawSm,
+		operator: rawOperator,
+		roles = OPERATOR_ROLES_DEFAULT,
+		finalAdmin: rawFinalAdmin,
+		renounceTemporaryAdmin = false,
+	}: GrantOperatorRolesArgs,
 ) {
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
 	const symbolManagerAddress = checksumAddress(rawSm)
 	const operator = checksumAddress(rawOperator)
+	const finalAdmin = rawFinalAdmin ? checksumAddress(rawFinalAdmin) : undefined
 
 	const sm = await ethers.getContractAt("SymmioSymbolManager", symbolManagerAddress)
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
@@ -246,19 +255,9 @@ export async function grantSymbolManagerOperatorRoles(
 		})),
 	)
 	const missingRoles = roleStates.filter(state => !state.already).map(state => state.role)
-	if (missingRoles.length === 0) {
-		for (const { role } of roleStates) logger.info(`  ⏭ ${role} already granted to ${operator}`)
-		logger.info(`  Operator roles: 0 granted, ${roles.length} already had`)
-		return { granted: 0, skipped: roles.length, deferred: 0, missingRoles: [] as string[] }
-	}
-
-	// SymmioSymbolManager's constructor grants DEFAULT_ADMIN_ROLE to `admin` only — the
-	// deployer gets nothing. Whenever ADMIN_PUBLIC_KEY differs from the deployer (i.e. any
-	// real deployment, where admin is a multisig) these grants revert. Detect that up front
-	// and hand the operator an exact command instead of failing the whole deployment at the
-	// last step with a raw AccessControl revert.
-	const deployerIsAdmin = await sm.hasRole(await sm.DEFAULT_ADMIN_ROLE(), deployer.address)
-	if (!deployerIsAdmin) {
+	const defaultAdminRole = await sm.DEFAULT_ADMIN_ROLE()
+	const deployerIsAdmin = await sm.hasRole(defaultAdminRole, deployer.address)
+	if (missingRoles.length > 0 && !deployerIsAdmin) {
 		logger.info("")
 		logger.info(`  ⚠ Deployer ${deployer.address} does not hold DEFAULT_ADMIN_ROLE on the SymbolManager,`)
 		logger.info(`    so it cannot grant operator roles. The admin must run this themselves:`)
@@ -282,6 +281,37 @@ export async function grantSymbolManagerOperatorRoles(
 		logger.info(`  Granting ${role} to ${operator} on SymbolManager...`)
 		await send(sm.connect(deployer).grantRole(roleHash(role), operator), `grant ${role} to ${operator}`)
 		granted++
+	}
+
+	if (finalAdmin && !(await sm.hasRole(defaultAdminRole, finalAdmin))) {
+		if (!deployerIsAdmin) {
+			throw new Error(`Cannot hand over SymbolManager admin: deployer ${deployer.address} does not hold DEFAULT_ADMIN_ROLE`)
+		}
+		logger.info(`  Granting DEFAULT_ADMIN_ROLE to final admin ${finalAdmin} on SymbolManager...`)
+		await send(sm.connect(deployer).grantRole(defaultAdminRole, finalAdmin), `grant SymbolManager DEFAULT_ADMIN_ROLE to ${finalAdmin}`)
+	}
+	if (renounceTemporaryAdmin && finalAdmin && finalAdmin.toLowerCase() !== deployer.address.toLowerCase()) {
+		if (!(await sm.hasRole(defaultAdminRole, finalAdmin))) {
+			throw new Error(`Refusing to renounce SymbolManager admin: final admin ${finalAdmin} does not hold DEFAULT_ADMIN_ROLE`)
+		}
+		if (await sm.hasRole(defaultAdminRole, deployer.address)) {
+			logger.info(`  Renouncing temporary deployer DEFAULT_ADMIN_ROLE on SymbolManager...`)
+			await send(sm.connect(deployer).renounceRole(defaultAdminRole, deployer.address), "renounce temporary SymbolManager DEFAULT_ADMIN_ROLE")
+		}
+	}
+	for (const { role } of roleStates) {
+		if (!(await sm.hasRole(roleHash(role), operator))) throw new Error(`SymbolManager operator ${operator} is missing ${role} after setup`)
+	}
+	if (finalAdmin && !(await sm.hasRole(defaultAdminRole, finalAdmin))) {
+		throw new Error(`SymbolManager final admin ${finalAdmin} is missing DEFAULT_ADMIN_ROLE after setup`)
+	}
+	if (
+		renounceTemporaryAdmin &&
+		finalAdmin &&
+		finalAdmin.toLowerCase() !== deployer.address.toLowerCase() &&
+		(await sm.hasRole(defaultAdminRole, deployer.address))
+	) {
+		throw new Error(`Temporary deployer ${deployer.address} still holds SymbolManager DEFAULT_ADMIN_ROLE after handover`)
 	}
 
 	logger.info(`  Operator roles: ${granted} granted, ${skipped} already had`)

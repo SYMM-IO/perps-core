@@ -135,11 +135,17 @@ from running or cancelling it concurrently. Read-only checks do not occupy the a
 
 ## Safe and handover waiting states
 
-The deployment/component report is the authoritative list of manual actions. When admin or
-Safe authority is required, the task records target, value, calldata, and reason. The
-operator may receive Safe Transaction Builder JSON with decoded method names or create a
-proposal directly through the official Safe SDK using a keystore, private-key, or Ledger
-Safe owner. The proposal itself is not treated as confirmation; the task waits.
+Fresh deployments use temporary deployer roles to finish configuration before those roles
+are revoked. The ordinary fresh handover therefore contains ownership acceptance only;
+reused components may still expose exact governance repair calls.
+
+The deployment/component report is the authoritative list of manual actions. The task
+classifies the configured admin from chain state before choosing delivery. An EOA can use a
+Ledger hardware wallet, a Hardhat keystore wallet, a transient private key, or an unlocked
+local account where allowed. A verified Safe can receive Safe Transaction Builder JSON with
+decoded method names or a direct proposal through the official Safe SDK. An unknown
+contract stays manual. The proposal or transaction receipt alone is not treated as final;
+output remains **Handover required** until exact post-state reads pass.
 After those actions confirm, choose **Continue active task**. The same stable handler rereads
 live state, avoids redeployment, runs the final health gates, marks the lifecycle complete,
 and archives the task.
@@ -162,14 +168,13 @@ healthy deployment.
 ## Maintenance
 
 **Other maintenance scripts** contains only registered operator operations: RPC health,
-protocol configuration show/diff/export, facet verification, explorer retry, Ledger
-handover, HyperEVM big-block control, and local/fork proxy-upgrade rehearsal. Each uses the
+protocol configuration show/diff/export, facet verification, explorer retry, HyperEVM
+big-block control, and local/fork proxy-upgrade rehearsal. Each uses the
 same task policies, progress UI, redacted evidence, and cancellation rules.
 
 Generic proxy upgrades cannot execute on a live RPC. Live upgrades require a separate
 reviewed target-specific task with storage-layout and implementation identity proof.
-HyperEVM big-block preference changes and Ledger handover are mutating tasks and acquire the
-active slot.
+HyperEVM big-block preference changes are mutating tasks and acquire the active slot.
 
 ## Evidence paths
 
@@ -180,12 +185,16 @@ active slot.
 | `.symmio/tasks/runs/`                         | Local NDJSON events and redacted raw logs   |
 | `.symmio/tasks/history/`                      | Indefinite local terminal outcomes          |
 | `tasks/data/<chainId>/deployment-report.json` | Canonical live system report                |
+| `tasks/data/<chainId>/deployment-summary.md`  | Human-readable important-address handoff    |
 | `tasks/data/<chainId>-fork/`                  | Isolated fork rehearsal evidence            |
 | `tasks/data/<scope>/components/`              | Standalone component/patch reports          |
 | `tasks/data/<chainId>/checklists/`            | Timestamped checklist evidence              |
 | `tasks/data/<chainId>/safe/`                  | Safe Builder intents and proposal receipts  |
 | `tasks/data/checkpoints/completed/`           | Completed underlying deployment checkpoints |
 | `tasks/data/checkpoints/abandoned/`           | Explicitly abandoned underlying checkpoints |
+
+The entire `tasks/data/` tree is ignored local evidence and is not pushed by Git. Back it
+up securely if another machine must be able to resume or audit the run.
 
 For the task-definition contract and registration instructions, see
 [the operator reference](../cli/README.md).
