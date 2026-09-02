@@ -340,23 +340,27 @@ export async function dispatchSafeActions(
 	ctx,
 	selection,
 	actions,
-	{ root = PROJECT_ROOT, chainId, network, name, description, processEnv = {} } = {},
+	{ root = PROJECT_ROOT, chainId, network, name, description, processEnv = {}, stateKey } = {},
 ) {
 	if (!SAFE_SIGNER_MODES.includes(selection?.mode)) throw new Error("Safe action dispatch requires a Safe signer mode");
+	if (stateKey !== undefined && !/^[a-z][a-z0-9.-]*$/.test(stateKey)) {
+		throw new Error(`Safe dispatch state key must be a stable lowercase id; received ${JSON.stringify(stateKey)}`);
+	}
 	if (selection.mode === SIGNER_MODES.SAFE_SERVICE && (network === "localhost" || String(network).startsWith("fork-"))) {
 		throw new Error("Safe Transaction Service proposals are refused for local and fork networks");
 	}
 	const batch = createSafeBatch({ root, chainId, safeAddress: selection.safeAddress, name, description, actions });
 	const paths = safeArtifactPaths(root, chainId, network, ctx.state.runId, batch.digest);
-	const previous = ctx.state.safeDispatch;
+	const previous = stateKey === undefined ? ctx.state.safeDispatch : ctx.state.safeDispatches?.[stateKey];
 	if (previous && previous.digest !== batch.digest) {
 		throw new Error(
-			`Pending Safe intent changed (${previous.digest.slice(0, 12)} != ${batch.digest.slice(0, 12)}); refusing to replace reviewed actions`,
+			`Pending Safe intent${stateKey ? ` ${stateKey}` : ""} changed (${previous.digest.slice(0, 12)} != ${batch.digest.slice(0, 12)}); refusing to replace reviewed actions`,
 		);
 	}
 	writeSafeBatch(paths.builder, batch);
 	writeSafeIntent(paths.intent, batch);
-	ctx.state.safeDispatch = {
+	const dispatch = {
+		...(stateKey ? { stateKey } : {}),
 		mode: selection.mode,
 		safeAddress: selection.safeAddress,
 		digest: batch.digest,
@@ -366,8 +370,13 @@ export async function dispatchSafeActions(
 		proposalPath: selection.mode === SIGNER_MODES.SAFE_SERVICE ? paths.proposal : undefined,
 		status: previous?.status || "exported",
 	};
-	ctx.emit("safe.exported", { safe: ctx.state.safeDispatch });
-	if (selection.mode === SIGNER_MODES.SAFE_FILE) return ctx.state.safeDispatch;
+	if (stateKey === undefined) ctx.state.safeDispatch = dispatch;
+	else {
+		ctx.state.safeDispatches ||= {};
+		ctx.state.safeDispatches[stateKey] = dispatch;
+	}
+	ctx.emit("safe.exported", { safe: dispatch });
+	if (selection.mode === SIGNER_MODES.SAFE_FILE) return dispatch;
 	if (previous?.status === "proposed" && fs.existsSync(paths.proposal)) return previous;
 	await hydrateSigner(selection, ctx.ui);
 	const apiKey = transientSecrets.get(selection)?.apiKey;
@@ -390,11 +399,11 @@ export async function dispatchSafeActions(
 	if (proposal.digest !== batch.digest || proposal.safeAddress !== selection.safeAddress) {
 		throw new Error("Safe proposal result is not bound to the reviewed batch");
 	}
-	ctx.state.safeDispatch.status = "proposed";
-	ctx.state.safeDispatch.safeTxHash = proposal.safeTxHash;
-	ctx.state.safeDispatch.proposedBy = proposal.proposedBy;
-	ctx.emit("safe.proposed", { safe: ctx.state.safeDispatch });
-	return ctx.state.safeDispatch;
+	dispatch.status = "proposed";
+	dispatch.safeTxHash = proposal.safeTxHash;
+	dispatch.proposedBy = proposal.proposedBy;
+	ctx.emit("safe.proposed", { safe: dispatch });
+	return dispatch;
 }
 
 export function validateSignerSelection(selection, { allowSafe = true } = {}) {
