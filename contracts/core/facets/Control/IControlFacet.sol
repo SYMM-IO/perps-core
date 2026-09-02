@@ -133,6 +133,8 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet {
 
 	function setDefaultFeeCollector(address feeCollector) external;
 
+	function setEntityMetadata(address entity, EntityMetadata memory metadata) external;
+
 	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external;
 
 	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external;

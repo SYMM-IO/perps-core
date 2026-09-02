@@ -21878,6 +21878,41 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "entity",
+                "type": "address"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "string",
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "brandColor",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "metadata",
+                        "type": "string"
+                    }
+                ],
+                "internalType": "struct EntityMetadata",
+                "name": "metadata",
+                "type": "tuple"
+            }
+        ],
+        "name": "setEntityMetadata",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "affiliate",
                 "type": "address"
             },
@@ -22898,6 +22933,19 @@
     {
         "inputs": [],
         "name": "EMERGENCY_ADMIN_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ENTITY_METADATA_MANAGER_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",
