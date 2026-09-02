@@ -159,9 +159,11 @@ async function withCheckpoint<T>(
 	simulated: boolean,
 	ethers: any,
 	actionFn: (checkpoint: DeploymentCheckpoint) => Promise<T>,
+	scopeQualifier?: string,
 ): Promise<T> {
 	setCheckpointSimulated(simulated)
-	const scope = `arbitrum-perps-upgrade-${arbitrumPerpsUpgradeInputDigest(input).slice(0, 16)}`
+	const baseScope = `arbitrum-perps-upgrade-${arbitrumPerpsUpgradeInputDigest(input).slice(0, 16)}`
+	const scope = scopeQualifier ? `${baseScope}-${scopeQualifier}` : baseScope
 	const lock = acquireCheckpointLock(42161, scope)
 	try {
 		let checkpoint = loadCheckpoint(42161, scope)
@@ -178,17 +180,17 @@ async function withCheckpoint<T>(
 			try {
 				await reconcileDeploymentTransactions(checkpoint.transactions, ethers.provider, checkpoint.deployerAddress)
 			} finally {
+				mergeTransactions(report, checkpoint.transactions)
 				saveCheckpoint(checkpoint)
 			}
 		}
 		resetDeploymentTransactionJournal()
 		bindDeploymentTransactionWriteAhead(record => persistSubmittedTransaction(checkpoint!, record))
 		try {
-			const result = await actionFn(checkpoint)
+			return await actionFn(checkpoint)
+		} finally {
 			mergeTransactions(report, [...(checkpoint.transactions || []), ...getDeploymentTransactionJournal()])
 			saveCheckpoint(checkpoint)
-			return result
-		} finally {
 			clearDeploymentTransactionWriteAhead()
 		}
 	} finally {
@@ -747,35 +749,61 @@ async function runForkRehearsal(
 	liveReport: ArbitrumPerpsUpgradeReport,
 	output: string,
 ): Promise<void> {
-	const forkOutput = `${output}.fork-rehearsal.json`
-	const forkReport = createArbitrumPerpsUpgradeReport(input)
 	const baseBlockNumber = await ethers.provider.getBlockNumber()
+	// A new Hardhat invocation creates a new ephemeral chain. Keep each attempt in
+	// its own namespace so an interrupted rehearsal can be retried without treating
+	// addresses from the discarded fork as deployments on the new fork.
+	const attemptId = `${baseBlockNumber}-${Date.now()}-${process.pid}`
+	const forkOutput = path.join(path.dirname(output), "fork-rehearsal", `attempt-${attemptId}`, "report.json")
+	const forkReport = createArbitrumPerpsUpgradeReport(input)
 	const [deployer] = await ethers.getSigners()
 	await ethers.provider.send("hardhat_setBalance", [deployer.address, "0x3635c9adc5dea00000"])
 	const previousAdmin = await fundAndImpersonate(ethers, input.governance.previousAdmin)
 	const safe = await fundAndImpersonate(ethers, input.governance.safe)
-	await withCheckpoint(input, forkReport, "fork-arbitrum", true, ethers, async checkpoint => {
-		await inspectAuthority(ethers, input, forkReport)
-		await executeAccountAuthority(ethers, input, forkReport, previousAdmin)
-		await executeActions(safe, (forkReport.safeBatches.authority as any).actions)
-		await inspectAuthority(ethers, input, forkReport)
-		if ((forkReport.safeBatches.authority as any).actions.length) throw new Error("Fork authority bootstrap did not reach its post-state")
-		await deployFacetScope(ethers, input, forkReport, forkOutput, "core", checkpoint)
-		await deployFacetScope(ethers, input, forkReport, forkOutput, "accountLayer", checkpoint)
-		await deployNewInstantLayer(hre, ethers, input, forkReport, checkpoint)
-		await deployNewGaslessLayer(hre, ethers, input, forkReport, checkpoint)
-		await planGovernance(ethers, input, forkReport, forkOutput)
-		await executeActions(safe, (forkReport.safeBatches.coreCut as any).actions)
-		await planGovernance(ethers, input, forkReport, forkOutput)
-		await executeActions(safe, (forkReport.safeBatches.accountCut as any).actions)
-		await planGovernance(ethers, input, forkReport, forkOutput)
-		await executeActions(safe, (forkReport.safeBatches.wiring as any).actions)
-		await planGovernance(ethers, input, forkReport, forkOutput)
-		if ((forkReport.safeBatches.wiring as any).actions.length) throw new Error("Fork wiring did not reach its post-state")
-		await executeActions(safe, (forkReport.safeBatches.cutover as any).actions)
-		await planGovernance(ethers, input, forkReport, forkOutput)
-		if ((forkReport.safeBatches.cutover as any).actions.length) throw new Error("Fork cutover did not reach its post-state")
-	})
+	try {
+		await withCheckpoint(
+			input,
+			forkReport,
+			"fork-arbitrum",
+			true,
+			ethers,
+			async checkpoint => {
+				await inspectAuthority(ethers, input, forkReport)
+				await executeAccountAuthority(ethers, input, forkReport, previousAdmin)
+				await executeActions(safe, (forkReport.safeBatches.authority as any).actions)
+				await inspectAuthority(ethers, input, forkReport)
+				if ((forkReport.safeBatches.authority as any).actions.length) throw new Error("Fork authority bootstrap did not reach its post-state")
+				await deployFacetScope(ethers, input, forkReport, forkOutput, "core", checkpoint)
+				await deployFacetScope(ethers, input, forkReport, forkOutput, "accountLayer", checkpoint)
+				await deployNewInstantLayer(hre, ethers, input, forkReport, checkpoint)
+				await deployNewGaslessLayer(hre, ethers, input, forkReport, checkpoint)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				await executeActions(safe, (forkReport.safeBatches.coreCut as any).actions)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				await executeActions(safe, (forkReport.safeBatches.accountCut as any).actions)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				await executeActions(safe, (forkReport.safeBatches.wiring as any).actions)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				if ((forkReport.safeBatches.wiring as any).actions.length) throw new Error("Fork wiring did not reach its post-state")
+				await executeActions(safe, (forkReport.safeBatches.cutover as any).actions)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				if ((forkReport.safeBatches.cutover as any).actions.length) throw new Error("Fork cutover did not reach its post-state")
+			},
+			`fork-${attemptId}`,
+		)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		forkReport.lifecycle = "failed"
+		updateStage(forkReport, "forkRehearsal", "failed", { baseBlockNumber, error: message })
+		writeReport(forkOutput, input, forkReport)
+		updateStage(liveReport, "forkRehearsal", "failed", {
+			baseBlockNumber,
+			evidence: forkOutput,
+			transactionCount: forkReport.transactions.length,
+			error: message,
+		})
+		throw error
+	}
 	forkReport.lifecycle = "complete"
 	writeReport(forkOutput, input, forkReport)
 	const blockNumber = await ethers.provider.getBlockNumber()

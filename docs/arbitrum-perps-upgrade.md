@@ -13,6 +13,8 @@ Preparation writes two machine-readable artifacts under `tasks/data/42161/upgrad
 
 Both formats have JSON Schemas in `deployment-tooling/`. A resume refuses source or input drift. Contract creations also use the deployment checkpoint and write-ahead transaction journal, so a submitted or confirmed deployment is reconciled before another creation can be attempted.
 
+Every fork invocation is an isolated attempt because a restarted Hardhat process has a new ephemeral chain. If a provider interrupts rehearsal, the task preserves that attempt's report, partial receipts, and checkpoint, then a resume starts the whole rehearsal against a fresh fork namespace. Live deployment phases keep the digest-stable checkpoint and reconcile on-chain state before continuing.
+
 ## Independent phases
 
 The task stops and resumes at stable boundaries:
