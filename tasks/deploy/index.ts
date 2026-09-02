@@ -1,4 +1,5 @@
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
+import { arbitrumPerpsUpgradeTask } from "./arbitrumPerpsUpgrade.js"
 import { checkComponentTask } from "./checkComponent.js"
 import { checkStandaloneDeploymentTask } from "./checkStandaloneDeployment.js"
 import { create2FactoryTask } from "./create2Factory.js"
@@ -24,6 +25,7 @@ import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
 	accountLayerDiamondTask,
+	arbitrumPerpsUpgradeTask,
 	checkComponentTask,
 	checkStandaloneDeploymentTask,
 	checkDeploymentTask,

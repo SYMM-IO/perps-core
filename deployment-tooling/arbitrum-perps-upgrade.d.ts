@@ -80,8 +80,8 @@ export interface ArbitrumPerpsUpgradeReport {
 	}
 	stages: Record<string, Record<string, unknown>>
 	safeBatches: Record<string, { status: string; actions: UpgradeAction[] }>
-	externalActions: Record<string, { status: string; actions: UpgradeAction[] }>
-	transactions: Array<Record<string, unknown>>
+	externalActions: Record<string, { status: string; authority?: string; actions: UpgradeAction[] }>
+	transactions: unknown[]
 	checks: Array<Record<string, unknown>>
 	createdAt: string
 	updatedAt: string

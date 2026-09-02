@@ -11,6 +11,9 @@ import {
 } from "../../utils/deploymentManifest.js"
 import { FacetCutAction, getSelectors } from "../utils/diamondCut.js"
 import { deploymentOnlyArtifact } from "./artifacts.js"
+import type { DeploymentCheckpoint } from "./checkpoint.js"
+import { recoverConfirmedDeployment } from "./tx.js"
+import { deployContract } from "./vanityDeploy.js"
 
 export type FacetInfo = {
 	address: string
@@ -62,15 +65,39 @@ async function getLibraryDeploymentFactory(scope: DiamondScope, spec: Deployment
 export async function deployFacets(
 	outputFile?: string,
 	scope: DiamondScope = "core",
-): Promise<{ facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
+	options: { checkpoint?: DeploymentCheckpoint } = {},
+): Promise<{ libraries: Record<string, string>; facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }> {
 	const state = loadState(outputFile)
 	const persist = () => saveState(outputFile, state)
+	for (const [name, address] of [
+		...Object.entries(state.libraries),
+		...Object.entries(state.facets).map(([name, facet]) => [name, facet.address] as const),
+	]) {
+		if ((await ethers.provider.getCode(address)) === "0x") {
+			throw new Error(`${scope} facet deployment state records ${name} at ${address}, but that address has no runtime bytecode`)
+		}
+	}
+	const deployRegistered = async (kind: "libraries" | "facets", name: string, factory: any): Promise<string> => {
+		const component = `contracts.upgrade.${scope}.${kind}.${name}`
+		const recovered = options.checkpoint ? await recoverConfirmedDeployment(options.checkpoint.transactions || [], component, ethers.provider) : null
+		if (recovered) return recovered
+		return (
+			await deployContract(null, {
+				key: `${scope}/${name}`,
+				component,
+				label: `${scope} ${name}`,
+				factory,
+				checkpoint: options.checkpoint,
+			})
+		).address
+	}
 
 	state.libraries = await ensureLibraries({
 		ethers,
 		scope,
 		existing: state.libraries,
 		getFactory: (spec, addresses) => getLibraryDeploymentFactory(scope, spec, addresses),
+		deploy: async (name, factory) => ({ address: await deployRegistered("libraries", name, factory) }),
 		onDeployed: (name, address) => {
 			state.libraries[name] = address
 			persist()
@@ -80,9 +107,7 @@ export async function deployFacets(
 	for (const spec of Object.values(FacetSpecs[scope])) {
 		if (state.facets[spec.name]) continue
 		const factory = await getLinkedContractFactory(ethers, scope, spec, state.libraries)
-		const facet = await factory.deploy()
-		await facet.waitForDeployment()
-		const address = await facet.getAddress()
+		const address = await deployRegistered("facets", spec.name, factory)
 		const selectors = getSelectors(ethers, factory).selectors
 		state.facets[spec.name] = { address, selectors }
 		for (const fragment of factory.interface.fragments) {
@@ -95,7 +120,7 @@ export async function deployFacets(
 		persist()
 	}
 
-	return { facets: state.facets, selectorSignatures: state.selectorSignatures }
+	return { libraries: state.libraries, facets: state.facets, selectorSignatures: state.selectorSignatures }
 }
 
 export async function buildDiamondCut(
