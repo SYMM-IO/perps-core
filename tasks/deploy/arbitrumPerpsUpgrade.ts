@@ -30,7 +30,6 @@ import {
 } from "./checkpoint.js"
 import { deployAndConfigureGaslessLayer, inspectGaslessLayerPostState, resolveGaslessLayerConfig } from "./componentDeployment.js"
 import { persistSubmittedTransaction } from "./deploymentRecovery.js"
-import { buildDiamondCut, deployFacets, type FacetInfo } from "./diamondUpgrade.js"
 import { verificationProviderForChain } from "./explorer.js"
 import { getConnection } from "./helpers.js"
 import { deployInstantLayer } from "./instantLayer.js"
@@ -59,6 +58,7 @@ const PHASES = [
 ] as const
 
 type Phase = (typeof PHASES)[number]
+type FacetInfo = { address: string; selectors: string[] }
 type FacetDeployment = { libraries: Record<string, string>; facets: Record<string, FacetInfo>; selectorSignatures: Record<string, string> }
 
 const ROLE = {
@@ -380,6 +380,7 @@ async function deployFacetScope(
 	scope: DiamondScope,
 	checkpoint: DeploymentCheckpoint,
 ): Promise<void> {
+	const { buildDiamondCut, deployFacets } = await import("./diamondUpgrade.js")
 	const file = facetStateFile(output, scope)
 	const deployed = await deployFacets(file, scope, { checkpoint })
 	const diamond = scope === "core" ? input.contracts.core : input.contracts.accountLayer
@@ -545,6 +546,7 @@ async function planInstantLayerActions(ethers: any, input: ArbitrumPerpsUpgradeI
 }
 
 async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport, output: string): Promise<void> {
+	const { buildDiamondCut } = await import("./diamondUpgrade.js")
 	await inspectAuthority(ethers, input, report)
 	for (const scope of ["core", "accountLayer"] as const) {
 		const state = loadFacetState(facetStateFile(output, scope))
