@@ -300,6 +300,59 @@ test("Safe file dispatch writes fork-scoped canonical artifacts without spawning
 	);
 });
 
+test("independent Safe dispatch keys resume without replacing another reviewed batch", async () => {
+	const root = artifactRoot();
+	const ctx = { state: { runId: "staged-safe" }, emit: () => {} };
+	const selection = { mode: SIGNER_MODES.SAFE_FILE, safeAddress: SAFE };
+	const first = await dispatchSafeActions(ctx, selection, [{ to: TARGET, value: "0", data: "0x", description: "Bootstrap" }], {
+		root,
+		chainId: 42161,
+		network: "arbitrum",
+		name: "Authority bootstrap",
+		stateKey: "authority-bootstrap",
+	});
+	const second = await dispatchSafeActions(ctx, selection, [{ to: SAFE, value: "0", data: "0x", description: "Wire" }], {
+		root,
+		chainId: 42161,
+		network: "arbitrum",
+		name: "Protocol wiring",
+		stateKey: "protocol-wiring",
+	});
+	assert.equal(ctx.state.safeDispatch, undefined);
+	assert.equal(ctx.state.safeDispatches["authority-bootstrap"].digest, first.digest);
+	assert.equal(ctx.state.safeDispatches["protocol-wiring"].digest, second.digest);
+	assert.notEqual(first.digest, second.digest);
+
+	const resumed = await dispatchSafeActions(ctx, selection, [{ to: TARGET, value: "0", data: "0x", description: "Bootstrap" }], {
+		root,
+		chainId: 42161,
+		network: "arbitrum",
+		name: "Authority bootstrap",
+		stateKey: "authority-bootstrap",
+	});
+	assert.equal(resumed.digest, first.digest);
+	await assert.rejects(
+		dispatchSafeActions(ctx, selection, [{ to: TARGET, value: "1", data: "0x", description: "Changed" }], {
+			root,
+			chainId: 42161,
+			network: "arbitrum",
+			name: "Authority bootstrap",
+			stateKey: "authority-bootstrap",
+		}),
+		/Pending Safe intent authority-bootstrap changed/,
+	);
+	await assert.rejects(
+		dispatchSafeActions(ctx, selection, [{ to: TARGET, value: "0", data: "0x", description: "Invalid key" }], {
+			root,
+			chainId: 42161,
+			network: "arbitrum",
+			name: "Invalid",
+			stateKey: "Unsafe Key",
+		}),
+		/stable lowercase id/,
+	);
+});
+
 test("direct Safe proposal keeps owner credentials transient and invokes the reviewed internal adapter", async () => {
 	const root = artifactRoot();
 	const apiKey = "safe-api-key-with-enough-entropy";

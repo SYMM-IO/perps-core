@@ -195,15 +195,17 @@ function taskSummary(state, current, startedAt, detail, rawLines, activity = {})
 		`Details      press d to ${detail ? "hide" : "show"} receipts, gas and recent raw logs`,
 	];
 	if (detail) {
-		if (state?.safeDispatch) {
-			lines.push(
-				"",
-				"Safe delivery:",
-				`  ${state.safeDispatch.status} ${state.safeDispatch.actionCount} action(s) • ${state.safeDispatch.safeAddress}`,
-				`  digest ${state.safeDispatch.digest}`,
-				...(state.safeDispatch.safeTxHash ? [`  proposal ${state.safeDispatch.safeTxHash}`] : []),
-				...(state.safeDispatch.builderPath ? [`  builder ${state.safeDispatch.builderPath}`] : []),
-			);
+		const safeDispatches = [...(state?.safeDispatch ? [["governance", state.safeDispatch]] : []), ...Object.entries(state?.safeDispatches || {})];
+		if (safeDispatches.length > 0) {
+			lines.push("", "Safe delivery:");
+			for (const [key, dispatch] of safeDispatches) {
+				lines.push(
+					`  ${key}: ${dispatch.status} ${dispatch.actionCount} action(s) • ${dispatch.safeAddress}`,
+					`    digest ${dispatch.digest}`,
+					...(dispatch.safeTxHash ? [`    proposal ${dispatch.safeTxHash}`] : []),
+					...(dispatch.builderPath ? [`    builder ${dispatch.builderPath}`] : []),
+				);
+			}
 		}
 		const recentTransactions = (state?.transactions || []).slice(-4);
 		if (recentTransactions.length) {
