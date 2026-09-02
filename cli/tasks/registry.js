@@ -18,6 +18,7 @@ import {
 	signerEnvironment,
 } from "../signer/index.js";
 import { ownershipAcceptanceAction, roleGrantAction } from "../signer/safe-batch.js";
+import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
 import { isAddress } from "ethers";
 import fs from "node:fs";
@@ -1307,6 +1308,7 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 });
 
 const MAINTENANCE_TASKS = [
+	createArbitrumPerpsUpgradeTask(common),
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
 	SYMBOL_SYNC_FETCH_TASK,
 	SYMBOL_SYNC_ASSIGNMENT_TASK,

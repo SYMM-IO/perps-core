@@ -6,6 +6,8 @@ Run the checkout-local operator application in an interactive terminal:
 ./symmio
 ```
 
+The fixed Arbitrum v0.8.6 production upgrade is available under **Other maintenance scripts** as **Arbitrum Perps Core v0.8.6 upgrade**. Its resumable phases and standard JSON input/report contract are documented in [the Arbitrum upgrade runbook](../docs/arbitrum-perps-upgrade.md).
+
 `./symmio --help` only explains how to launch the application. Every other argument and
 non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
 no generated CLI bundle.
