@@ -20,12 +20,14 @@ Every fork invocation is an isolated attempt because a restarted Hardhat process
 The task stops and resumes at stable boundaries:
 
 1. Compile the exact checkout, inspect live ownership and roles, and run the full flow at the inspected block on an Arbitrum fork.
-2. Have the prior AccountLayer administrator grant the Safe `DEFAULT_ADMIN_ROLE` and `SETTER_ROLE`.
-3. Export or propose the Safe Core authority batch (`setAdmin` and `FEE_ADMIN_ROLE`) and verify the roles on-chain.
-4. Deploy or recover Core facets, AccountLayer facets, the new InstantLayer, and the new GaslessLayer; then publish every new address to Arbiscan.
-5. Export or propose independent Safe batches for the Core cut, AccountLayer cut, and new-layer wiring. Each continuation recomputes the remaining actions from chain state.
+2. Deploy or recover Core facets, AccountLayer facets, the new InstantLayer, and the new GaslessLayer; then publish every new address to Arbiscan.
+3. Export or propose independent Safe batches for the Core and AccountLayer cuts, execute them through the Safe's existing Diamond ownership, and verify both selector surfaces.
+4. After both cuts, have the prior AccountLayer default administrator delegate administration of only `SIGNER_SETTER_ROLE` to the Safe. The Safe receives neither AccountLayer `DEFAULT_ADMIN_ROLE` nor `SETTER_ROLE`.
+5. Export or propose the Safe Core authority batch (`setAdmin` and `FEE_ADMIN_ROLE`), verify the scoped authority handoff, then execute the new-layer wiring batch. Each continuation recomputes the remaining actions from chain state.
 6. Record a successful production canary before exporting the cutover batch that revokes the old InstantLayer's Core and AccountLayer roles.
 7. Add the production Safe owners and raise the threshold above 1. The task completes only after it reads the hardened Safe state and every other invariant from chain state.
+
+Selecting the prior administrator's Ledger during preparation only binds the signer configuration. The workflow does not request its transaction until both Diamond cuts have been executed and verified.
 
 Safe export or proposal is not treated as execution. The task enters `waiting_external`, names the exact artifact or proposal, and verifies the resulting contract state when continued. Cancellation never rolls back confirmed effects and remains pending while any transaction outcome is unresolved.
 
