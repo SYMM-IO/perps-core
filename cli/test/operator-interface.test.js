@@ -75,7 +75,42 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 11);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 12);
+	const arbitrumUpgrade = entries.find(item => item.id === "maintenance.arbitrum-perps-upgrade");
+	assert.equal(arbitrumUpgrade.title, "Arbitrum Perps Core v0.8.6 upgrade");
+	assert.deepEqual(arbitrumUpgrade.supportedNetworks, ["arbitrum"]);
+	assert.equal(arbitrumUpgrade.risk, "transaction");
+	assert.deepEqual(
+		TASK_DEFINITIONS.find(item => item.id === "maintenance.arbitrum-perps-upgrade")
+			.plan()
+			.map(step => step.id),
+		[
+			"compile",
+			"inspect",
+			"rehearse",
+			"authorize",
+			"account-authority",
+			"core-authority",
+			"verify-authority",
+			"deploy-core-facets",
+			"deploy-account-facets",
+			"deploy-instant-layer",
+			"deploy-gasless-layer",
+			"publish",
+			"plan-governance",
+			"core-cut",
+			"verify-core-cut",
+			"account-cut",
+			"verify-account-cut",
+			"wiring",
+			"verify-wiring",
+			"canary",
+			"cutover",
+			"verify-cutover",
+			"safe-hardening",
+			"final-report",
+		],
+	);
 	const settlementRepair = entries.find(item => item.id === "maintenance.recreate-settlement-templates");
 	assert.equal(settlementRepair.title, "Recreate settleUpnl InstantLayer templates");
 	assert.deepEqual(settlementRepair.supportedNetworks, ["localhost", "fork-arbitrum", "arbitrum"]);
