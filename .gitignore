@@ -34,23 +34,8 @@ typechain-types
 addresses.json
 /abi.json
 .vscode
-# tasks/data holds the deployment records (deployed.json, accountlayer.json,
-# deployment-report.json, archived checkpoints). Ignoring the whole directory meant the
-# only off-chain record of a mainnet deployment lived on one machine — and verify:all,
-# which reads these files, could never run from a fresh clone. Deployed addresses are
-# public on-chain, so they are tracked. Only the in-progress checkpoint is transient.
-tasks/data/*/checkpoints/checkpoint-*.json
-tasks/data/checkpoints/checkpoint-*.json
-tasks/data/*/verify-failed.json
-tasks/data/verify-failed.json
-# Local/simulated chains — not worth tracking.
-tasks/data/31337/
-tasks/data/1337/
-tasks/data/*-fork/
-tasks/data/checkpoints/completed/checkpoint-31337-*.json
-tasks/data/checkpoints/abandoned/checkpoint-31337-*.json
-tasks/data/checkpoints/completed/checkpoint-1337-*.json
-tasks/data/checkpoints/abandoned/checkpoint-1337-*.json
+# Deployment reports, checkpoints, Safe exports, and transaction evidence are local operator data.
+/tasks/data/
 output.log
 hardhatNode.log
 serverLog.log

@@ -7,7 +7,16 @@ import { verify } from "../commands/verify.js";
 import { readDeploymentReport, resolveNetwork } from "../lib/context.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
-import { EOA_SIGNER_MODES, SAFE_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner } from "../signer/index.js";
+import {
+	EOA_SIGNER_MODES,
+	SAFE_SIGNER_MODES,
+	SIGNER_MODES,
+	dispatchSafeActions,
+	hydrateSigner,
+	selectGovernanceSigner,
+	selectSigner,
+	signerEnvironment,
+} from "../signer/index.js";
 import { ownershipAcceptanceAction, roleGrantAction } from "../signer/safe-batch.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
 import { isAddress } from "ethers";
@@ -167,13 +176,11 @@ function readPendingSafeActions(input) {
 			`Pending report ${path.relative(PROJECT_ROOT, reportPath)} has no machine-readable Safe actions; refusing to infer calldata from prose`,
 		);
 	}
-	return { actions: report.safeActions, recipe, reportPath };
+	return { actions: report.safeActions, recipe, reportPath, report };
 }
 
-async function dispatchPendingSafeActions(ctx, input) {
-	const selection = input.patch && SAFE_SIGNER_MODES.includes(input.signer?.mode) ? input.signer : input.governanceSigner;
-	if (!selection) return null;
-	const { actions, recipe, reportPath } = readPendingSafeActions(input);
+async function dispatchPendingSafeActions(ctx, input, selection, pending = readPendingSafeActions(input)) {
+	const { actions, recipe, reportPath } = pending;
 	const result = await dispatchSafeActions(ctx, selection, actions, {
 		chainId: input.chainId,
 		network: input.network,
@@ -182,6 +189,51 @@ async function dispatchPendingSafeActions(ctx, input) {
 		processEnv: recipeHardhatEnvironment(recipe),
 	});
 	return result;
+}
+
+async function handlePendingGovernance(ctx, input) {
+	const pending = readPendingSafeActions(input);
+	const admin = pending.recipe.recipe.governance.admin;
+	const classification = pending.report.governanceAdmin || { type: "unknown-contract", address: admin };
+	let selection = ctx.getSigner("governance");
+	if (!selection) {
+		const selected = await selectGovernanceSigner(ctx.ui, {
+			classification,
+			network: input.network,
+			chainId: input.chainId,
+		});
+		if (!selected) throw new Error("Governance signer selection was cancelled");
+		if (selected.delivery === "manual") {
+			ctx.wait(`Governance admin ${admin} is an unrecognized contract. Execute the reviewed actions manually, then continue this task`);
+		}
+		selection = ctx.bindSigner("governance", selected);
+	}
+
+	if (SAFE_SIGNER_MODES.includes(selection.mode)) {
+		const delivery = await dispatchPendingSafeActions(ctx, input, selection, pending);
+		if (delivery?.mode === SIGNER_MODES.SAFE_FILE) {
+			ctx.wait(
+				`Import ${path.relative(PROJECT_ROOT, delivery.builderPath)} into Safe Transaction Builder, execute it, then continue this task`,
+			);
+		}
+		if (delivery?.mode === SIGNER_MODES.SAFE_SERVICE) {
+			ctx.wait(`Safe proposal ${delivery.safeTxHash} must execute before this task can continue`);
+		}
+		return;
+	}
+
+	await hydrateSigner(selection, ctx.ui);
+	await ctx.runProcess(
+		"./node_modules/.bin/hardhat",
+		["internal:execute-governance-handover", "--recipe", input.config, "--network", input.network],
+		{
+			env: {
+				...recipeHardhatEnvironment(pending.recipe),
+				...signerEnvironment(selection),
+				CONFIRM_CHAIN_ID: String(input.chainId),
+			},
+		},
+	);
 }
 
 function inputText(ui, message, { address = false, placeholder, initialValue } = {}) {
@@ -252,15 +304,18 @@ function deploymentPlan(input, scope) {
 			(component.actions || []).map(action => ({ component: component.name, action })),
 		);
 	}
+	const stableSlug = value =>
+		String(value)
+			.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+			.replace(/[^A-Za-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.toLowerCase();
 	const batchItems = stage => [
 		...contracts.map((key, index) => {
-			const slug = key
-				.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-				.replace(/[^A-Za-z0-9]+/g, "-")
-				.toLowerCase();
+			const slug = stableSlug(key);
 			return `${stage}.contract-${String(index + 1).padStart(3, "0")}.${slug}`;
 		}),
-		...componentActions.map(({ component, action }) => `${stage}.${component}.${action.id}`),
+		...componentActions.map(({ component, action }) => `${stage}.${stableSlug(component)}.${stableSlug(action.id)}`),
 	];
 	return [
 		{ id: "preflight", phase: "prepare", title: "Validate recipe, RPC, signer, permissions and deployment plan" },
@@ -384,16 +439,10 @@ async function executeDeployment(ctx, input) {
 				return;
 			}
 			if (Number(code) === 2) {
-				const delivery = await dispatchPendingSafeActions(ctx, input);
-				if (delivery?.mode === SIGNER_MODES.SAFE_FILE) {
-					ctx.wait(
-						`Import ${path.relative(PROJECT_ROOT, delivery.builderPath)} into Safe Transaction Builder, execute it, then continue this task`,
-					);
-				}
-				if (delivery?.mode === SIGNER_MODES.SAFE_SERVICE) {
-					ctx.wait(`Safe proposal ${delivery.safeTxHash} must execute before this task can continue`);
-				}
-				ctx.wait("Safe or governance actions must confirm externally; continue this task after confirmation");
+				await handlePendingGovernance(ctx, input);
+				const reconciled = await ctx.runCallable("deployment handover reconciliation", () => deploy({ ...args, yes: true, fresh: false }));
+				requireZero(reconciled, "Deployment handover reconciliation");
+				return;
 			}
 			requireZero(code, "Deployment");
 		},
@@ -428,13 +477,28 @@ async function executeDeployment(ctx, input) {
 		{ phase: "assurance" },
 	);
 	await ctx.step("handover", "Prove ownership, roles and deployer privilege removal", async () => {}, { phase: "handover" });
-	return { recipe: input.config, recipeDigest: input.recipeDigest, network: input.network };
+	return {
+		recipe: input.config,
+		recipeDigest: input.recipeDigest,
+		network: input.network,
+		...(!input.only
+			? {
+					deploymentReportPath: path.join(
+						PROJECT_ROOT,
+						"tasks",
+						"data",
+						`${input.chainId}${input.mode === "fork" ? "-fork" : ""}`,
+						"deployment-report.json",
+					),
+				}
+			: {}),
+	};
 }
 
 function deployDefinition({ id, title, description, only, coreBundle = false }) {
 	return common({
 		id,
-		version: only === "partyB" || (!only && !coreBundle) ? 3 : 2,
+		version: only === "partyB" || (!only && !coreBundle) ? 4 : 3,
 		category: "deploy",
 		risk: "transaction",
 		title,
@@ -445,38 +509,6 @@ function deployDefinition({ id, title, description, only, coreBundle = false }) 
 		prepare: async context => {
 			const input = await prepareDeploymentRecipe({ ...context, only, coreBundle });
 			return input ? { ...input, fullSystem: !only && !coreBundle } : null;
-		},
-		postPrepare: async ({ ui }, input) => {
-			if (input.mode !== "live") return input;
-			const handling = await ui.select({
-				message: "How should pending governance/Safe handover transactions be prepared?",
-				options: [
-					{
-						value: SIGNER_MODES.SAFE_FILE,
-						label: "Safe multisig — export JSON",
-						hint: "recommended; import into Safe Transaction Builder",
-					},
-					{
-						value: SIGNER_MODES.SAFE_SERVICE,
-						label: "Safe multisig — create proposal",
-						hint: "sign and submit through Safe Transaction Service",
-					},
-					{ value: "manual", label: "Record manual actions only", hint: "no Safe artifact or service call" },
-				],
-				initialValue: SIGNER_MODES.SAFE_FILE,
-			});
-			if (handling === null) return null;
-			if (handling === "manual") return input;
-			const recipe = loadRecipeContext(input.config, { only: input.only, plan: false });
-			const governanceSigner = await selectSigner(ui, {
-				role: "Governance transaction delivery",
-				allowedModes: [handling],
-				initialMode: handling,
-				network: input.network,
-				chainId: input.chainId,
-				safeAddress: recipe.recipe.governance.admin,
-			});
-			return governanceSigner ? { ...input, governanceSigner } : null;
 		},
 		plan: (_context, input) => deploymentPlan(input, coreBundle ? "core" : only || "full"),
 		run: executeDeployment,
@@ -552,20 +584,42 @@ async function prepareSimpleDeployment({ ui }, kind) {
 
 function simpleDeployDefinition(kind, title, taskName, extraArgs = input => []) {
 	const extraInputs = kind === "feeDistributor" ? ["receiver", "share"] : [];
+	const checkArgs = (input, phase) => [
+		"check:standalone-deployment",
+		"--kind",
+		kind,
+		"--phase",
+		phase,
+		...(kind === "multicall" ? [] : ["--symmio-address", input.symmio, "--admin", input.admin]),
+		...(kind === "feeDistributor" ? ["--symmio-share-receiver", input.receiver, "--symmio-share", input.share] : []),
+		"--network",
+		input.network,
+	];
 	return common({
 		id: `deploy.${kind.replace(/[A-Z]/g, value => `-${value.toLowerCase()}`)}`,
+		version: 3,
 		category: "deploy",
 		risk: "transaction",
 		title,
 		description: `${title} deployment restricted to local and simulated fork networks until its live workflow meets the full safety contract.`,
 		supportedNetworks: ["localhost", "fork-arbitrum", "fork-hyperevm"],
 		inputs: ["network", ...(kind === "multicall" ? [] : ["symmio", "admin"]), ...extraInputs],
-		artifacts: ["transaction journal", "deployment records"],
+		artifacts: ["transaction journal", "deployment records", "post-state verification"],
 		prepare: context => prepareSimpleDeployment(context, kind),
-		plan: () => [{ id: "deploy", phase: "execution", title: `Deploy ${title}` }],
+		plan: () => [
+			{ id: "inspect", phase: "prepare", title: `Inspect ${title} deployment inputs` },
+			{ id: "deploy", phase: "execution", title: `Deploy ${title}` },
+			{ id: "verify", phase: "verification", title: `Verify ${title} post-state` },
+		],
 		run: async (ctx, input) => {
+			await ctx.step("inspect", `Inspect ${title} deployment inputs`, () =>
+				ctx.runProcess("./node_modules/.bin/hardhat", checkArgs(input, "preflight")),
+			);
 			await ctx.step("deploy", `Deploy ${title}`, () =>
 				ctx.runProcess("./node_modules/.bin/hardhat", [taskName, ...extraArgs(input), "--network", input.network]),
+			);
+			await ctx.step("verify", `Verify ${title} post-state`, () =>
+				ctx.runProcess("./node_modules/.bin/hardhat", checkArgs(input, "poststate")),
 			);
 		},
 		reconcile: mutationReconcile,

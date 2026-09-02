@@ -1,4 +1,12 @@
-import { SIGNER_MODES, dispatchSafeActions, redactSignerSecrets, selectSigner, signerEnvironment, validateSignerSelection } from "../signer/index.js";
+import {
+	SIGNER_MODES,
+	dispatchSafeActions,
+	redactSignerSecrets,
+	selectGovernanceSigner,
+	selectSigner,
+	signerEnvironment,
+	validateSignerSelection,
+} from "../signer/index.js";
 import { createSafeBatch, safeBatchDigest, writeSafeBatch, writeSafeIntent } from "../signer/safe-batch.js";
 import { Interface, Wallet } from "ethers";
 import assert from "node:assert/strict";
@@ -106,6 +114,56 @@ test("keystore and Ledger selections persist only public identifiers", async () 
 	);
 	assert.deepEqual(ledger, { mode: SIGNER_MODES.LEDGER, address: TARGET, derivation: "ledger-live" });
 	assert.deepEqual(validateSignerSelection(ledger, { allowSafe: false }), ledger);
+});
+
+test("governance signer choices follow the administrator type", async () => {
+	const eoaPrompts = [];
+	const eoa = await selectGovernanceSigner(
+		{
+			select: async options => {
+				eoaPrompts.push(options);
+				return options.message === "Governance administrator signer" ? SIGNER_MODES.LEDGER : "ledger-live";
+			},
+			text: async options => {
+				assert.equal(options.validate(TARGET), undefined);
+				assert.match(options.validate(SAFE), /does not match governance admin/);
+				return TARGET;
+			},
+			confirm: async () => true,
+			note: () => {},
+		},
+		{ classification: { type: "eoa", address: TARGET }, network: "arbitrum", chainId: 42161 },
+	);
+	assert.deepEqual(eoa, { mode: SIGNER_MODES.LEDGER, address: TARGET, derivation: "ledger-live" });
+	assert.deepEqual(
+		eoaPrompts[0].options.map(option => option.value),
+		[SIGNER_MODES.KEYSTORE, SIGNER_MODES.PRIVATE_KEY, SIGNER_MODES.LEDGER],
+	);
+
+	const safePrompts = [];
+	const safe = await selectGovernanceSigner(
+		{
+			select: async options => {
+				safePrompts.push(options);
+				return SIGNER_MODES.SAFE_FILE;
+			},
+			note: () => {},
+		},
+		{ classification: { type: "safe", address: SAFE, safeVersion: "1.4.1" }, network: "arbitrum", chainId: 42161 },
+	);
+	assert.deepEqual(safe, { mode: SIGNER_MODES.SAFE_FILE, safeAddress: SAFE });
+	assert.deepEqual(
+		safePrompts[0].options.map(option => option.value),
+		[SIGNER_MODES.SAFE_FILE, SIGNER_MODES.SAFE_SERVICE],
+	);
+
+	let prompted = false;
+	const unknown = await selectGovernanceSigner(
+		{ select: async () => (prompted = true) },
+		{ classification: { type: "unknown-contract", address: SAFE }, network: "arbitrum", chainId: 42161 },
+	);
+	assert.deepEqual(unknown, { delivery: "manual", address: SAFE });
+	assert.equal(prompted, false);
 });
 
 test("the configured Ledger interface signs a complete EIP-1559 request through a mocked device transport", async () => {

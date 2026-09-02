@@ -139,12 +139,13 @@
 
 					<h2 id="handover">Handover and external actions</h2>
 					<p>
-						When a Safe or governance account must act, the task records exact target, value, calldata, and reason. It can write Safe
-						Transaction Builder JSON with decoded method names or create a proposal through the official Safe SDK using a keystore,
-						private-key, or Ledger owner, then enters
-						<code>waiting_external</code>. After those actions confirm, launch <code>./symmio</code> and choose
-						<strong>Continue active task</strong>. The task rereads chain state, skips completed deployment steps, and closes only after
-						the strict health gate passes.
+						Fresh configuration is completed under temporary deployer roles before those roles are removed, so a normal fresh handover
+						contains ownership acceptance only. The task then classifies the administrator from chain state. An EOA can use a Ledger
+						hardware wallet, Hardhat keystore wallet, transient private key, or an allowed unlocked local account. Safe Transaction
+						Builder and direct proposal choices appear only for an address that passes Safe interface checks; unknown contracts remain
+						manual. The task displays <strong>Handover required</strong> until exact post-state reads pass. After external actions
+						confirm, launch <code>./symmio</code> and choose <strong>Continue active task</strong>. The task rereads chain state, skips
+						completed deployment steps, and closes only after the strict health gate passes.
 					</p>
 
 					<h2 id="evidence">Evidence</h2>
@@ -175,11 +176,19 @@
 								</tr>
 								<tr>
 									<td><code>tasks/data/&lt;chainId&gt;/</code></td>
-									<td>Canonical sanitized reports, receipts, and checklists</td>
+									<td>Ignored local evidence: reports, receipts, Safe exports, and checklists</td>
+								</tr>
+								<tr>
+									<td><code>tasks/data/&lt;chainId&gt;/deployment-summary.md</code></td>
+									<td>Human-readable important-address handoff; deployment-report.json remains machine evidence</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
+					<p>
+						<code>tasks/data/</code> is ignored local evidence and is never pushed by Git. Back it up securely when off-machine recovery
+						is required.
+					</p>
 					<p>
 						For persistent local-node rehearsal, patch semantics, checklist coverage, and maintenance policies, use the
 						<a href="deployment.md">complete deployment runbook</a>. For adding a one-time script, use the

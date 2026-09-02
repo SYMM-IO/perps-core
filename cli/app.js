@@ -1,7 +1,9 @@
+import { normalizeDeploymentSummary, renderDeploymentTerminal } from "../deployment-tooling/deployment-report.js";
 import { resolveNetwork } from "./lib/context.js";
 import * as defaultRunner from "./task-runner.js";
 import * as clack from "@clack/prompts";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import process from "node:process";
 import { clearScreenDown, cursorTo, moveCursor } from "node:readline";
 
@@ -451,8 +453,19 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 			view.success("Task setup cancelled; no active task was created", { showLog: false });
 			return null;
 		}
-		if (result.status === "completed") view.success(`${result.title} completed`, { showLog: false });
-		else if (result.status === "cancelled") view.success(`${result.title} cancelled safely; confirmed effects were preserved`, { showLog: true });
+		if (result.status === "completed") {
+			view.success(`${result.title} completed`, { showLog: false });
+			const reportPath = result.result?.deploymentReportPath;
+			if (reportPath && fs.existsSync(reportPath)) {
+				const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+				const explorer = Number(report.chainId) === 42161 ? "https://arbiscan.io" : undefined;
+				clack.note(renderDeploymentTerminal(normalizeDeploymentSummary(report, { explorer })).trimEnd(), "Deployment report", {
+					input,
+					output,
+				});
+			}
+		} else if (result.status === "cancelled")
+			view.success(`${result.title} cancelled safely; confirmed effects were preserved`, { showLog: true });
 		else if (result.status === "failed") {
 			view.error(
 				[result.title + " failed and cannot be resumed", result.lastError && `Reason: ${result.lastError}`].filter(Boolean).join("\n"),

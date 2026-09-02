@@ -1,10 +1,12 @@
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
 import { checkComponentTask } from "./checkComponent.js"
+import { checkStandaloneDeploymentTask } from "./checkStandaloneDeployment.js"
 import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
 import { deployComponentTask } from "./deployComponent.js"
 import { diamondTask } from "./diamond.js"
 import { feeDistributorTask } from "./feeDistributor.js"
+import { executeGovernanceHandoverTask } from "./governanceHandover.js"
 import { enableBigBlocksTask, disableBigBlocksTask } from "./hyperevm.js"
 import { instantLayerTask } from "./instantLayer.js"
 import { liquidatorTask } from "./liquidator.js"
@@ -23,6 +25,7 @@ import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 export const deployTasks = [
 	accountLayerDiamondTask,
 	checkComponentTask,
+	checkStandaloneDeploymentTask,
 	checkDeploymentTask,
 	create2FactoryTask,
 	deployAllTask,
@@ -31,6 +34,7 @@ export const deployTasks = [
 	disableBigBlocksTask,
 	enableBigBlocksTask,
 	feeDistributorTask,
+	executeGovernanceHandoverTask,
 	instantLayerTask,
 	liquidatorTask,
 	completeLocalHandoverTask,

@@ -52,13 +52,23 @@ references are accepted only for local and fork operation.
 
 Live deployment includes preflight, compilation, a matching fresh fork rehearsal,
 rehearsal review, typed live-network confirmation, execution, explorer verification,
-canonical health checks, and handover proof. A Safe or governance action places the task in
-`waiting_external`; continue the same task after it confirms.
+canonical health checks, and handover proof. Fresh configuration is completed with temporary
+deployer roles, then those roles are removed; the normal remaining handover is ownership
+acceptance only. Reused components can still require explicit governance repairs.
+
+At the handover boundary the task reads the administrator bytecode. An EOA can continue with
+a Ledger hardware wallet, a Hardhat keystore wallet (including a different key from the
+deployer), a transient private key, or an unlocked local account where allowed. Safe
+Transaction Builder and direct Safe proposal choices appear only after the address passes
+on-chain Safe interface checks. An unknown contract is never guessed to be a Safe: its
+governance process remains manual. Output stays **Handover required** until every action's
+post-state is proved.
 
 ## Transaction signers
 
 Every mutating task declares a transaction-signing role. The task asks once per role—not
-once per transaction—then binds the public selection into its input hash:
+once per transaction. The deployment signer is input-bound; a governance signer discovered
+after deployment is durably bound without changing the original input hash:
 
 | Choice                             | Durable state                         | Execution                                                                  |
 | ---------------------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
@@ -66,13 +76,13 @@ once per transaction—then binds the public selection into its input hash:
 | Private-key wallet                 | mode and derived address              | key is masked, memory-only, and requested again after process restart      |
 | Safe multisig — export JSON        | Safe address and batch digest         | writes Safe Transaction Builder JSON with ABI-decoded method names         |
 | Safe multisig — create proposal    | Safe address, owner identity, tx hash | owner signs and proposes through the official Safe SDK/Transaction Service |
-| Ledger account with address Z      | address and derivation family         | Hardhat Ledger signer; the device confirms each broadcast                  |
+| Ledger hardware wallet             | address and derivation family         | Hardhat Ledger signer; the device confirms each broadcast                  |
 | Unlocked local-node account        | mode and bound authority when known   | exact unlocked authority on the persistent localhost rehearsal             |
 
 Raw contract creation cannot be represented as a normal Safe call. Deployment roles
 therefore allow keystore, transient private-key, Ledger, or local-node signers. A live
-deployment separately asks how its governance handover should be delivered: Safe Builder
-JSON, a direct Safe proposal, or manually recorded actions. ExpressProvider patches can be
+deployment selects its governance delivery only after classifying the deployed admin as an
+EOA, verified Safe, or unknown contract. ExpressProvider patches can be
 entirely Safe-backed: the patch process computes exact calldata without broadcasting an EOA
 transaction, writes/proposes the batch, then waits for execution and re-proves the chain
 state on continuation.
@@ -103,8 +113,12 @@ Transient runner state is local and ignored by Git:
 | `.symmio/tasks/runs/<task>-<run>/raw.log`       | Redacted stdout/stderr                                    |
 | `.symmio/tasks/history/`                        | Indefinite completed, cancelled, and failed local history |
 
-Canonical sanitized deployment reports, receipts, component evidence, checklists, and
-checkpoint archives remain under `tasks/data/`.
+`tasks/data/` is ignored local evidence: reports, receipts, Safe exports, component state,
+checklists, and checkpoints are never pushed by Git. Operators must back up that directory
+securely when they need durable off-machine recovery. `deployment-report.json` is the
+machine-readable record; `deployment-summary.md` is the human address handoff containing
+Core, collateral, AccountLayer, InstantLayer, ExpressProvider, verifier, governance and fee
+destinations, SymbolManager, CREATE2 factory, GaslessLayer, Liquidator, and PartyB addresses.
 
 The active record binds task version, source hash, typed input hash, recipe and dependency
 digest, chain, observed signer, and stable plan. Resume refuses changed intent or source.

@@ -355,7 +355,10 @@ export function createTaskRunner(options = {}) {
 			recipeDigest: input?.recipeDigest,
 			chainId: input?.chainId,
 			network: input?.network,
-			signing: input?.signer || input?.governanceSigner ? { transaction: input?.signer, governance: input?.governanceSigner } : undefined,
+			signing: {
+				...(input?.signer ? { transaction: input.signer } : {}),
+				...(input?.governanceSigner ? { governance: input.governanceSigner } : {}),
+			},
 			plan,
 			planHash: digest(plan),
 			completedSteps: [],
@@ -470,6 +473,19 @@ export function createTaskRunner(options = {}) {
 			ui: runtime.ui,
 			state,
 			emit,
+			bindSigner(role, selection) {
+				if (!/^[a-z][a-z0-9.-]*$/.test(role)) throw new Error(`Invalid signer role ${JSON.stringify(role)}`);
+				const valid = validateSignerSelection(selection);
+				const current = state.signing?.[role];
+				if (current && digest(current) !== digest(valid)) throw new Error(`${role} signer binding changed after task preparation`);
+				state.signing ||= {};
+				state.signing[role] = valid;
+				emit("task.signer-bound", { role, signer: valid });
+				return valid;
+			},
+			getSigner(role) {
+				return state.signing?.[role] || null;
+			},
 			captureLine,
 			isPauseRequested: () => pauseRequested,
 			requestPause: () => {

@@ -134,9 +134,9 @@ export async function selectSigner(
 			validate: value => (keyName(value) ? undefined : "Use an environment-style key name such as NEW_DEPLOYER"),
 		});
 		if (key === null || !(await configureKeystore(ui, key, key))) return null;
-		selection = { mode, key };
+		selection = { mode, key, ...(nonZeroAddress(expectedAddress) ? { address: getAddress(expectedAddress) } : {}) };
 	} else if (mode === SIGNER_MODES.PRIVATE_KEY) {
-		const secret = await askPrivateKey(ui);
+		const secret = await askPrivateKey(ui, expectedAddress);
 		if (!secret) return null;
 		selection = { mode, address: secret.address };
 		transientSecrets.set(selection, rememberSecrets({ privateKey: secret.value }));
@@ -145,7 +145,12 @@ export async function selectSigner(
 		const address = await ui.text({
 			message: `${role} Ledger address`,
 			placeholder: "0x…",
-			validate: value => (nonZeroAddress(value) ? undefined : "Enter the non-zero address displayed by Ledger"),
+			validate: value => {
+				if (!nonZeroAddress(value)) return "Enter the non-zero address displayed by Ledger";
+				if (expectedAddress && getAddress(value) !== getAddress(expectedAddress)) {
+					return `Ledger address ${getAddress(value)} does not match governance admin ${getAddress(expectedAddress)}`;
+				}
+			},
 		});
 		if (address === null) return null;
 		const derivation = await ui.select({
@@ -199,6 +204,28 @@ export async function selectSigner(
 	return selection;
 }
 
+export async function selectGovernanceSigner(ui, { classification, network, chainId }) {
+	if (classification.type === "unknown-contract") return { delivery: "manual", address: classification.address };
+	if (classification.type === "safe") {
+		return selectSigner(ui, {
+			role: "Governance handover delivery",
+			allowedModes: SAFE_SIGNER_MODES,
+			initialMode: SIGNER_MODES.SAFE_FILE,
+			network,
+			chainId,
+			safeAddress: classification.address,
+		});
+	}
+	return selectSigner(ui, {
+		role: "Governance administrator signer",
+		allowedModes: network === "localhost" ? EOA_SIGNER_MODES : EOA_SIGNER_MODES.filter(mode => mode !== SIGNER_MODES.LOCAL_NODE),
+		initialMode: SIGNER_MODES.LEDGER,
+		network,
+		chainId,
+		expectedAddress: classification.address,
+	});
+}
+
 export function copyTransientSignerSecrets(from, to) {
 	const secret = transientSecrets.get(from);
 	if (secret) transientSecrets.set(to, secret);
@@ -232,7 +259,13 @@ export function signerEnvironment(selection) {
 	if (!selection) return {};
 	const base = { SYMMIO_SIGNER_MODE: selection.mode };
 	if (selection.mode === SIGNER_MODES.KEYSTORE) {
-		return { ...base, USE_KEYSTORE: "true", KEYSTORE_DEPLOYER_KEY: selection.key, KEYSTORE_ACCOUNTS: selection.key };
+		return {
+			...base,
+			USE_KEYSTORE: "true",
+			KEYSTORE_DEPLOYER_KEY: selection.key,
+			KEYSTORE_ACCOUNTS: selection.key,
+			...(selection.address ? { SYMMIO_EXPECTED_SIGNER: selection.address } : {}),
+		};
 	}
 	if (selection.mode === SIGNER_MODES.PRIVATE_KEY) {
 		const privateKey = transientSecrets.get(selection)?.privateKey;
@@ -368,6 +401,9 @@ export function validateSignerSelection(selection, { allowSafe = true } = {}) {
 	if (!selection || !Object.values(SIGNER_MODES).includes(selection.mode)) throw new Error("Signer selection has an unknown mode");
 	if (!allowSafe && SAFE_SIGNER_MODES.includes(selection.mode)) throw new Error("This signing role cannot use a Safe transaction intent");
 	if (selection.mode === SIGNER_MODES.KEYSTORE && !keyName(selection.key)) throw new Error("Keystore signer requires a valid key name");
+	if (selection.mode === SIGNER_MODES.KEYSTORE && selection.address !== undefined && !nonZeroAddress(selection.address)) {
+		throw new Error("Keystore signer requires a valid non-zero expected address when one is bound");
+	}
 	if ([SIGNER_MODES.PRIVATE_KEY, SIGNER_MODES.LEDGER].includes(selection.mode) && !nonZeroAddress(selection.address)) {
 		throw new Error(`${modeLabel(selection.mode)} requires a non-zero address`);
 	}

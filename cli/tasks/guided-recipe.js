@@ -76,6 +76,39 @@ function atomicWrite(file, value) {
 	}
 }
 
+function reviewedRecipeFiles(root) {
+	const directory = path.join(root, "deployment-recipes");
+	if (!fs.existsSync(directory)) return [];
+	return fs
+		.readdirSync(directory, { withFileTypes: true })
+		.filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
+		.map(entry => path.join(directory, entry.name))
+		.sort((left, right) => left.localeCompare(right));
+}
+
+async function selectReviewedRecipeFile(ui, root, files, initialValue) {
+	return ui.select({
+		message: "Which reviewed recipe file do you want to use?",
+		options: files.map(file => ({ value: file, label: path.relative(root, file) })),
+		initialValue: files.includes(initialValue) ? initialValue : files[0],
+	});
+}
+
+async function selectDeploymentSigner(ui, network) {
+	const chain = resolveNetwork(network);
+	ui.note(
+		"Contract creation must be signed by a wallet or Ledger. If governance is a Safe, the live workflow prepares its handover separately after deployment.",
+		"Two signing roles",
+	);
+	return selectSigner(ui, {
+		role: "Deployment transaction signer",
+		allowedModes: EOA_SIGNER_MODES,
+		initialMode: network === "localhost" ? SIGNER_MODES.LOCAL_NODE : SIGNER_MODES.KEYSTORE,
+		network,
+		chainId: chain.chainId,
+	});
+}
+
 function setAtPath(target, parts, value) {
 	let cursor = target;
 	for (let index = 0; index < parts.length - 1; index++) cursor = cursor[parts[index]];
@@ -893,7 +926,7 @@ async function customizeRecipe(ui, recipe, { only, forceSelection = false } = {}
 }
 
 export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, coreBundle = false, discoverAccounts = discoverLocalAccounts }) {
-	const network = await ui.select({
+	const requestedNetwork = await ui.select({
 		message: "Where do you want to deploy?",
 		options: [
 			{ value: "localhost", label: "Persistent local Hardhat node", hint: "recommended first rehearsal • no secrets" },
@@ -902,57 +935,76 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 		],
 		initialValue: "localhost",
 	});
-	if (network === null) return null;
-	const chain = resolveNetwork(network);
-	ui.note(
-		"Contract creation must be signed by a wallet or Ledger. If governance is a Safe, the live workflow prepares its handover separately after deployment.",
-		"Two signing roles",
-	);
-	const signer = await selectSigner(ui, {
-		role: "Deployment transaction signer",
-		allowedModes: EOA_SIGNER_MODES,
-		initialMode: network === "localhost" ? SIGNER_MODES.LOCAL_NODE : SIGNER_MODES.KEYSTORE,
-		network,
-		chainId: chain.chainId,
-	});
-	if (!signer) return null;
-	const defaultFile = path.join(root, "deployment-recipes", `${network}${only ? `-${only}` : coreBundle ? "-core" : ""}.json`);
+	if (requestedNetwork === null) return null;
+	const defaultFile = path.join(root, "deployment-recipes", `${requestedNetwork}${only ? `-${only}` : coreBundle ? "-core" : ""}.json`);
 	const outputPath = defaultFile;
+	const availableRecipes = reviewedRecipeFiles(root);
 	let recipe;
 	let replacing = fs.existsSync(defaultFile);
+	const useExactRecipe = async selectedFile => {
+		const context = loadRecipeContext(selectedFile, { only });
+		if (context.networkName !== requestedNetwork) {
+			ui.note(
+				`The selected recipe targets ${context.networkName}; it replaces the earlier ${requestedNetwork} target choice.`,
+				"Deployment target changed",
+			);
+		}
+		ui.note(reviewText(context, only), "Final review");
+		if (!(await ui.confirm({ message: "Use this exact reviewed intent?", initialValue: true }))) return null;
+		const signer = await selectDeploymentSigner(ui, context.networkName);
+		if (!signer) return null;
+		return { ...(await deploymentInput(context, only, root, ui)), signer };
+	};
 	if (fs.existsSync(defaultFile)) {
 		const choice = await ui.select({
 			message: "A reviewed recipe already exists for this scope",
 			options: [
 				{ value: "use", label: "Review and use it exactly", hint: path.relative(root, defaultFile) },
+				...(availableRecipes.length > 0
+					? [{ value: "choose", label: "Choose another recipe file", hint: "select any JSON file in deployment-recipes" }]
+					: []),
 				{ value: "edit", label: "Edit it interactively", hint: "choose only the sections you want to override" },
 				{ value: "defaults", label: "Start again from reviewed defaults", hint: "the old recipe is backed up after confirmation" },
 			],
 			initialValue: "use",
 		});
 		if (choice === null) return null;
-		if (choice === "use") {
-			const context = loadRecipeContext(defaultFile, { only });
-			ui.note(reviewText(context, only), "Final review");
-			if (!(await ui.confirm({ message: "Use this exact reviewed intent?", initialValue: true }))) return null;
-			return { ...(await deploymentInput(context, only, root, ui)), signer };
+		if (choice === "use" || choice === "choose") {
+			const selectedFile = choice === "use" ? defaultFile : await selectReviewedRecipeFile(ui, root, availableRecipes, defaultFile);
+			if (selectedFile === null) return null;
+			return useExactRecipe(selectedFile);
 		}
 		if (choice === "edit") {
 			recipe = structuredClone(loadRecipeContext(defaultFile, { only }).recipe);
 			if (!(await customizeRecipe(ui, recipe, { only, forceSelection: true }))) return null;
 		}
+	} else if (availableRecipes.length > 0) {
+		const choice = await ui.select({
+			message: "Reviewed recipe files are available",
+			options: [
+				{ value: "choose", label: "Choose a reviewed recipe file", hint: "select any JSON file in deployment-recipes" },
+				{ value: "defaults", label: "Start from reviewed defaults", hint: `create ${path.relative(root, defaultFile)}` },
+			],
+			initialValue: "choose",
+		});
+		if (choice === null) return null;
+		if (choice === "choose") {
+			const selectedFile = await selectReviewedRecipeFile(ui, root, availableRecipes, availableRecipes[0]);
+			if (selectedFile === null) return null;
+			return useExactRecipe(selectedFile);
+		}
 	}
 	if (!recipe) {
 		const source = JSON.parse(fs.readFileSync(RECIPE_EXAMPLE, "utf8"));
-		recipe = buildInitialRecipe(network, source, { sourcePath: RECIPE_EXAMPLE, outputPath, only });
+		recipe = buildInitialRecipe(requestedNetwork, source, { sourcePath: RECIPE_EXAMPLE, outputPath, only });
 		if (coreBundle) {
-			recipe.name = `${network}-core`;
+			recipe.name = `${requestedNetwork}-core`;
 			recipe.partyB = { mode: "skip", adlEnabled: false };
 			recipe.symbolManager = { mode: "skip" };
 			recipe.expressProvider = { mode: "skip" };
 			recipe.gaslessLayer = { mode: "skip" };
 		}
-		if (network === "localhost") {
+		if (requestedNetwork === "localhost") {
 			const accounts = await discoverAccounts();
 			applyLocalAccountDefaults(recipe, accounts);
 			ui.note(
@@ -979,6 +1031,8 @@ export async function prepareDeploymentRecipe({ root = PROJECT_ROOT, ui, only, c
 		"Final deployment review",
 	);
 	if (!(await ui.confirm({ message: "Create the task with this exact reviewed intent?", initialValue: true }))) return null;
+	const signer = await selectDeploymentSigner(ui, recipe.network.name);
+	if (!signer) return null;
 	if (replacing) fs.copyFileSync(defaultFile, `${defaultFile}.backup-${new Date().toISOString().replace(/[:.]/g, "-")}`);
 	atomicWrite(outputPath, recipe);
 	const context = loadRecipeContext(outputPath, { only });
