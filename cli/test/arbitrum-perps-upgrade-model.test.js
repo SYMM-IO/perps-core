@@ -1,12 +1,14 @@
 import {
 	ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION,
 	ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION,
+	ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
 	ARBITRUM_PERPS_UPGRADE_TARGET,
 	arbitrumPerpsUpgradeInputDigest,
 	buildArbitrumPerpsUpgradeInput,
 	createArbitrumPerpsUpgradeReport,
 	validateArbitrumPerpsUpgradeInput,
 	validateArbitrumPerpsUpgradeReport,
+	validateArbitrumPerpsUpgradeSourceMigration,
 } from "../../deployment-tooling/arbitrum-perps-upgrade.js";
 import { loadDeploymentRecipe } from "../../deployment-tooling/recipe.js";
 import assert from "node:assert/strict";
@@ -72,4 +74,45 @@ test("Arbitrum upgrade report binds every resumable update to the exact input", 
 	const changed = structuredClone(value);
 	changed.source.commit = "b".repeat(40);
 	assert.throws(() => validateArbitrumPerpsUpgradeReport(report, changed), /inputDigest must equal/);
+});
+
+test("Arbitrum upgrade source migration binds the task, input, commit lineage, and operational file set", () => {
+	const value = input();
+	const digest = arbitrumPerpsUpgradeInputDigest(value);
+	const migration = {
+		apiVersion: ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
+		taskId: "maintenance.arbitrum-perps-upgrade",
+		taskRunId: "run-1",
+		inputDigest: digest,
+		originalCommit: value.source.commit,
+		currentCommit: "b".repeat(40),
+		migrations: [
+			{
+				at: "2026-09-03T10:06:09.865Z",
+				from: `sha256:${"1".repeat(64)}`,
+				to: `sha256:${"2".repeat(64)}`,
+				authorization: "operator-confirmed",
+			},
+		],
+	};
+	const context = {
+		currentCommit: migration.currentCommit,
+		changedFiles: ["tasks/deploy/componentDeployment.ts", "cli/task-runner.js"],
+		originalCommitIsAncestor: true,
+	};
+	const validated = validateArbitrumPerpsUpgradeSourceMigration(value, migration, context);
+	assert.equal(validated.inputDigest, digest);
+	assert.deepEqual(validated.changedFiles, context.changedFiles);
+
+	const protectedSource = structuredClone(context);
+	protectedSource.changedFiles.push("contracts/core/facets/Control/ControlFacet.sol");
+	assert.throws(() => validateArbitrumPerpsUpgradeSourceMigration(value, migration, protectedSource), /not an approved operational migration file/);
+	assert.throws(
+		() => validateArbitrumPerpsUpgradeSourceMigration(value, migration, { ...context, originalCommitIsAncestor: false }),
+		/originalCommitIsAncestor must be true/,
+	);
+	assert.throws(
+		() => validateArbitrumPerpsUpgradeSourceMigration(value, { ...migration, inputDigest: "f".repeat(64) }, context),
+		/does not match the standard input/,
+	);
 });

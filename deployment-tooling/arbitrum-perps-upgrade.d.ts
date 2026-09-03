@@ -1,5 +1,6 @@
 export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-input-v2"
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-report-v1"
+export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION: "operations.symm.io/task-source-migration-v1"
 
 export type UpgradeAddressKey =
 	| "core"
@@ -87,6 +88,17 @@ export interface ArbitrumPerpsUpgradeReport {
 	updatedAt: string
 }
 
+export interface ArbitrumPerpsUpgradeSourceMigration {
+	apiVersion: typeof ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION
+	taskId: "maintenance.arbitrum-perps-upgrade"
+	taskRunId: string
+	inputDigest: string
+	originalCommit: string
+	currentCommit: string
+	migrations: Array<{ at: string; from: string; to: string; authorization: "operator-confirmed" }>
+	changedFiles: string[]
+}
+
 export const ARBITRUM_PERPS_UPGRADE_TARGET: {
 	readonly chainId: 42161
 	readonly network: "arbitrum"
@@ -97,6 +109,12 @@ export const ARBITRUM_PERPS_UPGRADE_TARGET: {
 
 export function validateArbitrumPerpsUpgradeInput(value: unknown, source?: string): ArbitrumPerpsUpgradeInput
 export function arbitrumPerpsUpgradeInputDigest(value: unknown): string
+export function validateArbitrumPerpsUpgradeSourceMigration(
+	input: unknown,
+	migration: unknown,
+	context: { currentCommit: string; changedFiles: string[]; originalCommitIsAncestor: boolean },
+	source?: string,
+): ArbitrumPerpsUpgradeSourceMigration
 export function buildArbitrumPerpsUpgradeInput(args: {
 	recipe: unknown
 	recipePath: string
