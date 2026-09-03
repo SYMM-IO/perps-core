@@ -2192,7 +2192,14 @@ async function setupSystem(
 
 	// AccountLayerDiamond admin roles
 	await checkpointedStep(checkpoint, "setup.alDefaultAdmin", "Granting DEFAULT_ADMIN_ROLE on AccountLayerDiamond to admin", async () => {
-		await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("DEFAULT_ADMIN_ROLE")), "grantRole")
+		const setAdmin = alControlFacet.interface.getFunction("setAdmin")!
+		const loupe = await ethers.getContractAt("IDiamondLoupe", deployedContracts.accountLayerDiamond!)
+		if ((await loupe.facetAddress(setAdmin.selector)) !== ethers.ZeroAddress) {
+			await send(alControlFacet.connect(deployer).setAdmin(config.admin), "setAdmin(AccountLayer)")
+		} else {
+			// Resume compatibility for AccountLayer diamonds whose ControlFacet predates setAdmin.
+			await send(alControlFacet.connect(deployer).grantRole(config.admin, roleHash("DEFAULT_ADMIN_ROLE")), "grantRole(AccountLayer admin)")
+		}
 	})
 
 	await checkpointedStep(checkpoint, "setup.alAdminRoles", "Setting up AccountLayerDiamond admin roles", async () => {

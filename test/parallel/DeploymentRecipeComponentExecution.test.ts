@@ -188,8 +188,8 @@ describe("deployment recipe standalone component execution", function () {
 		expect(await view.creditLineMuonFreshnessWindow()).to.equal(300n)
 		expect(await view.securityWindow()).to.equal(30n)
 		expect(await view.tolerancePeriod()).to.equal(90n)
-		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), operator.address)).to.equal(true)
-		expect(await view.hasRole(roleHash("SIGNER_ROLE"), signer.address)).to.equal(true)
+		expect(await view["hasRole(address,bytes32)"](operator.address, roleHash("OPERATOR_ROLE"))).to.equal(true)
+		expect(await view["hasRole(address,bytes32)"](signer.address, roleHash("SIGNER_ROLE"))).to.equal(true)
 
 		const affiliateConfig = await view.affiliateConfigs(affiliate.address)
 		expect(affiliateConfig[0]).to.equal(25n)
@@ -424,7 +424,7 @@ describe("deployment recipe standalone component execution", function () {
 		expect(await view.creditLineMuonAppId()).to.equal(0n)
 		// Nothing routes to it and no key can sign an offer, so the provider is inert but owned.
 		expect(await context.viewFacet.isExpressProviderRegistered(express.report.address)).to.equal(false)
-		expect(await view.hasRole(ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE")), admin.address)).to.equal(false)
+		expect(await view["hasRole(address,bytes32)"](admin.address, ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE")))).to.equal(false)
 		expect(await control.owner()).to.equal(admin.address)
 		// Init's own defaults survive an omitted securityWindow/tolerancePeriod.
 		expect(await view.securityWindow()).to.equal(20n)
@@ -479,8 +479,8 @@ describe("deployment recipe standalone component execution", function () {
 		// The deployer must retain no privilege once the final admin holds the Init roles.
 		for (const role of ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"]) {
 			const hash = ethers.keccak256(ethers.toUtf8Bytes(role))
-			expect(await view.hasRole(hash, futureAdmin.address), `${role} for admin`).to.equal(true)
-			expect(await view.hasRole(hash, deployer.address), `${role} for deployer`).to.equal(false)
+			expect(await view["hasRole(address,bytes32)"](futureAdmin.address, hash), `${role} for admin`).to.equal(true)
+			expect(await view["hasRole(address,bytes32)"](deployer.address, hash), `${role} for deployer`).to.equal(false)
 		}
 		expect(await control.pendingOwner()).to.equal(futureAdmin.address)
 	})
@@ -570,10 +570,10 @@ describe("deployment recipe standalone component execution", function () {
 
 		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
 		const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
-		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address), "new operator granted").to.equal(true)
-		expect(await view.hasRole(roleHash("OPERATOR_ROLE"), operator.address), "old operator revoked").to.equal(false)
-		expect(await view.hasRole(roleHash("LOCKER_ROLE"), operator.address), "dropped role revoked").to.equal(false)
-		expect(await view.hasRole(roleHash("SIGNER_ROLE"), signer.address), "kept holder untouched").to.equal(true)
+		expect(await view["hasRole(address,bytes32)"](newOperator.address, roleHash("OPERATOR_ROLE")), "new operator granted").to.equal(true)
+		expect(await view["hasRole(address,bytes32)"](operator.address, roleHash("OPERATOR_ROLE")), "old operator revoked").to.equal(false)
+		expect(await view["hasRole(address,bytes32)"](operator.address, roleHash("LOCKER_ROLE")), "dropped role revoked").to.equal(false)
+		expect(await view["hasRole(address,bytes32)"](signer.address, roleHash("SIGNER_ROLE")), "kept holder untouched").to.equal(true)
 		expect(await view.securityWindow()).to.equal(45n)
 		// Untouched sections survive on chain and in the stored baseline.
 		expect(await view.creditLineProtocolMaxDebt(affiliate.address)).to.equal(1000000n)
@@ -657,7 +657,7 @@ describe("deployment recipe standalone component execution", function () {
 			expect(pending.report.transactions).to.have.length(0)
 			const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", address)
 			const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
-			expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(false)
+			expect(await view["hasRole(address,bytes32)"](newOperator.address, roleHash("OPERATOR_ROLE"))).to.equal(false)
 
 			// The Safe owner executes the exact calldata the report printed, then the same intent converges.
 			const action = pending.report.manualActions[0]
@@ -665,7 +665,7 @@ describe("deployment recipe standalone component execution", function () {
 			const finished = await executeComponentDeployment(hre, patchInput)
 			expect(finished.report.lifecycle).to.equal("complete")
 			expect(finished.report.transactions).to.have.length(0)
-			expect(await view.hasRole(roleHash("OPERATOR_ROLE"), newOperator.address)).to.equal(true)
+			expect(await view["hasRole(address,bytes32)"](newOperator.address, roleHash("OPERATOR_ROLE"))).to.equal(true)
 		} finally {
 			if (previousSafeOnly === undefined) delete process.env.SYMMIO_SAFE_ACTIONS_ONLY
 			else process.env.SYMMIO_SAFE_ACTIONS_ONLY = previousSafeOnly

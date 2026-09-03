@@ -6,11 +6,12 @@ pragma solidity >=0.8.18;
 
 import { IExecutionContextFacet } from "../ExecutionContext/IExecutionContextFacet.sol";
 import { IControlEvents } from "./IControlEvents.sol";
+import { IDiamondAccessControl } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 /// @notice Compatibility control ABI spanning the core diamond's control-compatible facets.
-interface IControlFacet is IControlEvents, IExecutionContextFacet {
+interface IControlFacet is IControlEvents, IExecutionContextFacet, IDiamondAccessControl {
 	error IncompatibleSignatureVerifier();
 
 	function transferOwnership(address owner) external;
@@ -18,16 +19,6 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet {
 	function cancelOwnershipTransfer() external;
 
 	function acceptOwnership() external;
-
-	function setAdmin(address user) external;
-
-	function grantRole(address user, bytes32 role) external;
-
-	function revokeRole(address user, bytes32 role) external;
-
-	function addRoleAdmin(bytes32 role, address admin) external;
-
-	function removeRoleAdmin(bytes32 role, address admin) external;
 
 	function registerPartyB(address partyB) external;
 

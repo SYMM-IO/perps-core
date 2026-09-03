@@ -9,6 +9,7 @@ import { GlobalStorage } from "../storages/GlobalStorage.sol";
 /// @title LibAccessControl
 /// @notice Role-based access control and EIP-712 signature helpers for the ExpressProvider diamond.
 library LibAccessControl {
+	bytes32 public constant DEFAULT_ADMIN_ROLE = keccak256("DEFAULT_ADMIN_ROLE");
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 	bytes32 public constant LOCKER_ROLE = keccak256("LOCKER_ROLE");
 	bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
@@ -37,13 +38,24 @@ library LibAccessControl {
 	bytes32 private constant TYPE_HASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
 	error AccessDenied(bytes32 role);
+	error MustBeRoleAdmin(bytes32 role);
+	error ZeroAddress();
 
-	function hasRole(bytes32 role, address account) internal view returns (bool) {
-		return GlobalStorage.layout().hasRole[account][role];
+	function hasRole(address user, bytes32 role) internal view returns (bool) {
+		return GlobalStorage.layout().hasRole[user][role];
+	}
+
+	function isRoleAdmin(address user, bytes32 role) internal view returns (bool) {
+		GlobalStorage.Layout storage s = GlobalStorage.layout();
+		return s.roleAdmins[role][user] || s.hasRole[user][DEFAULT_ADMIN_ROLE];
 	}
 
 	function enforceRole(bytes32 role) internal view {
-		if (!hasRole(role, msg.sender)) revert AccessDenied(role);
+		if (!hasRole(msg.sender, role)) revert AccessDenied(role);
+	}
+
+	function enforceRoleAdmin(bytes32 role) internal view {
+		if (!isRoleAdmin(msg.sender, role)) revert MustBeRoleAdmin(role);
 	}
 
 	function grantRole(address account, bytes32 role) internal {
@@ -52,6 +64,10 @@ library LibAccessControl {
 
 	function revokeRole(address account, bytes32 role) internal {
 		GlobalStorage.layout().hasRole[account][role] = false;
+	}
+
+	function setRoleAdmin(address user, bytes32 role, bool status) internal {
+		GlobalStorage.layout().roleAdmins[role][user] = status;
 	}
 
 	function domainSeparatorV4() internal view returns (bytes32) {

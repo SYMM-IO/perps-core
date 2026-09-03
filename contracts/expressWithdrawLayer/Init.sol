@@ -23,6 +23,7 @@ import { ValidatorStorage } from "./storages/ValidatorStorage.sol";
 /// @dev Executed via delegatecall during the diamond cut to set up initial state.
 contract Init {
 	function init(address admin, address _symmio, address _collateral, address _accountLayer) external {
+		if (admin == address(0)) revert LibAccessControl.ZeroAddress();
 		GlobalStorage.Layout storage s = GlobalStorage.layout();
 		if (s.initialized) revert LibErrors.AlreadyInitialized();
 		s.initialized = true;
@@ -43,6 +44,7 @@ contract Init {
 		s.hashedName = keccak256(bytes("ExpressProvider"));
 		s.hashedVersion = keccak256(bytes("1"));
 
+		LibAccessControl.grantRole(admin, LibAccessControl.DEFAULT_ADMIN_ROLE);
 		LibAccessControl.grantRole(admin, LibAccessControl.SETTER_ROLE);
 		LibAccessControl.grantRole(admin, LibAccessControl.FEE_CLAIMER_ROLE);
 		LibAccessControl.grantRole(admin, LibAccessControl.WITHDRAWER_ROLE);

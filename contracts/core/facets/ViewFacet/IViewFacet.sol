@@ -13,8 +13,9 @@ import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSign
 import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
+import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
 
-interface IViewFacet {
+interface IViewFacet is IDiamondAccessControlView {
 	function pendingOwner() external view returns (address);
 
 	function getOwner() external view returns (address);

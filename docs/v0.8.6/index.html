@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Complete Symmio Core v0.8.6 release notes with 34 scoped changes covering Express Withdrawal, Gasless Layer, AccountLayer, trading execution, liquidation, settlement, fees, funding, events, and operations."
+			content="Complete Symmio Core v0.8.6 release notes with 35 scoped changes covering Express Withdrawal, Gasless Layer, AccountLayer, trading execution, liquidation, settlement, fees, funding, events, and operations."
 		/>
 		<title>Symmio Core v0.8.6 release notes</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
@@ -71,7 +71,7 @@
 					/>
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" id="catalog-result-count" data-catalog-count>34 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>35 chapters</span>
 			</div>
 			<div class="catalog-empty" data-catalog-empty hidden>
 				<strong>No chapters found</strong>
@@ -246,7 +246,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>20 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>21 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -416,6 +416,15 @@
 							<span
 								>A delegation grant can travel as a regular signed operation inside executeBatch or executeTemplate, so one owner
 								signature bootstraps a session key that signs the rest of the batch.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/diamond-role-management.html" data-catalog-item>
+							<span class="doc-list-index">35</span>
+							<span class="category">Access Control</span>
+							<strong>Consistent Diamond Role Management</strong>
+							<span
+								>Core, AccountLayer, and ExpressProvider now share one role-management interface while retaining the legacy
+								AccountLayer and ExpressProvider entry points used by existing integrations.</span
 							>
 						</a>
 					</div>

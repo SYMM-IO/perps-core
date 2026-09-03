@@ -309,6 +309,47 @@ export function shouldBehaveLikeAccountLayer(): void {
 			})
 		})
 
+		describe("Role management", function () {
+			const operatorRole = roleHash("ACCOUNT_CREATOR_ROLE")
+
+			it("uses the canonical owner-to-default-admin path", async function () {
+				await expect(context.alControlFacet.connect(context.signers.admin).setAdmin(context.signers.user.address))
+					.to.emit(context.alControlFacet, "RoleGranted")
+					.withArgs(roleHash("DEFAULT_ADMIN_ROLE"), context.signers.user.address, context.signers.admin.address)
+				expect(await context.alViewFacet.hasRole(context.signers.user.address, roleHash("DEFAULT_ADMIN_ROLE"))).to.be.true
+			})
+
+			it("allows a delegated role admin to grant and revoke only its role", async function () {
+				await context.alControlFacet.connect(context.signers.admin).addRoleAdmin(operatorRole, context.signers.user.address)
+				expect(await context.alViewFacet.isRoleAdmin(context.signers.user.address, operatorRole)).to.be.true
+
+				await context.alControlFacet.connect(context.signers.user).grantRole(context.signers.user2.address, operatorRole)
+				expect(await context.alViewFacet.hasRole(context.signers.user2.address, operatorRole)).to.be.true
+
+				await context.alControlFacet.connect(context.signers.user).revokeRole(context.signers.user2.address, operatorRole)
+				expect(await context.alViewFacet.hasRole(context.signers.user2.address, operatorRole)).to.be.false
+
+				await context.alControlFacet.connect(context.signers.admin).removeRoleAdmin(operatorRole, context.signers.user.address)
+				await expect(
+					context.alControlFacet.connect(context.signers.user).grantRole(context.signers.user2.address, operatorRole),
+				).to.be.revertedWithCustomError(context.alControlFacet, "MustBeRoleAdmin")
+			})
+
+			it("keeps setAdmin owner-only and rejects zero-address grants", async function () {
+				await expect(context.alControlFacet.connect(context.signers.user).setAdmin(context.signers.user.address)).to.be.revertedWith(
+					"LibDiamond: Must be contract owner",
+				)
+				await expect(context.alControlFacet.connect(context.signers.admin).setAdmin(ZeroAddress)).to.be.revertedWithCustomError(
+					context.alControlFacet,
+					"ZeroAddress",
+				)
+				await expect(context.alControlFacet.connect(context.signers.admin).grantRole(ZeroAddress, operatorRole)).to.be.revertedWithCustomError(
+					context.alControlFacet,
+					"ZeroAddress",
+				)
+			})
+		})
+
 		describe("Ownership", async () => {
 			describe("transferOwnership", () => {
 				it("Should initiate ownership transfer successfully", async function () {
