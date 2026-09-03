@@ -1,4 +1,5 @@
 import {
+	ARBITRUM_PERPS_UPGRADE_PLAN,
 	applyForkRehearsalWaiver,
 	buildArbitrumPerpsUpgradeSourceMigrationEnvironment,
 	safeDispatchStateKeyForUpgradeBatch,
@@ -22,6 +23,17 @@ test("fork rehearsal waiver remains distinct from passed rehearsal evidence", ()
 
 test("fork rehearsal waiver requires a live inspection block", () => {
 	assert.throws(() => applyForkRehearsalWaiver({ lifecycle: "prepared", stages: {} }, 0), /fork block number/);
+});
+
+test("canary waiver support preserves the active run step identity", () => {
+	assert.deepEqual(
+		ARBITRUM_PERPS_UPGRADE_PLAN.find(step => step.id === "canary"),
+		{
+			id: "canary",
+			phase: "canary",
+			title: "Record a successful production canary before cutover",
+		},
+	);
 });
 
 test("upgrade report batch ids map to independent stable Safe dispatch keys", () => {
