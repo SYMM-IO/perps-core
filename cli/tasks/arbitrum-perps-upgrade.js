@@ -7,6 +7,7 @@ import {
 	loadArbitrumPerpsUpgradeInput,
 	validateArbitrumPerpsUpgradeReport,
 } from "../../deployment-tooling/arbitrum-perps-upgrade.js";
+import { PROJECT_ROOT } from "../lib/paths.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
 import { EOA_SIGNER_MODES, SAFE_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner, validateSignerSelection } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
@@ -79,7 +80,7 @@ function phaseEnvironment(input, extra = {}) {
 	};
 }
 
-function sourceMigrationEnvironment(input, state) {
+export function buildArbitrumPerpsUpgradeSourceMigrationEnvironment(input, state) {
 	if (!state?.sourceMigrations?.length) return {};
 	if (state.sourceMigrations.at(-1)?.to !== state.sourceHash) {
 		throw new Error("Task source migration journal does not end at the active source hash");
@@ -102,7 +103,7 @@ async function runPhase(ctx, input, phase, { network = "arbitrum", env = {} } = 
 	await ctx.runProcess(
 		"./node_modules/.bin/hardhat",
 		[ADAPTER, "--phase", phase, "--input", input.input, "--output", input.output, "--network", network],
-		{ env: phaseEnvironment(input, { ...env, ...sourceMigrationEnvironment(input, ctx.state) }) },
+		{ env: phaseEnvironment(input, { ...env, ...buildArbitrumPerpsUpgradeSourceMigrationEnvironment(input, ctx.state) }) },
 	);
 	return readReport(input);
 }
