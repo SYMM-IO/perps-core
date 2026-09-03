@@ -174,16 +174,57 @@ export function safeDispatchStateKeyForUpgradeBatch(batchId) {
 	return stateKey;
 }
 
+const INSTANT_STATE_TEMPLATES_PER_SAFE_BATCH = 4;
+
+function instantStateTemplateId(action) {
+	const match = action?.description?.match(/^Copy legacy (?:InstantLayer template |(?:active state|instant-open mode) for template )(\d+):/);
+	if (!match) throw new Error(`InstantLayer state action has no stable template id: ${JSON.stringify(action?.description)}`);
+	return Number(match[1]);
+}
+
+export function safeDispatchChunksForUpgradeBatch(batchId, actions) {
+	const stateKey = safeDispatchStateKeyForUpgradeBatch(batchId);
+	if (batchId !== "instantState") return [{ stateKey, templateRange: null, actions }];
+	const chunks = [];
+	let current;
+	let previousTemplateId = -1;
+	for (const entry of actions) {
+		const templateId = instantStateTemplateId(entry);
+		if (templateId < previousTemplateId) throw new Error("InstantLayer state actions must be ordered by ascending template id");
+		if (!current || (templateId !== previousTemplateId && current.templateIds.length === INSTANT_STATE_TEMPLATES_PER_SAFE_BATCH)) {
+			current = { templateIds: [], actions: [] };
+			chunks.push(current);
+		}
+		if (templateId !== previousTemplateId) current.templateIds.push(templateId);
+		current.actions.push(entry);
+		previousTemplateId = templateId;
+	}
+	return chunks.map(chunk => {
+		const first = chunk.templateIds[0];
+		const last = chunk.templateIds.at(-1);
+		return {
+			stateKey: `${stateKey}-${first}${first === last ? "" : `-${last}`}`,
+			templateRange: first === last ? `template ${first}` : `templates ${first}-${last}`,
+			actions: chunk.actions,
+		};
+	});
+}
+
 async function dispatchBatch(ctx, input, id, name, description) {
 	const report = await runPhase(ctx, input, "plan");
 	const actions = requiredActions(report, "safeBatches", id);
 	if (actions.length === 0) return;
-	const delivery = await dispatchSafeActions(ctx, input.governanceSigner, actions, {
+	const [chunk] = safeDispatchChunksForUpgradeBatch(id, actions);
+	const displayName = chunk.templateRange ? `${name} (${chunk.templateRange})` : name;
+	const displayDescription = chunk.templateRange
+		? `${description} This independently executable batch covers ${chunk.templateRange}.`
+		: description;
+	const delivery = await dispatchSafeActions(ctx, input.governanceSigner, chunk.actions, {
 		chainId: input.chainId,
 		network: input.network,
-		name,
-		description,
-		stateKey: safeDispatchStateKeyForUpgradeBatch(id),
+		name: displayName,
+		description: displayDescription,
+		stateKey: chunk.stateKey,
 		processEnv: phaseEnvironment(input),
 	});
 	const current = readReport(input);
@@ -192,6 +233,8 @@ async function dispatchBatch(ctx, input, id, name, description) {
 		status: delivery.status,
 		delivery: {
 			mode: delivery.mode,
+			stateKey: chunk.stateKey,
+			actionCount: chunk.actions.length,
 			digest: delivery.digest,
 			builderPath: delivery.builderPath,
 			intentPath: delivery.intentPath,
