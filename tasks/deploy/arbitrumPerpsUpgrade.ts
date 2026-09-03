@@ -562,19 +562,29 @@ function persistedLegacyStateSnapshot(ethers: any, input: ArbitrumPerpsUpgradeIn
 	return snapshot
 }
 
-async function getLogsInChunks(provider: any, filter: Record<string, unknown>, fromBlock: number, toBlock: number): Promise<any[]> {
+export async function getLogsInChunks(provider: any, filter: Record<string, unknown>, fromBlock: number, toBlock: number): Promise<any[]> {
 	const logs: any[] = []
-	const chunkSize = 2_000_000
-	for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+	const minimumChunkSize = 1_000
+	let chunkSize = 2_000_000
+	let start = fromBlock
+	while (start <= toBlock) {
 		const end = Math.min(start + chunkSize - 1, toBlock)
 		try {
 			logs.push(...(await provider.getLogs({ ...filter, fromBlock: start, toBlock: end })))
 		} catch (error: any) {
+			const errorText = String([error?.code, error?.shortMessage, error?.message].filter(Boolean).join(" "))
+			const rangeRejected =
+				error?.code === -1 || error?.code === -32005 || /(?:block|query|response).*(?:range|limit|size|timeout)|too many|exceed/i.test(errorText)
+			if (rangeRejected && end - start + 1 > minimumChunkSize) {
+				chunkSize = Math.max(minimumChunkSize, Math.floor(chunkSize / 2))
+				continue
+			}
 			const detail = String(error?.shortMessage || error?.info?.responseStatus || error?.code || "unknown provider error")
 				.replace(/\s+/g, " ")
 				.slice(0, 240)
 			throw new Error(`Historical Arbitrum log query failed for blocks ${start}-${end}: ${detail}`)
 		}
+		start = end + 1
 	}
 	return logs.sort((left, right) => left.blockNumber - right.blockNumber || left.index - right.index)
 }

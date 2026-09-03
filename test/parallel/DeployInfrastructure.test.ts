@@ -1,5 +1,6 @@
 import { expect } from "chai"
 
+import { getLogsInChunks } from "../../tasks/deploy/arbitrumPerpsUpgrade.js"
 import {
 	assertCheckpointContractsHaveCode,
 	assertCheckpointManifest,
@@ -20,6 +21,43 @@ import { FacetSpecs, LibrarySpecs } from "../../utils/deploymentManifest.js"
 import { hre } from "../helpers/hardhat-connection.js"
 
 describe("deployment infrastructure", function () {
+	it("shrinks rejected historical log ranges and preserves complete ordered coverage", async function () {
+		const accepted: Array<[number, number]> = []
+		const provider = {
+			getLogs: async ({ fromBlock, toBlock }: { fromBlock: number; toBlock: number }) => {
+				if (toBlock - fromBlock + 1 > 1_000) throw Object.assign(new Error("requested block range exceeds limit"), { code: -1 })
+				accepted.push([fromBlock, toBlock])
+				return [{ blockNumber: fromBlock, index: 0 }]
+			},
+		}
+
+		const logs = await getLogsInChunks(provider, { address: "0x1234" }, 10, 3_015)
+
+		expect(accepted).to.deep.equal([
+			[10, 1_009],
+			[1_010, 2_009],
+			[2_010, 3_009],
+			[3_010, 3_015],
+		])
+		expect(logs.map(log => log.blockNumber)).to.deep.equal([10, 1_010, 2_010, 3_010])
+	})
+
+	it("reports a concise terminal historical log error without embedding provider response bodies", async function () {
+		const provider = {
+			getLogs: async () => {
+				throw {
+					code: "SERVER_ERROR",
+					shortMessage: "server response 403 Forbidden",
+					info: { responseBody: "<html>large Cloudflare response</html>" },
+				}
+			},
+		}
+
+		await expect(getLogsInChunks(provider, {}, 100, 100)).to.be.rejectedWith(
+			"Historical Arbitrum log query failed for blocks 100-100: server response 403 Forbidden",
+		)
+	})
+
 	it("selects Blockscout for the configured IOTA, Mode, and COTI explorers", function () {
 		for (const chainId of [8822, 34443, 2632500]) expect(verificationProviderForChain(chainId)).to.equal("blockscout")
 		expect(verificationProviderForChain(42161)).to.equal("etherscan")
