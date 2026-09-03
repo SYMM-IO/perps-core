@@ -165,6 +165,8 @@ const SAFE_DISPATCH_STATE_KEYS = Object.freeze({
 	instantState: "instant-state",
 	gaslessState: "gasless-state",
 	liquidatorState: "liquidator-state",
+	replacementWiring: "replacement-wiring",
+	quarantine: "quarantine",
 	cutover: "cutover",
 });
 
@@ -493,6 +495,32 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				assertNoActions(report, "safeBatches", "wiring", "InstantLayer and GaslessLayer wiring");
 			});
 			await ctx.step("canary", PLAN[19].title, async () => {
+				for (const phase of ["repair-instant-layer", "repair-gasless-layer", "publish-peripherals"]) {
+					await runPhase(ctx, input, phase, {
+						env: { SYMMIO_ARBITRUM_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) },
+					});
+				}
+				const replacement = readReport(input).stages.peripheralReplacement;
+				if (replacement?.discardedInstantLayer) {
+					await dispatchBatch(
+						ctx,
+						input,
+						"replacementWiring",
+						"Arbitrum replacement InstantLayer and GaslessLayer wiring",
+						"Authorize the exact verified replacement pair without changing the original production pair.",
+					);
+					let report = await runPhase(ctx, input, "plan");
+					assertNoActions(report, "safeBatches", "replacementWiring", "Replacement peripheral wiring");
+					await dispatchBatch(
+						ctx,
+						input,
+						"quarantine",
+						"Arbitrum discarded peripheral quarantine",
+						"Remove protocol authority from the discarded InstantLayer and GaslessLayer while keeping the original production pair active.",
+					);
+					report = await runPhase(ctx, input, "plan");
+					assertNoActions(report, "safeBatches", "quarantine", "Discarded peripheral quarantine");
+				}
 				await dispatchBatch(
 					ctx,
 					input,

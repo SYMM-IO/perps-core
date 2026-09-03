@@ -45,6 +45,8 @@ test("upgrade report batch ids map to independent stable Safe dispatch keys", ()
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("instantState"), "instant-state");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("gaslessState"), "gasless-state");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("liquidatorState"), "liquidator-state");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("replacementWiring"), "replacement-wiring");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("quarantine"), "quarantine");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("cutover"), "cutover");
 	assert.throws(() => safeDispatchStateKeyForUpgradeBatch("unknown"), /Unsupported Arbitrum upgrade Safe batch/);
 });

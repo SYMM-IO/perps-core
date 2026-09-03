@@ -53,8 +53,11 @@ const PHASES = [
 	"deploy-account-facets",
 	"deploy-instant-layer",
 	"deploy-gasless-layer",
+	"repair-instant-layer",
+	"repair-gasless-layer",
 	"plan",
 	"publish",
+	"publish-peripherals",
 	"reconcile",
 	"verify-final",
 ] as const
@@ -69,6 +72,7 @@ const ROLE = {
 	FEE_ADMIN_ROLE: "FEE_ADMIN_ROLE",
 	INSTANT_LAYER_ROLE: "INSTANT_LAYER_ROLE",
 	SIGNER_SETTER_ROLE: "SIGNER_SETTER_ROLE",
+	ACCOUNT_CREATOR_ROLE: "ACCOUNT_CREATOR_ROLE",
 	REVOKER_ROLE: "REVOKER_ROLE",
 	OPERATOR_ROLE: "OPERATOR_ROLE",
 	LIQUIDATOR_ROLE: "LIQUIDATOR_ROLE",
@@ -786,6 +790,212 @@ async function planLegacyInstantStateActions(
 	return actions
 }
 
+async function instantTemplateParityError(instant: any, snapshot: LegacyStateSnapshot): Promise<string | null> {
+	const nextTemplateId = Number(await instant.getNextTemplateId())
+	if (nextTemplateId !== snapshot.templates.length) {
+		return `template count ${nextTemplateId} does not equal the pinned legacy count ${snapshot.templates.length}`
+	}
+	for (const template of snapshot.templates) {
+		const [stored, operations, instantOpenMode] = await Promise.all([
+			instant.getTemplate(template.id),
+			instant.getTemplateOperations(template.id),
+			instant.templateInstantOpenMode(template.id),
+		])
+		if (stored.name !== template.name)
+			return `template ${template.id} name is ${JSON.stringify(stored.name)}, expected ${JSON.stringify(template.name)}`
+		if (!sameOperations(operations, template.operations)) return `template ${template.id} operations differ from the pinned legacy template`
+		if (stored.active !== template.active) return `template ${template.id} active state is ${stored.active}, expected ${template.active}`
+		if (instantOpenMode !== template.instantOpenMode) {
+			return `template ${template.id} instant-open mode is ${instantOpenMode}, expected ${template.instantOpenMode}`
+		}
+	}
+	return null
+}
+
+async function instantTemplateContaminationError(instant: any, snapshot: LegacyStateSnapshot): Promise<string | null> {
+	const nextTemplateId = Number(await instant.getNextTemplateId())
+	if (nextTemplateId > snapshot.templates.length) {
+		return `template count ${nextTemplateId} exceeds the pinned legacy count ${snapshot.templates.length}`
+	}
+	for (let id = 0; id < nextTemplateId; id++) {
+		const expected = snapshot.templates[id]
+		const [stored, operations] = await Promise.all([instant.getTemplate(id), instant.getTemplateOperations(id)])
+		if (stored.name !== expected.name || !sameOperations(operations, expected.operations)) {
+			return `template ${id} is not the pinned legacy template ${JSON.stringify(expected.name)}`
+		}
+	}
+	return null
+}
+
+async function ensurePeripheralReplacementState(
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	report: ArbitrumPerpsUpgradeReport,
+): Promise<{ required: boolean; snapshot: LegacyStateSnapshot }> {
+	const snapshot = await captureLegacyStateSnapshot(ethers, input, report)
+	const replacement = report.stages.peripheralReplacement as any
+	if (replacement?.discardedInstantLayer) return { required: true, snapshot }
+	if (!report.addresses.newInstantLayer || !report.addresses.newGaslessLayer) {
+		throw new Error("The original peripheral deployment must be recorded before replacement recovery can run")
+	}
+	const current = await ethers.getContractAt("InstantLayer", report.addresses.newInstantLayer)
+	const mismatch = await instantTemplateContaminationError(current, snapshot)
+	if (!mismatch) {
+		updateStage(report, "peripheralReplacement", "complete", {
+			required: false,
+			reason: "The deployed InstantLayer is an exact prefix of the pinned legacy template sequence",
+		})
+		return { required: false, snapshot }
+	}
+	report.stages.peripheralReplacement = {
+		status: "required",
+		reason: mismatch,
+		discardedInstantLayer: report.addresses.newInstantLayer,
+		discardedGaslessLayer: report.addresses.newGaslessLayer,
+		discardedGaslessLayerImplementation: report.addresses.newGaslessLayerImplementation,
+		snapshotBlockNumber: snapshot.blockNumber,
+		snapshotBlockHash: snapshot.blockHash,
+		updatedAt: now(),
+	}
+	return { required: true, snapshot }
+}
+
+async function seedReplacementInstantLayer(
+	ethers: any,
+	instant: any,
+	deployer: any,
+	input: ArbitrumPerpsUpgradeInput,
+	snapshot: LegacyStateSnapshot,
+): Promise<void> {
+	const address = await instant.getAddress()
+	const deployerAddress = ethers.getAddress(deployer.address)
+	const safe = ethers.getAddress(input.governance.safe)
+	const [defaultAdminRole, setterRole, operatorRole, revokerRole] = await Promise.all([
+		instant.DEFAULT_ADMIN_ROLE(),
+		instant.SETTER_ROLE(),
+		instant.OPERATOR_ROLE(),
+		instant.REVOKER_ROLE(),
+	])
+	const connected = instant.connect(deployer)
+	const deployerIsSetter = await instant.hasRole(setterRole, deployerAddress)
+
+	if (ethers.getAddress(await instant.accountLayer()) !== ethers.getAddress(input.contracts.accountLayer)) {
+		if (!deployerIsSetter) throw new Error(`Replacement InstantLayer ${address} is not configured and deployer no longer holds SETTER_ROLE`)
+		await send(connected.setAccountLayer(input.contracts.accountLayer), "bind replacement InstantLayer to AccountLayer")
+	}
+	if (!(await instant.transientContextEnabled())) {
+		if (!deployerIsSetter)
+			throw new Error(`Replacement InstantLayer ${address} has transient context disabled and deployer no longer holds SETTER_ROLE`)
+		await send(connected.setTransientContextEnabled(true), "enable replacement InstantLayer transient execution context")
+	}
+
+	let nextTemplateId = Number(await instant.getNextTemplateId())
+	if (nextTemplateId > snapshot.templates.length) {
+		throw new Error(`Replacement InstantLayer already has ${nextTemplateId} templates; expected no more than ${snapshot.templates.length}`)
+	}
+	for (const template of snapshot.templates) {
+		if (template.id < nextTemplateId) {
+			const [stored, operations] = await Promise.all([instant.getTemplate(template.id), instant.getTemplateOperations(template.id)])
+			if (stored.name !== template.name || !sameOperations(operations, template.operations)) {
+				throw new Error(`Replacement InstantLayer template ${template.id} conflicts with pinned template ${template.name}`)
+			}
+		} else {
+			if (template.id !== nextTemplateId) throw new Error(`Replacement InstantLayer template sequence skipped expected id ${nextTemplateId}`)
+			if (!deployerIsSetter) throw new Error(`Replacement InstantLayer is missing template ${template.id} and deployer no longer holds SETTER_ROLE`)
+			await send(connected.addTemplate(template.name, template.operations), `seed replacement InstantLayer template ${template.id}: ${template.name}`)
+			nextTemplateId++
+		}
+		const [stored, instantOpenMode] = await Promise.all([instant.getTemplate(template.id), instant.templateInstantOpenMode(template.id)])
+		if (stored.active !== template.active) {
+			if (!deployerIsSetter) throw new Error(`Replacement InstantLayer template ${template.id} active state differs after deployer handover`)
+			await send(connected.setTemplateActive(template.id, template.active), `copy replacement template ${template.id} active state`)
+		}
+		if (instantOpenMode !== template.instantOpenMode) {
+			if (!deployerIsSetter) throw new Error(`Replacement InstantLayer template ${template.id} mode differs after deployer handover`)
+			await send(
+				connected.setTemplateInstantOpenMode(template.id, template.instantOpenMode),
+				`copy replacement template ${template.id} instant-open mode`,
+			)
+		}
+	}
+
+	const deployerIsAdmin = await instant.hasRole(defaultAdminRole, deployerAddress)
+	for (const [name, roleHash] of [
+		["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+		["SETTER_ROLE", setterRole],
+		["OPERATOR_ROLE", operatorRole],
+		["REVOKER_ROLE", revokerRole],
+	] as const) {
+		if (await instant.hasRole(roleHash, safe)) continue
+		if (!deployerIsAdmin) throw new Error(`Safe is missing replacement InstantLayer ${name} and deployer no longer holds DEFAULT_ADMIN_ROLE`)
+		await send(connected.grantRole(roleHash, safe), `grant replacement InstantLayer ${name} to Safe`)
+	}
+
+	if (deployerAddress !== safe) {
+		for (const [name, roleHash] of [
+			["OPERATOR_ROLE", operatorRole],
+			["SETTER_ROLE", setterRole],
+			["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+		] as const) {
+			if (await instant.hasRole(roleHash, deployerAddress)) {
+				await send(connected.renounceRole(roleHash, deployerAddress), `renounce deployer replacement InstantLayer ${name}`)
+			}
+		}
+	}
+
+	const mismatch = await instantTemplateParityError(instant, snapshot)
+	if (mismatch) throw new Error(`Replacement InstantLayer parity verification failed: ${mismatch}`)
+	for (const [name, roleHash] of [
+		["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+		["SETTER_ROLE", setterRole],
+		["OPERATOR_ROLE", operatorRole],
+		["REVOKER_ROLE", revokerRole],
+	] as const) {
+		if (!(await instant.hasRole(roleHash, safe))) throw new Error(`Safe is missing replacement InstantLayer ${name}`)
+	}
+	if (deployerAddress !== safe) {
+		for (const [name, roleHash] of [
+			["DEFAULT_ADMIN_ROLE", defaultAdminRole],
+			["SETTER_ROLE", setterRole],
+			["OPERATOR_ROLE", operatorRole],
+		] as const) {
+			if (await instant.hasRole(roleHash, deployerAddress)) {
+				throw new Error(`Deployer still holds replacement InstantLayer ${name} after handover`)
+			}
+		}
+	}
+}
+
+async function repairInstantLayer(
+	hre: any,
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	report: ArbitrumPerpsUpgradeReport,
+	checkpoint: DeploymentCheckpoint,
+): Promise<void> {
+	const { required, snapshot } = await ensurePeripheralReplacementState(ethers, input, report)
+	if (!required) return
+	const [deployer] = await ethers.getSigners()
+	if (!deployer) throw new Error("Replacement InstantLayer deployment signer is unavailable")
+	const instant = await deployInstantLayer(hre, {
+		symmioaddress: input.contracts.core,
+		admin: deployer.address,
+		logData: false,
+		checkpoint,
+		vanity: null,
+	})
+	const address = await instant.getAddress()
+	report.addresses.newInstantLayer = address
+	await seedReplacementInstantLayer(ethers, instant, deployer, input, snapshot)
+	updateStage(report, "instantLayerReplacement", "complete", {
+		address,
+		constructorArguments: [input.contracts.core, deployer.address],
+		templateCount: snapshot.templates.length,
+		templateSource: input.contracts.currentInstantLayer,
+		snapshotBlockNumber: snapshot.blockNumber,
+	})
+}
+
 async function planLegacyGaslessStateActions(
 	ethers: any,
 	report: ArbitrumPerpsUpgradeReport,
@@ -901,6 +1111,91 @@ async function planLegacyGaslessStateActions(
 	return actions
 }
 
+async function activeRoleMembersFromEvents(ethers: any, contract: any, address: string, roleHash: string, toBlock: number): Promise<string[]> {
+	const historyRpcUrl = process.env.SYMMIO_ARBITRUM_HISTORY_RPC_URL || ARBITRUM_HISTORY_RPC_URL
+	const historyProvider = new ethers.JsonRpcProvider(historyRpcUrl, 42161, { staticNetwork: true })
+	let logs: any[]
+	try {
+		const grantedTopic = contract.interface.getEvent("RoleGranted").topicHash
+		const revokedTopic = contract.interface.getEvent("RoleRevoked").topicHash
+		logs = await getLogsInChunks(
+			historyProvider,
+			{ address, topics: [[grantedTopic, revokedTopic], roleHash] },
+			LEGACY_STATE_EVENT_START_BLOCK,
+			toBlock,
+		)
+	} finally {
+		await historyProvider.destroy?.()
+	}
+	const state = new Map<string, boolean>()
+	for (const log of logs) {
+		const parsed = contract.interface.parseLog(log)
+		if (!parsed) continue
+		state.set(ethers.getAddress(parsed.args.account), parsed.name === "RoleGranted")
+	}
+	const members = [...state.entries()].filter(([, active]) => active).map(([account]) => account)
+	const checks = await Promise.all(members.map(account => contract.hasRole(roleHash, account)))
+	if (checks.some(active => !active)) throw new Error(`Role event reconstruction for ${roleHash} does not match current on-chain state`)
+	return members
+}
+
+async function repairGaslessLayer(
+	hre: any,
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	report: ArbitrumPerpsUpgradeReport,
+	checkpoint: DeploymentCheckpoint,
+): Promise<void> {
+	const { required, snapshot } = await ensurePeripheralReplacementState(ethers, input, report)
+	if (!required) return
+	if ((report.stages.instantLayerReplacement as any)?.status !== "complete" || !report.addresses.newInstantLayer) {
+		throw new Error("Replacement InstantLayer must reach exact template parity before deploying GaslessLayer")
+	}
+	const [deployer] = await ethers.getSigners()
+	if (!deployer) throw new Error("Replacement GaslessLayer deployment signer is unavailable")
+	const currentGasless = await ethers.getContractAt("GaslessLayer", input.contracts.currentGaslessLayer)
+	const relayerRole = await currentGasless.RELAYER_ROLE()
+	const relayers = await activeRoleMembersFromEvents(ethers, currentGasless, input.contracts.currentGaslessLayer, relayerRole, snapshot.blockNumber)
+	if (relayers.length === 0) throw new Error("Legacy GaslessLayer has no active RELAYER_ROLE accounts")
+	const configured = await resolveGaslessLayerConfig(
+		ethers,
+		input.gaslessLayer,
+		{
+			core: input.contracts.core,
+			accountLayer: input.contracts.accountLayer,
+			instantLayer: report.addresses.newInstantLayer,
+			admin: input.governance.safe,
+		},
+		deployer.address,
+	)
+	const resolved = {
+		...configured,
+		...snapshot.gaslessFeeState,
+		relayers,
+	}
+	const result = await deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, null)
+	report.addresses.newGaslessLayer = result.address
+	report.addresses.newGaslessLayerImplementation = result.implementation
+	updateStage(report, "gaslessLayerReplacement", "complete", {
+		address: result.address,
+		implementation: result.implementation,
+		verificationRecords: result.records,
+		postStateChecks: result.checks,
+		manualActions: result.manualActions,
+		resolvedConfig: resolved,
+		stateSource: input.contracts.currentGaslessLayer,
+		snapshotBlockNumber: snapshot.blockNumber,
+	})
+	report.stages.peripheralReplacement = {
+		...(report.stages.peripheralReplacement as any),
+		status: "complete",
+		replacementInstantLayer: report.addresses.newInstantLayer,
+		replacementGaslessLayer: result.address,
+		replacementGaslessLayerImplementation: result.implementation,
+		updatedAt: now(),
+	}
+}
+
 async function planReusedLiquidatorStateActions(
 	ethers: any,
 	input: ArbitrumPerpsUpgradeInput,
@@ -917,7 +1212,9 @@ async function planReusedLiquidatorStateActions(
 	}
 	const { coreView, coreControl } = await contractsFor(ethers, input)
 	const actions: UpgradeAction[] = []
-	for (const name of [ROLE.LIQUIDATOR_ROLE, ROLE.PARTYB_LIQUIDATOR_ROLE]) {
+	// The reused proxy is the Party-A liquidator. PARTYB_LIQUIDATOR_ROLE is deliberately
+	// outside this upgrade's authority model and must not be inferred from LIQUIDATOR_ROLE.
+	for (const name of [ROLE.LIQUIDATOR_ROLE]) {
 		const roleHash = role(ethers, name)
 		if (!(await coreView.hasRole(input.contracts.liquidatorProxy, roleHash))) {
 			actions.push(
@@ -1050,7 +1347,18 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 			),
 		)
 	}
-	const deployedConfig = (report.stages.gaslessLayerDeployment as any)?.resolvedConfig
+	const accountCreatorRole = role(ethers, ROLE.ACCOUNT_CREATOR_ROLE)
+	if (!(await accountView.hasRole(report.addresses.newGaslessLayer, accountCreatorRole))) {
+		wiring.push(
+			action(
+				input.contracts.accountLayer,
+				accountControl.interface.encodeFunctionData("grantRole", [report.addresses.newGaslessLayer, accountCreatorRole]),
+				`Grant AccountLayer ACCOUNT_CREATOR_ROLE to new GaslessLayer ${report.addresses.newGaslessLayer}`,
+			),
+		)
+	}
+	const deployedConfig =
+		(report.stages.gaslessLayerReplacement as any)?.resolvedConfig || (report.stages.gaslessLayerDeployment as any)?.resolvedConfig
 	if (!deployedConfig) throw new Error("GaslessLayer resolved deployment config is missing from the standard report")
 	const resolved = { ...deployedConfig, ...legacyState.gaslessFeeState }
 	const gaslessState = await inspectGaslessLayerPostState(ethers, {
@@ -1059,10 +1367,78 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 		implementation: report.addresses.newGaslessLayerImplementation,
 	})
 	wiring.push(...gaslessState.manualActions)
-	report.safeBatches.wiring = { ...report.safeBatches.wiring, status: wiring.length ? "required" : "complete", actions: wiring }
-	updateStage(report, "wiring", wiring.length ? "required" : "complete", {
+	const replacement = report.stages.peripheralReplacement as any
+	const wiringBatchId = replacement?.discardedInstantLayer ? "replacementWiring" : "wiring"
+	report.safeBatches[wiringBatchId] = {
+		...report.safeBatches[wiringBatchId],
+		status: wiring.length ? "required" : "complete",
+		actions: wiring,
+	}
+	updateStage(report, wiringBatchId, wiring.length ? "required" : "complete", {
 		actionCount: wiring.length,
 	})
+
+	const quarantine: UpgradeAction[] = []
+	if (replacement?.discardedInstantLayer && replacement?.discardedGaslessLayer) {
+		const discardedInstant = ethers.getAddress(replacement.discardedInstantLayer)
+		const discardedGasless = ethers.getAddress(replacement.discardedGaslessLayer)
+		if (discardedInstant === ethers.getAddress(newInstant) || discardedGasless === ethers.getAddress(report.addresses.newGaslessLayer)) {
+			throw new Error("Peripheral replacement quarantine cannot target the active replacement pair")
+		}
+		if (await coreView.hasRole(discardedInstant, instantRole)) {
+			quarantine.push(
+				action(
+					input.contracts.core,
+					coreControl.interface.encodeFunctionData("revokeRole", [discardedInstant, instantRole]),
+					`Revoke Core INSTANT_LAYER_ROLE from discarded InstantLayer ${discardedInstant}`,
+				),
+			)
+		}
+		if (await accountView.hasRole(discardedInstant, signerSetterRole)) {
+			quarantine.push(
+				action(
+					input.contracts.accountLayer,
+					accountControl.interface.encodeFunctionData("revokeRole", [discardedInstant, signerSetterRole]),
+					`Revoke AccountLayer SIGNER_SETTER_ROLE from discarded InstantLayer ${discardedInstant}`,
+				),
+			)
+		}
+		if (await accountView.hasRole(discardedGasless, accountCreatorRole)) {
+			quarantine.push(
+				action(
+					input.contracts.accountLayer,
+					accountControl.interface.encodeFunctionData("revokeRole", [discardedGasless, accountCreatorRole]),
+					`Revoke AccountLayer ACCOUNT_CREATOR_ROLE from discarded GaslessLayer ${discardedGasless}`,
+				),
+			)
+		}
+		const discardedInstantContract = await ethers.getContractAt("InstantLayer", discardedInstant)
+		const discardedOperatorRole = await discardedInstantContract.OPERATOR_ROLE()
+		if (await discardedInstantContract.hasRole(discardedOperatorRole, discardedGasless)) {
+			quarantine.push(
+				action(
+					discardedInstant,
+					discardedInstantContract.interface.encodeFunctionData("revokeRole", [discardedOperatorRole, discardedGasless]),
+					`Revoke discarded GaslessLayer ${discardedGasless} OPERATOR_ROLE on discarded InstantLayer`,
+				),
+			)
+		}
+		if (await coreView.isOperationalFeeCharger(discardedGasless)) {
+			quarantine.push(
+				action(
+					input.contracts.core,
+					coreControl.interface.encodeFunctionData("unregisterOperationalFeeCharger", [discardedGasless]),
+					`Unregister discarded GaslessLayer ${discardedGasless} as a Core operational-fee charger`,
+				),
+			)
+		}
+	}
+	report.safeBatches.quarantine = {
+		...report.safeBatches.quarantine,
+		status: quarantine.length ? "required" : "complete",
+		actions: quarantine,
+	}
+	updateStage(report, "quarantine", quarantine.length ? "required" : "complete", { actionCount: quarantine.length })
 
 	const [instantState, gaslessFeeState, liquidatorState] = await Promise.all([
 		planLegacyInstantStateActions(ethers, report, legacyState),
@@ -1109,7 +1485,8 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 
 	const cutover: UpgradeAction[] = []
 	const blockingBatches = [
-		...(wiring.length ? ["wiring"] : []),
+		...(wiring.length ? [wiringBatchId] : []),
+		...(quarantine.length ? ["quarantine"] : []),
 		...(instantState.length ? ["instantState"] : []),
 		...(gaslessFeeState.length ? ["gaslessState"] : []),
 		...(liquidatorState.length ? ["liquidatorState"] : []),
@@ -1197,11 +1574,65 @@ async function publishDeployments(hre: any, input: ArbitrumPerpsUpgradeInput, re
 	updateStage(report, "publication", "complete", { recordCount: publicationRecords.length, records: publicationRecords })
 }
 
+async function publishReplacementPeripherals(hre: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): Promise<void> {
+	const replacement = report.stages.peripheralReplacement as any
+	if (!replacement?.discardedInstantLayer) {
+		updateStage(report, "peripheralPublication", "complete", { required: false, recordCount: 0 })
+		return
+	}
+	if (!report.addresses.newInstantLayer || !report.addresses.newGaslessLayer) {
+		throw new Error("Replacement peripheral addresses are missing")
+	}
+	const instantStage = report.stages.instantLayerReplacement as any
+	const gaslessStage = report.stages.gaslessLayerReplacement as any
+	if (instantStage?.status !== "complete" || gaslessStage?.status !== "complete") {
+		throw new Error("Replacement peripherals must be deployed and verified before explorer publication")
+	}
+	const records: Array<{ name: string; address: string; constructorArguments: unknown[]; libraries?: Record<string, string> }> = [
+		{
+			name: "contracts/instantLayer/InstantLayer.sol:InstantLayer",
+			address: report.addresses.newInstantLayer,
+			constructorArguments: instantStage.constructorArguments,
+		},
+		...((gaslessStage.verificationRecords || []) as any[]),
+	]
+	const publicationRecords: typeof records = []
+	for (const record of records) {
+		const publicationRecord = { ...record, name: await resolveVerificationContractName(hre.artifacts, record.name) }
+		publicationRecords.push(publicationRecord)
+		try {
+			await verifyContract(
+				{
+					address: publicationRecord.address,
+					constructorArgs: publicationRecord.constructorArguments,
+					contract: publicationRecord.name,
+					libraries: publicationRecord.libraries,
+					provider: verificationProviderForChain(42161),
+				},
+				hre,
+			)
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			if (!message.toLowerCase().includes("already verified")) throw error
+		}
+	}
+	updateStage(report, "peripheralPublication", "complete", { recordCount: publicationRecords.length, records: publicationRecords })
+}
+
 async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport, output: string): Promise<void> {
 	await planGovernance(ethers, input, report, output)
-	const requiredBatches = ["authority", "coreCut", "accountCut", "wiring", "instantState", "gaslessState", "liquidatorState", "cutover"].filter(
-		id => (report.safeBatches[id] as any)?.actions?.length > 0,
-	)
+	const requiredBatches = [
+		"authority",
+		"coreCut",
+		"accountCut",
+		"wiring",
+		"replacementWiring",
+		"quarantine",
+		"instantState",
+		"gaslessState",
+		"liquidatorState",
+		"cutover",
+	].filter(id => (report.safeBatches[id] as any)?.actions?.length > 0)
 	const external = Object.entries(report.externalActions)
 		.filter(([, entry]: any) => entry.actions?.length > 0)
 		.map(([id]) => id)
@@ -1217,7 +1648,10 @@ async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, 
 	const canary = arbitrumPerpsUpgradeCanaryDisposition(report)
 	const canaryComplete = canary.status === "passed"
 	const canaryWaived = canary.waived
-	const publicationComplete = (report.stages.publication as any)?.status === "complete"
+	const replacementRequired = Boolean((report.stages.peripheralReplacement as any)?.discardedInstantLayer)
+	const publicationComplete =
+		(report.stages.publication as any)?.status === "complete" &&
+		(!replacementRequired || (report.stages.peripheralPublication as any)?.status === "complete")
 	const complete = requiredBatches.length === 0 && external.length === 0 && safeHardened && canary.satisfied && publicationComplete
 	report.checks = [
 		{
@@ -1403,11 +1837,38 @@ async function executePhase(hre: any, phase: Phase, inputFile: string, outputFil
 					sourceMigration,
 				)
 				break
+			case "repair-instant-layer":
+				await withCheckpoint(
+					input,
+					report,
+					"arbitrum",
+					false,
+					ethers,
+					checkpoint => repairInstantLayer(hre, ethers, input, report, checkpoint),
+					"peripheral-replacement-v1",
+					sourceMigration,
+				)
+				break
+			case "repair-gasless-layer":
+				await withCheckpoint(
+					input,
+					report,
+					"arbitrum",
+					false,
+					ethers,
+					checkpoint => repairGaslessLayer(hre, ethers, input, report, checkpoint),
+					"peripheral-replacement-v1",
+					sourceMigration,
+				)
+				break
 			case "plan":
 				await planGovernance(ethers, input, report, outputFile)
 				break
 			case "publish":
 				await publishDeployments(hre, input, report, outputFile)
+				break
+			case "publish-peripherals":
+				await publishReplacementPeripherals(hre, input, report)
 				break
 			case "reconcile":
 				await withCheckpoint(input, report, "arbitrum", false, ethers, async () => undefined, undefined, sourceMigration)
