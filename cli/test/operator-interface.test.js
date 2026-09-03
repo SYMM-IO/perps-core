@@ -81,6 +81,10 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	assert.deepEqual(arbitrumUpgrade.supportedNetworks, ["arbitrum"]);
 	assert.equal(arbitrumUpgrade.risk, "transaction");
 	assert.deepEqual(
+		arbitrumUpgrade.inputs.map(input => input.id),
+		["network", "config", "input", "output", "governanceSigner", "signer"],
+	);
+	assert.deepEqual(
 		TASK_DEFINITIONS.find(item => item.id === "maintenance.arbitrum-perps-upgrade")
 			.plan()
 			.map(step => step.id),

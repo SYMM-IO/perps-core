@@ -7,16 +7,7 @@ import {
 	validateArbitrumPerpsUpgradeReport,
 } from "../../deployment-tooling/arbitrum-perps-upgrade.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
-import {
-	EOA_SIGNER_MODES,
-	SAFE_SIGNER_MODES,
-	SIGNER_MODES,
-	dispatchSafeActions,
-	hydrateSigner,
-	selectSigner,
-	signerEnvironment,
-	validateSignerSelection,
-} from "../signer/index.js";
+import { EOA_SIGNER_MODES, SAFE_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner, validateSignerSelection } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -43,11 +34,11 @@ const PLAN = Object.freeze([
 	{ id: "verify-account-cut", phase: "verification", title: "Verify the AccountLayer selector surface from live state" },
 	{
 		id: "account-authority",
-		phase: "authority",
-		title: "Delegate AccountLayer SIGNER_SETTER_ROLE administration to the Safe",
+		phase: "verification",
+		title: "Verify AccountLayer role administration is held by the Safe",
 	},
-	{ id: "core-authority", phase: "authority", title: "Execute the Safe Core authority bootstrap batch" },
-	{ id: "verify-authority", phase: "verification", title: "Verify scoped post-cut authority from live contract state" },
+	{ id: "core-authority", phase: "authority", title: "Execute the remaining Safe Core authority batch" },
+	{ id: "verify-authority", phase: "verification", title: "Verify Safe post-cut authority from live contract state" },
 	{ id: "wiring", phase: "execution", title: "Execute the Safe InstantLayer and GaslessLayer wiring batch" },
 	{ id: "verify-wiring", phase: "verification", title: "Verify new InstantLayer and GaslessLayer wiring from live state" },
 	{ id: "canary", phase: "canary", title: "Record a successful production canary before cutover" },
@@ -107,6 +98,15 @@ function assertNoActions(report, collection, id, label) {
 	if (actions.length > 0) throw new Error(`${label} still requires ${actions.length} action(s)`);
 }
 
+function assertSafeAccountAuthority(report) {
+	const actions = requiredActions(report, "externalActions", "accountAuthority");
+	if (actions.length > 0) {
+		throw new Error(
+			`Safe ${ARBITRUM_PERPS_UPGRADE_TARGET.safe} must already administer AccountLayer SIGNER_SETTER_ROLE; no prior-admin or Ledger signer is accepted by this workflow`,
+		);
+	}
+}
+
 function validateUpgradeTaskInput(input) {
 	if (input.network !== "arbitrum" || input.chainId !== 42161 || input.mode !== "live") {
 		throw new Error("Arbitrum Perps upgrade task input must target live Arbitrum chain 42161");
@@ -115,10 +115,6 @@ function validateUpgradeTaskInput(input) {
 	if (arbitrumPerpsUpgradeInputDigest(standardInput) !== input.inputDigest)
 		throw new Error("Standard upgrade input digest does not match task input");
 	if (standardInput.source.commit !== input.sourceCommit) throw new Error("Standard upgrade source commit does not match task input");
-	const prior = validateSignerSelection(input.previousAdminSigner, { allowSafe: false });
-	if (prior.address?.toLowerCase() !== ARBITRUM_PERPS_UPGRADE_TARGET.previousAdmin.toLowerCase()) {
-		throw new Error(`Prior administrator signer must be bound to ${ARBITRUM_PERPS_UPGRADE_TARGET.previousAdmin}`);
-	}
 	const governance = validateSignerSelection(input.governanceSigner);
 	if (!SAFE_SIGNER_MODES.includes(governance.mode) || governance.safeAddress.toLowerCase() !== ARBITRUM_PERPS_UPGRADE_TARGET.safe.toLowerCase()) {
 		throw new Error(`Governance signer must be Safe ${ARBITRUM_PERPS_UPGRADE_TARGET.safe}`);
@@ -191,15 +187,6 @@ async function prepareUpgrade({ root, ui }) {
 		"Bound standard upgrade I/O",
 	);
 
-	const previousAdminSigner = await selectSigner(ui, {
-		role: "Post-cut AccountLayer SIGNER_SETTER_ROLE administrator",
-		allowedModes: EOA_SIGNER_MODES.filter(mode => mode !== SIGNER_MODES.LOCAL_NODE),
-		initialMode: SIGNER_MODES.KEYSTORE,
-		network: "arbitrum",
-		chainId: 42161,
-		expectedAddress: ARBITRUM_PERPS_UPGRADE_TARGET.previousAdmin,
-	});
-	if (!previousAdminSigner) return null;
 	const governanceSigner = await selectSigner(ui, {
 		role: "Upgrade governance Safe",
 		allowedModes: SAFE_SIGNER_MODES,
@@ -220,7 +207,6 @@ async function prepareUpgrade({ root, ui }) {
 		inputDigest,
 		sourceCommit,
 		execution: standardInput.execution,
-		previousAdminSigner,
 		governanceSigner,
 	};
 }
@@ -247,7 +233,7 @@ async function reconcileUpgrade(ctx, input) {
 export function createArbitrumPerpsUpgradeTask(common) {
 	return common({
 		id: TASK_ID,
-		version: 3,
+		version: 4,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum Perps Core v0.8.6 upgrade",
@@ -258,7 +244,6 @@ export function createArbitrumPerpsUpgradeTask(common) {
 			{ id: "config", label: "Reviewed deployment recipe", type: "recipe", required: true },
 			{ id: "input", label: "Standard input JSON", type: "string", required: true },
 			{ id: "output", label: "Standard report JSON", type: "string", required: true },
-			{ id: "previousAdminSigner", label: "Prior AccountLayer administrator", type: "selection", required: true },
 			{ id: "governanceSigner", label: "Upgrade governance Safe", type: "selection", required: true },
 			{ id: "signer", label: "Contract deployment signer", type: "selection", required: true },
 		],
@@ -284,7 +269,8 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				await ctx.runProcess("npm", ["run", "compile"], { env: phaseEnvironment(input) });
 			});
 			await ctx.step("inspect", PLAN[1].title, async () => {
-				await runPhase(ctx, input, "inspect");
+				const report = await runPhase(ctx, input, "inspect");
+				assertSafeAccountAuthority(report);
 			});
 			await ctx.step("rehearse", PLAN[2].title, async () => {
 				const report = readReport(input);
@@ -358,22 +344,16 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				assertNoActions(report, "safeBatches", "accountCut", "AccountLayer Diamond cut");
 			});
 			await ctx.step("account-authority", PLAN[14].title, async () => {
-				await hydrateSigner(input.previousAdminSigner, ctx.ui);
-				await runPhase(ctx, input, "execute-account-authority", {
-					env: {
-						...signerEnvironment(input.previousAdminSigner),
-						SYMMIO_ARBITRUM_UPGRADE_EXECUTE: "true",
-						CONFIRM_CHAIN_ID: String(input.chainId),
-					},
-				});
+				const report = await runPhase(ctx, input, "inspect");
+				assertSafeAccountAuthority(report);
 			});
 			await ctx.step("core-authority", PLAN[15].title, () =>
 				dispatchBatch(
 					ctx,
 					input,
 					"authority",
-					"Arbitrum Perps Core authority bootstrap",
-					"Grant the reviewed Core administrative roles to the upgrade Safe after both Diamond cuts.",
+					"Arbitrum Perps Core authority completion",
+					"Grant any remaining reviewed Core administrative role to the upgrade Safe after both Diamond cuts.",
 				),
 			);
 			await ctx.step("verify-authority", PLAN[16].title, async () => {
