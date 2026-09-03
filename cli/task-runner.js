@@ -193,10 +193,12 @@ function validateDefinition(definition) {
 		}
 		if (
 			definition.resumePolicy.strategy !== "stable-step-id" ||
-			definition.resumePolicy.sourceDrift !== "refuse" ||
+			!["refuse", "confirm"].includes(definition.resumePolicy.sourceDrift) ||
 			definition.resumePolicy.inputDrift !== "refuse"
 		) {
-			throw new Error(`Mutating task ${definition.id} requires stable-step-id resume with source and input drift refusal`);
+			throw new Error(
+				`Mutating task ${definition.id} requires stable-step-id resume with explicit source drift policy and input drift refusal`,
+			);
 		}
 		if (
 			definition.cancellationPolicy.rollback !== false ||
@@ -704,9 +706,35 @@ export function createTaskRunner(options = {}) {
 		}
 		const currentSourceHash = hashSourceTree(root);
 		if (currentSourceHash !== state.sourceHash) {
-			throw new Error(
-				`Task source changed since this run started (${state.sourceHash.slice(0, 19)} != ${currentSourceHash.slice(0, 19)}); restore the original source or cancel safely`,
-			);
+			if (definition.resumePolicy.sourceDrift !== "confirm") {
+				throw new Error(
+					`Task source changed since this run started (${state.sourceHash.slice(0, 19)} != ${currentSourceHash.slice(0, 19)}); restore the original source or cancel safely`,
+				);
+			}
+			const uncertain = state.transactions.filter(transaction => UNCERTAIN_TX_STATUSES.has(transaction.status));
+			if (uncertain.length > 0) {
+				throw new Error(
+					`Task source cannot be migrated while ${uncertain.length} transaction outcome(s) remain unresolved: ${uncertain.map(transaction => transaction.hash).join(", ")}`,
+				);
+			}
+			if (typeof runtime.ui?.text !== "function") {
+				throw new Error("Task source migration requires an interactive operator confirmation");
+			}
+			const authorization = `MIGRATE ${currentSourceHash.slice("sha256:".length, "sha256:".length + 12)}`;
+			const entered = await runtime.ui.text({
+				message: `Task source changed from ${state.sourceHash} to ${currentSourceHash}. Type ${authorization} to bind this paused run to the reviewed source`,
+				placeholder: authorization,
+				validate: value => (value === authorization ? undefined : `Type exactly ${authorization}`),
+			});
+			if (entered !== authorization) throw new Error("Task source migration was not authorized; active task state is unchanged");
+			const migration = { at: now(), from: state.sourceHash, to: currentSourceHash, authorization: "operator-confirmed" };
+			state.sourceMigrations ||= [];
+			state.sourceMigrations.push(migration);
+			state.sourceHash = currentSourceHash;
+			delete state.runner;
+			const event = appendEvent(state, { type: "task.source.migrated", migration });
+			saveActive(state);
+			runtime.onEvent?.(event, state);
 		}
 		if (definition.validateResume) await definition.validateResume({ root, state }, state.input);
 		delete state.runner;

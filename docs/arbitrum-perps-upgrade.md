@@ -10,8 +10,9 @@ Preparation writes two machine-readable artifacts under `tasks/data/42161/upgrad
 
 - `input.json` uses `operations.symm.io/arbitrum-perps-upgrade-input-v2`. It binds every target address, the source commit, reviewed recipe digest, governance authorities, InstantLayer templates, GaslessLayer configuration, transaction policy, and whether the operator requires or explicitly waives the fork rehearsal.
 - `report.json` uses `operations.symm.io/arbitrum-perps-upgrade-report-v1`. It records phase status, deployed addresses, selector changes, Safe actions and delivery artifacts, transaction outcomes, publication evidence, and final checks.
+- A paused run still refuses silent source drift. If a reviewed operational fix changes the source between attempts, continuation requires typing the displayed `MIGRATE <digest>` phrase. The runner refuses migration while any transaction outcome is unresolved and journals the old and new source hashes before resuming the same input, report, and deployment checkpoint.
 
-Both formats have JSON Schemas in `deployment-tooling/`. A resume refuses source or input drift. Contract creations also use the deployment checkpoint and write-ahead transaction journal, so a submitted or confirmed deployment is reconciled before another creation can be attempted.
+Both formats have JSON Schemas in `deployment-tooling/`. A resume refuses input drift and either refuses source drift or requires the explicit, journaled migration above. Contract creations also use the deployment checkpoint and write-ahead transaction journal, so a submitted or confirmed deployment is reconciled before another creation can be attempted.
 
 Every fork invocation is an isolated attempt because a restarted Hardhat process has a new ephemeral chain. If a provider interrupts rehearsal, the task preserves that attempt's report, partial receipts, and checkpoint, then a resume starts the whole rehearsal against a fresh fork namespace. Live deployment phases keep the digest-stable checkpoint and reconcile on-chain state before continuing.
 

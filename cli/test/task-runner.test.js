@@ -400,6 +400,64 @@ test("resume refuses changed source and changed input intent", async () => {
 	await assert.rejects(second.runner.resumeActive(), /input no longer matches/);
 });
 
+test("an opted-in paused task requires exact source migration confirmation and journals it", async () => {
+	let attempts = 0;
+	const run = async () => {
+		if (attempts++ === 0) throw new Error("pause me");
+	};
+	const task = mutating({
+		run,
+		handler: run,
+		resumePolicy: { strategy: "stable-step-id", sourceDrift: "confirm", inputDrift: "refuse" },
+	});
+	const { root, runner } = runnerFor(task);
+	const paused = await runner.start("maintenance.test");
+	const originalSourceHash = paused.sourceHash;
+	fs.writeFileSync(path.join(root, "cli", "source.js"), "export const version = 2\n");
+
+	await assert.rejects(runner.resumeActive({ ui: { text: async () => "WRONG" } }), /Task source migration was not authorized/);
+	assert.equal(runner.getActive().sourceHash, originalSourceHash);
+
+	const events = [];
+	const completed = await runner.resumeActive({
+		ui: {
+			text: async options => {
+				assert.equal(options.validate(options.placeholder), undefined);
+				return options.placeholder;
+			},
+		},
+		onEvent: event => events.push(event),
+	});
+	assert.equal(completed.status, "completed");
+	assert.equal(completed.sourceMigrations.length, 1);
+	assert.equal(completed.sourceMigrations[0].from, originalSourceHash);
+	assert.equal(completed.sourceMigrations[0].to, completed.sourceHash);
+	assert.equal(completed.sourceMigrations[0].authorization, "operator-confirmed");
+	assert.equal(events.find(event => event.type === "task.source.migrated")?.migration.to, completed.sourceHash);
+});
+
+test("source migration refuses an unresolved transaction before prompting", async () => {
+	const unresolvedHash = `0x${"6".repeat(64)}`;
+	const run = async ctx => {
+		ctx.emit("tx.submitted", { transaction: { hash: unresolvedHash, status: "unresolved", nonce: 9 } });
+		throw new Error("pause me");
+	};
+	const task = mutating({
+		run,
+		handler: run,
+		resumePolicy: { strategy: "stable-step-id", sourceDrift: "confirm", inputDrift: "refuse" },
+	});
+	const { root, runner } = runnerFor(task);
+	await runner.start("maintenance.test");
+	fs.writeFileSync(path.join(root, "cli", "source.js"), "export const version = 2\n");
+	let prompted = false;
+	await assert.rejects(
+		runner.resumeActive({ ui: { text: async () => (prompted = true) } }),
+		/source cannot be migrated while 1 transaction outcome.*remain unresolved/,
+	);
+	assert.equal(prompted, false);
+});
+
 test("resume refuses a changed stable plan", async () => {
 	const run = async () => {
 		throw new Error("pause me");
