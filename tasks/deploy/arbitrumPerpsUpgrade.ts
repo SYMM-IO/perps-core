@@ -7,6 +7,7 @@ import path from "node:path"
 
 import {
 	ARBITRUM_PERPS_UPGRADE_TARGET,
+	arbitrumPerpsUpgradeCanaryDisposition,
 	arbitrumPerpsUpgradeInputDigest,
 	createArbitrumPerpsUpgradeReport,
 	loadArbitrumPerpsUpgradeInput,
@@ -728,9 +729,11 @@ async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, 
 		ownerCount,
 		requirement: "Add the production owners and raise the Safe threshold above 1 after wiring and canary completion",
 	})
-	const canaryComplete = (report.stages.canary as any)?.status === "complete"
+	const canary = arbitrumPerpsUpgradeCanaryDisposition(report)
+	const canaryComplete = canary.status === "passed"
+	const canaryWaived = canary.waived
 	const publicationComplete = (report.stages.publication as any)?.status === "complete"
-	const complete = requiredBatches.length === 0 && external.length === 0 && safeHardened && canaryComplete && publicationComplete
+	const complete = requiredBatches.length === 0 && external.length === 0 && safeHardened && canary.satisfied && publicationComplete
 	report.checks = [
 		{
 			check: "governance actions",
@@ -739,7 +742,7 @@ async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, 
 			pendingExternalActions: external,
 		},
 		{ check: "explorer publication", status: publicationComplete ? "passed" : "pending" },
-		{ check: "operator canary", status: canaryComplete ? "passed" : "pending" },
+		{ check: "operator canary", status: canary.status },
 		{ check: "Safe hardening", status: safeHardened ? "passed" : "pending", threshold, ownerCount },
 	]
 	report.lifecycle = complete ? "complete" : "waiting_external"
@@ -748,6 +751,8 @@ async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, 
 		pendingExternalActions: external,
 		publicationComplete,
 		canaryComplete,
+		canaryWaived,
+		canarySatisfied: canary.satisfied,
 		safeHardened,
 	})
 	if (complete) report.lifecycle = "complete"

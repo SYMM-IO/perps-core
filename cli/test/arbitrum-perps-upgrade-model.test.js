@@ -1,11 +1,14 @@
 import {
+	ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION,
 	ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION,
 	ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION,
 	ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
 	ARBITRUM_PERPS_UPGRADE_TARGET,
 	arbitrumPerpsUpgradeInputDigest,
+	arbitrumPerpsUpgradeCanaryDisposition,
 	buildArbitrumPerpsUpgradeInput,
 	createArbitrumPerpsUpgradeReport,
+	recordArbitrumPerpsUpgradeCanaryWaiver,
 	validateArbitrumPerpsUpgradeInput,
 	validateArbitrumPerpsUpgradeReport,
 	validateArbitrumPerpsUpgradeSourceMigration,
@@ -74,6 +77,64 @@ test("Arbitrum upgrade report binds every resumable update to the exact input", 
 	const changed = structuredClone(value);
 	changed.source.commit = "b".repeat(40);
 	assert.throws(() => validateArbitrumPerpsUpgradeReport(report, changed), /inputDigest must equal/);
+});
+
+test("production canary waiver is explicit, auditable, and remains distinct from a passed canary", () => {
+	const report = createArbitrumPerpsUpgradeReport(input(), "2026-09-02T00:00:00.000Z");
+	const waived = recordArbitrumPerpsUpgradeCanaryWaiver(
+		report,
+		"Operator accepted cutover risk because both components were already production validated.",
+		"2026-09-03T12:30:00.000Z",
+	);
+	assert.equal(waived, report);
+	assert.deepEqual(report.stages.canary, {
+		status: "skipped",
+		authorization: "operator-confirmed",
+		confirmation: ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION,
+		reason: "Operator accepted cutover risk because both components were already production validated.",
+		skippedAt: "2026-09-03T12:30:00.000Z",
+	});
+	assert.deepEqual(arbitrumPerpsUpgradeCanaryDisposition(report), {
+		satisfied: true,
+		status: "skipped",
+		waived: true,
+	});
+
+	const passed = structuredClone(report);
+	passed.stages.canary = {
+		status: "complete",
+		evidence: "0x1234",
+		recordedAt: "2026-09-03T12:31:00.000Z",
+	};
+	assert.deepEqual(arbitrumPerpsUpgradeCanaryDisposition(passed), {
+		satisfied: true,
+		status: "passed",
+		waived: false,
+	});
+});
+
+test("production canary waiver rejects missing reasons and malformed report evidence", () => {
+	const report = createArbitrumPerpsUpgradeReport(input());
+	assert.throws(() => recordArbitrumPerpsUpgradeCanaryWaiver(report, " "), /reason/);
+	for (const canary of [
+		{ status: "complete", evidence: "" },
+		{ status: "skipped", authorization: "operator-confirmed", reason: "accepted" },
+		{
+			status: "skipped",
+			authorization: "operator-confirmed",
+			confirmation: ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION,
+			reason: "accepted",
+			skippedAt: "not-a-date",
+		},
+	]) {
+		const changed = structuredClone(report);
+		changed.stages.canary = canary;
+		assert.deepEqual(arbitrumPerpsUpgradeCanaryDisposition(changed), {
+			satisfied: false,
+			status: "pending",
+			waived: false,
+		});
+	}
 });
 
 test("Arbitrum upgrade source migration binds the task, input, commit lineage, and operational file set", () => {

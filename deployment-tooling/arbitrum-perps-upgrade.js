@@ -6,6 +6,7 @@ import fs from "node:fs";
 export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-input-v2";
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-report-v1";
 export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION = "operations.symm.io/task-source-migration-v1";
+export const ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION = "WAIVE PRODUCTION CANARY";
 
 const ARBITRUM_PERPS_UPGRADE_OPERATIONAL_MIGRATION_FILES = new Set([
 	"cli/task-runner.js",
@@ -406,6 +407,49 @@ export function createArbitrumPerpsUpgradeReport(input, now = new Date().toISOSt
 		createdAt: now,
 		updatedAt: now,
 	};
+}
+
+export function recordArbitrumPerpsUpgradeCanaryWaiver(reportValue, reasonValue, skippedAt = new Date().toISOString()) {
+	const report = object(reportValue, "Arbitrum Perps upgrade canary waiver", "report");
+	const stages = object(report.stages, "Arbitrum Perps upgrade canary waiver", "report.stages");
+	const reason = string(reasonValue, "Arbitrum Perps upgrade canary waiver", "reason");
+	if (Number.isNaN(Date.parse(skippedAt))) {
+		fail("Arbitrum Perps upgrade canary waiver", "skippedAt", "must be an ISO date-time");
+	}
+	stages.canary = {
+		status: "skipped",
+		authorization: "operator-confirmed",
+		confirmation: ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION,
+		reason,
+		skippedAt,
+	};
+	if (report.lifecycle !== "complete") report.lifecycle = "in_progress";
+	return report;
+}
+
+export function arbitrumPerpsUpgradeCanaryDisposition(reportValue) {
+	const stage = reportValue?.stages?.canary;
+	if (
+		stage?.status === "complete" &&
+		typeof stage.evidence === "string" &&
+		stage.evidence.trim().length > 0 &&
+		typeof stage.recordedAt === "string" &&
+		!Number.isNaN(Date.parse(stage.recordedAt))
+	) {
+		return { satisfied: true, status: "passed", waived: false };
+	}
+	if (
+		stage?.status === "skipped" &&
+		stage.authorization === "operator-confirmed" &&
+		stage.confirmation === ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION &&
+		typeof stage.reason === "string" &&
+		stage.reason.trim().length > 0 &&
+		typeof stage.skippedAt === "string" &&
+		!Number.isNaN(Date.parse(stage.skippedAt))
+	) {
+		return { satisfied: true, status: "skipped", waived: true };
+	}
+	return { satisfied: false, status: "pending", waived: false };
 }
 
 export function validateArbitrumPerpsUpgradeReport(value, input, source = "Arbitrum Perps upgrade report") {
