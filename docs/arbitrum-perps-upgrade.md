@@ -36,3 +36,25 @@ Safe export or proposal is not treated as execution. The task enters `waiting_ex
 File exports use byte-exact raw calldata: every Transaction Builder entry carries a non-null `data` value copied from the digest-bound intent, while `contractMethod` and `contractInputsValues` remain null. The exporter validates that target, value, calldata, action count, chain, and Safe address match the reviewed intent before and after writing the file. This avoids asking the Safe UI to reconstruct complex tuple-array calls such as `diamondCut` from decoded JSON values. Always discard an older browser draft and freshly import a regenerated file; before execution, confirm that every expected transaction has non-null calldata. Continuing the task after execution independently checks the resulting selector surface rather than treating a successful Safe receipt as proof that the cut ran.
 
 No new release tag is required by this flow. The standard input pins the exact source commit used to build and deploy, while the report keeps source parity, explorer publication, receipt evidence, wiring checks, and final custody/governance handover as separate proof layers.
+
+## Contaminated peripheral recovery
+
+The unfinished canary phase performs an additional prefix check before it accepts or migrates template state. If the deployed InstantLayer has more templates than the pinned legacy source, or any existing ID does not contain the expected legacy template, the task treats that InstantLayer and its bound GaslessLayer as discarded. It does not attempt to delete, reorder, or overwrite append-only template IDs.
+
+Recovery remains inside the same resumable upgrade run and uses a separate `peripheral-replacement-v1` deployment checkpoint:
+
+1. Deploy a clean InstantLayer with the deployment signer as temporary administrator.
+2. Bind AccountLayer and copy every pinned legacy template in ID order. Each confirmed template transaction is journaled; a resume verifies the already-present prefix before sending the next transaction.
+3. Verify the exact count, operations, active flags, instant-open modes, transient execution mode, and Safe roles. Grant the Safe its final InstantLayer roles and remove the deployment signer before proceeding.
+4. Deploy and configure a fresh GaslessLayer proxy bound to the clean InstantLayer. Fee/quota state comes from the pinned legacy snapshot, and active relayers are reconstructed from role events and checked against live role reads.
+5. Publish the replacement InstantLayer, Gasless implementation, libraries, and proxy to the explorer.
+6. Export an independent replacement-wiring Safe file. It grants the clean InstantLayer Core `INSTANT_LAYER_ROLE`, grants AccountLayer `SIGNER_SETTER_ROLE`, grants the clean GaslessLayer AccountLayer `ACCOUNT_CREATOR_ROLE`, grants it InstantLayer `OPERATOR_ROLE`, registers it as a Core operational-fee charger, and routes fees to the reviewed treasury.
+7. After wiring is independently verified, export a quarantine Safe file that removes those protocol authorities from the discarded pair. The original production InstantLayer and GaslessLayer remain untouched until the later canary and cutover gates.
+
+To resume this recovery from the repository root:
+
+```bash
+./symmio
+```
+
+Select **Continue active task**, unlock the existing `TEAM_DEPLOYER` Hardhat keystore key, and approve the displayed source migration phrase. Do not cancel the active task, start a fresh upgrade, invoke `internal:arbitrum-perps-upgrade` directly, or reuse an older Safe Transaction Builder file. Each `waiting_external` screen names the one newly generated file that is valid for the next independently verified action set.
