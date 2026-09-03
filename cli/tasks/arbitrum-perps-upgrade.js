@@ -1,10 +1,12 @@
 import {
+	ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION,
 	ARBITRUM_PERPS_UPGRADE_TARGET,
 	ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
 	arbitrumPerpsUpgradeInputDigest,
 	buildArbitrumPerpsUpgradeInput,
 	createArbitrumPerpsUpgradeReport,
 	loadArbitrumPerpsUpgradeInput,
+	recordArbitrumPerpsUpgradeCanaryWaiver,
 	validateArbitrumPerpsUpgradeReport,
 } from "../../deployment-tooling/arbitrum-perps-upgrade.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
@@ -43,7 +45,7 @@ const PLAN = Object.freeze([
 	{ id: "verify-authority", phase: "verification", title: "Verify Safe post-cut authority from live contract state" },
 	{ id: "wiring", phase: "execution", title: "Execute the Safe InstantLayer and GaslessLayer wiring batch" },
 	{ id: "verify-wiring", phase: "verification", title: "Verify new InstantLayer and GaslessLayer wiring from live state" },
-	{ id: "canary", phase: "canary", title: "Record a successful production canary before cutover" },
+	{ id: "canary", phase: "canary", title: "Record a production canary or explicit operator waiver before cutover" },
 	{ id: "cutover", phase: "execution", title: "Execute the Safe old-InstantLayer role cutover batch" },
 	{ id: "verify-cutover", phase: "verification", title: "Verify old InstantLayer protocol roles are revoked" },
 	{ id: "safe-hardening", phase: "handover", title: "Verify production Safe owners and threshold are hardened" },
@@ -449,19 +451,51 @@ export function createArbitrumPerpsUpgradeTask(common) {
 					message: "Did the production canary complete successfully against the new InstantLayer and GaslessLayer?",
 					initialValue: false,
 				});
-				if (!confirmed)
-					ctx.wait("Run and verify a production canary against the newly wired InstantLayer and GaslessLayer, then continue this task.");
-				const evidence = await ctx.ui.text({
-					message: "Canary transaction hash or durable evidence reference",
-					validate: value => (value.trim() ? undefined : "A canary evidence reference is required"),
+				if (confirmed) {
+					const evidence = await ctx.ui.text({
+						message: "Canary transaction hash or durable evidence reference",
+						validate: value => (value.trim() ? undefined : "A canary evidence reference is required"),
+					});
+					if (evidence === null) {
+						ctx.requestPause();
+						ctx.checkpoint();
+					}
+					const report = readReport(input);
+					report.stages.canary = { status: "complete", evidence: evidence.trim(), recordedAt: new Date().toISOString() };
+					writeReport(input, report);
+					return;
+				}
+				const waive = await ctx.ui.confirm({
+					message: "Explicitly waive the production canary and accept cutover without runtime canary evidence?",
+					initialValue: false,
 				});
-				if (evidence === null) {
+				if (!waive)
+					ctx.wait("Run and verify a production canary against the newly wired InstantLayer and GaslessLayer, then continue this task.");
+				const authorization = await ctx.ui.text({
+					message: `Type ${ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION} to authorize the waiver`,
+					validate: value =>
+						value === ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION
+							? undefined
+							: `Type exactly ${ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION}`,
+				});
+				if (authorization === null) {
+					ctx.requestPause();
+					ctx.checkpoint();
+				}
+				const reason = await ctx.ui.text({
+					message: "Durable operator reason for waiving the production canary",
+					validate: value => (value.trim() ? undefined : "A waiver reason is required"),
+				});
+				if (reason === null) {
 					ctx.requestPause();
 					ctx.checkpoint();
 				}
 				const report = readReport(input);
-				report.stages.canary = { status: "complete", evidence: evidence.trim(), recordedAt: new Date().toISOString() };
+				recordArbitrumPerpsUpgradeCanaryWaiver(report, reason.trim());
 				writeReport(input, report);
+				ctx.emit("warning", {
+					message: "Production canary was explicitly waived; cutover is proceeding without runtime canary evidence.",
+				});
 			});
 			await ctx.step("cutover", PLAN[20].title, () =>
 				dispatchBatch(

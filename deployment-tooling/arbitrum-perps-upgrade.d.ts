@@ -1,6 +1,7 @@
 export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-input-v2"
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-report-v1"
 export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION: "operations.symm.io/task-source-migration-v1"
+export const ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION: "WAIVE PRODUCTION CANARY"
 
 export type UpgradeAddressKey =
 	| "core"
@@ -124,4 +125,14 @@ export function buildArbitrumPerpsUpgradeInput(args: {
 }): ArbitrumPerpsUpgradeInput
 export function loadArbitrumPerpsUpgradeInput(file: string): ArbitrumPerpsUpgradeInput
 export function createArbitrumPerpsUpgradeReport(input: ArbitrumPerpsUpgradeInput, now?: string): ArbitrumPerpsUpgradeReport
+export function recordArbitrumPerpsUpgradeCanaryWaiver(
+	report: ArbitrumPerpsUpgradeReport,
+	reason: string,
+	skippedAt?: string,
+): ArbitrumPerpsUpgradeReport
+export function arbitrumPerpsUpgradeCanaryDisposition(report: ArbitrumPerpsUpgradeReport): {
+	satisfied: boolean
+	status: "passed" | "skipped" | "pending"
+	waived: boolean
+}
 export function validateArbitrumPerpsUpgradeReport(value: unknown, input: ArbitrumPerpsUpgradeInput, source?: string): ArbitrumPerpsUpgradeReport
