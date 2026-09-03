@@ -34,6 +34,7 @@ library LibSymbolAdjustmentInventory {
 		PositionType positionType,
 		uint256 consumedAmount
 	);
+	event RestatementFundingSettlementCompleted(uint256 indexed symbolId, uint256 indexed epoch);
 
 	/// @notice Snapshots each PartyB's current global open quantity exactly once in a restatement epoch.
 	function preparePartyBs(
@@ -113,10 +114,18 @@ library LibSymbolAdjustmentInventory {
 			totals.remainingShort -= amount;
 			if (fundingUnsettled) fundingTotals.remainingShort -= amount;
 		}
-		if (phase == RestatementPhase.FUNDING_SETTLEMENT && fundingTotals.remainingLong == 0 && fundingTotals.remainingShort == 0)
-			adjustment.restatementPhase = RestatementPhase.QUOTE_PROCESSING;
-
 		emit RestatementInventoryConsumed(quote.symbolId, adjustment.restatementEpoch, quote.id, quote.partyB, quote.positionType, amount);
+		completeFundingSettlementIfDone(quote.symbolId, adjustment);
+	}
+
+	/// @notice Advances a FUNDING_SETTLEMENT window to QUOTE_PROCESSING once both settlement totals reach zero.
+	function completeFundingSettlementIfDone(uint256 symbolId, SymbolAdjustment storage adjustment) internal returns (bool completed) {
+		if (adjustment.restatementPhase != RestatementPhase.FUNDING_SETTLEMENT) return false;
+		RestatementInventoryTotals storage fundingTotals = SymbolAdjustmentStorage.layout().restatementFundingSettlementTotals[symbolId];
+		if (fundingTotals.remainingLong != 0 || fundingTotals.remainingShort != 0) return false;
+		adjustment.restatementPhase = RestatementPhase.QUOTE_PROCESSING;
+		emit RestatementFundingSettlementCompleted(symbolId, adjustment.restatementEpoch);
+		return true;
 	}
 
 	/// @notice Records that one quote's old-basis accumulated funding was settled before quote mutation begins.

@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { PositionType } from "../../storages/QuoteStorage.sol";
+import { RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
 
 interface ISymbolAdjustmentFacet {
 	struct QuoteAdjustmentPreview {
@@ -39,8 +40,10 @@ interface ISymbolAdjustmentFacet {
 		uint256 indexed epoch,
 		uint256 totalRemainingLongAmount,
 		uint256 totalRemainingShortAmount,
-		uint256 pendingFundingPartyBCount
+		uint256 pendingFundingPartyBCount,
+		RestatementPhase phase
 	);
+	event RestatementFundingSettlementCompleted(uint256 indexed symbolId, uint256 indexed epoch);
 	event RestatementInventoryPrepared(
 		uint256 indexed symbolId,
 		uint256 indexed epoch,
