@@ -2,6 +2,7 @@ import {
 	ARBITRUM_PERPS_UPGRADE_PLAN,
 	applyForkRehearsalWaiver,
 	buildArbitrumPerpsUpgradeSourceMigrationEnvironment,
+	safeDispatchChunksForUpgradeBatch,
 	safeDispatchStateKeyForUpgradeBatch,
 } from "../tasks/arbitrum-perps-upgrade.js";
 import assert from "node:assert/strict";
@@ -46,6 +47,54 @@ test("upgrade report batch ids map to independent stable Safe dispatch keys", ()
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("liquidatorState"), "liquidator-state");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("cutover"), "cutover");
 	assert.throws(() => safeDispatchStateKeyForUpgradeBatch("unknown"), /Unsupported Arbitrum upgrade Safe batch/);
+});
+
+test("InstantLayer state actions split on template boundaries for independently simulatable Safe batches", () => {
+	const action = description => ({ to: "0x1111111111111111111111111111111111111111", value: "0", data: "0x", description });
+	const actions = [
+		action("Copy legacy InstantLayer template 4: Four"),
+		action("Copy legacy InstantLayer template 5: Five"),
+		action("Copy legacy InstantLayer template 6: Six"),
+		action("Copy legacy active state for template 6: false"),
+		action("Copy legacy InstantLayer template 7: Seven"),
+		action("Copy legacy InstantLayer template 8: Eight"),
+		action("Copy legacy instant-open mode for template 8: true"),
+	];
+
+	assert.deepEqual(
+		safeDispatchChunksForUpgradeBatch("instantState", actions).map(chunk => ({
+			stateKey: chunk.stateKey,
+			templateRange: chunk.templateRange,
+			descriptions: chunk.actions.map(entry => entry.description),
+		})),
+		[
+			{
+				stateKey: "instant-state-4-7",
+				templateRange: "templates 4-7",
+				descriptions: actions.slice(0, 5).map(entry => entry.description),
+			},
+			{
+				stateKey: "instant-state-8",
+				templateRange: "template 8",
+				descriptions: actions.slice(5).map(entry => entry.description),
+			},
+		],
+	);
+});
+
+test("non-template upgrade batches retain one stable Safe dispatch", () => {
+	const actions = [{ to: "0x1111111111111111111111111111111111111111", value: "0", data: "0x", description: "Wire" }];
+	assert.deepEqual(safeDispatchChunksForUpgradeBatch("wiring", actions), [{ stateKey: "wiring", templateRange: null, actions }]);
+});
+
+test("InstantLayer state chunking refuses actions without a stable template id", () => {
+	assert.throws(
+		() =>
+			safeDispatchChunksForUpgradeBatch("instantState", [
+				{ to: "0x1111111111111111111111111111111111111111", value: "0", data: "0x", description: "Unknown action" },
+			]),
+		/template id/,
+	);
 });
 
 test("source migration environment binds the active journal to the checked-out commit", () => {
