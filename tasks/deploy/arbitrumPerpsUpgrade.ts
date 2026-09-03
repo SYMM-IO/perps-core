@@ -46,7 +46,6 @@ import {
 const PHASES = [
 	"inspect",
 	"rehearse",
-	"execute-account-authority",
 	"deploy-core-facets",
 	"deploy-account-facets",
 	"deploy-instant-layer",
@@ -354,25 +353,6 @@ async function executeActions(signer: any, actions: UpgradeAction[]): Promise<vo
 	for (const entry of actions) {
 		await send(signer.sendTransaction({ to: entry.to, value: entry.value, data: entry.data }), entry.description)
 	}
-}
-
-async function executeAccountAuthority(
-	ethers: any,
-	input: ArbitrumPerpsUpgradeInput,
-	report: ArbitrumPerpsUpgradeReport,
-	signer?: any,
-): Promise<void> {
-	await inspectAuthority(ethers, input, report)
-	const actions = (report.externalActions.accountAuthority as any).actions as UpgradeAction[]
-	if (actions.length === 0) return
-	const authority = signer || (await ethers.getSigners())[0]
-	if (ethers.getAddress(authority.address) !== ethers.getAddress(input.governance.previousAdmin)) {
-		throw new Error(`AccountLayer authority signer is ${authority.address}, expected prior admin ${input.governance.previousAdmin}`)
-	}
-	await executeActions(authority, actions)
-	await inspectAuthority(ethers, input, report)
-	if ((report.externalActions.accountAuthority as any).actions.length !== 0)
-		throw new Error("AccountLayer authority remains incomplete after confirmed transactions")
 }
 
 async function deployFacetScope(
@@ -759,7 +739,6 @@ async function runForkRehearsal(
 	const forkReport = createArbitrumPerpsUpgradeReport(input)
 	const [deployer] = await ethers.getSigners()
 	await ethers.provider.send("hardhat_setBalance", [deployer.address, "0x3635c9adc5dea00000"])
-	const previousAdmin = await fundAndImpersonate(ethers, input.governance.previousAdmin)
 	const safe = await fundAndImpersonate(ethers, input.governance.safe)
 	try {
 		await withCheckpoint(
@@ -770,6 +749,9 @@ async function runForkRehearsal(
 			ethers,
 			async checkpoint => {
 				await inspectAuthority(ethers, input, forkReport)
+				if ((forkReport.externalActions.accountAuthority as any).actions.length) {
+					throw new Error("Fork rehearsal requires the Safe to already administer AccountLayer SIGNER_SETTER_ROLE")
+				}
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "core", checkpoint)
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "accountLayer", checkpoint)
 				await deployNewInstantLayer(hre, ethers, input, forkReport, checkpoint)
@@ -779,7 +761,6 @@ async function runForkRehearsal(
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				await executeActions(safe, (forkReport.safeBatches.accountCut as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)
-				await executeAccountAuthority(ethers, input, forkReport, previousAdmin)
 				await executeActions(safe, (forkReport.safeBatches.authority as any).actions)
 				await inspectAuthority(ethers, input, forkReport)
 				if ((forkReport.safeBatches.authority as any).actions.length || (forkReport.externalActions.accountAuthority as any).actions.length)
@@ -837,9 +818,6 @@ async function executePhase(hre: any, phase: Phase, inputFile: string, outputFil
 				break
 			case "rehearse":
 				await runForkRehearsal(hre, ethers, input, report, outputFile)
-				break
-			case "execute-account-authority":
-				await withCheckpoint(input, report, "arbitrum", false, ethers, async () => executeAccountAuthority(ethers, input, report))
 				break
 			case "deploy-core-facets":
 				await withCheckpoint(input, report, "arbitrum", false, ethers, checkpoint =>
