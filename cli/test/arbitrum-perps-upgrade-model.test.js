@@ -97,7 +97,13 @@ test("Arbitrum upgrade source migration binds the task, input, commit lineage, a
 	};
 	const context = {
 		currentCommit: migration.currentCommit,
-		changedFiles: ["tasks/deploy/componentDeployment.ts", "cli/task-runner.js", "cli/test/arbitrum-perps-upgrade-task.test.js"],
+		changedFiles: [
+			"tasks/deploy/componentDeployment.ts",
+			"cli/task-runner.js",
+			"cli/signer/safe-batch.js",
+			"cli/test/arbitrum-perps-upgrade-task.test.js",
+			"cli/test/signer.test.js",
+		],
 		originalCommitIsAncestor: true,
 	};
 	const validated = validateArbitrumPerpsUpgradeSourceMigration(value, migration, context);
