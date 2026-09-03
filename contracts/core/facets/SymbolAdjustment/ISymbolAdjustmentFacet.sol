@@ -92,7 +92,7 @@ interface ISymbolAdjustmentFacet {
 	/// @notice Processes only the operator-supplied PartyBs for funding preparation or restoration.
 	function processRestatementFunding(uint256 symbolId, address[] calldata partyBs) external;
 
-	/// @notice Attests that Operations has supplied every PartyB required for preparation and enables quote processing.
+	/// @notice Attests that Operations supplied every PartyB and starts the funding-only pass when accumulated funding is active.
 	function completeRestatementFundingPreparation(uint256 symbolId) external;
 
 	function abortRestatement(uint256 symbolId) external;
