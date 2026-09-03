@@ -71,7 +71,51 @@ const ROLE = {
 	SIGNER_SETTER_ROLE: "SIGNER_SETTER_ROLE",
 	REVOKER_ROLE: "REVOKER_ROLE",
 	OPERATOR_ROLE: "OPERATOR_ROLE",
+	LIQUIDATOR_ROLE: "LIQUIDATOR_ROLE",
+	PARTYB_LIQUIDATOR_ROLE: "PARTYB_LIQUIDATOR_ROLE",
 } as const
+
+const LEGACY_STATE_EVENT_START_BLOCK = 493_326_073
+const ARBITRUM_HISTORY_RPC_URL = "https://arb1.arbitrum.io/rpc"
+
+type LegacyTemplate = {
+	id: number
+	name: string
+	active: boolean
+	instantOpenMode: boolean
+	operations: Array<{ insertionPoints: string[]; sourceIndices: string[]; sourceOffsets: string[] }>
+}
+
+type LegacyGaslessFeeState = {
+	depositFee: string
+	minimumDeposit: string
+	defaultSelectorFee: string
+	dailyFreeOpsLimit: string
+	revertWhenFreeQuotaExhausted: boolean
+	dailySponsoredNativeLimit: string
+	revertWhenNativeSponsorLimitExhausted: boolean
+	maxNativeGasTopUpAmount: string
+	nativeGasTopUpFeeBps: number
+	selectorFees: Array<{ selector: string; configured: boolean; amount: string }>
+}
+
+type LegacyStateSnapshot = {
+	blockNumber: number
+	blockHash: string
+	currentInstantLayer: string
+	currentGaslessLayer: string
+	liquidatorProxy: string
+	templates: LegacyTemplate[]
+	gaslessFeeState: LegacyGaslessFeeState
+	liquidator: {
+		symmioAddress: string
+		paused: boolean
+		operators: string[]
+		coreLiquidatorRole: boolean
+		corePartyBLiquidatorRole: boolean
+	}
+	eventScan: { fromBlock: number; toBlock: number }
+}
 
 function now(): string {
 	return new Date().toISOString()
@@ -482,14 +526,410 @@ async function deployNewGaslessLayer(
 	})
 }
 
+function normalizeOperations(operations: any[]): LegacyTemplate["operations"] {
+	return operations.map(operation => ({
+		insertionPoints: [...operation.insertionPoints].map(String),
+		sourceIndices: [...operation.sourceIndices].map(String),
+		sourceOffsets: [...operation.sourceOffsets].map(String),
+	}))
+}
+
 function sameOperations(actual: any[], expected: any[]): boolean {
-	const normalize = (operations: any[]) =>
-		operations.map(operation => ({
-			insertionPoints: [...operation.insertionPoints].map(String),
-			sourceIndices: [...operation.sourceIndices].map(String),
-			sourceOffsets: [...operation.sourceOffsets].map(String),
-		}))
-	return JSON.stringify(normalize(actual)) === JSON.stringify(normalize(expected))
+	return JSON.stringify(normalizeOperations(actual)) === JSON.stringify(normalizeOperations(expected))
+}
+
+function persistedLegacyStateSnapshot(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): LegacyStateSnapshot | null {
+	const snapshot = (report.stages.legacyStateSnapshot as any)?.snapshot as LegacyStateSnapshot | undefined
+	if (!snapshot) return null
+	if (!Number.isSafeInteger(snapshot.blockNumber) || snapshot.blockNumber < LEGACY_STATE_EVENT_START_BLOCK || !snapshot.blockHash) {
+		throw new Error("Persisted legacy-state snapshot has an invalid block binding")
+	}
+	for (const [label, actual, expected] of [
+		["InstantLayer", snapshot.currentInstantLayer, input.contracts.currentInstantLayer],
+		["GaslessLayer", snapshot.currentGaslessLayer, input.contracts.currentGaslessLayer],
+		["Liquidator Proxy", snapshot.liquidatorProxy, input.contracts.liquidatorProxy],
+	] as const) {
+		if (ethers.getAddress(actual) !== ethers.getAddress(expected)) {
+			throw new Error(`Persisted legacy-state ${label} address is ${actual}, expected ${expected}`)
+		}
+	}
+	if (!Array.isArray(snapshot.templates) || !Array.isArray(snapshot.gaslessFeeState?.selectorFees)) {
+		throw new Error("Persisted legacy-state snapshot is incomplete")
+	}
+	return snapshot
+}
+
+async function getLogsInChunks(provider: any, filter: Record<string, unknown>, fromBlock: number, toBlock: number): Promise<any[]> {
+	const logs: any[] = []
+	const chunkSize = 2_000_000
+	for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+		const end = Math.min(start + chunkSize - 1, toBlock)
+		logs.push(...(await provider.getLogs({ ...filter, fromBlock: start, toBlock: end })))
+	}
+	return logs.sort((left, right) => left.blockNumber - right.blockNumber || left.index - right.index)
+}
+
+async function captureLegacyStateSnapshot(
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	report: ArbitrumPerpsUpgradeReport,
+): Promise<LegacyStateSnapshot> {
+	const persisted = persistedLegacyStateSnapshot(ethers, input, report)
+	if (persisted) return persisted
+
+	const blockNumber = await ethers.provider.getBlockNumber()
+	const block = await ethers.provider.getBlock(blockNumber)
+	if (!block?.hash) throw new Error(`Cannot bind the legacy-state snapshot to Arbitrum block ${blockNumber}`)
+	const currentInstant = await ethers.getContractAt("InstantLayer", input.contracts.currentInstantLayer)
+	const currentGasless = await ethers.getContractAt("GaslessLayer", input.contracts.currentGaslessLayer)
+	const liquidator = await ethers.getContractAt("SymmioLiquidator", input.contracts.liquidatorProxy)
+	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", input.contracts.core)
+
+	const templateCount = Number(await currentInstant.getNextTemplateId())
+	if (!Number.isSafeInteger(templateCount) || templateCount < 1) throw new Error(`Legacy InstantLayer template count is invalid: ${templateCount}`)
+	const templates: LegacyTemplate[] = []
+	for (let id = 0; id < templateCount; id++) {
+		const [stored, operations, instantOpenMode] = await Promise.all([
+			currentInstant.getTemplate(id),
+			currentInstant.getTemplateOperations(id),
+			currentInstant.templateInstantOpenMode(id),
+		])
+		templates.push({
+			id,
+			name: stored.name,
+			active: stored.active,
+			instantOpenMode,
+			operations: normalizeOperations(operations),
+		})
+	}
+
+	const historyRpcUrl = process.env.SYMMIO_ARBITRUM_HISTORY_RPC_URL || ARBITRUM_HISTORY_RPC_URL
+	const historyProvider = new ethers.JsonRpcProvider(historyRpcUrl, 42161, { staticNetwork: true })
+	let selectorLogs: any[]
+	let operatorLogs: any[]
+	try {
+		const selectorTopic = currentGasless.interface.getEvent("SelectorFeeConfigUpdated").topicHash
+		const grantedTopic = liquidator.interface.getEvent("RoleGranted").topicHash
+		const revokedTopic = liquidator.interface.getEvent("RoleRevoked").topicHash
+		const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
+		;[selectorLogs, operatorLogs] = await Promise.all([
+			getLogsInChunks(
+				historyProvider,
+				{ address: input.contracts.currentGaslessLayer, topics: [selectorTopic] },
+				LEGACY_STATE_EVENT_START_BLOCK,
+				blockNumber,
+			),
+			getLogsInChunks(
+				historyProvider,
+				{ address: input.contracts.liquidatorProxy, topics: [[grantedTopic, revokedTopic], operatorRole] },
+				LEGACY_STATE_EVENT_START_BLOCK,
+				blockNumber,
+			),
+		])
+	} finally {
+		await historyProvider.destroy?.()
+	}
+
+	const selectorState = new Map<string, { selector: string; configured: boolean; amount: string }>()
+	for (const log of selectorLogs) {
+		const parsed = currentGasless.interface.parseLog(log)
+		if (!parsed || parsed.name !== "SelectorFeeConfigUpdated") continue
+		const selector = String(parsed.args.selector).toLowerCase()
+		selectorState.set(selector, { selector, configured: parsed.args.configured, amount: parsed.args.amount.toString() })
+	}
+	const operatorState = new Map<string, boolean>()
+	for (const log of operatorLogs) {
+		const parsed = liquidator.interface.parseLog(log)
+		if (!parsed) continue
+		operatorState.set(ethers.getAddress(parsed.args.account), parsed.name === "RoleGranted")
+	}
+	const operators = [...operatorState.entries()].filter(([, active]) => active).map(([address]) => address)
+	if (operators.length === 0) throw new Error("Reused Liquidator Proxy has no active OPERATOR_ROLE accounts")
+	const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
+	const operatorChecks = await Promise.all(operators.map(operator => liquidator.hasRole(operatorRole, operator)))
+	if (operatorChecks.some(active => !active)) throw new Error("Liquidator operator event reconstruction does not match current role state")
+
+	const [
+		depositFee,
+		minimumDeposit,
+		defaultSelectorFee,
+		dailyFreeOpsLimit,
+		revertWhenFreeQuotaExhausted,
+		dailySponsoredNativeLimit,
+		revertWhenNativeSponsorLimitExhausted,
+		maxNativeGasTopUpAmount,
+		nativeGasTopUpFeeBps,
+		symmioAddress,
+		paused,
+		coreLiquidatorRole,
+		corePartyBLiquidatorRole,
+	] = await Promise.all([
+		currentGasless.depositFee(),
+		currentGasless.minimumDeposit(),
+		currentGasless.defaultSelectorFee(),
+		currentGasless.dailyFreeOpsLimit(),
+		currentGasless.revertWhenFreeQuotaExhausted(),
+		currentGasless.dailySponsoredNativeLimit(),
+		currentGasless.revertWhenNativeSponsorLimitExhausted(),
+		currentGasless.maxNativeGasTopUpAmount(),
+		currentGasless.nativeGasTopUpFeeBps(),
+		liquidator.symmioAddress(),
+		liquidator.paused(),
+		coreView.hasRole(input.contracts.liquidatorProxy, role(ethers, ROLE.LIQUIDATOR_ROLE)),
+		coreView.hasRole(input.contracts.liquidatorProxy, role(ethers, ROLE.PARTYB_LIQUIDATOR_ROLE)),
+	])
+	if (ethers.getAddress(symmioAddress) !== ethers.getAddress(input.contracts.core)) {
+		throw new Error(`Reused Liquidator Proxy points to ${symmioAddress}, expected Core ${input.contracts.core}`)
+	}
+
+	const snapshot: LegacyStateSnapshot = {
+		blockNumber,
+		blockHash: block.hash,
+		currentInstantLayer: input.contracts.currentInstantLayer,
+		currentGaslessLayer: input.contracts.currentGaslessLayer,
+		liquidatorProxy: input.contracts.liquidatorProxy,
+		templates,
+		gaslessFeeState: {
+			depositFee: depositFee.toString(),
+			minimumDeposit: minimumDeposit.toString(),
+			defaultSelectorFee: defaultSelectorFee.toString(),
+			dailyFreeOpsLimit: dailyFreeOpsLimit.toString(),
+			revertWhenFreeQuotaExhausted,
+			dailySponsoredNativeLimit: dailySponsoredNativeLimit.toString(),
+			revertWhenNativeSponsorLimitExhausted,
+			maxNativeGasTopUpAmount: maxNativeGasTopUpAmount.toString(),
+			nativeGasTopUpFeeBps: Number(nativeGasTopUpFeeBps),
+			selectorFees: [...selectorState.values()].sort((left, right) => left.selector.localeCompare(right.selector)),
+		},
+		liquidator: {
+			symmioAddress,
+			paused,
+			operators,
+			coreLiquidatorRole,
+			corePartyBLiquidatorRole,
+		},
+		eventScan: { fromBlock: LEGACY_STATE_EVENT_START_BLOCK, toBlock: blockNumber },
+	}
+	report.stages.legacyStateSnapshot = { status: "complete", snapshot, capturedAt: now() }
+	return snapshot
+}
+
+async function planLegacyInstantStateActions(
+	ethers: any,
+	report: ArbitrumPerpsUpgradeReport,
+	snapshot: LegacyStateSnapshot,
+): Promise<UpgradeAction[]> {
+	const address = report.addresses.newInstantLayer
+	if (!address) throw new Error("New InstantLayer deployment is missing")
+	const instant = await ethers.getContractAt("InstantLayer", address)
+	const nextTemplateId = Number(await instant.getNextTemplateId())
+	if (nextTemplateId > snapshot.templates.length) {
+		throw new Error(`New InstantLayer has ${nextTemplateId} templates, more than the pinned legacy count ${snapshot.templates.length}`)
+	}
+	const actions: UpgradeAction[] = []
+	for (const template of snapshot.templates) {
+		if (template.id < nextTemplateId) {
+			const [stored, operations, instantOpenMode] = await Promise.all([
+				instant.getTemplate(template.id),
+				instant.getTemplateOperations(template.id),
+				instant.templateInstantOpenMode(template.id),
+			])
+			if (stored.name !== template.name || !sameOperations(operations, template.operations)) {
+				throw new Error(`New InstantLayer template ${template.id} conflicts with pinned legacy template ${template.name}`)
+			}
+			if (instantOpenMode !== template.instantOpenMode) {
+				actions.push(
+					action(
+						address,
+						instant.interface.encodeFunctionData("setTemplateInstantOpenMode", [template.id, template.instantOpenMode]),
+						`Copy legacy instant-open mode for template ${template.id}: ${template.instantOpenMode}`,
+					),
+				)
+			}
+			if (stored.active !== template.active) {
+				actions.push(
+					action(
+						address,
+						instant.interface.encodeFunctionData("setTemplateActive", [template.id, template.active]),
+						`Copy legacy active state for template ${template.id}: ${template.active}`,
+					),
+				)
+			}
+			continue
+		}
+		actions.push(
+			action(
+				address,
+				instant.interface.encodeFunctionData("addTemplate", [template.name, template.operations]),
+				`Copy legacy InstantLayer template ${template.id}: ${template.name}`,
+			),
+		)
+		if (template.instantOpenMode) {
+			actions.push(
+				action(
+					address,
+					instant.interface.encodeFunctionData("setTemplateInstantOpenMode", [template.id, true]),
+					`Copy legacy instant-open mode for template ${template.id}: true`,
+				),
+			)
+		}
+		if (!template.active) {
+			actions.push(
+				action(
+					address,
+					instant.interface.encodeFunctionData("setTemplateActive", [template.id, false]),
+					`Copy legacy active state for template ${template.id}: false`,
+				),
+			)
+		}
+	}
+	return actions
+}
+
+async function planLegacyGaslessStateActions(
+	ethers: any,
+	report: ArbitrumPerpsUpgradeReport,
+	snapshot: LegacyStateSnapshot,
+): Promise<UpgradeAction[]> {
+	const address = report.addresses.newGaslessLayer
+	if (!address) throw new Error("New GaslessLayer deployment is missing")
+	const gasless = await ethers.getContractAt("GaslessLayer", address)
+	const desired = snapshot.gaslessFeeState
+	const actions: UpgradeAction[] = []
+	const [
+		depositFee,
+		minimumDeposit,
+		defaultSelectorFee,
+		dailyFreeOpsLimit,
+		revertWhenFreeQuotaExhausted,
+		dailySponsoredNativeLimit,
+		revertWhenNativeSponsorLimitExhausted,
+		maxNativeGasTopUpAmount,
+		nativeGasTopUpFeeBps,
+	] = await Promise.all([
+		gasless.depositFee(),
+		gasless.minimumDeposit(),
+		gasless.defaultSelectorFee(),
+		gasless.dailyFreeOpsLimit(),
+		gasless.revertWhenFreeQuotaExhausted(),
+		gasless.dailySponsoredNativeLimit(),
+		gasless.revertWhenNativeSponsorLimitExhausted(),
+		gasless.maxNativeGasTopUpAmount(),
+		gasless.nativeGasTopUpFeeBps(),
+	])
+	if (depositFee.toString() !== desired.depositFee || minimumDeposit.toString() !== desired.minimumDeposit) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setDepositFeeConfig", [desired.depositFee, desired.minimumDeposit]),
+				`Copy legacy GaslessLayer deposit fee ${desired.depositFee} and minimum deposit ${desired.minimumDeposit}`,
+			),
+		)
+	}
+	if (defaultSelectorFee.toString() !== desired.defaultSelectorFee) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setDefaultSelectorFee", [desired.defaultSelectorFee]),
+				`Copy legacy GaslessLayer default selector fee ${desired.defaultSelectorFee}`,
+			),
+		)
+	}
+	if (dailyFreeOpsLimit.toString() !== desired.dailyFreeOpsLimit) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setDailyFreeOpsLimit", [desired.dailyFreeOpsLimit]),
+				`Copy legacy GaslessLayer daily free-operation limit ${desired.dailyFreeOpsLimit}`,
+			),
+		)
+	}
+	if (revertWhenFreeQuotaExhausted !== desired.revertWhenFreeQuotaExhausted) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setRevertWhenFreeQuotaExhausted", [desired.revertWhenFreeQuotaExhausted]),
+				`Copy legacy GaslessLayer free-quota exhaustion policy ${desired.revertWhenFreeQuotaExhausted}`,
+			),
+		)
+	}
+	if (
+		dailySponsoredNativeLimit.toString() !== desired.dailySponsoredNativeLimit ||
+		revertWhenNativeSponsorLimitExhausted !== desired.revertWhenNativeSponsorLimitExhausted
+	) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setNativeGasTopUpConfig", [
+					desired.dailySponsoredNativeLimit,
+					desired.revertWhenNativeSponsorLimitExhausted,
+				]),
+				`Copy legacy GaslessLayer native sponsorship limit ${desired.dailySponsoredNativeLimit} and exhaustion policy ${desired.revertWhenNativeSponsorLimitExhausted}`,
+			),
+		)
+	}
+	if (maxNativeGasTopUpAmount.toString() !== desired.maxNativeGasTopUpAmount) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setMaxNativeGasTopUpAmount", [desired.maxNativeGasTopUpAmount]),
+				`Copy legacy GaslessLayer maximum native gas top-up ${desired.maxNativeGasTopUpAmount}`,
+			),
+		)
+	}
+	if (nativeGasTopUpFeeBps.toString() !== String(desired.nativeGasTopUpFeeBps)) {
+		actions.push(
+			action(
+				address,
+				gasless.interface.encodeFunctionData("setNativeGasTopUpFeeBps", [desired.nativeGasTopUpFeeBps]),
+				`Copy legacy GaslessLayer native gas top-up fee ${desired.nativeGasTopUpFeeBps} bps`,
+			),
+		)
+	}
+	for (const entry of desired.selectorFees) {
+		const current = await gasless.selectorFeeConfigs(entry.selector)
+		if (current[0] !== entry.configured || current[1].toString() !== entry.amount) {
+			actions.push(
+				action(
+					address,
+					gasless.interface.encodeFunctionData("setSelectorFeeConfig", [entry.selector, entry.configured, entry.amount]),
+					`Copy legacy GaslessLayer selector fee ${entry.selector}: configured=${entry.configured}, amount=${entry.amount}`,
+				),
+			)
+		}
+	}
+	return actions
+}
+
+async function planReusedLiquidatorStateActions(
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	snapshot: LegacyStateSnapshot,
+): Promise<UpgradeAction[]> {
+	const liquidator = await ethers.getContractAt("SymmioLiquidator", input.contracts.liquidatorProxy)
+	const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
+	const operatorChecks = await Promise.all(snapshot.liquidator.operators.map(operator => liquidator.hasRole(operatorRole, operator)))
+	if (operatorChecks.some(active => !active)) {
+		throw new Error("A pinned Liquidator Proxy operator was revoked after the legacy-state snapshot")
+	}
+	if (ethers.getAddress(await liquidator.symmioAddress()) !== ethers.getAddress(input.contracts.core)) {
+		throw new Error(`Reused Liquidator Proxy no longer points to Core ${input.contracts.core}`)
+	}
+	const { coreView, coreControl } = await contractsFor(ethers, input)
+	const actions: UpgradeAction[] = []
+	for (const name of [ROLE.LIQUIDATOR_ROLE, ROLE.PARTYB_LIQUIDATOR_ROLE]) {
+		const roleHash = role(ethers, name)
+		if (!(await coreView.hasRole(input.contracts.liquidatorProxy, roleHash))) {
+			actions.push(
+				action(
+					input.contracts.core,
+					coreControl.interface.encodeFunctionData("grantRole", [input.contracts.liquidatorProxy, roleHash]),
+					`Grant Core ${name} to reused Liquidator Proxy ${input.contracts.liquidatorProxy}`,
+				),
+			)
+		}
+	}
+	return actions
 }
 
 async function planInstantLayerActions(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): Promise<UpgradeAction[]> {
@@ -526,11 +966,6 @@ async function planInstantLayerActions(ethers: any, input: ArbitrumPerpsUpgradeI
 		)
 	}
 	const nextTemplateId = Number(await instant.getNextTemplateId())
-	if (nextTemplateId > input.instantLayer.templates.length) {
-		throw new Error(
-			`New InstantLayer already has ${nextTemplateId} templates, more than the ${input.instantLayer.templates.length} reviewed templates`,
-		)
-	}
 	for (let index = 0; index < input.instantLayer.templates.length; index++) {
 		const template = input.instantLayer.templates[index]
 		if (index < nextTemplateId) {
@@ -591,6 +1026,7 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 	}
 
 	if (!report.addresses.newInstantLayer || !report.addresses.newGaslessLayer || !report.addresses.newGaslessLayerImplementation) return
+	const legacyState = await captureLegacyStateSnapshot(ethers, input, report)
 	const { coreView, coreControl, accountView, accountControl } = await contractsFor(ethers, input)
 	const newInstant = report.addresses.newInstantLayer
 	const wiring = await planInstantLayerActions(ethers, input, report)
@@ -614,8 +1050,9 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 			),
 		)
 	}
-	const resolved = (report.stages.gaslessLayerDeployment as any)?.resolvedConfig
-	if (!resolved) throw new Error("GaslessLayer resolved deployment config is missing from the standard report")
+	const deployedConfig = (report.stages.gaslessLayerDeployment as any)?.resolvedConfig
+	if (!deployedConfig) throw new Error("GaslessLayer resolved deployment config is missing from the standard report")
+	const resolved = { ...deployedConfig, ...legacyState.gaslessFeeState }
 	const gaslessState = await inspectGaslessLayerPostState(ethers, {
 		...resolved,
 		address: report.addresses.newGaslessLayer,
@@ -628,8 +1065,56 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 		gaslessChecks: gaslessState.checks,
 	})
 
+	const [instantState, gaslessFeeState, liquidatorState] = await Promise.all([
+		planLegacyInstantStateActions(ethers, report, legacyState),
+		planLegacyGaslessStateActions(ethers, report, legacyState),
+		planReusedLiquidatorStateActions(ethers, input, legacyState),
+	])
+	for (const [batchId, actions, details] of [
+		[
+			"instantState",
+			instantState,
+			{
+				source: input.contracts.currentInstantLayer,
+				target: report.addresses.newInstantLayer,
+				templateCount: legacyState.templates.length,
+			},
+		],
+		[
+			"gaslessState",
+			gaslessFeeState,
+			{
+				source: input.contracts.currentGaslessLayer,
+				target: report.addresses.newGaslessLayer,
+				selectorFeeCount: legacyState.gaslessFeeState.selectorFees.length,
+			},
+		],
+		[
+			"liquidatorState",
+			liquidatorState,
+			{
+				proxy: input.contracts.liquidatorProxy,
+				operators: legacyState.liquidator.operators,
+				paused: legacyState.liquidator.paused,
+			},
+		],
+	] as const) {
+		report.safeBatches[batchId] = {
+			...report.safeBatches[batchId],
+			status: actions.length ? "required" : "complete",
+			actions: [...actions],
+		}
+		updateStage(report, batchId, actions.length ? "required" : "complete", { actionCount: actions.length, ...details })
+	}
+
 	const cutover: UpgradeAction[] = []
-	if (wiring.length === 0) {
+	const blockingBatches = [
+		...(wiring.length ? ["wiring"] : []),
+		...(instantState.length ? ["instantState"] : []),
+		...(gaslessFeeState.length ? ["gaslessState"] : []),
+		...(liquidatorState.length ? ["liquidatorState"] : []),
+	]
+	if (blockingBatches.length === 0) {
 		if (await coreView.hasRole(input.contracts.currentInstantLayer, instantRole)) {
 			cutover.push(
 				action(
@@ -651,12 +1136,12 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 	}
 	report.safeBatches.cutover = {
 		...report.safeBatches.cutover,
-		status: cutover.length ? "required" : wiring.length ? "blocked" : "complete",
+		status: cutover.length ? "required" : blockingBatches.length ? "blocked" : "complete",
 		actions: cutover,
 	}
-	updateStage(report, "cutover", wiring.length ? "waiting_external" : cutover.length ? "required" : "complete", {
+	updateStage(report, "cutover", blockingBatches.length ? "waiting_external" : cutover.length ? "required" : "complete", {
 		actionCount: cutover.length,
-		blockedBy: wiring.length ? "wiring" : null,
+		blockedBy: blockingBatches,
 	})
 }
 
@@ -714,7 +1199,7 @@ async function publishDeployments(hre: any, input: ArbitrumPerpsUpgradeInput, re
 
 async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport, output: string): Promise<void> {
 	await planGovernance(ethers, input, report, output)
-	const requiredBatches = ["authority", "coreCut", "accountCut", "wiring", "cutover"].filter(
+	const requiredBatches = ["authority", "coreCut", "accountCut", "wiring", "instantState", "gaslessState", "liquidatorState", "cutover"].filter(
 		id => (report.safeBatches[id] as any)?.actions?.length > 0,
 	)
 	const external = Object.entries(report.externalActions)
@@ -811,6 +1296,13 @@ async function runForkRehearsal(
 				await executeActions(safe, (forkReport.safeBatches.wiring as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				if ((forkReport.safeBatches.wiring as any).actions.length) throw new Error("Fork wiring did not reach its post-state")
+				for (const batchId of ["instantState", "gaslessState", "liquidatorState"] as const) {
+					await executeActions(safe, (forkReport.safeBatches[batchId] as any).actions)
+					await planGovernance(ethers, input, forkReport, forkOutput)
+					if ((forkReport.safeBatches[batchId] as any).actions.length) {
+						throw new Error(`Fork ${batchId} migration did not reach its post-state`)
+					}
+				}
 				await executeActions(safe, (forkReport.safeBatches.cutover as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				if ((forkReport.safeBatches.cutover as any).actions.length) throw new Error("Fork cutover did not reach its post-state")

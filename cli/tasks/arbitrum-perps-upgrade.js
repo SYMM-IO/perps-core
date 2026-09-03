@@ -162,6 +162,9 @@ const SAFE_DISPATCH_STATE_KEYS = Object.freeze({
 	accountCut: "account-cut",
 	authority: "authority",
 	wiring: "wiring",
+	instantState: "instant-state",
+	gaslessState: "gasless-state",
+	liquidatorState: "liquidator-state",
 	cutover: "cutover",
 });
 
@@ -447,6 +450,27 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				assertNoActions(report, "safeBatches", "wiring", "InstantLayer and GaslessLayer wiring");
 			});
 			await ctx.step("canary", PLAN[19].title, async () => {
+				await dispatchBatch(
+					ctx,
+					input,
+					"instantState",
+					"Arbitrum InstantLayer template-state migration",
+					"Copy the pinned legacy InstantLayer templates, active flags, and instant-open modes without changing template IDs.",
+				);
+				await dispatchBatch(
+					ctx,
+					input,
+					"gaslessState",
+					"Arbitrum GaslessLayer fee-state migration",
+					"Copy the pinned legacy GaslessLayer fee and quota configuration while retaining the reviewed new treasury.",
+				);
+				await dispatchBatch(
+					ctx,
+					input,
+					"liquidatorState",
+					"Arbitrum reused Liquidator Proxy wiring",
+					"Preserve the pinned operator list and complete any missing Core liquidation role required by the reused proxy.",
+				);
 				const confirmed = await ctx.ui.confirm({
 					message: "Did the production canary complete successfully against the new InstantLayer and GaslessLayer?",
 					initialValue: false,
