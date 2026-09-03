@@ -27,7 +27,7 @@ The task stops and resumes at stable boundaries:
 3. Export or propose independent Safe batches for the Core and AccountLayer cuts, execute them through the Safe's existing Diamond ownership, and verify both selector surfaces.
 4. Re-read the Safe's existing AccountLayer role-administration authority after both cuts. No prior-admin EOA or Ledger signer participates in the workflow.
 5. Export or propose any remaining Safe Core authority action (currently `FEE_ADMIN_ROLE`), verify authority from chain state, then execute the new-layer wiring batch. Each continuation recomputes the remaining actions from chain state.
-6. Record a successful production canary before exporting the cutover batch that revokes the old InstantLayer's Core and AccountLayer roles.
+6. Record a successful production canary before exporting the cutover batch that revokes the old InstantLayer's Core and AccountLayer roles. If the operator deliberately accepts cutover without runtime canary evidence, select the explicit waiver path, type `WAIVE PRODUCTION CANARY`, and record a durable reason. The report records that gate as `skipped`, emits a warning, and never represents the waiver as a passed canary.
 7. Add the production Safe owners and raise the threshold above 1. The task completes only after it reads the hardened Safe state and every other invariant from chain state.
 
 Safe export or proposal is not treated as execution. The task enters `waiting_external`, names the exact artifact or proposal, and verifies the resulting contract state when continued. Cancellation never rolls back confirmed effects and remains pending while any transaction outcome is unresolved.
