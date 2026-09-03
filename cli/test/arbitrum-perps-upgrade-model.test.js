@@ -160,6 +160,7 @@ test("Arbitrum upgrade source migration binds the task, input, commit lineage, a
 		currentCommit: migration.currentCommit,
 		changedFiles: [
 			"tasks/deploy/componentDeployment.ts",
+			"tasks/config/arbitrum-perps-upgrade-42161.json",
 			"cli/task-runner.js",
 			"cli/signer/safe-batch.js",
 			"cli/test/arbitrum-perps-upgrade-task.test.js",

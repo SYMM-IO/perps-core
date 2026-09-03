@@ -1,6 +1,13 @@
 import { expect } from "chai"
 
-import { getLogsInChunks } from "../../tasks/deploy/arbitrumPerpsUpgrade.js"
+import { buildArbitrumPerpsUpgradeInput } from "../../deployment-tooling/arbitrum-perps-upgrade.js"
+import { loadDeploymentRecipe } from "../../deployment-tooling/recipe.js"
+import {
+	ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
+	checkedLegacyGaslessRelayers,
+	getLogsInChunks,
+	loadLegacyGaslessRelayerConfig,
+} from "../../tasks/deploy/arbitrumPerpsUpgrade.js"
 import {
 	assertCheckpointContractsHaveCode,
 	assertCheckpointManifest,
@@ -56,6 +63,48 @@ describe("deployment infrastructure", function () {
 		await expect(getLogsInChunks(provider, {}, 100, 100)).to.be.rejectedWith(
 			"Historical Arbitrum log query failed for blocks 100-100: server response 403 Forbidden",
 		)
+	})
+
+	it("loads legacy Gasless relayers from the source-controlled runtime config", function () {
+		const recipe = loadDeploymentRecipe("deployment-recipes/arbitrum-vibe-production.json")
+		const input = buildArbitrumPerpsUpgradeInput({
+			recipe: recipe.recipe,
+			recipePath: recipe.identityPath,
+			recipeDigest: recipe.digest,
+			sourceCommit: "a".repeat(40),
+		})
+		const loaded = loadLegacyGaslessRelayerConfig({ getAddress: (value: string) => value }, input)
+
+		expect(loaded.path).to.equal(ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH)
+		expect(loaded.digest).to.match(/^[0-9a-f]{64}$/)
+		expect(loaded.relayers).to.have.length(1)
+	})
+
+	it("accepts configured legacy Gasless relayers only after live role checks", async function () {
+		const checked: Array<[string, string]> = []
+		const configured = ["0x1000000000000000000000000000000000000001"]
+		const relayers = await checkedLegacyGaslessRelayers(
+			{ getAddress: (value: string) => value },
+			{
+				hasRole: async (role: string, account: string) => {
+					checked.push([role, account])
+					return true
+				},
+			},
+			"0xrelayer-role",
+			configured,
+		)
+
+		expect(relayers).to.deep.equal(configured)
+		expect(checked).to.deep.equal([["0xrelayer-role", relayers[0]]])
+	})
+
+	it("refuses to copy a target-bound Gasless relayer that fails the live role check", async function () {
+		await expect(
+			checkedLegacyGaslessRelayers({ getAddress: (value: string) => value }, { hasRole: async () => false }, "0xrelayer-role", [
+				"0x1000000000000000000000000000000000000001",
+			]),
+		).to.be.rejectedWith("does not currently hold RELAYER_ROLE")
 	})
 
 	it("selects Blockscout for the configured IOTA, Mode, and COTI explorers", function () {

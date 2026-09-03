@@ -2,6 +2,7 @@ import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -80,6 +81,8 @@ const ROLE = {
 } as const
 
 const LEGACY_STATE_EVENT_START_BLOCK = 493_326_073
+export const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH = "tasks/config/arbitrum-perps-upgrade-42161.json"
+const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-runtime-config-v1"
 
 type LegacyTemplate = {
 	id: number
@@ -1133,31 +1136,49 @@ async function planLegacyGaslessStateActions(
 	return actions
 }
 
-async function activeRoleMembersFromEvents(ethers: any, contract: any, address: string, roleHash: string, toBlock: number): Promise<string[]> {
-	const history = historicalProvider(ethers)
-	let logs: any[]
-	try {
-		const grantedTopic = contract.interface.getEvent("RoleGranted").topicHash
-		const revokedTopic = contract.interface.getEvent("RoleRevoked").topicHash
-		logs = await getLogsInChunks(
-			history.provider,
-			{ address, topics: [[grantedTopic, revokedTopic], roleHash] },
-			LEGACY_STATE_EVENT_START_BLOCK,
-			toBlock,
-		)
-	} finally {
-		await history.release()
+export function loadLegacyGaslessRelayerConfig(
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	projectRoot = process.cwd(),
+): { path: string; digest: string; relayers: string[] } {
+	const configPath = path.resolve(projectRoot, ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH)
+	const raw = fs.readFileSync(configPath, "utf8")
+	const config = JSON.parse(raw)
+	if (config?.apiVersion !== ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION) {
+		throw new Error(`Unsupported Arbitrum upgrade runtime config apiVersion in ${ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH}`)
 	}
-	const state = new Map<string, boolean>()
-	for (const log of logs) {
-		const parsed = contract.interface.parseLog(log)
-		if (!parsed) continue
-		state.set(ethers.getAddress(parsed.args.account), parsed.name === "RoleGranted")
+	if (config?.chainId !== input.network.chainId) {
+		throw new Error(`Arbitrum upgrade runtime config chainId does not match standard input ${input.network.chainId}`)
 	}
-	const members = [...state.entries()].filter(([, active]) => active).map(([account]) => account)
-	const checks = await Promise.all(members.map(account => contract.hasRole(roleHash, account)))
-	if (checks.some(active => !active)) throw new Error(`Role event reconstruction for ${roleHash} does not match current on-chain state`)
-	return members
+	if (ethers.getAddress(config?.legacyGaslessLayer?.address) !== ethers.getAddress(input.contracts.currentGaslessLayer)) {
+		throw new Error("Arbitrum upgrade runtime config legacy GaslessLayer does not match the standard input")
+	}
+	if (!Array.isArray(config.legacyGaslessLayer.relayers) || config.legacyGaslessLayer.relayers.length === 0) {
+		throw new Error("Arbitrum upgrade runtime config must contain at least one legacy GaslessLayer relayer")
+	}
+	const relayers = config.legacyGaslessLayer.relayers.map((relayer: string) => ethers.getAddress(relayer))
+	if (new Set(relayers.map((relayer: string) => relayer.toLowerCase())).size !== relayers.length) {
+		throw new Error("Arbitrum upgrade runtime config contains duplicate legacy GaslessLayer relayers")
+	}
+	return {
+		path: ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
+		digest: createHash("sha256").update(raw).digest("hex"),
+		relayers,
+	}
+}
+
+export async function checkedLegacyGaslessRelayers(
+	ethers: any,
+	currentGasless: any,
+	relayerRole: string,
+	configuredRelayers: string[],
+): Promise<string[]> {
+	const relayers = configuredRelayers.map(relayer => ethers.getAddress(relayer))
+	const relayerChecks = await Promise.all(relayers.map(relayer => currentGasless.hasRole(relayerRole, relayer)))
+	for (const [index, active] of relayerChecks.entries()) {
+		if (!active) throw new Error(`Reviewed legacy GaslessLayer relayer ${relayers[index]} does not currently hold RELAYER_ROLE`)
+	}
+	return relayers
 }
 
 async function repairGaslessLayer(
@@ -1176,8 +1197,8 @@ async function repairGaslessLayer(
 	if (!deployer) throw new Error("Replacement GaslessLayer deployment signer is unavailable")
 	const currentGasless = await ethers.getContractAt("GaslessLayer", input.contracts.currentGaslessLayer)
 	const relayerRole = await currentGasless.RELAYER_ROLE()
-	const relayers = await activeRoleMembersFromEvents(ethers, currentGasless, input.contracts.currentGaslessLayer, relayerRole, snapshot.blockNumber)
-	if (relayers.length === 0) throw new Error("Legacy GaslessLayer has no active RELAYER_ROLE accounts")
+	const relayerConfig = loadLegacyGaslessRelayerConfig(ethers, input)
+	const relayers = await checkedLegacyGaslessRelayers(ethers, currentGasless, relayerRole, relayerConfig.relayers)
 	const configured = await resolveGaslessLayerConfig(
 		ethers,
 		input.gaslessLayer,
@@ -1205,6 +1226,7 @@ async function repairGaslessLayer(
 		manualActions: result.manualActions,
 		resolvedConfig: resolved,
 		stateSource: input.contracts.currentGaslessLayer,
+		relayerSource: { ...relayerConfig, liveRoleCheck: true },
 		snapshotBlockNumber: snapshot.blockNumber,
 	})
 	report.stages.peripheralReplacement = {
