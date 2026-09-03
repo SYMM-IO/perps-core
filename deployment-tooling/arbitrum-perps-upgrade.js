@@ -9,9 +9,11 @@ export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION = "operations.s
 
 const ARBITRUM_PERPS_UPGRADE_OPERATIONAL_MIGRATION_FILES = new Set([
 	"cli/task-runner.js",
+	"cli/signer/safe-batch.js",
 	"cli/tasks/arbitrum-perps-upgrade.js",
 	"cli/test/arbitrum-perps-upgrade-model.test.js",
 	"cli/test/arbitrum-perps-upgrade-task.test.js",
+	"cli/test/signer.test.js",
 	"cli/test/task-runner.test.js",
 	"deployment-tooling/arbitrum-perps-upgrade.d.ts",
 	"deployment-tooling/arbitrum-perps-upgrade.js",
