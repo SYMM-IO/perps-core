@@ -1,5 +1,6 @@
-import { applyForkRehearsalWaiver } from "../tasks/arbitrum-perps-upgrade.js";
+import { applyForkRehearsalWaiver, buildArbitrumPerpsUpgradeSourceMigrationEnvironment } from "../tasks/arbitrum-perps-upgrade.js";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import test from "node:test";
 
 test("fork rehearsal waiver remains distinct from passed rehearsal evidence", () => {
@@ -17,4 +18,27 @@ test("fork rehearsal waiver remains distinct from passed rehearsal evidence", ()
 
 test("fork rehearsal waiver requires a live inspection block", () => {
 	assert.throws(() => applyForkRehearsalWaiver({ lifecycle: "prepared", stages: {} }, 0), /fork block number/);
+});
+
+test("source migration environment binds the active journal to the checked-out commit", () => {
+	const sourceHash = `sha256:${"2".repeat(64)}`;
+	const migrations = [
+		{
+			at: "2026-09-03T10:15:24.199Z",
+			from: `sha256:${"1".repeat(64)}`,
+			to: sourceHash,
+			authorization: "operator-confirmed",
+		},
+	];
+	const environment = buildArbitrumPerpsUpgradeSourceMigrationEnvironment(
+		{ inputDigest: "input-digest", sourceCommit: "a".repeat(40) },
+		{ runId: "run-1", sourceHash, sourceMigrations: migrations },
+	);
+	const evidence = JSON.parse(environment.SYMMIO_ARBITRUM_UPGRADE_SOURCE_MIGRATION);
+	assert.equal(evidence.taskId, "maintenance.arbitrum-perps-upgrade");
+	assert.equal(evidence.taskRunId, "run-1");
+	assert.equal(evidence.inputDigest, "input-digest");
+	assert.equal(evidence.originalCommit, "a".repeat(40));
+	assert.equal(evidence.currentCommit, execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim());
+	assert.deepEqual(evidence.migrations, migrations);
 });
