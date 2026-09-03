@@ -1062,7 +1062,6 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 	report.safeBatches.wiring = { ...report.safeBatches.wiring, status: wiring.length ? "required" : "complete", actions: wiring }
 	updateStage(report, "wiring", wiring.length ? "required" : "complete", {
 		actionCount: wiring.length,
-		gaslessChecks: gaslessState.checks,
 	})
 
 	const [instantState, gaslessFeeState, liquidatorState] = await Promise.all([
@@ -1087,6 +1086,7 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 				source: input.contracts.currentGaslessLayer,
 				target: report.addresses.newGaslessLayer,
 				selectorFeeCount: legacyState.gaslessFeeState.selectorFees.length,
+				checks: gaslessState.checks,
 			},
 		],
 		[
