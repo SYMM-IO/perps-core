@@ -2,7 +2,7 @@
 
 Start this workflow from `./symmio` under **Other maintenance scripts** and select **Arbitrum Perps Core v0.8.6 upgrade**. The internal adapters are deliberately not an operator entrypoint.
 
-The workflow is fixed to Arbitrum chain 42161, Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, AccountLayer `0x5733107211B2801Acd39933a54d482FE303c4907`, and governance Safe `0x89bE952790657297ac03f1954b22B668d819D3d9`. It upgrades the existing Core and AccountLayer Diamonds, deploys fresh InstantLayer and GaslessLayer contracts, and reuses the other reviewed production components.
+The workflow is fixed to Arbitrum chain 42161, Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, AccountLayer `0x5733107211B2801Acd39933a54d482FE303c4907`, and governance Safe `0x89bE952790657297ac03f1954b22B668d819D3d9`. It upgrades the existing Core and AccountLayer Diamonds, deploys fresh InstantLayer and GaslessLayer contracts, and reuses the other reviewed production components. The Safe must already own both Diamonds and hold `DEFAULT_ADMIN_ROLE` on both; the workflow fails before rehearsal or deployment if that authority is absent.
 
 ## Durable input and output
 
@@ -22,12 +22,10 @@ The task stops and resumes at stable boundaries:
 1. Compile the exact checkout, inspect live ownership and roles, and run the full flow at the inspected block on an Arbitrum fork.
 2. Deploy or recover Core facets, AccountLayer facets, the new InstantLayer, and the new GaslessLayer; then publish every new address to Arbiscan.
 3. Export or propose independent Safe batches for the Core and AccountLayer cuts, execute them through the Safe's existing Diamond ownership, and verify both selector surfaces.
-4. After both cuts, have the prior AccountLayer default administrator delegate administration of only `SIGNER_SETTER_ROLE` to the Safe. The Safe receives neither AccountLayer `DEFAULT_ADMIN_ROLE` nor `SETTER_ROLE`.
-5. Export or propose the Safe Core authority batch (`setAdmin` and `FEE_ADMIN_ROLE`), verify the scoped authority handoff, then execute the new-layer wiring batch. Each continuation recomputes the remaining actions from chain state.
+4. Re-read the Safe's existing AccountLayer role-administration authority after both cuts. No prior-admin EOA or Ledger signer participates in the workflow.
+5. Export or propose any remaining Safe Core authority action (currently `FEE_ADMIN_ROLE`), verify authority from chain state, then execute the new-layer wiring batch. Each continuation recomputes the remaining actions from chain state.
 6. Record a successful production canary before exporting the cutover batch that revokes the old InstantLayer's Core and AccountLayer roles.
 7. Add the production Safe owners and raise the threshold above 1. The task completes only after it reads the hardened Safe state and every other invariant from chain state.
-
-Selecting the prior administrator's Ledger during preparation only binds the signer configuration. The workflow does not request its transaction until both Diamond cuts have been executed and verified.
 
 Safe export or proposal is not treated as execution. The task enters `waiting_external`, names the exact artifact or proposal, and verifies the resulting contract state when continued. Cancellation never rolls back confirmed effects and remains pending while any transaction outcome is unresolved.
 
