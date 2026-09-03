@@ -280,6 +280,74 @@ describe("deployment recipe standalone component execution", function () {
 		expect(resumed.report.implementation).to.equal(deployed.report.implementation)
 	})
 
+	it("defers GaslessLayer dependency wiring to a separate governance admin and resumes", async function () {
+		const context = await loadFixture(initializeFixture)
+		const [deployer, finalAdmin, relayer, treasury] = await ethers.getSigners()
+		const networkName = (await hre.network.getOrCreate()).networkName || "default"
+		const feeAdminRole = ethers.keccak256(ethers.toUtf8Bytes("FEE_ADMIN_ROLE"))
+		const instantAdminRole = await context.instantLayer.DEFAULT_ADMIN_ROLE()
+
+		await context.controlFacet.connect(deployer).grantRole(finalAdmin.address, feeAdminRole)
+		await context.controlFacet.connect(deployer).revokeRole(deployer.address, feeAdminRole)
+		await context.instantLayer.connect(deployer).grantRole(instantAdminRole, finalAdmin.address)
+		await context.instantLayer.connect(deployer).revokeRole(instantAdminRole, deployer.address)
+
+		const input = {
+			recipeName,
+			recipePath: "/tmp/component-engine-gasless-handover-test.json",
+			recipeDigest: "gasless-handover-digest",
+			target: { name: networkName, chainId: 31337, mode: "local" as const },
+			component: "gaslessLayer",
+			componentConfig: {
+				mode: "deploy",
+				admin: finalAdmin.address,
+				treasury: treasury.address,
+				depositFee: "2",
+				minimumDeposit: "5",
+				defaultSelectorFee: "0",
+				dailyFreeOpsLimit: "0",
+				revertWhenFreeQuotaExhausted: false,
+				dailySponsoredNativeLimit: "0",
+				revertWhenNativeSponsorLimitExhausted: true,
+				maxNativeGasTopUpAmount: "1000000000000000",
+				nativeGasTopUpFeeBps: 0,
+				relayers: [relayer.address],
+				selectorFees: [],
+			},
+			coreReport: {
+				deploymentId: "fixture-core-gasless-handover",
+				deployerAddress: deployer.address,
+				network: networkName,
+				chainId: 31337,
+				lifecycle: "complete",
+				checks: { health: "passed", verification: "skipped", verificationPolicy: "not_applicable" },
+				config: { admin: finalAdmin.address },
+				addresses: {
+					diamond: context.diamond,
+					accountLayerDiamond: context.accountLayerDiamond,
+					instantLayer: await context.instantLayer.getAddress(),
+				},
+			} as CoreDependencyReport,
+			coreReportPath: "/tmp/core-gasless-handover-report.json",
+			fresh: false,
+			verify: false,
+		} as const
+
+		const pending = await executeComponentDeployment(hre, input)
+		expect(pending.report.lifecycle).to.equal("pending_handover")
+		expect(pending.report.manualActions.map(action => action.description)).to.deep.equal([
+			`Register GaslessLayer ${pending.report.address} as an operational fee charger on core`,
+			`Route GaslessLayer operational fees to treasury ${treasury.address}`,
+			`Grant InstantLayer OPERATOR_ROLE to GaslessLayer ${pending.report.address}`,
+		])
+
+		const transactionCount = pending.report.transactions.length
+		const resumed = await executeComponentDeployment(hre, input)
+		expect(resumed.report.address).to.equal(pending.report.address)
+		expect(resumed.report.manualActions).to.deep.equal(pending.report.manualActions)
+		expect(resumed.report.transactions).to.have.length(transactionCount)
+	})
+
 	it("rejects an Express credit verifier without the forward-compatible capability API", async function () {
 		const context = await loadFixture(initializeFixture)
 		const [admin] = await ethers.getSigners()
