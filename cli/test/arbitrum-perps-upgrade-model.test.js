@@ -40,12 +40,26 @@ test("Arbitrum upgrade input refuses target, authority, source, and live-safety 
 		value => (value.governance.safe = "0x2222222222222222222222222222222222222222"),
 		value => (value.source.commit = "not-a-commit"),
 		value => (value.execution.verify = false),
-		value => (value.execution.requireForkRehearsal = false),
+		value => (value.execution.requireForkRehearsal = "no"),
 	]) {
 		const changed = structuredClone(input());
 		mutate(changed);
 		assert.throws(() => validateArbitrumPerpsUpgradeInput(changed), /must/);
 	}
+});
+
+test("Arbitrum upgrade input digest binds an explicit fork rehearsal waiver", () => {
+	const required = input();
+	const loaded = loadDeploymentRecipe("deployment-recipes/arbitrum-vibe-production.json");
+	const waived = buildArbitrumPerpsUpgradeInput({
+		recipe: loaded.recipe,
+		recipePath: loaded.identityPath,
+		recipeDigest: loaded.digest,
+		sourceCommit: "a".repeat(40),
+		requireForkRehearsal: false,
+	});
+	assert.equal(waived.execution.requireForkRehearsal, false);
+	assert.notEqual(arbitrumPerpsUpgradeInputDigest(waived), arbitrumPerpsUpgradeInputDigest(required));
 });
 
 test("Arbitrum upgrade report binds every resumable update to the exact input", () => {

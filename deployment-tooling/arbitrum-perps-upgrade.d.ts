@@ -1,4 +1,4 @@
-export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-input-v1"
+export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-input-v2"
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-report-v1"
 
 export type UpgradeAddressKey =
@@ -53,7 +53,7 @@ export interface ArbitrumPerpsUpgradeInput {
 		confirmations: number
 		txTimeoutSeconds: number
 		slowNoticeSeconds: number
-		requireForkRehearsal: true
+		requireForkRehearsal: boolean
 	}
 }
 
@@ -102,6 +102,7 @@ export function buildArbitrumPerpsUpgradeInput(args: {
 	recipePath: string
 	recipeDigest: string
 	sourceCommit: string
+	requireForkRehearsal?: boolean
 }): ArbitrumPerpsUpgradeInput
 export function loadArbitrumPerpsUpgradeInput(file: string): ArbitrumPerpsUpgradeInput
 export function createArbitrumPerpsUpgradeReport(input: ArbitrumPerpsUpgradeInput, now?: string): ArbitrumPerpsUpgradeReport

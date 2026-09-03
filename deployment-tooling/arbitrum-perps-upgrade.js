@@ -3,7 +3,7 @@ import { getAddress } from "ethers";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 
-export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-input-v1";
+export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-input-v2";
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-report-v1";
 
 export const ARBITRUM_PERPS_UPGRADE_TARGET = Object.freeze({
@@ -233,7 +233,7 @@ export function validateArbitrumPerpsUpgradeInput(value, source = "Arbitrum Perp
 	integer(execution.txTimeoutSeconds, source, "execution.txTimeoutSeconds", 30);
 	integer(execution.slowNoticeSeconds, source, "execution.slowNoticeSeconds", 5);
 	if (execution.slowNoticeSeconds >= execution.txTimeoutSeconds) fail(source, "execution.slowNoticeSeconds", "must be less than txTimeoutSeconds");
-	if (execution.requireForkRehearsal !== true) fail(source, "execution.requireForkRehearsal", "must be true");
+	boolean(execution.requireForkRehearsal, source, "execution.requireForkRehearsal");
 	return input;
 }
 
@@ -254,7 +254,7 @@ export function arbitrumPerpsUpgradeInputDigest(value) {
 	return createHash("sha256").update(stableSerialize(intent)).digest("hex");
 }
 
-export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, recipeDigest, sourceCommit }) {
+export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, recipeDigest, sourceCommit, requireForkRehearsal = true }) {
 	const recipe = validateDeploymentRecipe(structuredClone(rawRecipe), recipePath || "deployment recipe");
 	if (recipe.network.name !== "arbitrum" || recipe.network.chainId !== 42161 || recipe.network.mode !== "live") {
 		throw new Error("Arbitrum Perps upgrade requires a live Arbitrum recipe");
@@ -263,7 +263,7 @@ export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, 
 	if (recipe.gaslessLayer?.mode !== "deploy") throw new Error("Arbitrum Perps upgrade recipe must declare a GaslessLayer deployment");
 	const gasless = recipe.gaslessLayer;
 	const input = {
-		$schema: "https://operations.symm.io/schemas/arbitrum-perps-upgrade-input-v1.json",
+		$schema: "https://operations.symm.io/schemas/arbitrum-perps-upgrade-input-v2.json",
 		apiVersion: ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION,
 		kind: "ArbitrumPerpsUpgrade",
 		name: "arbitrum-perps-core-v0.8.6-upgrade",
@@ -297,7 +297,7 @@ export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, 
 			confirmations: recipe.execution.confirmations ?? 1,
 			txTimeoutSeconds: recipe.execution.txTimeoutSeconds ?? 300,
 			slowNoticeSeconds: recipe.execution.slowNoticeSeconds ?? 30,
-			requireForkRehearsal: true,
+			requireForkRehearsal,
 		},
 	};
 	return validateArbitrumPerpsUpgradeInput(input, "generated Arbitrum Perps upgrade input");

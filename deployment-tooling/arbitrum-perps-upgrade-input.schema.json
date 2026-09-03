@@ -1,13 +1,13 @@
 {
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
-	"$id": "https://operations.symm.io/schemas/arbitrum-perps-upgrade-input-v1.json",
+	"$id": "https://operations.symm.io/schemas/arbitrum-perps-upgrade-input-v2.json",
 	"title": "SYMMIO Arbitrum Perps upgrade input",
 	"type": "object",
 	"additionalProperties": false,
 	"required": ["apiVersion", "kind", "name", "network", "source", "governance", "contracts", "instantLayer", "gaslessLayer", "execution"],
 	"properties": {
 		"$schema": { "type": "string" },
-		"apiVersion": { "const": "operations.symm.io/arbitrum-perps-upgrade-input-v1" },
+		"apiVersion": { "const": "operations.symm.io/arbitrum-perps-upgrade-input-v2" },
 		"kind": { "const": "ArbitrumPerpsUpgrade" },
 		"name": { "type": "string", "minLength": 1 },
 		"network": {
@@ -43,7 +43,7 @@
 				"confirmations": { "type": "integer", "minimum": 1 },
 				"txTimeoutSeconds": { "type": "integer", "minimum": 30 },
 				"slowNoticeSeconds": { "type": "integer", "minimum": 5 },
-				"requireForkRehearsal": { "const": true }
+				"requireForkRehearsal": { "type": "boolean" }
 			}
 		}
 	},
