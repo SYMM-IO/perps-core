@@ -80,7 +80,6 @@ const ROLE = {
 } as const
 
 const LEGACY_STATE_EVENT_START_BLOCK = 493_326_073
-const ARBITRUM_HISTORY_RPC_URL = "https://arb1.arbitrum.io/rpc"
 
 type LegacyTemplate = {
 	id: number
@@ -568,9 +567,23 @@ async function getLogsInChunks(provider: any, filter: Record<string, unknown>, f
 	const chunkSize = 2_000_000
 	for (let start = fromBlock; start <= toBlock; start += chunkSize) {
 		const end = Math.min(start + chunkSize - 1, toBlock)
-		logs.push(...(await provider.getLogs({ ...filter, fromBlock: start, toBlock: end })))
+		try {
+			logs.push(...(await provider.getLogs({ ...filter, fromBlock: start, toBlock: end })))
+		} catch (error: any) {
+			const detail = String(error?.shortMessage || error?.info?.responseStatus || error?.code || "unknown provider error")
+				.replace(/\s+/g, " ")
+				.slice(0, 240)
+			throw new Error(`Historical Arbitrum log query failed for blocks ${start}-${end}: ${detail}`)
+		}
 	}
 	return logs.sort((left, right) => left.blockNumber - right.blockNumber || left.index - right.index)
+}
+
+function historicalProvider(ethers: any): { provider: any; release: () => Promise<void> } {
+	const override = process.env.SYMMIO_ARBITRUM_HISTORY_RPC_URL?.trim()
+	if (!override) return { provider: ethers.provider, release: async () => undefined }
+	const provider = new ethers.JsonRpcProvider(override, 42161, { staticNetwork: true })
+	return { provider, release: async () => provider.destroy?.() }
 }
 
 async function captureLegacyStateSnapshot(
@@ -607,8 +620,7 @@ async function captureLegacyStateSnapshot(
 		})
 	}
 
-	const historyRpcUrl = process.env.SYMMIO_ARBITRUM_HISTORY_RPC_URL || ARBITRUM_HISTORY_RPC_URL
-	const historyProvider = new ethers.JsonRpcProvider(historyRpcUrl, 42161, { staticNetwork: true })
+	const history = historicalProvider(ethers)
 	let selectorLogs: any[]
 	let operatorLogs: any[]
 	try {
@@ -618,20 +630,20 @@ async function captureLegacyStateSnapshot(
 		const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
 		;[selectorLogs, operatorLogs] = await Promise.all([
 			getLogsInChunks(
-				historyProvider,
+				history.provider,
 				{ address: input.contracts.currentGaslessLayer, topics: [selectorTopic] },
 				LEGACY_STATE_EVENT_START_BLOCK,
 				blockNumber,
 			),
 			getLogsInChunks(
-				historyProvider,
+				history.provider,
 				{ address: input.contracts.liquidatorProxy, topics: [[grantedTopic, revokedTopic], operatorRole] },
 				LEGACY_STATE_EVENT_START_BLOCK,
 				blockNumber,
 			),
 		])
 	} finally {
-		await historyProvider.destroy?.()
+		await history.release()
 	}
 
 	const selectorState = new Map<string, { selector: string; configured: boolean; amount: string }>()
@@ -1112,20 +1124,19 @@ async function planLegacyGaslessStateActions(
 }
 
 async function activeRoleMembersFromEvents(ethers: any, contract: any, address: string, roleHash: string, toBlock: number): Promise<string[]> {
-	const historyRpcUrl = process.env.SYMMIO_ARBITRUM_HISTORY_RPC_URL || ARBITRUM_HISTORY_RPC_URL
-	const historyProvider = new ethers.JsonRpcProvider(historyRpcUrl, 42161, { staticNetwork: true })
+	const history = historicalProvider(ethers)
 	let logs: any[]
 	try {
 		const grantedTopic = contract.interface.getEvent("RoleGranted").topicHash
 		const revokedTopic = contract.interface.getEvent("RoleRevoked").topicHash
 		logs = await getLogsInChunks(
-			historyProvider,
+			history.provider,
 			{ address, topics: [[grantedTopic, revokedTopic], roleHash] },
 			LEGACY_STATE_EVENT_START_BLOCK,
 			toBlock,
 		)
 	} finally {
-		await historyProvider.destroy?.()
+		await history.release()
 	}
 	const state = new Map<string, boolean>()
 	for (const log of logs) {
