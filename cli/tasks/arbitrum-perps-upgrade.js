@@ -45,7 +45,7 @@ const PLAN = Object.freeze([
 	{ id: "verify-authority", phase: "verification", title: "Verify Safe post-cut authority from live contract state" },
 	{ id: "wiring", phase: "execution", title: "Execute the Safe InstantLayer and GaslessLayer wiring batch" },
 	{ id: "verify-wiring", phase: "verification", title: "Verify new InstantLayer and GaslessLayer wiring from live state" },
-	{ id: "canary", phase: "canary", title: "Record a production canary or explicit operator waiver before cutover" },
+	{ id: "canary", phase: "canary", title: "Record a successful production canary before cutover" },
 	{ id: "cutover", phase: "execution", title: "Execute the Safe old-InstantLayer role cutover batch" },
 	{ id: "verify-cutover", phase: "verification", title: "Verify old InstantLayer protocol roles are revoked" },
 	{ id: "safe-hardening", phase: "handover", title: "Verify production Safe owners and threshold are hardened" },
