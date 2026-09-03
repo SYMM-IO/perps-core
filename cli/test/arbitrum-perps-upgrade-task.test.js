@@ -1,4 +1,8 @@
-import { applyForkRehearsalWaiver, buildArbitrumPerpsUpgradeSourceMigrationEnvironment } from "../tasks/arbitrum-perps-upgrade.js";
+import {
+	applyForkRehearsalWaiver,
+	buildArbitrumPerpsUpgradeSourceMigrationEnvironment,
+	safeDispatchStateKeyForUpgradeBatch,
+} from "../tasks/arbitrum-perps-upgrade.js";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
@@ -18,6 +22,15 @@ test("fork rehearsal waiver remains distinct from passed rehearsal evidence", ()
 
 test("fork rehearsal waiver requires a live inspection block", () => {
 	assert.throws(() => applyForkRehearsalWaiver({ lifecycle: "prepared", stages: {} }, 0), /fork block number/);
+});
+
+test("upgrade report batch ids map to independent stable Safe dispatch keys", () => {
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("coreCut"), "core-cut");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("accountCut"), "account-cut");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("authority"), "authority");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("wiring"), "wiring");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("cutover"), "cutover");
+	assert.throws(() => safeDispatchStateKeyForUpgradeBatch("unknown"), /Unsupported Arbitrum upgrade Safe batch/);
 });
 
 test("source migration environment binds the active journal to the checked-out commit", () => {
