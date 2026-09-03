@@ -25,6 +25,7 @@ import {
 	createCheckpoint,
 	createDeploymentManifest,
 	loadCheckpoint,
+	migrateCheckpointManifestSource,
 	saveCheckpoint,
 	setCheckpointSimulated,
 	type DeploymentCheckpoint,
@@ -183,6 +184,7 @@ async function withCheckpoint<T>(
 	ethers: any,
 	actionFn: (checkpoint: DeploymentCheckpoint) => Promise<T>,
 	scopeQualifier?: string,
+	sourceMigration?: ReturnType<typeof validateArbitrumPerpsUpgradeSourceMigration> | null,
 ): Promise<T> {
 	setCheckpointSimulated(simulated)
 	const baseScope = `arbitrum-perps-upgrade-${arbitrumPerpsUpgradeInputDigest(input).slice(0, 16)}`
@@ -195,7 +197,16 @@ async function withCheckpoint<T>(
 			{ inputDigest: arbitrumPerpsUpgradeInputDigest(input), source: input.source, network: simulated ? "fork-arbitrum" : "arbitrum" },
 			{ deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId },
 		)
-		if (checkpoint.manifest) assertCheckpointManifest(checkpoint, manifest)
+		if (checkpoint.manifest) {
+			try {
+				assertCheckpointManifest(checkpoint, manifest)
+			} catch (error) {
+				if (!sourceMigration) throw error
+				const migration = migrateCheckpointManifestSource(checkpoint, manifest, sourceMigration)
+				updateStage(report, "checkpointManifestMigration", "complete", { ...migration })
+				saveCheckpoint(checkpoint)
+			}
+		}
 		checkpoint.deploymentId = manifest.deploymentId
 		checkpoint.manifest = manifest
 		checkpoint.deployerAddress ||= (await ethers.getSigners())[0]?.address
@@ -751,6 +762,7 @@ async function runForkRehearsal(
 	input: ArbitrumPerpsUpgradeInput,
 	liveReport: ArbitrumPerpsUpgradeReport,
 	output: string,
+	sourceMigration: ReturnType<typeof validateArbitrumPerpsUpgradeSourceMigration> | null,
 ): Promise<void> {
 	const baseBlockNumber = await ethers.provider.getBlockNumber()
 	// A new Hardhat invocation creates a new ephemeral chain. Keep each attempt in
@@ -796,6 +808,7 @@ async function runForkRehearsal(
 				if ((forkReport.safeBatches.cutover as any).actions.length) throw new Error("Fork cutover did not reach its post-state")
 			},
 			`fork-${attemptId}`,
+			sourceMigration,
 		)
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
@@ -840,23 +853,55 @@ async function executePhase(hre: any, phase: Phase, inputFile: string, outputFil
 				await inspectAuthority(ethers, input, report)
 				break
 			case "rehearse":
-				await runForkRehearsal(hre, ethers, input, report, outputFile)
+				await runForkRehearsal(hre, ethers, input, report, outputFile, sourceMigration)
 				break
 			case "deploy-core-facets":
-				await withCheckpoint(input, report, "arbitrum", false, ethers, checkpoint =>
-					deployFacetScope(ethers, input, report, outputFile, "core", checkpoint),
+				await withCheckpoint(
+					input,
+					report,
+					"arbitrum",
+					false,
+					ethers,
+					checkpoint => deployFacetScope(ethers, input, report, outputFile, "core", checkpoint),
+					undefined,
+					sourceMigration,
 				)
 				break
 			case "deploy-account-facets":
-				await withCheckpoint(input, report, "arbitrum", false, ethers, checkpoint =>
-					deployFacetScope(ethers, input, report, outputFile, "accountLayer", checkpoint),
+				await withCheckpoint(
+					input,
+					report,
+					"arbitrum",
+					false,
+					ethers,
+					checkpoint => deployFacetScope(ethers, input, report, outputFile, "accountLayer", checkpoint),
+					undefined,
+					sourceMigration,
 				)
 				break
 			case "deploy-instant-layer":
-				await withCheckpoint(input, report, "arbitrum", false, ethers, checkpoint => deployNewInstantLayer(hre, ethers, input, report, checkpoint))
+				await withCheckpoint(
+					input,
+					report,
+					"arbitrum",
+					false,
+					ethers,
+					checkpoint => deployNewInstantLayer(hre, ethers, input, report, checkpoint),
+					undefined,
+					sourceMigration,
+				)
 				break
 			case "deploy-gasless-layer":
-				await withCheckpoint(input, report, "arbitrum", false, ethers, checkpoint => deployNewGaslessLayer(hre, ethers, input, report, checkpoint))
+				await withCheckpoint(
+					input,
+					report,
+					"arbitrum",
+					false,
+					ethers,
+					checkpoint => deployNewGaslessLayer(hre, ethers, input, report, checkpoint),
+					undefined,
+					sourceMigration,
+				)
 				break
 			case "plan":
 				await planGovernance(ethers, input, report, outputFile)
@@ -865,7 +910,7 @@ async function executePhase(hre: any, phase: Phase, inputFile: string, outputFil
 				await publishDeployments(hre, input, report, outputFile)
 				break
 			case "reconcile":
-				await withCheckpoint(input, report, "arbitrum", false, ethers, async () => undefined)
+				await withCheckpoint(input, report, "arbitrum", false, ethers, async () => undefined, undefined, sourceMigration)
 				updateStage(report, "reconciliation", "complete", { transactionCount: report.transactions.length })
 				break
 			case "verify-final":
