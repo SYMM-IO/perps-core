@@ -887,7 +887,7 @@ export async function deployAndConfigureGaslessLayer(
 			safeAction(
 				resolved.core,
 				coreControl.interface.encodeFunctionData("setOperationalFeeReceiver", [address, resolved.treasury]),
-				`Route GaslessLayer operational fees to treasury ${resolved.treasury} (after charger registration)`,
+				`Route GaslessLayer operational fees to treasury ${resolved.treasury}`,
 			),
 		)
 	}
