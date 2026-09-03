@@ -1476,10 +1476,11 @@ dust            = 30 - 28 = 2</code></pre>
 						</li>
 						<li>
 							During <code>FUNDING_SETTLEMENT</code>, submit bounded <code>applyAdjustment(symbolId, quoteIds)</code> batches and track
-							<code>QuoteFundingSettled</code> until Core enters <code>QUOTE_PROCESSING</code>. Then have the Operations bot simulate
-							each exact rewrite call through <code>eth_call</code> from the intended transaction sender. Submit only a successful
-							simulation, track <code>QuoteAdjusted</code>, and verify each quote's epoch. Remove successful IDs before retrying.
-							Re-simulate whenever the batch or relevant state changes.
+							<code>QuoteFundingSettled</code> and <code>getRestatementFundingSettlementProgress</code> until
+							<code>RestatementFundingSettlementCompleted</code> reports the move to <code>QUOTE_PROCESSING</code>. Then have the
+							Operations bot simulate each exact rewrite call through <code>eth_call</code> from the intended transaction sender. Submit
+							only a successful simulation, track <code>QuoteAdjusted</code>, and verify each quote's epoch. Remove successful IDs
+							before retrying. Re-simulate whenever the batch or relevant state changes.
 						</li>
 						<li>
 							Use venue-unit views for convertible records during the open window, but compare raw storage and epoch data to prove
@@ -1606,7 +1607,9 @@ dust            = 30 - 28 = 2</code></pre>
 									<td><code>FUNDING_SETTLEMENT = 5</code></td>
 									<td>
 										Settle old-basis accumulated funding for every prepared open quote with <code>applyAdjustment</code>. Abort
-										remains available, and no quote rewrite is allowed until both settlement inventory totals reach zero.
+										remains available, and no quote rewrite is allowed until both settlement inventory totals reach zero. The
+										transaction that clears both totals emits <code>RestatementFundingSettlementCompleted</code> and moves the
+										window to <code>QUOTE_PROCESSING</code>.
 									</td>
 								</tr>
 							</tbody>
@@ -1652,9 +1655,12 @@ dust            = 30 - 28 = 2</code></pre>
 									<td>
 										<code>restatementPhase</code>, <code>fundingCutoffTimestamp</code>, <code>pendingFundingPartyBCount</code>,
 										and <code>fundingRestorationTimestamp</code> coordinate operator-supplied preparation and funding restoration
-										batches. <code>restatementInventoryTotals[symbolId]</code> separately records the exact prepared old-basis
-										LONG and SHORT quantities still unresolved. The terminal abort or finalization clears the live progress
-										fields.
+										batches. <code>fundingSettlementRequired</code> is snapshotted from the global accumulated-funding switch when
+										the manifest is sealed; rewrites check this snapshot, never the live switch, so flipping the switch mid-window
+										cannot strand a partially rewritten book. <code>restatementInventoryTotals[symbolId]</code> separately records
+										the exact prepared old-basis LONG and SHORT quantities still unresolved, and
+										<code>restatementFundingSettlementTotals[symbolId]</code> records the subset whose funding is still unsettled.
+										The terminal abort or finalization clears the live progress fields.
 									</td>
 								</tr>
 								<tr>
@@ -1677,7 +1683,7 @@ dust            = 30 - 28 = 2</code></pre>
 							<tbody>
 								<tr>
 									<td><code>adjustments[symbolId]</code></td>
-									<td>The latest 15-field <code>SymbolAdjustment</code> record, not history.</td>
+									<td>The latest 16-field <code>SymbolAdjustment</code> record, not history.</td>
 								</tr>
 								<tr>
 									<td><code>quoteRestatedEpoch[quoteId]</code></td>
@@ -1712,6 +1718,17 @@ dust            = 30 - 28 = 2</code></pre>
 										Exact current-epoch LONG and SHORT quantities summed across prepared PartyBs. Finalization requires both to be
 										zero.
 									</td>
+								</tr>
+								<tr>
+									<td><code>restatementFundingSettlementTotals[symbolId]</code></td>
+									<td>
+										Prepared LONG and SHORT quantities whose old-basis funding is still unsettled. Funding settlement and full
+										closes subtract from the corresponding side; both must be zero before the first rewrite.
+									</td>
+								</tr>
+								<tr>
+									<td><code>quoteFundingSettledEpoch[quoteId]</code></td>
+									<td>Last epoch in which the funding-only pass settled the quote. Zero means never settled by a window.</td>
 								</tr>
 							</tbody>
 						</table>
@@ -1806,8 +1823,12 @@ dust            = 30 - 28 = 2</code></pre>
 						<code>getRestatementInventoryProgress</code> returns the current epoch, whether one PartyB was prepared, that PartyB's
 						remaining LONG and SHORT quantities, and the exact symbol-wide remaining LONG and SHORT quantities.
 						<code>isRestatementFundingCheckpointed</code> reports whether one PartyB has a checkpoint for the open epoch.
-						<code>getQuoteRestatedEpoch</code> returns a quote's last physical epoch. <code>previewQuoteAdjustment</code>
-						selects the open-window, prospective, or active factor and returns the exact nine converted fields.
+						<code>getQuoteRestatedEpoch</code> returns a quote's last physical epoch.
+						<code>getRestatementFundingSettlementProgress</code> returns the current epoch, whether the window requires the funding-only
+						pass, and the symbol-wide LONG and SHORT quantities whose funding is still unsettled.
+						<code>getQuoteFundingSettledEpoch</code> returns the last epoch in which the funding-only pass settled a quote.
+						<code>previewQuoteAdjustment</code> selects the open-window, prospective, or active factor and returns the exact nine
+						converted fields.
 					</p>
 
 					<h3>Event lookup</h3>
@@ -1821,7 +1842,8 @@ RestatementPreparationProgress(uint256 indexed symbolId, uint256 indexed epoch, 
                                uint256 pendingFundingPartyBCount)
 RestatementPreparationCompleted(uint256 indexed symbolId, uint256 indexed epoch,
                                 uint256 totalRemainingLongAmount, uint256 totalRemainingShortAmount,
-                                uint256 pendingFundingPartyBCount)
+                                uint256 pendingFundingPartyBCount, RestatementPhase phase)
+RestatementFundingSettlementCompleted(uint256 indexed symbolId, uint256 indexed epoch)
 RestatementInventoryPrepared(uint256 indexed symbolId, uint256 indexed epoch, address indexed partyB,
                              uint256 partyBRemainingLongAmount, uint256 partyBRemainingShortAmount,
                              uint256 totalRemainingLongAmount, uint256 totalRemainingShortAmount)

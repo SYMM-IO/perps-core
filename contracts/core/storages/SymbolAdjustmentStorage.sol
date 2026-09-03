@@ -84,6 +84,10 @@ struct SymbolAdjustment {
 	/// @notice Shared rate-resumption timestamp selected when finalization begins.
 	/// @dev Batched restoration uses this timestamp so every PartyB resumes funding at one economic boundary.
 	uint256 fundingRestorationTimestamp;
+	/// @notice Whether the open window settles old-basis funding before quote rewrites.
+	/// @dev Snapshotted from the global accumulated-funding switch when the PartyB manifest is sealed, so a switch flipped
+	///      mid-window cannot change what a rewrite requires after quotes have already been rewritten.
+	bool fundingSettlementRequired;
 }
 
 /// @notice Funding rates saved while a symbol is physically restated.

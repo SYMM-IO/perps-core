@@ -113,6 +113,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.fundingCutoffTimestamp = block.timestamp;
 		adjustment.pendingFundingPartyBCount = 0;
 		adjustment.fundingRestorationTimestamp = 0;
+		adjustment.fundingSettlementRequired = false;
 		delete adjustmentLayout.restatementInventoryTotals[symbolId];
 		delete adjustmentLayout.restatementFundingSettlementTotals[symbolId];
 		adjustment.restatementPhase = RestatementPhase.FUNDING_PREPARATION;
@@ -177,8 +178,11 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		require(adjustment.restatementPhase == RestatementPhase.FUNDING_PREPARATION, "SymbolAdjustmentFacet: Invalid funding phase");
 		RestatementInventoryTotals storage inventoryTotals = SymbolAdjustmentStorage.layout().restatementInventoryTotals[symbolId];
 		RestatementInventoryTotals storage fundingTotals = SymbolAdjustmentStorage.layout().restatementFundingSettlementTotals[symbolId];
+		// Snapshot the switch here: rewrites check this flag, never the live global, so flipping the switch mid-window is harmless.
+		bool fundingSettlementRequired = FundingStorage.layout().accumulatedFundingActivated;
+		adjustment.fundingSettlementRequired = fundingSettlementRequired;
 		adjustment.restatementPhase =
-			FundingStorage.layout().accumulatedFundingActivated && (fundingTotals.remainingLong != 0 || fundingTotals.remainingShort != 0)
+			fundingSettlementRequired && (fundingTotals.remainingLong != 0 || fundingTotals.remainingShort != 0)
 				? RestatementPhase.FUNDING_SETTLEMENT
 				: RestatementPhase.QUOTE_PROCESSING;
 		emit RestatementPreparationCompleted(
@@ -186,7 +190,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 			adjustment.restatementEpoch,
 			inventoryTotals.remainingLong,
 			inventoryTotals.remainingShort,
-			adjustment.pendingFundingPartyBCount
+			adjustment.pendingFundingPartyBCount,
+			adjustment.restatementPhase
 		);
 	}
 
@@ -225,10 +230,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 			for (uint256 i = 0; i < quoteIds.length; i++) {
 				_settleQuoteFunding(quoteIds[i], symbolId, epoch, isManager);
 			}
-			RestatementInventoryTotals storage fundingTotals = SymbolAdjustmentStorage.layout().restatementFundingSettlementTotals[symbolId];
-			if (fundingTotals.remainingLong == 0 && fundingTotals.remainingShort == 0) {
-				adjustment.restatementPhase = RestatementPhase.QUOTE_PROCESSING;
-			}
+			LibSymbolAdjustmentInventory.completeFundingSettlementIfDone(symbolId, adjustment);
 			return;
 		}
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -273,7 +275,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 
 		// 1) Funding was settled for the complete prepared inventory before any quote mutation began.
 		require(
-			layout.quoteFundingSettledEpoch[quoteId] == epoch || !FundingStorage.layout().accumulatedFundingActivated,
+			layout.quoteFundingSettledEpoch[quoteId] == epoch || !layout.adjustments[symbolId].fundingSettlementRequired,
 			"SymbolAdjustmentFacet: Funding not settled"
 		);
 		// Funding settlement invalidated the balance change; invalidate again at the later quote-basis mutation.
@@ -375,6 +377,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.fundingCutoffTimestamp = 0;
 		adjustment.pendingFundingPartyBCount = 0;
 		adjustment.fundingRestorationTimestamp = 0;
+		adjustment.fundingSettlementRequired = false;
 		delete SymbolAdjustmentStorage.layout().restatementInventoryTotals[symbolId];
 		delete SymbolAdjustmentStorage.layout().restatementFundingSettlementTotals[symbolId];
 	}

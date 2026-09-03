@@ -6966,6 +6966,25 @@
                 "type": "uint256"
             }
         ],
+        "name": "getQuoteFundingSettledEpoch",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
         "name": "getQuoteRestatedEpoch",
         "outputs": [
             {
@@ -7005,6 +7024,40 @@
             {
                 "internalType": "uint256",
                 "name": "fundingRestorationTimestamp",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getRestatementFundingSettlementProgress",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "fundingSettlementRequired",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "remainingLong",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "remainingShort",
                 "type": "uint256"
             }
         ],
@@ -7236,6 +7289,11 @@
                         "internalType": "uint256",
                         "name": "fundingRestorationTimestamp",
                         "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "fundingSettlementRequired",
+                        "type": "bool"
                     }
                 ],
                 "internalType": "struct SymbolAdjustment",
@@ -8203,6 +8261,25 @@
                 "internalType": "uint256",
                 "name": "epoch",
                 "type": "uint256"
+            }
+        ],
+        "name": "RestatementFundingSettlementCompleted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
             },
             {
                 "indexed": true,
@@ -8313,6 +8390,12 @@
                 "internalType": "uint256",
                 "name": "pendingFundingPartyBCount",
                 "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum RestatementPhase",
+                "name": "phase",
+                "type": "uint8"
             }
         ],
         "name": "RestatementPreparationCompleted",

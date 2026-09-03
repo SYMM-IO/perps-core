@@ -333,6 +333,21 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return SymbolAdjustmentStorage.layout().quoteRestatedEpoch[quoteId];
 	}
 
+	/// @notice Returns the last restatement epoch in which a quote's old-basis funding was settled by the funding-only pass.
+	function getQuoteFundingSettledEpoch(uint256 quoteId) external view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().quoteFundingSettledEpoch[quoteId];
+	}
+
+	/// @notice Returns the old-basis quantities whose funding still has to be settled before any quote may be rewritten.
+	function getRestatementFundingSettlementProgress(
+		uint256 symbolId
+	) external view returns (uint256 epoch, bool fundingSettlementRequired, uint256 remainingLong, uint256 remainingShort) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		RestatementInventoryTotals storage fundingTotals = adjustmentLayout.restatementFundingSettlementTotals[symbolId];
+		return (adjustment.restatementEpoch, adjustment.fundingSettlementRequired, fundingTotals.remainingLong, fundingTotals.remainingShort);
+	}
+
 	/// @notice Returns the current restatement inventory for one PartyB and the symbol-wide remaining quantities.
 	function getRestatementInventoryProgress(
 		uint256 symbolId,
