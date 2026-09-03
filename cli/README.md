@@ -52,8 +52,8 @@ private-key wallet or Ledger does not force operators to handle infrastructure c
 differently. Secret values never enter a recipe, task input, event, or log. Environment
 references are accepted only for local and fork operation.
 
-Live deployment includes preflight, compilation, a matching fresh fork rehearsal,
-rehearsal review, typed live-network confirmation, execution, explorer verification,
+Live deployment includes preflight, compilation, a matching fresh fork rehearsal or an
+explicit digest-bound operator waiver, typed live-network confirmation, execution, explorer verification,
 canonical health checks, and handover proof. Fresh configuration is completed with temporary
 deployer roles, then those roles are removed; the normal remaining handover is ownership
 acceptance only. Reused components can still require explicit governance repairs.

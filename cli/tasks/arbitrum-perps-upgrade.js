@@ -20,7 +20,7 @@ const ADAPTER = "internal:arbitrum-perps-upgrade";
 const PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile and validate the pinned contract artifacts" },
 	{ id: "inspect", phase: "prepare", title: "Inspect the live target, ownership, roles, and Safe state" },
-	{ id: "rehearse", phase: "rehearsal", title: "Execute the complete upgrade on the matching Arbitrum fork" },
+	{ id: "rehearse", phase: "rehearsal", title: "Run or explicitly waive the matching Arbitrum fork rehearsal" },
 	{ id: "authorize", phase: "authorization", title: "Authorize the exact live chain, Safe, input, and report" },
 	{ id: "deploy-core-facets", phase: "deployment", title: "Deploy or recover the Core facet and library set" },
 	{ id: "deploy-account-facets", phase: "deployment", title: "Deploy or recover the AccountLayer facet and library set" },
@@ -107,6 +107,18 @@ function assertSafeAccountAuthority(report) {
 	}
 }
 
+export function applyForkRehearsalWaiver(report, forkBlockNumber, skippedAt = new Date().toISOString()) {
+	if (!Number.isSafeInteger(forkBlockNumber) || forkBlockNumber < 1) throw new Error("Live inspection did not record a fork block number");
+	report.stages.forkRehearsal = {
+		status: "skipped",
+		baseBlockNumber: forkBlockNumber,
+		reason: "Explicit operator waiver bound in the standard upgrade input",
+		skippedAt,
+	};
+	if (report.lifecycle !== "complete") report.lifecycle = "in_progress";
+	return report;
+}
+
 function validateUpgradeTaskInput(input) {
 	if (input.network !== "arbitrum" || input.chainId !== 42161 || input.mode !== "live") {
 		throw new Error("Arbitrum Perps upgrade task input must target live Arbitrum chain 42161");
@@ -161,11 +173,24 @@ async function prepareUpgrade({ root, ui }) {
 	if (dirty) throw new Error("The tracked worktree must be clean before binding a live upgrade to an exact Git commit");
 	const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 	const recipe = loadRecipeContext(config, { plan: false });
+	const skipForkRehearsal = await ui.confirm({
+		message: "Skip the matching Arbitrum fork rehearsal before live deployment?",
+		initialValue: false,
+	});
+	if (skipForkRehearsal === null) return null;
+	if (skipForkRehearsal) {
+		const waiver = await ui.text({
+			message: "Type SKIP FORK REHEARSAL to bind this waiver into the standard upgrade input",
+			validate: value => (value === "SKIP FORK REHEARSAL" ? undefined : "Type exactly SKIP FORK REHEARSAL"),
+		});
+		if (waiver === null) return null;
+	}
 	const standardInput = buildArbitrumPerpsUpgradeInput({
 		recipe: recipe.recipe,
 		recipePath: recipe.identityPath,
 		recipeDigest: recipe.digest,
 		sourceCommit,
+		requireForkRehearsal: !skipForkRehearsal,
 	});
 	const inputDigest = arbitrumPerpsUpgradeInputDigest(standardInput);
 	const directory = path.join(root, "tasks", "data", "42161", "upgrades", inputDigest);
@@ -233,11 +258,12 @@ async function reconcileUpgrade(ctx, input) {
 export function createArbitrumPerpsUpgradeTask(common) {
 	return common({
 		id: TASK_ID,
-		version: 4,
+		version: 5,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum Perps Core v0.8.6 upgrade",
-		description: "Rehearse, deploy, publish, upgrade, wire, cut over, and verify the fixed Arbitrum production target through its Safe.",
+		description:
+			"Deploy, publish, upgrade, wire, cut over, and verify the fixed Arbitrum production target through its Safe, with a rehearsal or explicit waiver.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
@@ -250,7 +276,7 @@ export function createArbitrumPerpsUpgradeTask(common) {
 		artifacts: [
 			"digest-bound standard input JSON",
 			"resumable standard report JSON",
-			"fork rehearsal evidence",
+			"fork rehearsal evidence or explicit digest-bound waiver",
 			"deployment checkpoint and transaction journal",
 			"independent Safe Transaction Builder batches",
 			"Arbiscan publication evidence",
@@ -277,6 +303,14 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				const forkBlockNumber = report.stages.inspect?.blockNumber;
 				if (!Number.isSafeInteger(forkBlockNumber) || forkBlockNumber < 1)
 					throw new Error("Live inspection did not record a fork block number");
+				if (!input.execution.requireForkRehearsal) {
+					applyForkRehearsalWaiver(report, forkBlockNumber);
+					writeReport(input, report);
+					ctx.emit("warning", {
+						message: "Matching Arbitrum fork rehearsal was explicitly waived; live deployment is proceeding without rehearsal evidence.",
+					});
+					return;
+				}
 				await runPhase(ctx, input, "rehearse", {
 					network: "fork-arbitrum",
 					env: { FORK_BLOCK_NUMBER: String(forkBlockNumber) },
