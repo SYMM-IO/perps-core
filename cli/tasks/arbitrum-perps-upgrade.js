@@ -155,6 +155,20 @@ function validateUpgradeTaskInput(input) {
 	return standardInput;
 }
 
+const SAFE_DISPATCH_STATE_KEYS = Object.freeze({
+	coreCut: "core-cut",
+	accountCut: "account-cut",
+	authority: "authority",
+	wiring: "wiring",
+	cutover: "cutover",
+});
+
+export function safeDispatchStateKeyForUpgradeBatch(batchId) {
+	const stateKey = SAFE_DISPATCH_STATE_KEYS[batchId];
+	if (!stateKey) throw new Error(`Unsupported Arbitrum upgrade Safe batch ${JSON.stringify(batchId)}`);
+	return stateKey;
+}
+
 async function dispatchBatch(ctx, input, id, name, description) {
 	const report = await runPhase(ctx, input, "plan");
 	const actions = requiredActions(report, "safeBatches", id);
@@ -164,7 +178,7 @@ async function dispatchBatch(ctx, input, id, name, description) {
 		network: input.network,
 		name,
 		description,
-		stateKey: id,
+		stateKey: safeDispatchStateKeyForUpgradeBatch(id),
 		processEnv: phaseEnvironment(input),
 	});
 	const current = readReport(input);
