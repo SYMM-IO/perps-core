@@ -44,6 +44,7 @@ library LibSymbolAdjustmentInventory {
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		RestatementInventoryTotals storage totals = adjustmentLayout.restatementInventoryTotals[symbolId];
+		RestatementInventoryTotals storage fundingTotals = adjustmentLayout.restatementFundingSettlementTotals[symbolId];
 
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
@@ -57,6 +58,8 @@ library LibSymbolAdjustmentInventory {
 			checkpoint.remainingShort = remainingShort;
 			totals.remainingLong += remainingLong;
 			totals.remainingShort += remainingShort;
+			fundingTotals.remainingLong += remainingLong;
+			fundingTotals.remainingShort += remainingShort;
 			newlyPreparedPartyBCount += 1;
 			emit RestatementInventoryPrepared(
 				symbolId,
@@ -86,7 +89,11 @@ library LibSymbolAdjustmentInventory {
 		if (!adjustment.restating || adjustmentLayout.quoteRestatedEpoch[quote.id] >= adjustment.restatementEpoch) return;
 
 		RestatementPhase phase = adjustment.restatementPhase;
-		if (phase != RestatementPhase.FUNDING_PREPARATION && phase != RestatementPhase.QUOTE_PROCESSING) return;
+		if (
+			phase != RestatementPhase.FUNDING_PREPARATION &&
+			phase != RestatementPhase.FUNDING_SETTLEMENT &&
+			phase != RestatementPhase.QUOTE_PROCESSING
+		) return;
 
 		RestatementInventoryCheckpoint storage checkpoint = adjustmentLayout.restatementInventoryCheckpoints[quote.symbolId][quote.partyB];
 		if (checkpoint.restatementEpoch != adjustment.restatementEpoch) {
@@ -95,14 +102,36 @@ library LibSymbolAdjustmentInventory {
 		}
 
 		RestatementInventoryTotals storage totals = adjustmentLayout.restatementInventoryTotals[quote.symbolId];
+		bool fundingUnsettled = adjustmentLayout.quoteFundingSettledEpoch[quote.id] < adjustment.restatementEpoch;
+		RestatementInventoryTotals storage fundingTotals = adjustmentLayout.restatementFundingSettlementTotals[quote.symbolId];
 		if (quote.positionType == PositionType.LONG) {
 			checkpoint.remainingLong -= amount;
 			totals.remainingLong -= amount;
+			if (fundingUnsettled) fundingTotals.remainingLong -= amount;
 		} else {
 			checkpoint.remainingShort -= amount;
 			totals.remainingShort -= amount;
+			if (fundingUnsettled) fundingTotals.remainingShort -= amount;
 		}
+		if (phase == RestatementPhase.FUNDING_SETTLEMENT && fundingTotals.remainingLong == 0 && fundingTotals.remainingShort == 0)
+			adjustment.restatementPhase = RestatementPhase.QUOTE_PROCESSING;
 
 		emit RestatementInventoryConsumed(quote.symbolId, adjustment.restatementEpoch, quote.id, quote.partyB, quote.positionType, amount);
+	}
+
+	/// @notice Records that one quote's old-basis accumulated funding was settled before quote mutation begins.
+	function consumeFundingSettlementAmount(Quote storage quote, uint256 restatementEpoch) internal {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		require(
+			adjustmentLayout.quoteFundingSettledEpoch[quote.id] < restatementEpoch,
+			"LibSymbolAdjustmentInventory: Quote funding already settled"
+		);
+		requirePrepared(quote.symbolId, quote.partyB, restatementEpoch);
+
+		uint256 amount = quote.quantity - quote.closedAmount;
+		RestatementInventoryTotals storage fundingTotals = adjustmentLayout.restatementFundingSettlementTotals[quote.symbolId];
+		if (quote.positionType == PositionType.LONG) fundingTotals.remainingLong -= amount;
+		else fundingTotals.remainingShort -= amount;
+		adjustmentLayout.quoteFundingSettledEpoch[quote.id] = restatementEpoch;
 	}
 }

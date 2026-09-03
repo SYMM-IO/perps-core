@@ -474,13 +474,13 @@ funding amount = 1 * 8 = 8</code></pre>
 									<h5>Optional later conversion</h5>
 									<p>Freeze again when Operations is ready to rewrite stored quotes.</p>
 								</header>
-								<ol class="adjustment-track" style="--timeline-step-count: 5">
+								<ol class="adjustment-track" style="--timeline-step-count: 6">
 									<li class="adjustment-tick is-frozen">
 										<div class="adjustment-event"><span>Open window</span><code>startRestatement</code></div>
 										<div class="adjustment-rail" aria-hidden="true"></div>
 										<div class="adjustment-interval">
 											<div><code>PRICE_ADJUSTED + restating</code><span class="adjustment-status">Frozen</span></div>
-											<p>Abort is available only before a quote rewrite or PartyA pending removal.</p>
+											<p>Abort remains available through funding settlement and pending-quote cancellation.</p>
 										</div>
 									</li>
 									<li class="adjustment-tick is-frozen">
@@ -492,10 +492,17 @@ funding amount = 1 * 8 = 8</code></pre>
 										</div>
 									</li>
 									<li class="adjustment-tick is-frozen">
+										<div class="adjustment-event"><span>Settle funding</span><code>applyAdjustment</code></div>
+										<div class="adjustment-rail" aria-hidden="true"></div>
+										<div class="adjustment-interval">
+											<div><code>FUNDING_SETTLEMENT</code><span class="adjustment-status">Frozen</span></div>
+										</div>
+									</li>
+									<li class="adjustment-tick is-frozen">
 										<div class="adjustment-event"><span>Rewrite batches</span><code>applyAdjustment</code></div>
 										<div class="adjustment-rail" aria-hidden="true"></div>
 										<div class="adjustment-interval">
-											<div><code>restating</code><span class="adjustment-status">Frozen</span></div>
+											<div><code>QUOTE_PROCESSING</code><span class="adjustment-status">Frozen</span></div>
 										</div>
 									</li>
 									<li class="adjustment-tick is-frozen">
@@ -517,7 +524,7 @@ funding amount = 1 * 8 = 8</code></pre>
 							</div>
 						</section>
 
-						<section class="adjustment-sequence" style="--timeline-step-count: 7">
+						<section class="adjustment-sequence" style="--timeline-step-count: 8">
 							<header class="adjustment-sequence-header">
 								<span>Route 02 · direct restatement</span>
 								<h4>Rewrite stored quotes to the venue basis</h4>
@@ -544,8 +551,8 @@ funding amount = 1 * 8 = 8</code></pre>
 									<div class="adjustment-interval">
 										<div><code>SCHEDULED + restating</code><span class="adjustment-status">Frozen</span></div>
 										<p>
-											The opening call only records the window. Prepare funding before quote rewrites; abort remains available
-											only before the first pending removal or rewrite.
+											The opening call only records the window. Prepare and settle funding before quote rewrites; abort remains
+											available until the first rewrite.
 										</p>
 									</div>
 								</li>
@@ -555,6 +562,14 @@ funding amount = 1 * 8 = 8</code></pre>
 									<div class="adjustment-interval">
 										<div><code>FUNDING_PREPARATION</code><span class="adjustment-status">Frozen</span></div>
 										<p>Submit PartyB address batches, then attest that preparation is complete.</p>
+									</div>
+								</li>
+								<li class="adjustment-tick is-frozen">
+									<div class="adjustment-event"><span>Settle funding</span><code>applyAdjustment</code></div>
+									<div class="adjustment-rail" aria-hidden="true"></div>
+									<div class="adjustment-interval">
+										<div><code>FUNDING_SETTLEMENT</code><span class="adjustment-status">Frozen</span></div>
+										<p>Settle every prepared open quote before rewriting any quote.</p>
 									</div>
 								</li>
 								<li class="adjustment-tick is-frozen">
@@ -605,7 +620,7 @@ funding amount = 1 * 8 = 8</code></pre>
 								</tr>
 								<tr>
 									<td><code>abortRestatement</code></td>
-									<td>A restatement window is open, but no quote has been rewritten or removed from PartyA's pending inventory.</td>
+									<td>A restatement window is open, but no quote has been rewritten.</td>
 									<td>
 										Starts funding restoration. If checkpoints exist, Operations supplies their PartyB addresses to
 										<code>processRestatementFunding</code>; the last batch closes the window and emits
@@ -619,9 +634,9 @@ funding amount = 1 * 8 = 8</code></pre>
 						After a direct-route abort, the state is still effective <code>SCHEDULED</code>, so the symbol remains frozen. Operations must
 						restart restatement, switch to the adjusted-price route with <code>confirmPriceAdjusted</code>, or cancel if the event was
 						called off. An abort from a later window normally returns to live <code>PRICE_ADJUSTED</code>. Core rejects abort once a quote
-						rewrite or PartyA pending removal sets <code>restatementMutated</code>. Other quote-state changes do not always set this flag,
-						and abort neither detects nor reverses them. Operations must reconcile the book before aborting. An aborted window's epoch is
-						not reused.
+						rewrite sets <code>restatementMutated</code>. Funding settlement and pending-quote cancellation do not set this flag because
+						they do not create a mixed-basis open book. Operations must still reconcile the book before aborting. An aborted window's
+						epoch is not reused.
 					</p>
 
 					<h3 id="active-route">Adjusted-price route without quote rewrites</h3>
@@ -710,7 +725,8 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 							<strong>Prepare every involved PartyB.</strong> Operations builds the complete PartyB set off-chain from its open book and
 							funding records. The bot simulates and submits <code>processRestatementFunding(symbolId, partyBs)</code> in gas-bounded
 							address batches. Core snapshots LONG and SHORT totals for only those addresses and checkpoints funding when active. After
-							reconciling the complete set, Operations calls <code>completeRestatementFundingPreparation</code> to seal it and move to
+							reconciling the complete set, Operations calls <code>completeRestatementFundingPreparation</code> to seal it. When
+							accumulated funding is active and open inventory exists, Core enters <code>FUNDING_SETTLEMENT</code>; otherwise it enters
 							<code>QUOTE_PROCESSING</code>.
 						</li>
 						<li>
@@ -732,12 +748,13 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 							emitted.
 						</li>
 						<li>
-							<strong>Simulate every rewrite batch.</strong> From the address that will submit the transaction, the Operations bot uses
-							<code>eth_call</code> to simulate each exact <code>applyAdjustment(symbolId, quoteIds)</code> batch. This runs
-							authorization, quote-status, epoch, liquidation, funding-settlement, conversion, and aggregate-accounting checks without
-							saving any changes. If a batch reverts, Operations resolves the cause or aborts before the first mutation. Simulation does
-							not reserve state, so the bot repeats it immediately before submitting the batch and whenever the caller, IDs, or chain
-							state changes.
+							<strong>Settle funding, then simulate every rewrite batch.</strong> During <code>FUNDING_SETTLEMENT</code>, Operations
+							calls <code>applyAdjustment(symbolId, quoteIds)</code> in batches for every prepared open quote. This pass settles
+							old-basis funding without rewriting quotes, and Core advances only after its settlement inventory reaches zero. Operations
+							then uses <code>eth_call</code> to simulate each exact rewrite batch. This runs authorization, quote-status, epoch,
+							liquidation, conversion, and aggregate-accounting checks without saving any changes. If a batch reverts, Operations
+							resolves the cause or aborts before the first rewrite. Simulation does not reserve state, so the bot repeats it
+							immediately before submitting the batch and whenever the caller, IDs, or chain state changes.
 						</li>
 						<li>
 							<strong>Convert the book.</strong> Operations calls <code>cancelPendingQuotes</code> for pending inventory and
@@ -800,13 +817,13 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 								frozen until Operations confirms the adjusted-price route.
 							</li>
 						</ul>
-						Once a quote rewrite or pending removal has set <code>restatementMutated</code>, Core cannot abort or roll back the window. If
-						a liquidation blocker is found at that point, stop and escalate the incident. Do not finalize an improvised partial
-						conversion.
+						Once a quote rewrite has set <code>restatementMutated</code>, Core cannot abort or roll back the window. If a liquidation
+						blocker is found at that point, stop and escalate the incident. Do not finalize an improvised partial conversion.
 					</aside>
 					<p>
-						The call is atomic. Any invalid ID, failed funding charge, arithmetic failure, aggregate overflow, or downstream revert rolls
-						back every earlier quote in the batch. A duplicate epoch reverts with <code>Already restated</code>. Repeating a completed ID
+						Each call is atomic. During <code>FUNDING_SETTLEMENT</code>, any invalid ID or failed funding charge rolls back the batch.
+						During <code>QUOTE_PROCESSING</code>, any invalid ID, arithmetic failure, aggregate overflow, or downstream revert rolls back
+						every earlier quote in the batch. A duplicate epoch reverts with <code>Already restated</code>. Repeating a completed ID
 						reverts, so retries must omit completed IDs. An empty array is accepted and changes nothing.
 					</p>
 
@@ -867,10 +884,10 @@ else:
 					</div>
 					<p>
 						The conversion assigns exactly those nine fields. It does not assign IDs, parties, symbol, position or order type, whitelists,
-						statuses, deadlines, parent links, locked values, fee fields, affiliate, funding limit, close fee, or data. Funding settlement
-						runs before conversion on every successful <code>applyAdjustment</code>. It sets <code>lastFundingPaymentTimestamp</code> to
-						the current block time and may change <code>accumulatedPaidFunding</code> and party balances. These are settlement side
-						effects, not part of the nine-field unit conversion.
+						statuses, deadlines, parent links, locked values, fee fields, affiliate, funding limit, close fee, or data. When accumulated
+						funding is active, the earlier <code>FUNDING_SETTLEMENT</code> pass sets <code>lastFundingPaymentTimestamp</code> and may
+						change <code>accumulatedPaidFunding</code> and party balances. The later <code>QUOTE_PROCESSING</code> pass performs only the
+						unit conversion and related aggregate updates.
 					</p>
 					<p>
 						A reverse split can make a very small raw amount disappear when multiplication is rounded down, and Core would rather refuse
@@ -997,11 +1014,10 @@ dust            = 30 - 28 = 2</code></pre>
 						empty quote array is accepted and changes nothing.
 					</p>
 					<p>
-						Removing a quote from PartyA's pending index records a mutation if a restatement window is open. This applies to
-						<code>cancelPendingQuotes</code> and to normal user-driven pending removal. A cancellation while the symbol is merely frozen,
-						before a window opens, does not mark a future window. Operations must monitor normal cancellation events during a window
-						because the first such removal also makes abort unavailable. Close-request creation, cancellation, and expiry can also change
-						the quote inventory during the window, but those paths do not set the restatement mutation flag.
+						Removing a pending quote does not set the restatement mutation flag because pending inventory has not entered the open book
+						and its removal cannot create mixed quote bases. Operations must still monitor cancellations and reconcile the affected
+						inventory before continuing or aborting. Close-request creation, cancellation, and expiry can also change quote status or
+						price-bearing fields during the window without setting the mutation flag.
 					</p>
 
 					<h3 id="rewrite-reads">Mixed-book reads</h3>
@@ -1122,9 +1138,11 @@ dust            = 30 - 28 = 2</code></pre>
 					</aside>
 					<p>
 						After Operations has submitted and checked the intended set, the manager calls
-						<code>completeRestatementFundingPreparation</code>. Core then enters <code>QUOTE_PROCESSING</code> and rejects later PartyB
-						preparation. The seal is an attestation that the submitted address set is complete. Within that set, completeness is enforced
-						on-chain: finalization requires every snapshotted LONG and SHORT quantity to reach zero.
+						<code>completeRestatementFundingPreparation</code>. Core rejects later PartyB preparation and enters
+						<code>FUNDING_SETTLEMENT</code> when accumulated funding is active and prepared inventory is nonzero; otherwise it enters
+						<code>QUOTE_PROCESSING</code>. The seal is an attestation that the submitted address set is complete. Within that set,
+						completeness is enforced on-chain: funding settlement and finalization each require their corresponding snapshotted LONG and
+						SHORT quantity totals to reach zero.
 					</p>
 
 					<h3 id="funding-quotes">While quotes are being rewritten</h3>
@@ -1429,8 +1447,9 @@ dust            = 30 - 28 = 2</code></pre>
 							inventory snapshots with events and <code>getRestatementInventoryProgress</code>; when funding is active, also verify
 							funding checkpoint creation with events, the pending count, or <code>isRestatementFundingCheckpointed</code>. After the
 							complete involved-PartyB set has been supplied and reconciled, call <code>completeRestatementFundingPreparation</code>.
-							The manifest is sealed at that transition; do not submit quote rewrites before progress reports
-							<code>QUOTE_PROCESSING</code>.
+							The manifest is sealed at that transition. If progress reports <code>FUNDING_SETTLEMENT</code>, use
+							<code>applyAdjustment</code> batches to settle every prepared open quote before submitting any rewrite. Core advances to
+							<code>QUOTE_PROCESSING</code> only when the funding-settlement inventory reaches zero.
 						</li>
 						<li>
 							Re-scan the now-frozen book before the first mutation. Recheck statuses, every liquidation mode, previews, funding
@@ -1444,7 +1463,7 @@ dust            = 30 - 28 = 2</code></pre>
 							used for finalization.
 						</li>
 						<li>
-							If any item cannot be processed, abort before a quote rewrite or pending removal. Direct abort stays frozen in
+							If any item cannot be processed, abort before a quote rewrite. Direct abort stays frozen in
 							<code>SCHEDULED</code>. Active-factor abort preserves the prior state, normally live <code>PRICE_ADJUSTED</code>, but it
 							can also return live in <code>CANCELLED</code>. After <code>abortRestatement</code>, submit the checkpointed PartyB
 							manifest through <code>processRestatementFunding</code> until <code>RestatementAborted</code> if progress reports
@@ -1456,10 +1475,11 @@ dust            = 30 - 28 = 2</code></pre>
 							and reconcile each resulting status and price-bearing close field before processing the quote.
 						</li>
 						<li>
-							Before submitting each bounded batch, have the Operations bot simulate the exact
-							<code>applyAdjustment(symbolId, quoteIds)</code> call through <code>eth_call</code> from the intended transaction sender.
-							Submit only a successful simulation, then track <code>QuoteAdjusted</code> and verify each quote's epoch. Remove
-							successful IDs before retrying. Re-simulate whenever the batch or relevant state changes.
+							During <code>FUNDING_SETTLEMENT</code>, submit bounded <code>applyAdjustment(symbolId, quoteIds)</code> batches and track
+							<code>QuoteFundingSettled</code> until Core enters <code>QUOTE_PROCESSING</code>. Then have the Operations bot simulate
+							each exact rewrite call through <code>eth_call</code> from the intended transaction sender. Submit only a successful
+							simulation, track <code>QuoteAdjusted</code>, and verify each quote's epoch. Remove successful IDs before retrying.
+							Re-simulate whenever the batch or relevant state changes.
 						</li>
 						<li>
 							Use venue-unit views for convertible records during the open window, but compare raw storage and epoch data to prove
@@ -1582,6 +1602,13 @@ dust            = 30 - 28 = 2</code></pre>
 										increments <code>basisVersion</code> and unfreezes.
 									</td>
 								</tr>
+								<tr>
+									<td><code>FUNDING_SETTLEMENT = 5</code></td>
+									<td>
+										Settle old-basis accumulated funding for every prepared open quote with <code>applyAdjustment</code>. Abort
+										remains available, and no quote rewrite is allowed until both settlement inventory totals reach zero.
+									</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -1616,8 +1643,8 @@ dust            = 30 - 28 = 2</code></pre>
 									<td>
 										<code>restatementEpoch</code> increments on every successful start and survives abort and finalization.
 										<code>restating</code> is the open-window flag. <code>restatementMutated</code> resets to false at start,
-										becomes true on a rewrite or pending removal, and is not cleared by finalization.
-										<code>restatementFactor</code> and <code>restatementStartedAt</code> are zero outside a window.
+										becomes true on a quote rewrite, and is not cleared by finalization. <code>restatementFactor</code> and
+										<code>restatementStartedAt</code> are zero outside a window.
 									</td>
 								</tr>
 								<tr>
@@ -1743,8 +1770,8 @@ dust            = 30 - 28 = 2</code></pre>
 								<tr>
 									<td><code>applyAdjustment</code></td>
 									<td>
-										Manager for any quote or own PartyB per quote. Rewrite eligible open inventory only in a current
-										<code>QUOTE_PROCESSING</code> phase.
+										Manager for any quote or own PartyB per quote. Settle eligible open inventory in
+										<code>FUNDING_SETTLEMENT</code>, then rewrite it in <code>QUOTE_PROCESSING</code>.
 									</td>
 								</tr>
 								<tr>
@@ -1818,9 +1845,9 @@ RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 						Funding-restoration events report restoration mode and remaining PartyB work. Per-pair preparation and restoration also emit
 						the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints exist, <code>RestatementAborted</code> or
 						<code>RestatementFinalized</code> is emitted by the last funding batch rather than the transaction that starts restoration.
-						Every successful <code>applyAdjustment</code> emits <code>QuoteFundingSettled</code> before <code>QuoteAdjusted</code>,
-						including when the settled funding amount is zero. Indexers need both events to attribute the settlement side effects and the
-						later unit conversion.
+						During <code>FUNDING_SETTLEMENT</code>, every successfully processed quote emits <code>QuoteFundingSettled</code>, including
+						when the amount is zero. During the later <code>QUOTE_PROCESSING</code> pass, every successfully rewritten quote emits
+						<code>QuoteAdjusted</code>. Indexers need both events to attribute settlement side effects and the later unit conversion.
 					</p>
 				</article>
 			</main>
