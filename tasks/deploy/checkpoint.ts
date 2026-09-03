@@ -89,6 +89,8 @@ export interface DeploymentCheckpoint {
 	progress?: Record<string, boolean | string[]>
 	/** Immutable deployment intent and source fingerprint used to reject unsafe resumes. */
 	manifest?: DeploymentManifest
+	/** Explicitly authorized source-only transitions applied to an existing deployment manifest. */
+	manifestSourceMigrations?: DeploymentManifestSourceMigration[]
 	/** Confirmed, replaced, failed, and timed-out transactions accumulated across resumes. */
 	transactions?: DeploymentTransactionRecord[]
 	/** Once requested, explorer verification remains mandatory across every resume until it passes. */
@@ -103,6 +105,27 @@ export interface DeploymentManifest {
 	intentHash: string
 	sourceHash: string
 	fingerprint: string
+}
+
+export interface DeploymentManifestSourceMigrationEvidence {
+	apiVersion: "operations.symm.io/task-source-migration-v1"
+	taskId: string
+	taskRunId: string
+	inputDigest: string
+	originalCommit: string
+	currentCommit: string
+	migrations: Array<{ at: string; from: string; to: string; authorization: "operator-confirmed" }>
+	changedFiles: string[]
+}
+
+export interface DeploymentManifestSourceMigration {
+	apiVersion: "operations.symm.io/deployment-manifest-source-migration-v1"
+	migratedAt: string
+	from: { sourceHash: string; fingerprint: string }
+	to: { sourceHash: string; fingerprint: string }
+	preservedStateHash: string
+	transactionCount: number
+	evidence: DeploymentManifestSourceMigrationEvidence
 }
 
 // ============================================================================
@@ -408,6 +431,81 @@ export function assertCheckpointManifest(checkpoint: DeploymentCheckpoint, curre
 				"Resume with the original checkout/config, or review the archived addresses and deliberately start --fresh.",
 		)
 	}
+}
+
+/**
+ * Deliberately adopt a source-only manifest change after the owning workflow has
+ * independently validated and operator-authorized its source migration. Intent
+ * changes and uncertain broadcasts remain non-migratable.
+ */
+export function migrateCheckpointManifestSource(
+	checkpoint: DeploymentCheckpoint,
+	current: DeploymentManifest,
+	evidence: DeploymentManifestSourceMigrationEvidence,
+	migratedAt = new Date().toISOString(),
+): DeploymentManifestSourceMigration {
+	const previous = checkpoint.manifest
+	if (!previous) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: checkpoint has no bound deployment manifest")
+	}
+	if (previous.fingerprint === current.fingerprint) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: checkpoint manifest already matches the current source")
+	}
+	if (previous.version !== current.version || previous.deploymentId !== current.deploymentId) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: deployment manifest identity changed")
+	}
+	if (previous.intentHash !== current.intentHash) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: deployment configuration changed")
+	}
+	if (previous.sourceHash === current.sourceHash) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: manifest fingerprint changed without a source change")
+	}
+	const uncertain = (checkpoint.transactions || []).filter(record => ["submitted", "timed_out", "unresolved"].includes(record.status))
+	if (uncertain.length > 0) {
+		throw new Error(
+			`RESUME_MANIFEST_MIGRATION_REFUSED: ${uncertain.length} transaction outcome(s) remain uncertain: ${uncertain.map(record => record.hash).join(", ")}`,
+		)
+	}
+	if (
+		evidence.apiVersion !== "operations.symm.io/task-source-migration-v1" ||
+		!evidence.taskId ||
+		!evidence.taskRunId ||
+		!evidence.inputDigest ||
+		!evidence.originalCommit ||
+		!evidence.currentCommit ||
+		!Array.isArray(evidence.changedFiles) ||
+		evidence.changedFiles.length === 0 ||
+		!Array.isArray(evidence.migrations) ||
+		evidence.migrations.length === 0 ||
+		evidence.migrations.some(migration => migration.authorization !== "operator-confirmed")
+	) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: operator source-migration evidence is incomplete")
+	}
+	if (Number.isNaN(Date.parse(migratedAt))) {
+		throw new Error("RESUME_MANIFEST_MIGRATION_REFUSED: migration timestamp is invalid")
+	}
+
+	const record: DeploymentManifestSourceMigration = {
+		apiVersion: "operations.symm.io/deployment-manifest-source-migration-v1",
+		migratedAt,
+		from: { sourceHash: previous.sourceHash, fingerprint: previous.fingerprint },
+		to: { sourceHash: current.sourceHash, fingerprint: current.fingerprint },
+		preservedStateHash: sha256(
+			stableSerialize({
+				contracts: checkpoint.contracts,
+				pending: checkpoint.pending,
+				progress: checkpoint.progress,
+				setupComplete: checkpoint.setupComplete,
+				transactions: checkpoint.transactions,
+			}),
+		),
+		transactionCount: checkpoint.transactions?.length || 0,
+		evidence: structuredClone(evidence),
+	}
+	checkpoint.manifestSourceMigrations ||= []
+	checkpoint.manifestSourceMigrations.push(record)
+	checkpoint.manifest = current
+	return record
 }
 
 function hashSourceTree(entries: string[]): string {

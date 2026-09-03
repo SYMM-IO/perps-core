@@ -6,6 +6,7 @@ import {
 	createCheckpoint,
 	createDeployedContract,
 	createDeploymentManifest,
+	migrateCheckpointManifestSource,
 } from "../../tasks/deploy/checkpoint.js"
 import { verificationProviderForChain } from "../../tasks/deploy/explorer.js"
 import {
@@ -61,6 +62,67 @@ describe("deployment infrastructure", function () {
 			{ deploymentId: checkpoint.deploymentId, sourcePaths: ["package.json"] },
 		)
 		expect(() => assertCheckpointManifest(checkpoint, changed)).to.throw("deployment configuration")
+	})
+
+	it("records an operator-authorized source-only checkpoint migration and preserves fail-closed boundaries", function () {
+		const checkpoint = createCheckpoint("arbitrum", 42161, "upgrade-test")
+		const intent = { inputDigest: "a".repeat(64), network: "arbitrum" }
+		const previous = createDeploymentManifest(intent, {
+			deploymentId: checkpoint.deploymentId,
+			sourcePaths: ["package.json"],
+		})
+		const current = createDeploymentManifest(intent, {
+			deploymentId: checkpoint.deploymentId,
+			sourcePaths: ["tsconfig.json"],
+		})
+		checkpoint.manifest = previous
+		checkpoint.transactions = [{ hash: "0xconfirmed", status: "confirmed" } as any]
+		const evidence = {
+			apiVersion: "operations.symm.io/task-source-migration-v1" as const,
+			taskId: "maintenance.arbitrum-perps-upgrade",
+			taskRunId: "run-1",
+			inputDigest: "a".repeat(64),
+			originalCommit: "b".repeat(40),
+			currentCommit: "c".repeat(40),
+			migrations: [
+				{
+					at: "2026-09-03T10:20:57.957Z",
+					from: `sha256:${"1".repeat(64)}`,
+					to: `sha256:${"2".repeat(64)}`,
+					authorization: "operator-confirmed" as const,
+				},
+			],
+			changedFiles: ["tasks/deploy/componentDeployment.ts"],
+		}
+		const migration = migrateCheckpointManifestSource(checkpoint, current, evidence, "2026-09-03T10:30:00.000Z")
+		expect(checkpoint.manifest).to.deep.equal(current)
+		expect(checkpoint.manifestSourceMigrations).to.deep.equal([migration])
+		expect(migration).to.include({
+			apiVersion: "operations.symm.io/deployment-manifest-source-migration-v1",
+			migratedAt: "2026-09-03T10:30:00.000Z",
+			transactionCount: 1,
+		})
+		expect(migration.from).to.deep.equal({ sourceHash: previous.sourceHash, fingerprint: previous.fingerprint })
+		expect(migration.to).to.deep.equal({ sourceHash: current.sourceHash, fingerprint: current.fingerprint })
+		expect(migration.preservedStateHash).to.match(/^sha256:[0-9a-f]{64}$/)
+
+		const configurationChanged = createDeploymentManifest(
+			{ ...intent, network: "base" },
+			{
+				deploymentId: checkpoint.deploymentId,
+				sourcePaths: ["package-lock.json"],
+			},
+		)
+		expect(() => migrateCheckpointManifestSource({ ...checkpoint, manifest: previous }, configurationChanged, evidence)).to.throw(
+			"deployment configuration changed",
+		)
+		expect(() =>
+			migrateCheckpointManifestSource(
+				{ ...checkpoint, manifest: previous, transactions: [{ hash: "0xunknown", status: "unresolved" } as any] },
+				current,
+				evidence,
+			),
+		).to.throw("transaction outcome(s) remain uncertain")
 	})
 
 	it("refuses checkpoint addresses that have no code on the connected chain", async function () {
