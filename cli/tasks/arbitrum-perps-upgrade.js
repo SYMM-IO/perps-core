@@ -1,5 +1,6 @@
 import {
 	ARBITRUM_PERPS_UPGRADE_TARGET,
+	ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
 	arbitrumPerpsUpgradeInputDigest,
 	buildArbitrumPerpsUpgradeInput,
 	createArbitrumPerpsUpgradeReport,
@@ -78,11 +79,30 @@ function phaseEnvironment(input, extra = {}) {
 	};
 }
 
+function sourceMigrationEnvironment(input, state) {
+	if (!state?.sourceMigrations?.length) return {};
+	if (state.sourceMigrations.at(-1)?.to !== state.sourceHash) {
+		throw new Error("Task source migration journal does not end at the active source hash");
+	}
+	const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: PROJECT_ROOT, encoding: "utf8" }).trim();
+	return {
+		SYMMIO_ARBITRUM_UPGRADE_SOURCE_MIGRATION: JSON.stringify({
+			apiVersion: ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
+			taskId: TASK_ID,
+			taskRunId: state.runId,
+			inputDigest: input.inputDigest,
+			originalCommit: input.sourceCommit,
+			currentCommit,
+			migrations: state.sourceMigrations,
+		}),
+	};
+}
+
 async function runPhase(ctx, input, phase, { network = "arbitrum", env = {} } = {}) {
 	await ctx.runProcess(
 		"./node_modules/.bin/hardhat",
 		[ADAPTER, "--phase", phase, "--input", input.input, "--output", input.output, "--network", network],
-		{ env: phaseEnvironment(input, env) },
+		{ env: phaseEnvironment(input, { ...env, ...sourceMigrationEnvironment(input, ctx.state) }) },
 	);
 	return readReport(input);
 }

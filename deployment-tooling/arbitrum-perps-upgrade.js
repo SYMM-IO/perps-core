@@ -5,6 +5,20 @@ import fs from "node:fs";
 
 export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-input-v2";
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-report-v1";
+export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION = "operations.symm.io/task-source-migration-v1";
+
+const ARBITRUM_PERPS_UPGRADE_OPERATIONAL_MIGRATION_FILES = new Set([
+	"cli/task-runner.js",
+	"cli/tasks/arbitrum-perps-upgrade.js",
+	"cli/test/arbitrum-perps-upgrade-model.test.js",
+	"cli/test/task-runner.test.js",
+	"deployment-tooling/arbitrum-perps-upgrade.d.ts",
+	"deployment-tooling/arbitrum-perps-upgrade.js",
+	"docs/arbitrum-perps-upgrade.md",
+	"tasks/deploy/arbitrumPerpsUpgrade.ts",
+	"tasks/deploy/componentDeployment.ts",
+	"test/parallel/DeploymentRecipeComponentExecution.test.ts",
+]);
 
 export const ARBITRUM_PERPS_UPGRADE_TARGET = Object.freeze({
 	chainId: 42161,
@@ -252,6 +266,59 @@ export function arbitrumPerpsUpgradeInputDigest(value) {
 	const input = validateArbitrumPerpsUpgradeInput(value);
 	const intent = Object.fromEntries(Object.entries(input).filter(([key]) => key !== "$schema"));
 	return createHash("sha256").update(stableSerialize(intent)).digest("hex");
+}
+
+export function validateArbitrumPerpsUpgradeSourceMigration(inputValue, migrationValue, context, source = "source migration") {
+	const input = validateArbitrumPerpsUpgradeInput(inputValue);
+	const migration = object(migrationValue, source, "migration");
+	exactKeys(migration, ["apiVersion", "taskId", "taskRunId", "inputDigest", "originalCommit", "currentCommit", "migrations"], source, "migration");
+	if (migration.apiVersion !== ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION) {
+		fail(source, "migration.apiVersion", `must equal ${ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION}`);
+	}
+	if (migration.taskId !== "maintenance.arbitrum-perps-upgrade") {
+		fail(source, "migration.taskId", "must identify the Arbitrum Perps upgrade task");
+	}
+	string(migration.taskRunId, source, "migration.taskRunId");
+	if (migration.inputDigest !== arbitrumPerpsUpgradeInputDigest(input)) fail(source, "migration.inputDigest", "does not match the standard input");
+	if (migration.originalCommit !== input.source.commit) fail(source, "migration.originalCommit", "does not match source.commit");
+	const execution = object(context, source, "context");
+	exactKeys(execution, ["currentCommit", "changedFiles", "originalCommitIsAncestor"], source, "context");
+	if (migration.currentCommit !== execution.currentCommit) fail(source, "migration.currentCommit", "does not match the checked-out commit");
+	if (execution.originalCommitIsAncestor !== true) fail(source, "context.originalCommitIsAncestor", "must be true");
+	if (!Array.isArray(execution.changedFiles) || execution.changedFiles.length === 0) fail(source, "context.changedFiles", "must be non-empty");
+	for (const [index, file] of execution.changedFiles.entries()) {
+		string(file, source, `context.changedFiles[${index}]`);
+		if (!ARBITRUM_PERPS_UPGRADE_OPERATIONAL_MIGRATION_FILES.has(file)) {
+			fail(source, `context.changedFiles[${index}]`, `is not an approved operational migration file (${file})`);
+		}
+	}
+	if (!Array.isArray(migration.migrations) || migration.migrations.length === 0) fail(source, "migration.migrations", "must be non-empty");
+	let previousTo;
+	for (const [index, rawRecord] of migration.migrations.entries()) {
+		const field = `migration.migrations[${index}]`;
+		const record = object(rawRecord, source, field);
+		exactKeys(record, ["at", "from", "to", "authorization"], source, field);
+		string(record.at, source, `${field}.at`);
+		if (Number.isNaN(Date.parse(record.at))) fail(source, `${field}.at`, "must be an ISO date-time");
+		for (const key of ["from", "to"]) {
+			if (typeof record[key] !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record[key])) {
+				fail(source, `${field}.${key}`, "must be a sha256 source digest");
+			}
+		}
+		if (record.authorization !== "operator-confirmed") fail(source, `${field}.authorization`, "must be operator-confirmed");
+		if (previousTo !== undefined && record.from !== previousTo) fail(source, `${field}.from`, "must continue the prior migration");
+		previousTo = record.to;
+	}
+	return {
+		apiVersion: migration.apiVersion,
+		taskId: migration.taskId,
+		taskRunId: migration.taskRunId,
+		inputDigest: migration.inputDigest,
+		originalCommit: migration.originalCommit,
+		currentCommit: migration.currentCommit,
+		migrations: structuredClone(migration.migrations),
+		changedFiles: [...execution.changedFiles],
+	};
 }
 
 export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, recipeDigest, sourceCommit, requireForkRehearsal = true }) {

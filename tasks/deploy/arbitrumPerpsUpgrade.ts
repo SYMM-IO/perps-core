@@ -10,6 +10,7 @@ import {
 	arbitrumPerpsUpgradeInputDigest,
 	createArbitrumPerpsUpgradeReport,
 	loadArbitrumPerpsUpgradeInput,
+	validateArbitrumPerpsUpgradeSourceMigration,
 	validateArbitrumPerpsUpgradeReport,
 	type ArbitrumPerpsUpgradeInput,
 	type ArbitrumPerpsUpgradeReport,
@@ -128,13 +129,34 @@ function loadFacetState(file: string): FacetDeployment | null {
 	return parsed as FacetDeployment
 }
 
-function assertSourceBinding(input: ArbitrumPerpsUpgradeInput): void {
+function assertSourceBinding(input: ArbitrumPerpsUpgradeInput): ReturnType<typeof validateArbitrumPerpsUpgradeSourceMigration> | null {
 	const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim()
 	if (dirty) throw new Error("Upgrade execution requires a clean tracked worktree; the bound source commit has local modifications")
 	const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()
-	if (commit !== input.source.commit) throw new Error(`Upgrade input is bound to commit ${input.source.commit}, but this checkout is ${commit}`)
 	const recipe = loadDeploymentRecipe(input.source.recipe.path)
 	if (recipe.digest !== input.source.recipe.digest) throw new Error("Upgrade input recipe digest no longer matches its source recipe")
+	if (commit === input.source.commit) return null
+	const rawMigration = process.env.SYMMIO_ARBITRUM_UPGRADE_SOURCE_MIGRATION
+	if (!rawMigration) throw new Error(`Upgrade input is bound to commit ${input.source.commit}, but this checkout is ${commit}`)
+	let migration: unknown
+	try {
+		migration = JSON.parse(rawMigration)
+	} catch (error) {
+		throw new Error(`Upgrade source migration evidence is invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
+	}
+	let originalCommitIsAncestor = true
+	try {
+		execFileSync("git", ["merge-base", "--is-ancestor", input.source.commit, commit], { stdio: "ignore" })
+	} catch {
+		originalCommitIsAncestor = false
+	}
+	const changedFiles = execFileSync("git", ["diff", "--name-only", input.source.commit, commit], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean)
+	return validateArbitrumPerpsUpgradeSourceMigration(
+		input,
+		migration,
+		{ currentCommit: commit, changedFiles, originalCommitIsAncestor },
+		"SYMMIO_ARBITRUM_UPGRADE_SOURCE_MIGRATION",
+	)
 }
 
 function assertInternalInvocation(phase: Phase, networkName: string | undefined, simulated: boolean, chainId: number): void {
@@ -804,13 +826,14 @@ async function runForkRehearsal(
 
 async function executePhase(hre: any, phase: Phase, inputFile: string, outputFile: string): Promise<void> {
 	const input = loadArbitrumPerpsUpgradeInput(inputFile)
-	assertSourceBinding(input)
+	const sourceMigration = assertSourceBinding(input)
 	const connection = await getConnection(hre)
 	const { ethers } = connection
 	const chainId = Number((await ethers.provider.getNetwork()).chainId)
 	const simulated = connection.networkConfig?.type === "edr-simulated"
 	assertInternalInvocation(phase, connection.networkName, simulated, chainId)
 	const report = readReport(outputFile, input)
+	if (sourceMigration) updateStage(report, "sourceMigration", "complete", { ...sourceMigration })
 	try {
 		switch (phase) {
 			case "inspect":
