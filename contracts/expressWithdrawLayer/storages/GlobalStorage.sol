@@ -40,6 +40,8 @@ library GlobalStorage {
 		// ── Account identity ──
 		/// @dev Appended to preserve the storage layout of existing ExpressProvider diamonds.
 		address accountLayer;
+		/// @dev Appended for the canonical diamond role-admin model.
+		mapping(bytes32 => mapping(address => bool)) roleAdmins;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

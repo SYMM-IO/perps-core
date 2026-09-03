@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Core, AccountLayer, and ExpressProvider now expose the same canonical role-management and role-query interfaces, with explicit upgrade instructions for existing v0.8.6.1 deployments."
+		/>
+		<title>Consistent Diamond Role Management - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#canonical-interface">Canonical interface</a>
+				<a class="toc-link level-2" href="#compatibility">Compatibility</a>
+				<a class="toc-link level-2" href="#upgrade-from-v0861">Upgrade from v0.8.6.1</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Consistent Diamond Role Management</h1>
+							<p class="hero-copy">
+								Core, AccountLayer, and ExpressProvider now expose the same canonical role-management and role-query interfaces.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Administrative tooling can now use the same account-first role calls against the Core, AccountLayer, and ExpressProvider
+						diamonds. The diamond owner appoints default admins. A default admin appoints or removes role-specific admins, and either a
+						default admin or the relevant role admin can grant and revoke that role.
+					</p>
+
+					<h2 id="canonical-interface">Canonical interface</h2>
+					<pre><code class="language-solidity">function setAdmin(address user) external;
+function grantRole(address user, bytes32 role) external;
+function revokeRole(address user, bytes32 role) external;
+function addRoleAdmin(bytes32 role, address admin) external;
+function removeRoleAdmin(bytes32 role, address admin) external;
+
+function hasRole(address user, bytes32 role) external view returns (bool);
+function isRoleAdmin(address user, bytes32 role) external view returns (bool);</code></pre>
+					<p>
+						<code>setAdmin</code> remains owner-only. <code>addRoleAdmin</code> and <code>removeRoleAdmin</code> require
+						<code>DEFAULT_ADMIN_ROLE</code>. The account-first <code>grantRole</code> and <code>revokeRole</code> calls require the caller
+						to administer the requested role.
+					</p>
+
+					<h2 id="compatibility">Compatibility</h2>
+					<p>
+						The AccountLayer keeps <code>setRoleAdmin(address,bytes32,bool)</code>. ExpressProvider keeps its owner-only
+						<code>grantRole(bytes32,address)</code> and <code>revokeRole(bytes32,address)</code> overloads, as well as the role-first
+						<code>hasRole(bytes32,address)</code> view. Existing integrations can continue using those selectors while new administrative
+						tooling uses the shared interface.
+					</p>
+					<aside class="callout callout-note">
+						<strong>ExpressProvider's composite ABI contains same-name overloads.</strong> Clients that use it must select
+						<code>grantRole(address,bytes32)</code>, <code>revokeRole(address,bytes32)</code>, and
+						<code>hasRole(address,bytes32)</code> by full signature. Tooling bound to <code>IDiamondAccessControl</code> and
+						<code>IDiamondAccessControlView</code> does not need overload disambiguation.
+					</aside>
+
+					<h2 id="upgrade-from-v0861">Upgrade from v0.8.6.1</h2>
+					<p>
+						The AccountLayer change adds selectors without changing its storage layout. Existing roles and role-admin assignments remain
+						in place after the facet cut.
+					</p>
+					<p>
+						ExpressProvider appends the new role-admin mapping after its existing storage fields. Existing configuration, balances, roles,
+						and withdrawal state therefore remain at their original slots.
+					</p>
+					<aside class="callout callout-risk">
+						<strong>An existing v0.8.6.1 ExpressProvider needs one access-control migration.</strong> Its current owner does not
+						automatically hold <code>DEFAULT_ADMIN_ROLE</code>. The upgrade procedure must call <code>setAdmin(currentOwner)</code>,
+						preferably in the same <code>diamondCut</code> initialization step that installs the new facets. Until that call succeeds, the
+						new role-admin path cannot appoint role admins or use the canonical account-first grant and revoke calls.
+					</aside>
+					<aside class="callout callout-important">
+						<strong>Do not run ExpressProvider <code>Init.init</code> again.</strong> v0.8.6.1 is already initialized, so a second call
+						reverts with <code>AlreadyInitialized</code>. Fresh deployments receive <code>DEFAULT_ADMIN_ROLE</code> through
+						<code>Init.init</code>; upgraded deployments receive it through <code>setAdmin</code>.
+					</aside>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

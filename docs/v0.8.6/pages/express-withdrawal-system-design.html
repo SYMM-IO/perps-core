@@ -2140,9 +2140,19 @@ function setCreditLineBlacklisted(address affiliate, address user, bool blacklis
 // Affiliate self-service cap change (msg.sender is the affiliate; increases may consume quota or pay a fee)
 function setMyCreditLineConfig(uint256 maxDebt, uint256 maxDebtBps) external;
 
-// Role management (owner-only, via ControlFacet)
-function grantRole(bytes32 role, address account) external;   // Diamond owner only
-function revokeRole(bytes32 role, address account) external;  // Diamond owner only
+// Canonical diamond role management (same interface as Core and AccountLayer)
+function setAdmin(address user) external;                       // Diamond owner only
+function grantRole(address user, bytes32 role) external;        // Role admin
+function revokeRole(address user, bytes32 role) external;       // Role admin
+function addRoleAdmin(bytes32 role, address admin) external;    // DEFAULT_ADMIN_ROLE
+function removeRoleAdmin(bytes32 role, address admin) external; // DEFAULT_ADMIN_ROLE
+function hasRole(address user, bytes32 role) external view returns (bool);
+function isRoleAdmin(address user, bytes32 role) external view returns (bool);
+
+// Compatibility selectors retained for existing ExpressProvider integrations
+function grantRole(bytes32 role, address account) external;  // Diamond owner only
+function revokeRole(bytes32 role, address account) external; // Diamond owner only
+function hasRole(bytes32 role, address account) external view returns (bool);
 
 // Two-step diamond ownership
 function owner() external view returns (address);
@@ -2205,8 +2215,9 @@ function minValidatorSignatures(address affiliate) external view returns (uint25
 function validatorApprovalTimeout(address affiliate) external view returns (uint256);
 function isValidator(address affiliate, address validator) external view returns (bool);
 
-// Access control
-function hasRole(bytes32 role, address account) external view returns (bool);
+// Access control (the role-first overload is retained for compatibility)
+function hasRole(address user, bytes32 role) external view returns (bool);
+function isRoleAdmin(address user, bytes32 role) external view returns (bool);
 
 // Cap-change fee and quota
 function capChangeFeeConfig() external view returns (address feeToken, uint256 feeAmount, address feeReceiver);

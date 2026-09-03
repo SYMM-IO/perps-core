@@ -27,6 +27,7 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external {
 		LibDiamond.enforceIsContractOwner();
+		if (owner == address(0)) revert ZeroAddress();
 		LibDiamond.transferOwnership(owner);
 	}
 
@@ -43,10 +44,20 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 
 	// ==================== Role Management ====================
 
+	/// @notice Grants DEFAULT_ADMIN_ROLE to a user.
+	/// @dev Only the diamond owner may appoint a default admin.
+	function setAdmin(address user) external {
+		LibDiamond.enforceIsContractOwner();
+		if (user == address(0)) revert ZeroAddress();
+		LibAccountLayerAccessibility.grantRole(user, LibAccountLayerAccessibility.DEFAULT_ADMIN_ROLE);
+		emit RoleGranted(LibAccountLayerAccessibility.DEFAULT_ADMIN_ROLE, user, msg.sender);
+	}
+
 	/// @notice Grants a role to a user
 	/// @param user The address to receive the role
 	/// @param role The role identifier to grant
 	function grantRole(address user, bytes32 role) external onlyRoleAdmin(role) {
+		if (user == address(0)) revert ZeroAddress();
 		LibAccountLayerAccessibility.grantRole(user, role);
 		emit RoleGranted(role, user, msg.sender);
 	}
@@ -59,11 +70,27 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		emit RoleRevoked(role, user, msg.sender);
 	}
 
+	/// @notice Appoints an admin that may grant or revoke one role.
+	function addRoleAdmin(bytes32 role, address admin) external onlyRole(LibAccountLayerAccessibility.DEFAULT_ADMIN_ROLE) {
+		if (admin == address(0)) revert ZeroAddress();
+		LibAccountLayerAccessibility.setRoleAdmin(admin, role, true);
+		emit RoleAdminAdded(role, admin);
+	}
+
+	/// @notice Removes an admin for one role.
+	function removeRoleAdmin(bytes32 role, address admin) external onlyRole(LibAccountLayerAccessibility.DEFAULT_ADMIN_ROLE) {
+		if (admin == address(0)) revert ZeroAddress();
+		LibAccountLayerAccessibility.setRoleAdmin(admin, role, false);
+		emit RoleAdminRemoved(role, admin);
+	}
+
 	/// @notice Adds or removes an address as a role admin for a specific role
+	/// @dev Compatibility adapter for integrations that use the original AccountLayer selector.
 	/// @param user The address to set as role admin
 	/// @param role The role identifier to manage
 	/// @param status Whether the user should be a role admin
 	function setRoleAdmin(address user, bytes32 role, bool status) external onlyRole(LibAccountLayerAccessibility.DEFAULT_ADMIN_ROLE) {
+		if (user == address(0)) revert ZeroAddress();
 		LibAccountLayerAccessibility.setRoleAdmin(user, role, status);
 		emit RoleAdminSet(role, user, status, msg.sender);
 	}

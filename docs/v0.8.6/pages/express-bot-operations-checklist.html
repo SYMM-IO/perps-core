@@ -4331,7 +4331,7 @@ Step 2D: Bot sees: WithdrawFinalized(user, reqId) at T+43200
 								<tr>
 									<td><code>AccessDenied(bytes32 role)</code></td>
 									<td>Caller lacks the required role for the function</td>
-									<td>Check role membership via <code>hasRole(role, account)</code></td>
+									<td>Check role membership via <code>hasRole(account, role)</code></td>
 								</tr>
 							</tbody>
 						</table>
@@ -4960,20 +4960,20 @@ Setup:
   Bot has 5 pending signed options (not yet submitted or in mempool):
     Options for Alice, Bob, Carol, Dave, Eve: all signed by 0xBotSigner
 
-Step 1: Admin calls: revokeRole(SIGNER_ROLE, 0xBotSigner)
+Step 1: Admin calls: revokeRole(0xBotSigner, SIGNER_ROLE)
   No role-change event is emitted by the current ControlFacet/LibAccessControl implementation.
-  On-chain: hasRole(SIGNER_ROLE, 0xBotSigner) = false
+  On-chain: hasRole(0xBotSigner, SIGNER_ROLE) = false
 
 Step 2: Alice submits her withdrawal tx with option signed by 0xBotSigner
   On-chain validation:
     EIP-712 signature recovery -&gt; recovers 0xBotSigner
-    hasRole(SIGNER_ROLE, 0xBotSigner) = false
+    hasRole(0xBotSigner, SIGNER_ROLE) = false
     --&gt; REVERT: InvalidSigner
   All 5 pending options become unusable
 
 Step 3: Bot observes the owner transaction or its scheduled hasRole poll detects the change
   Bot reads on-chain:
-    hasRole(SIGNER_ROLE, 0xBotSigner) = false
+    hasRole(0xBotSigner, SIGNER_ROLE) = false
   Bot checks:
     0xBotSigner is the bot's own signing key: ALL options signed by this key are now invalid
   Decision:
@@ -4998,8 +4998,8 @@ Step 3: Bot observes the owner transaction or its scheduled hasRole poll detects
     ACCEPTED withdrawals proceed normally (no risk-lock capability)
     Alert: &quot;LOCKER_ROLE revoked: risk lock disabled&quot;
 
-Critical roles to monitor by polling hasRole and tracking owner grantRole/revokeRole transactions
-(the current implementation emits no RoleGranted/RoleRevoked events):
+Critical roles to monitor through RoleGranted/RoleRevoked events and periodic
+hasRole(address user, bytes32 role) reconciliation:
   - SIGNER_ROLE:    affects option signing: invalidates all pending options
   - OPERATOR_ROLE:  affects processWithdraw: delays user fund delivery
   - LOCKER_ROLE:    affects risk detection: reduces security capabilities

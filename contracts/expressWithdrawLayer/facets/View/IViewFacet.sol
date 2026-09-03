@@ -4,10 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
+
 import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
 
 /// @notice Read-only interface exposing all state getters for the ExpressProvider diamond.
-interface IViewFacet {
+interface IViewFacet is IDiamondAccessControlView {
 	// ── Core addresses ──
 
 	function symmio() external view returns (address);
@@ -66,6 +68,7 @@ interface IViewFacet {
 
 	// ── Access control ──
 
+	/// @dev Compatibility selector for existing ExpressProvider integrations.
 	function hasRole(bytes32 role, address account) external view returns (bool);
 
 	// ── Credit line ──

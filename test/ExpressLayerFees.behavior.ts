@@ -51,10 +51,10 @@ export function shouldBehaveLikeExpressLayerFees(): void {
 		await context.controlFacet.connect(deployer).setWithdrawCooldownPeriod(43200)
 
 		// Configure ExpressProvider via roles
-		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
-		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
-		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
-		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
+		await expressProvider["grantRole(address,bytes32)"](botSigner.address, SIGNER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](operator.address, OPERATOR_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](locker.address, LOCKER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](unlocker.address, UNLOCK_ROLE)
 		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
 

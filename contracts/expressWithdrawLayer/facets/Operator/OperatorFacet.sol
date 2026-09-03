@@ -52,7 +52,7 @@ contract OperatorFacet is IOperatorFacet, Pausable, ReentrancyGuard {
 			processableAt = info.finalizedAt;
 		}
 
-		if (!LibAccessControl.hasRole(LibAccessControl.OPERATOR_ROLE, msg.sender)) {
+		if (!LibAccessControl.hasRole(msg.sender, LibAccessControl.OPERATOR_ROLE)) {
 			processableAt += s.tolerancePeriod;
 		}
 		if (block.timestamp < processableAt) revert LibErrors.TooEarly();
