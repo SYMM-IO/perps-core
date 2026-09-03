@@ -32,7 +32,7 @@ import {
 } from "./checkpoint.js"
 import { deployAndConfigureGaslessLayer, inspectGaslessLayerPostState, resolveGaslessLayerConfig } from "./componentDeployment.js"
 import { persistSubmittedTransaction } from "./deploymentRecovery.js"
-import { verificationProviderForChain } from "./explorer.js"
+import { resolveVerificationContractName, verificationProviderForChain } from "./explorer.js"
 import { getConnection } from "./helpers.js"
 import { deployInstantLayer } from "./instantLayer.js"
 import {
@@ -688,14 +688,17 @@ async function publishDeployments(hre: any, input: ArbitrumPerpsUpgradeInput, re
 		constructorArguments: [input.contracts.core, input.governance.safe],
 	})
 	records.push(...(((report.stages.gaslessLayerDeployment as any)?.verificationRecords || []) as any[]))
+	const publicationRecords: typeof records = []
 	for (const record of records) {
+		const publicationRecord = { ...record, name: await resolveVerificationContractName(hre.artifacts, record.name) }
+		publicationRecords.push(publicationRecord)
 		try {
 			await verifyContract(
 				{
-					address: record.address,
-					constructorArgs: record.constructorArguments,
-					contract: record.name,
-					libraries: record.libraries,
+					address: publicationRecord.address,
+					constructorArgs: publicationRecord.constructorArguments,
+					contract: publicationRecord.name,
+					libraries: publicationRecord.libraries,
 					provider: verificationProviderForChain(42161),
 				},
 				hre,
@@ -705,7 +708,7 @@ async function publishDeployments(hre: any, input: ArbitrumPerpsUpgradeInput, re
 			if (!message.toLowerCase().includes("already verified")) throw error
 		}
 	}
-	updateStage(report, "publication", "complete", { recordCount: records.length, records })
+	updateStage(report, "publication", "complete", { recordCount: publicationRecords.length, records: publicationRecords })
 }
 
 async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport, output: string): Promise<void> {
