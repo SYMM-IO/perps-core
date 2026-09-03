@@ -282,6 +282,7 @@ export function createArbitrumPerpsUpgradeTask(common) {
 			"Arbiscan publication evidence",
 			"final on-chain verification",
 		],
+		resumePolicy: { strategy: "stable-step-id", sourceDrift: "confirm", inputDrift: "refuse" },
 		prepare: prepareUpgrade,
 		signerPolicy: {
 			role: "Contract deployment signer",
