@@ -8,7 +8,7 @@ import {
 	createDeploymentManifest,
 	migrateCheckpointManifestSource,
 } from "../../tasks/deploy/checkpoint.js"
-import { verificationProviderForChain } from "../../tasks/deploy/explorer.js"
+import { resolveVerificationContractName, verificationProviderForChain } from "../../tasks/deploy/explorer.js"
 import {
 	getDeploymentTransactionJournal,
 	getDeploymentTransactionSettings,
@@ -16,6 +16,7 @@ import {
 	resetDeploymentTransactionJournal,
 	send,
 } from "../../tasks/deploy/tx.js"
+import { FacetSpecs, LibrarySpecs } from "../../utils/deploymentManifest.js"
 import { hre } from "../helpers/hardhat-connection.js"
 
 describe("deployment infrastructure", function () {
@@ -34,6 +35,20 @@ describe("deployment infrastructure", function () {
 			expect(explorer?.url).to.match(/^https:\/\//)
 		}
 		expect(hre.config.chainDescriptors.get(1329n)?.blockExplorers.etherscan?.url).to.equal("https://seiscan.io")
+	})
+
+	it("resolves every release deployment artifact to an exact verification FQN", async function () {
+		for (const scope of ["core", "accountLayer"] as const) {
+			for (const spec of [...Object.values(LibrarySpecs[scope]), ...Object.values(FacetSpecs[scope])]) {
+				const fqn = await resolveVerificationContractName(hre.artifacts, spec.artifact)
+				expect(fqn, `${scope}:${spec.name}`).to.match(/^[^:]+:[^:]+$/)
+				const artifact = await hre.artifacts.readArtifact(fqn)
+				expect(fqn).to.equal(`${artifact.sourceName}:${artifact.contractName}`)
+			}
+		}
+		expect(await resolveVerificationContractName(hre.artifacts, "AccountFacet")).to.equal(
+			"contracts/core/facets/Account/AccountFacet.sol:AccountFacet",
+		)
 	})
 	it("validates transaction timing settings instead of accepting NaN or unsafe ranges", function () {
 		expect(getDeploymentTransactionSettings({})).to.deep.equal({ confirmations: 1, timeoutSeconds: 300, slowNoticeSeconds: 30 })

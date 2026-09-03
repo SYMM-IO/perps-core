@@ -19,6 +19,7 @@ const ARBITRUM_PERPS_UPGRADE_OPERATIONAL_MIGRATION_FILES = new Set([
 	"tasks/deploy/arbitrumPerpsUpgrade.ts",
 	"tasks/deploy/checkpoint.ts",
 	"tasks/deploy/componentDeployment.ts",
+	"tasks/deploy/explorer.ts",
 	"test/parallel/DeployInfrastructure.test.ts",
 	"test/parallel/DeploymentRecipeComponentExecution.test.ts",
 ]);
