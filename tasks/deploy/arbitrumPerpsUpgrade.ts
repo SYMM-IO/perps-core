@@ -1362,7 +1362,6 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 	const configured = resolvedInstantLayerPartyBs(ethers, input)
 	const safe = ethers.getAddress(input.governance.safe)
 	const previousAdmin = ethers.getAddress(input.governance.previousAdmin)
-	const defaultAdminRole = role(ethers, ROLE.DEFAULT_ADMIN_ROLE)
 	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
 	const { coreView } = await contractsFor(ethers, input)
 	const actions: UpgradeAction[] = []
@@ -1371,6 +1370,7 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 	for (const partyBAddress of configured.partyBs) {
 		if ((await ethers.provider.getCode(partyBAddress)) === "0x") throw new Error(`Configured PartyB ${partyBAddress} has no runtime bytecode`)
 		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
+		const defaultAdminRole = await partyB.DEFAULT_ADMIN_ROLE()
 		const [boundCore, coreRegistered, safeDefaultAdmin, safeManager, previousDefaultAdmin] = await Promise.all([
 			partyB.symmioAddress(),
 			coreView.isPartyB(partyBAddress),
@@ -1446,7 +1446,6 @@ async function planPartyBWiring(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 	const safe = ethers.getAddress(input.governance.safe)
 	const instant = await ethers.getContractAt("InstantLayer", newInstant)
 	const { accountView, accountControl } = await contractsFor(ethers, input)
-	const defaultAdminRole = role(ethers, ROLE.DEFAULT_ADMIN_ROLE)
 	const trustedRole = role(ethers, ROLE.TRUSTED_ROLE)
 	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
 	const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
@@ -1461,6 +1460,7 @@ async function planPartyBWiring(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 	}
 	for (const partyBAddress of configured.partyBs) {
 		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
+		const defaultAdminRole = await partyB.DEFAULT_ADMIN_ROLE()
 		const [safeDefaultAdmin, safeManager, instantTrusted, multicastWhitelisted, registered, operator] = await Promise.all([
 			partyB.hasRole(defaultAdminRole, safe),
 			partyB.hasRole(managerRole, safe),
