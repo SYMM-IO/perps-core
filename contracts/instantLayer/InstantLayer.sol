@@ -565,6 +565,28 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		_applyGrant(info, msg.sender);
 	}
 
+	/// @notice Grant delegation to several delegates of one account in a single call.
+	/// @dev    Every entry must name the same account; each keeps its own delegate, selectors, and
+	///         expiry. Signed as a SignedOperation targeting this contract, one owner signature grants
+	///         all delegates inside `executeBatch`/`executeTemplate` so later operations in the batch
+	///         can already be signed by any of them.
+	/// @param infos Delegation entries, all for the same PartyA account
+	function grantDelegations(DelegationInfo[] calldata infos) external {
+		if (infos.length == 0) revert InvalidDelegation();
+		Account calldata account = infos[0].account;
+		if (!_isAccountOwner(account)) revert NotOwnerOfAccount(msg.sender, account.addr);
+		for (uint256 i = 0; i < infos.length; i++) {
+			_applyAccountGrant(infos[i], account.addr, msg.sender);
+		}
+	}
+
+	/// @dev Applies one grant after pinning it to `account`: the entry must name that account and
+	///      the account must be PartyA.
+	function _applyAccountGrant(DelegationInfo memory info, address account, address owner) private {
+		if (info.account.addr != account || info.account.isPartyB) revert InvalidDelegation();
+		_applyGrant(info, owner);
+	}
+
 	/// @dev Shared grant application for the direct, by-sig, and signed-operation grant paths.
 	///      Validates the delegation parameters against `owner`, normalizes the delegator to the
 	///      canonical account, writes the selector permissions, and clears pending revocations.
@@ -1092,7 +1114,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev Validates the shape of a self-targeted delegation-grant operation.
 	///
 	/// Grant Operation Rules:
-	/// - Only the `grantDelegation` selector may target this contract.
+	/// - Only the `grantDelegation` and `grantDelegations` selectors may target this contract.
 	/// - The signer must be the account owner — a delegate can never mint further delegations.
 	/// - maxUses must be 1: re-granting clears pending revocations, so a replayable grant
 	///   could silently cancel a scheduled revocation.
@@ -1103,7 +1125,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		assembly ("memory-safe") {
 			selector := calldataload(callData.offset)
 		}
-		if (selector != this.grantDelegation.selector) revert InvalidGrantOperation();
+		if (selector != this.grantDelegation.selector && selector != this.grantDelegations.selector) revert InvalidGrantOperation();
 		if (signedOp.signerAccount.isPartyB) revert InvalidDelegation();
 		if (signedOp.flexFields.length != 0 || signedOp.maxUses != 1) revert InvalidGrantOperation();
 		if (_getAccountOwner(signedOp.signerAccount.addr) != signedOp.signer) revert InvalidDelegation();
@@ -1113,9 +1135,17 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	///      Decodes from the original signed calldata — never the fill/injection-modified copy —
 	///      so neither flex fills nor template result-injection can alter the grant parameters.
 	function _executeGrantOperation(SignedOperation calldata signedOp) private returns (bool success, bytes memory result) {
-		DelegationInfo memory info = abi.decode(signedOp.callData[4:], (DelegationInfo));
-		if (info.account.addr != signedOp.signerAccount.addr || info.account.isPartyB) revert InvalidDelegation();
-		_applyGrant(info, signedOp.signer);
+		address account = signedOp.signerAccount.addr;
+		if (bytes4(signedOp.callData[:4]) == this.grantDelegation.selector) {
+			DelegationInfo memory info = abi.decode(signedOp.callData[4:], (DelegationInfo));
+			_applyAccountGrant(info, account, signedOp.signer);
+		} else {
+			DelegationInfo[] memory infos = abi.decode(signedOp.callData[4:], (DelegationInfo[]));
+			if (infos.length == 0) revert InvalidDelegation();
+			for (uint256 i = 0; i < infos.length; i++) {
+				_applyAccountGrant(infos[i], account, signedOp.signer);
+			}
+		}
 		return (true, result);
 	}
 
