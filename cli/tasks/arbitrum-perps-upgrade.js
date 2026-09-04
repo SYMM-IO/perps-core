@@ -256,24 +256,22 @@ async function dispatchBatch(ctx, input, id, name, description, { planPhase = "p
 }
 
 async function completePartyBWiring(ctx, input) {
-	let report = await runPhase(ctx, input, "plan-partyb");
-	const authorityActions = requiredActions(report, "externalActions", "partyBAuthority");
-	if (authorityActions.length > 0) {
-		ctx.wait(
-			`Prior admin ${report.externalActions.partyBAuthority.authority} must execute the ${authorityActions.length} PartyB authority handoff action(s) in ${path.relative(ctx.root, input.output)} at externalActions.partyBAuthority.actions, then continue this task.`,
-		);
-	}
 	await dispatchBatch(
 		ctx,
 		input,
 		"partyBWiring",
 		"Arbitrum InstantLayer PartyB wiring",
-		"Grant the configured PartyB permissions, register each PartyB on InstantLayer, and grant AccountLayer INSTANT_LAYER_ROLE.",
+		"Register each configured PartyB on InstantLayer and grant AccountLayer INSTANT_LAYER_ROLE.",
 		{ planPhase: "plan-partyb" },
 	);
-	report = await runPhase(ctx, input, "plan-partyb");
-	assertNoActions(report, "externalActions", "partyBAuthority", "PartyB authority handoff");
+	const report = await runPhase(ctx, input, "plan-partyb");
 	assertNoActions(report, "safeBatches", "partyBWiring", "InstantLayer PartyB wiring");
+	const externalActions = requiredActions(report, "externalActions", "partyBLocalWiring");
+	if (externalActions.length > 0) {
+		ctx.wait(
+			`Prior PartyB admin ${report.externalActions.partyBLocalWiring.authority} must execute the ${externalActions.length} PartyB-local wiring action(s) in ${path.relative(ctx.root, input.output)} at externalActions.partyBLocalWiring.actions, then continue this task.`,
+		);
+	}
 }
 
 async function prepareUpgrade({ root, ui }) {
@@ -554,7 +552,7 @@ export function createArbitrumPerpsUpgradeTask(common) {
 			);
 			await ctx.step("verify-wiring", PLAN[18].title, async () => {
 				const report = await runPhase(ctx, input, "plan");
-				assertNoActions(report, "externalActions", "partyBAuthority", "PartyB authority handoff");
+				assertNoActions(report, "externalActions", "partyBLocalWiring", "PartyB-local wiring");
 				assertNoActions(report, "safeBatches", "partyBWiring", "InstantLayer PartyB wiring");
 				assertNoActions(report, "safeBatches", "wiring", "InstantLayer and GaslessLayer wiring");
 			});
