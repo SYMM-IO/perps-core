@@ -962,6 +962,39 @@ describe("GaslessLayer", () => {
 		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(1)
 	})
 
+	describe("setInstantLayer", () => {
+		it("re-points relayed operations to the new InstantLayer and emits InstantLayerUpdated", async () => {
+			const Instant = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockInstantLayer.sol:MockInstantLayer")
+			const replacement = await Instant.deploy()
+			const replacementAddr = await replacement.getAddress()
+			await replacement.setExecutor(gatewayAddr)
+			await replacement.setTargetExecution(true, await core.getAddress())
+
+			await expect(gateway.connect(admin).setInstantLayer(replacementAddr)).to.emit(gateway, "InstantLayerUpdated").withArgs(replacementAddr)
+			expect(await gateway.instantLayer()).to.equal(replacementAddr)
+
+			const grantOp = {
+				...(await makeGrantOp(user.address, stranger.address)),
+				target: replacementAddr,
+			}
+			await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]])
+
+			expect(await replacement.lastDelegationDelegate()).to.equal(stranger.address)
+			expect(await instant.lastDelegationDelegate()).to.equal(ethers.ZeroAddress)
+		})
+
+		it("rejects the zero address", async () => {
+			await expect(gateway.connect(admin).setInstantLayer(ethers.ZeroAddress)).to.be.revertedWithCustomError(gateway, "ZeroAddress")
+		})
+
+		it("is restricted to CONFIG_ADMIN_ROLE", async () => {
+			await expect(gateway.connect(stranger).setInstantLayer(await instant.getAddress())).to.be.revertedWithCustomError(
+				gateway,
+				"AccessControlUnauthorizedAccount",
+			)
+		})
+	})
+
 	it("bills a delegation-grant operation by its grantDelegation selector and forwards it to the InstantLayer", async () => {
 		await instant.setTargetExecution(true, await core.getAddress())
 		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])

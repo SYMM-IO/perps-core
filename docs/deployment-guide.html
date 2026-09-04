@@ -45,6 +45,7 @@
 				<a class="toc-link level-2" href="#task">One durable task</a>
 				<a class="toc-link level-2" href="#progress">Progress and recovery</a>
 				<a class="toc-link level-2" href="#handover">Handover</a>
+				<a class="toc-link level-2" href="#instant-layer-replacement">Replacing the InstantLayer</a>
 				<a class="toc-link level-2" href="#evidence">Evidence</a>
 				<section class="rail-group rail-group-plain">
 					<h2 class="rail-group-title">Related</h2>
@@ -146,6 +147,56 @@
 						manual. The task displays <strong>Handover required</strong> until exact post-state reads pass. After external actions
 						confirm, launch <code>./symmio</code> and choose <strong>Continue active task</strong>. The task rereads chain state, skips
 						completed deployment steps, and closes only after the strict health gate passes.
+					</p>
+
+					<h2 id="instant-layer-replacement">Replacing the InstantLayer</h2>
+					<p>
+						The InstantLayer is a plain contract, so a code change means a new address.
+						<code>scripts/migrateInstantLayer.ts</code> carries a live deployment across that change in two phases. The deployer phase
+						reads the old layer from chain (AccountLayer, whitelisted targets, registered PartyBs, templates in id order, cooldown,
+						transient flag, and every role holder), deploys and configures the replacement to match, deploys a GaslessLayer implementation
+						that exposes <code>setInstantLayer</code>, grants all four roles to the Safe, and renounces the deployer. Every step checks
+						chain state first, so an interrupted run is resumed by running the same command again with the state file it wrote under
+						<code>scripts/output/</code>.
+					</p>
+					<p>
+						The admin phase is nine binding transactions: grant <code>INSTANT_LAYER_ROLE</code> on core and
+						<code>SIGNER_SETTER_ROLE</code> on the AccountLayer to the new layer, trust and multicast-whitelist it on every registered
+						SymmioPartyB, and upgrade the GaslessLayer with <code>setInstantLayer</code> as the init data; later, the matching revokes for
+						the old layer. When the governance admin is an EOA whose key is configured as a second signer, the script executes the cutover
+						itself right after the deployer phase, so one command completes the migration. A Ledger admin signs the same actions through
+						<code>ADMIN_SIGNER=cast-ledger</code> (Foundry <code>cast send --ledger</code>, as in the governance handover) in a second
+						command, <code>PHASE=bind</code>. When the admin is a Safe, the actions are written as Transaction Builder batches next to the
+						state file. The old layer keeps its bindings, so users can keep trading on existing delegations while they re-grant on the new
+						address; <code>PHASE=decommission</code> revokes the old layer once that window closes. Delegations, pending revocations, and
+						delegation nonces do not carry over; frontends and relayers must switch the address and the EIP-712
+						<code>verifyingContract</code>.
+					</p>
+					<pre><code># plan (read-only)
+npx hardhat run --no-compile scripts/migrateInstantLayer.ts --network arbitrum
+
+# deployer phase (keystore deployer); the cutover runs in the same command when the admin key is a configured signer
+EXECUTE=true CONFIRM_CHAIN_ID=42161 npx hardhat run --no-compile scripts/migrateInstantLayer.ts --network arbitrum
+
+# admin phase for a Ledger admin: five cast --ledger transactions, one device confirmation each
+EXECUTE=true CONFIRM_CHAIN_ID=42161 PHASE=bind ADMIN_SIGNER=cast-ledger npx hardhat run --no-compile scripts/migrateInstantLayer.ts --network arbitrum
+
+# confirm at any time
+CHECK_INSTANT_LAYER=0x&lt;new&gt; npx hardhat run --no-compile scripts/migrateInstantLayer.ts --network arbitrum
+
+# after the transition window
+EXECUTE=true CONFIRM_CHAIN_ID=42161 PHASE=decommission ADMIN_SIGNER=cast-ledger npx hardhat run --no-compile scripts/migrateInstantLayer.ts --network arbitrum</code></pre>
+					<p>
+						Defaults come from <code>tasks/data/&lt;chainId&gt;/deployment-report.json</code> and <code>gaslesslayer.json</code>;
+						templates are replayed from the old layer with their ids and then extended with the recipe's extra templates
+						(<code>TEMPLATES_RECIPE</code>, the Arbitrum production recipe by default), whose leading entries must match the deployed ones
+						exactly; the GaslessLayer implementation links against the library addresses recorded there. Once the cutover is confirmed,
+						update <code>addresses.instantLayer</code> in that report and append the new entry to <code>instantlayer.json</code>, so
+						<code>check:deployment</code> and <code>verify:all</code> follow the new layer. The rehearsal in
+						<code>test/InstantLayerMigration.behavior.ts</code> runs the whole sequence, Safe batches included, against the local full
+						stack, and <code>scripts/rehearseInstantLayerMigration.ts</code> repeats it on a fork of the live chain with the Safe
+						impersonated (<code>--network fork-arbitrum</code> with the upstream RPC exported), which is the step to run before spending
+						real gas.
 					</p>
 
 					<h2 id="evidence">Evidence</h2>

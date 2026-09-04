@@ -464,6 +464,16 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		emit TreasuryUpdated(treasury_);
 	}
 
+	/// @notice Re-point the gateway at a replacement InstantLayer.
+	/// @dev The InstantLayer is not upgradeable, so a redeploy has to be followed by this call
+	///      (typically as the init data of the accompanying upgradeToAndCall). The new layer must
+	///      grant this gateway OPERATOR_ROLE before relays resume.
+	function setInstantLayer(address instantLayer_) external onlyRole(CONFIG_ADMIN_ROLE) {
+		if (instantLayer_ == address(0)) revert ZeroAddress();
+		instantLayer = IInstantLayer(instantLayer_);
+		emit InstantLayerUpdated(instantLayer_);
+	}
+
 	/// @notice Admin recovery for tokens that are not the gateway's collateral.
 	/// @dev The gateway's collateral is permanently non-recoverable. Only non-collateral tokens
 	///      accidentally sent to a deposit address can be swept to `to`.
