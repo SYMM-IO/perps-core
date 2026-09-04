@@ -2,6 +2,8 @@ export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION: "operations.symm.io/arbit
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-report-v1"
 export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION: "operations.symm.io/task-source-migration-v1"
 export const ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION: "WAIVE PRODUCTION CANARY"
+export const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION: "operations.symm.io/arbitrum-perps-upgrade-runtime-config-v1"
+export const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH: "tasks/config/arbitrum-perps-upgrade-42161.json"
 
 export type UpgradeAddressKey =
 	| "core"
@@ -28,6 +30,8 @@ export interface ArbitrumPerpsUpgradeInput {
 	instantLayer: {
 		mode: "deploy"
 		admin: string
+		/** Required for newly prepared inputs; omitted only by upgrade inputs created before PartyB wiring became mandatory. */
+		partyBs?: string[]
 		templates: Array<{
 			name: string
 			instantOpenMode?: boolean
@@ -121,8 +125,20 @@ export function buildArbitrumPerpsUpgradeInput(args: {
 	recipePath: string
 	recipeDigest: string
 	sourceCommit: string
+	partyBs: string[]
 	requireForkRehearsal?: boolean
 }): ArbitrumPerpsUpgradeInput
+export interface ArbitrumPerpsUpgradeRuntimeConfig {
+	apiVersion: typeof ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION
+	chainId: 42161
+	legacyGaslessLayer: { address: string; relayers: string[] }
+	instantLayer: { partyBs: string[] }
+}
+export function validateArbitrumPerpsUpgradeRuntimeConfig(value: unknown, source?: string): ArbitrumPerpsUpgradeRuntimeConfig
+export function loadArbitrumPerpsUpgradeRuntimeConfig(file: string): {
+	config: ArbitrumPerpsUpgradeRuntimeConfig
+	digest: string
+}
 export function loadArbitrumPerpsUpgradeInput(file: string): ArbitrumPerpsUpgradeInput
 export function createArbitrumPerpsUpgradeReport(input: ArbitrumPerpsUpgradeInput, now?: string): ArbitrumPerpsUpgradeReport
 export function recordArbitrumPerpsUpgradeCanaryWaiver(
