@@ -1363,6 +1363,8 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 	const safe = ethers.getAddress(input.governance.safe)
 	const previousAdmin = ethers.getAddress(input.governance.previousAdmin)
 	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
+	const trustedRole = role(ethers, ROLE.TRUSTED_ROLE)
+	const newInstant = report.addresses.newInstantLayer
 	const { coreView } = await contractsFor(ethers, input)
 	const actions: UpgradeAction[] = []
 	const parties: Array<Record<string, unknown>> = []
@@ -1371,39 +1373,52 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 		if ((await ethers.provider.getCode(partyBAddress)) === "0x") throw new Error(`Configured PartyB ${partyBAddress} has no runtime bytecode`)
 		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
 		const defaultAdminRole = await partyB.DEFAULT_ADMIN_ROLE()
-		const [boundCore, coreRegistered, safeDefaultAdmin, safeManager, previousDefaultAdmin] = await Promise.all([
+		const [boundCore, coreRegistered, safeDefaultAdmin, safeManager, previousDefaultAdmin, previousManager] = await Promise.all([
 			partyB.symmioAddress(),
 			coreView.isPartyB(partyBAddress),
 			partyB.hasRole(defaultAdminRole, safe),
 			partyB.hasRole(managerRole, safe),
 			partyB.hasRole(defaultAdminRole, previousAdmin),
+			partyB.hasRole(managerRole, previousAdmin),
 		])
 		if (ethers.getAddress(boundCore) !== ethers.getAddress(input.contracts.core)) {
 			throw new Error(`Configured PartyB ${partyBAddress} is bound to Core ${boundCore}, expected ${input.contracts.core}`)
 		}
 		if (!coreRegistered) throw new Error(`Configured PartyB ${partyBAddress} is not registered on Core ${input.contracts.core}`)
-		if (!safeDefaultAdmin && !previousDefaultAdmin) {
-			throw new Error(
-				`Neither Safe ${safe} nor prior admin ${previousAdmin} holds PartyB ${partyBAddress} DEFAULT_ADMIN_ROLE; authority handoff cannot be generated`,
-			)
-		}
-		if (!safeDefaultAdmin) {
-			actions.push(
-				action(
-					partyBAddress,
-					partyB.interface.encodeFunctionData("grantRole", [defaultAdminRole, safe]),
-					`Grant PartyB ${partyBAddress} DEFAULT_ADMIN_ROLE to Safe ${safe}`,
-				),
-			)
-		}
-		if (!safeManager && !safeDefaultAdmin) {
-			actions.push(
-				action(
-					partyBAddress,
-					partyB.interface.encodeFunctionData("grantRole", [managerRole, safe]),
-					`Grant PartyB ${partyBAddress} MANAGER_ROLE to Safe ${safe}`,
-				),
-			)
+		let instantTrusted: boolean | null = null
+		let multicastWhitelisted: boolean | null = null
+		if (newInstant) {
+			const partyBState = await Promise.all([partyB.hasRole(trustedRole, newInstant), partyB.multicastWhitelist(newInstant)])
+			instantTrusted = partyBState[0]
+			multicastWhitelisted = partyBState[1]
+			if (!instantTrusted) {
+				if (!previousDefaultAdmin) {
+					throw new Error(
+						`Prior PartyB admin ${previousAdmin} does not hold DEFAULT_ADMIN_ROLE on ${partyBAddress}; it cannot grant TRUSTED_ROLE to new InstantLayer ${newInstant}`,
+					)
+				}
+				actions.push(
+					action(
+						partyBAddress,
+						partyB.interface.encodeFunctionData("grantRole", [trustedRole, newInstant]),
+						`Grant new InstantLayer ${newInstant} TRUSTED_ROLE on PartyB ${partyBAddress}`,
+					),
+				)
+			}
+			if (!multicastWhitelisted) {
+				if (!previousManager) {
+					throw new Error(
+						`Prior PartyB admin ${previousAdmin} does not hold MANAGER_ROLE on ${partyBAddress}; it cannot whitelist new InstantLayer ${newInstant} for multicast`,
+					)
+				}
+				actions.push(
+					action(
+						partyBAddress,
+						partyB.interface.encodeFunctionData("setMulticastWhitelist", [newInstant, true]),
+						`Whitelist new InstantLayer ${newInstant} for PartyB ${partyBAddress} multicast`,
+					),
+				)
+			}
 		}
 		parties.push({
 			address: partyBAddress,
@@ -1412,18 +1427,33 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 			safeDefaultAdmin,
 			safeManager,
 			previousDefaultAdmin,
+			previousManager,
+			instantTrusted,
+			multicastWhitelisted,
 		})
 	}
 
-	report.externalActions.partyBAuthority = {
+	if (report.externalActions.partyBAuthority) {
+		report.externalActions.partyBAuthority = {
+			status: "superseded",
+			authority: previousAdmin,
+			actions: [],
+		}
+		updateStage(report, "partyBAuthority", "complete", {
+			supersededBy: "partyBExternalWiring",
+			reason: "PartyB administration remains with the prior PartyB administrator",
+		})
+	}
+	report.externalActions.partyBLocalWiring = {
 		status: actions.length ? "required" : "complete",
 		authority: previousAdmin,
 		actions,
 	}
-	updateStage(report, "partyBAuthority", actions.length ? "waiting_external" : "complete", {
+	updateStage(report, "partyBExternalWiring", actions.length ? "waiting_external" : "complete", {
 		actionCount: actions.length,
 		safe,
 		previousAdmin,
+		newInstantLayer: newInstant || null,
 		parties,
 		configuration: configured,
 	})
@@ -1431,23 +1461,12 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 
 async function planPartyBWiring(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): Promise<void> {
 	await inspectPartyBAuthority(ethers, input, report)
-	const authorityActions = (report.externalActions.partyBAuthority as any)?.actions || []
-	if (authorityActions.length) {
-		report.safeBatches.partyBWiring = { status: "blocked", actions: [] }
-		updateStage(report, "partyBWiring", "waiting_external", {
-			actionCount: 0,
-			blockedBy: ["partyBAuthority"],
-		})
-		return
-	}
 	const newInstant = report.addresses.newInstantLayer
 	if (!newInstant) throw new Error("New InstantLayer deployment is missing; PartyB wiring cannot be planned")
 	const configured = resolvedInstantLayerPartyBs(ethers, input)
 	const safe = ethers.getAddress(input.governance.safe)
 	const instant = await ethers.getContractAt("InstantLayer", newInstant)
 	const { accountView, accountControl } = await contractsFor(ethers, input)
-	const trustedRole = role(ethers, ROLE.TRUSTED_ROLE)
-	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
 	const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
 	const accountInstantRole = role(ethers, ROLE.INSTANT_LAYER_ROLE)
 	const instantSetterRole = role(ethers, ROLE.SETTER_ROLE)
@@ -1460,43 +1479,12 @@ async function planPartyBWiring(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 	}
 	for (const partyBAddress of configured.partyBs) {
 		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
-		const defaultAdminRole = await partyB.DEFAULT_ADMIN_ROLE()
-		const [safeDefaultAdmin, safeManager, instantTrusted, multicastWhitelisted, registered, operator] = await Promise.all([
-			partyB.hasRole(defaultAdminRole, safe),
-			partyB.hasRole(managerRole, safe),
-			partyB.hasRole(trustedRole, newInstant),
+		const [instantTrusted, multicastWhitelisted, registered, operator] = await Promise.all([
+			partyB.hasRole(role(ethers, ROLE.TRUSTED_ROLE), newInstant),
 			partyB.multicastWhitelist(newInstant),
 			instant.registeredPartyBs(partyBAddress),
 			instant.hasRole(operatorRole, partyBAddress),
 		])
-		if (!safeDefaultAdmin) throw new Error(`Safe ${safe} does not hold DEFAULT_ADMIN_ROLE on PartyB ${partyBAddress}`)
-		if (!safeManager) {
-			actions.push(
-				action(
-					partyBAddress,
-					partyB.interface.encodeFunctionData("grantRole", [managerRole, safe]),
-					`Grant PartyB ${partyBAddress} MANAGER_ROLE to Safe ${safe}`,
-				),
-			)
-		}
-		if (!instantTrusted) {
-			actions.push(
-				action(
-					partyBAddress,
-					partyB.interface.encodeFunctionData("grantRole", [trustedRole, newInstant]),
-					`Grant new InstantLayer ${newInstant} TRUSTED_ROLE on PartyB ${partyBAddress}`,
-				),
-			)
-		}
-		if (!multicastWhitelisted) {
-			actions.push(
-				action(
-					partyBAddress,
-					partyB.interface.encodeFunctionData("setMulticastWhitelist", [newInstant, true]),
-					`Whitelist new InstantLayer ${newInstant} for PartyB ${partyBAddress} multicast`,
-				),
-			)
-		}
 		if (!registered) missingRegistrations.push(partyBAddress)
 		else if (!operator) {
 			actions.push(
@@ -1742,7 +1730,7 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 
 	const cutover: UpgradeAction[] = []
 	const blockingBatches = [
-		...((report.externalActions.partyBAuthority as any)?.actions?.length ? ["partyBAuthority"] : []),
+		...((report.externalActions.partyBLocalWiring as any)?.actions?.length ? ["partyBLocalWiring"] : []),
 		...((report.safeBatches.partyBWiring as any)?.actions?.length ? ["partyBWiring"] : []),
 		...(wiring.length ? [wiringBatchId] : []),
 		...(quarantine.length ? ["quarantine"] : []),
@@ -1974,11 +1962,6 @@ async function runForkRehearsal(
 				if ((forkReport.externalActions.accountAuthority as any).actions.length) {
 					throw new Error("Fork rehearsal requires the Safe to already administer AccountLayer SIGNER_SETTER_ROLE")
 				}
-				await executeActions(previousAdmin, (forkReport.externalActions.partyBAuthority as any).actions)
-				await inspectAuthority(ethers, input, forkReport)
-				if ((forkReport.externalActions.partyBAuthority as any).actions.length) {
-					throw new Error("Fork PartyB authority handoff did not reach its post-state")
-				}
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "core", checkpoint)
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "accountLayer", checkpoint)
 				await deployNewInstantLayer(hre, ethers, input, forkReport, checkpoint)
@@ -1994,8 +1977,9 @@ async function runForkRehearsal(
 					throw new Error("Fork post-cut authority handoff did not reach its post-state")
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				await executeActions(safe, (forkReport.safeBatches.partyBWiring as any).actions)
+				await executeActions(previousAdmin, (forkReport.externalActions.partyBLocalWiring as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)
-				if ((forkReport.safeBatches.partyBWiring as any).actions.length) {
+				if ((forkReport.safeBatches.partyBWiring as any).actions.length || (forkReport.externalActions.partyBLocalWiring as any).actions.length) {
 					throw new Error("Fork PartyB wiring did not reach its post-state")
 				}
 				await executeActions(safe, (forkReport.safeBatches.wiring as any).actions)
