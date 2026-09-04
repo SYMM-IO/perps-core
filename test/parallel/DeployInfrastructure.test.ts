@@ -72,6 +72,7 @@ describe("deployment infrastructure", function () {
 			recipePath: recipe.identityPath,
 			recipeDigest: recipe.digest,
 			sourceCommit: "a".repeat(40),
+			partyBs: ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"],
 		})
 		const loaded = loadLegacyGaslessRelayerConfig({ getAddress: (value: string) => value }, input)
 

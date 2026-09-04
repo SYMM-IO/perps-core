@@ -2,15 +2,16 @@ import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import { execFileSync } from "node:child_process"
-import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
 import {
+	ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
 	ARBITRUM_PERPS_UPGRADE_TARGET,
 	arbitrumPerpsUpgradeCanaryDisposition,
 	arbitrumPerpsUpgradeInputDigest,
 	createArbitrumPerpsUpgradeReport,
+	loadArbitrumPerpsUpgradeRuntimeConfig,
 	loadArbitrumPerpsUpgradeInput,
 	validateArbitrumPerpsUpgradeSourceMigration,
 	validateArbitrumPerpsUpgradeReport,
@@ -56,6 +57,7 @@ const PHASES = [
 	"deploy-gasless-layer",
 	"repair-instant-layer",
 	"repair-gasless-layer",
+	"plan-partyb",
 	"plan",
 	"publish",
 	"publish-peripherals",
@@ -78,11 +80,12 @@ const ROLE = {
 	OPERATOR_ROLE: "OPERATOR_ROLE",
 	LIQUIDATOR_ROLE: "LIQUIDATOR_ROLE",
 	PARTYB_LIQUIDATOR_ROLE: "PARTYB_LIQUIDATOR_ROLE",
+	TRUSTED_ROLE: "TRUSTED_ROLE",
+	MANAGER_ROLE: "MANAGER_ROLE",
 } as const
 
 const LEGACY_STATE_EVENT_START_BLOCK = 493_326_073
-export const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH = "tasks/config/arbitrum-perps-upgrade-42161.json"
-const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-runtime-config-v1"
+export { ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH }
 
 type LegacyTemplate = {
 	id: number
@@ -220,7 +223,7 @@ function assertInternalInvocation(phase: Phase, networkName: string | undefined,
 	if (phase !== "rehearse" && (simulated || networkName !== "arbitrum")) {
 		throw new Error(`${phase} requires the live arbitrum network; connected to ${networkName || "unknown"}`)
 	}
-	const mutating = !["inspect", "plan", "reconcile", "verify-final"].includes(phase)
+	const mutating = !["inspect", "plan-partyb", "plan", "reconcile", "verify-final"].includes(phase)
 	if (mutating && phase !== "rehearse") {
 		if (process.env.SYMMIO_ARBITRUM_UPGRADE_EXECUTE !== "true") throw new Error(`${phase} requires SYMMIO_ARBITRUM_UPGRADE_EXECUTE=true`)
 		if (process.env.CONFIRM_CHAIN_ID !== "42161") throw new Error(`${phase} requires CONFIRM_CHAIN_ID=42161`)
@@ -431,6 +434,7 @@ async function inspectAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 		safeActionCount: safeActions.length,
 		externalActionCount: accountActions.length,
 	})
+	await inspectPartyBAuthority(ethers, input, report)
 }
 
 async function executeActions(signer: any, actions: UpgradeAction[]): Promise<void> {
@@ -1142,28 +1146,45 @@ export function loadLegacyGaslessRelayerConfig(
 	projectRoot = process.cwd(),
 ): { path: string; digest: string; relayers: string[] } {
 	const configPath = path.resolve(projectRoot, ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH)
-	const raw = fs.readFileSync(configPath, "utf8")
-	const config = JSON.parse(raw)
-	if (config?.apiVersion !== ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION) {
-		throw new Error(`Unsupported Arbitrum upgrade runtime config apiVersion in ${ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH}`)
-	}
-	if (config?.chainId !== input.network.chainId) {
+	const loaded = loadArbitrumPerpsUpgradeRuntimeConfig(configPath)
+	const config = loaded.config
+	if (config.chainId !== input.network.chainId) {
 		throw new Error(`Arbitrum upgrade runtime config chainId does not match standard input ${input.network.chainId}`)
 	}
-	if (ethers.getAddress(config?.legacyGaslessLayer?.address) !== ethers.getAddress(input.contracts.currentGaslessLayer)) {
+	if (ethers.getAddress(config.legacyGaslessLayer.address) !== ethers.getAddress(input.contracts.currentGaslessLayer)) {
 		throw new Error("Arbitrum upgrade runtime config legacy GaslessLayer does not match the standard input")
 	}
-	if (!Array.isArray(config.legacyGaslessLayer.relayers) || config.legacyGaslessLayer.relayers.length === 0) {
-		throw new Error("Arbitrum upgrade runtime config must contain at least one legacy GaslessLayer relayer")
-	}
 	const relayers = config.legacyGaslessLayer.relayers.map((relayer: string) => ethers.getAddress(relayer))
-	if (new Set(relayers.map((relayer: string) => relayer.toLowerCase())).size !== relayers.length) {
-		throw new Error("Arbitrum upgrade runtime config contains duplicate legacy GaslessLayer relayers")
-	}
 	return {
 		path: ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
-		digest: createHash("sha256").update(raw).digest("hex"),
+		digest: loaded.digest,
 		relayers,
+	}
+}
+
+function resolvedInstantLayerPartyBs(
+	ethers: any,
+	input: ArbitrumPerpsUpgradeInput,
+	projectRoot = process.cwd(),
+): { partyBs: string[]; source: "standard-input" | "runtime-config"; path?: string; digest?: string } {
+	if (input.instantLayer.partyBs?.length) {
+		return {
+			partyBs: input.instantLayer.partyBs.map(partyB => ethers.getAddress(partyB)),
+			source: "standard-input",
+		}
+	}
+	const configPath = path.resolve(projectRoot, ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH)
+	const loaded = loadArbitrumPerpsUpgradeRuntimeConfig(configPath)
+	if (loaded.config.instantLayer.partyBs.length === 0) {
+		throw new Error(
+			`No PartyB is bound in instantLayer.partyBs or ${ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH}; start a new task to enter the required PartyB address`,
+		)
+	}
+	return {
+		partyBs: loaded.config.instantLayer.partyBs.map(partyB => ethers.getAddress(partyB)),
+		source: "runtime-config",
+		path: ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
+		digest: loaded.digest,
 	}
 }
 
@@ -1337,6 +1358,198 @@ async function planInstantLayerActions(ethers: any, input: ArbitrumPerpsUpgradeI
 	return actions
 }
 
+async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): Promise<void> {
+	const configured = resolvedInstantLayerPartyBs(ethers, input)
+	const safe = ethers.getAddress(input.governance.safe)
+	const previousAdmin = ethers.getAddress(input.governance.previousAdmin)
+	const defaultAdminRole = role(ethers, ROLE.DEFAULT_ADMIN_ROLE)
+	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
+	const { coreView } = await contractsFor(ethers, input)
+	const actions: UpgradeAction[] = []
+	const parties: Array<Record<string, unknown>> = []
+
+	for (const partyBAddress of configured.partyBs) {
+		if ((await ethers.provider.getCode(partyBAddress)) === "0x") throw new Error(`Configured PartyB ${partyBAddress} has no runtime bytecode`)
+		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
+		const [boundCore, coreRegistered, safeDefaultAdmin, safeManager, previousDefaultAdmin] = await Promise.all([
+			partyB.symmioAddress(),
+			coreView.isPartyB(partyBAddress),
+			partyB.hasRole(defaultAdminRole, safe),
+			partyB.hasRole(managerRole, safe),
+			partyB.hasRole(defaultAdminRole, previousAdmin),
+		])
+		if (ethers.getAddress(boundCore) !== ethers.getAddress(input.contracts.core)) {
+			throw new Error(`Configured PartyB ${partyBAddress} is bound to Core ${boundCore}, expected ${input.contracts.core}`)
+		}
+		if (!coreRegistered) throw new Error(`Configured PartyB ${partyBAddress} is not registered on Core ${input.contracts.core}`)
+		if (!safeDefaultAdmin && !previousDefaultAdmin) {
+			throw new Error(
+				`Neither Safe ${safe} nor prior admin ${previousAdmin} holds PartyB ${partyBAddress} DEFAULT_ADMIN_ROLE; authority handoff cannot be generated`,
+			)
+		}
+		if (!safeDefaultAdmin) {
+			actions.push(
+				action(
+					partyBAddress,
+					partyB.interface.encodeFunctionData("grantRole", [defaultAdminRole, safe]),
+					`Grant PartyB ${partyBAddress} DEFAULT_ADMIN_ROLE to Safe ${safe}`,
+				),
+			)
+		}
+		if (!safeManager && !safeDefaultAdmin) {
+			actions.push(
+				action(
+					partyBAddress,
+					partyB.interface.encodeFunctionData("grantRole", [managerRole, safe]),
+					`Grant PartyB ${partyBAddress} MANAGER_ROLE to Safe ${safe}`,
+				),
+			)
+		}
+		parties.push({
+			address: partyBAddress,
+			boundCore: ethers.getAddress(boundCore),
+			coreRegistered,
+			safeDefaultAdmin,
+			safeManager,
+			previousDefaultAdmin,
+		})
+	}
+
+	report.externalActions.partyBAuthority = {
+		status: actions.length ? "required" : "complete",
+		authority: previousAdmin,
+		actions,
+	}
+	updateStage(report, "partyBAuthority", actions.length ? "waiting_external" : "complete", {
+		actionCount: actions.length,
+		safe,
+		previousAdmin,
+		parties,
+		configuration: configured,
+	})
+}
+
+async function planPartyBWiring(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): Promise<void> {
+	await inspectPartyBAuthority(ethers, input, report)
+	const authorityActions = (report.externalActions.partyBAuthority as any)?.actions || []
+	if (authorityActions.length) {
+		report.safeBatches.partyBWiring = { status: "blocked", actions: [] }
+		updateStage(report, "partyBWiring", "waiting_external", {
+			actionCount: 0,
+			blockedBy: ["partyBAuthority"],
+		})
+		return
+	}
+	const newInstant = report.addresses.newInstantLayer
+	if (!newInstant) throw new Error("New InstantLayer deployment is missing; PartyB wiring cannot be planned")
+	const configured = resolvedInstantLayerPartyBs(ethers, input)
+	const safe = ethers.getAddress(input.governance.safe)
+	const instant = await ethers.getContractAt("InstantLayer", newInstant)
+	const { accountView, accountControl } = await contractsFor(ethers, input)
+	const defaultAdminRole = role(ethers, ROLE.DEFAULT_ADMIN_ROLE)
+	const trustedRole = role(ethers, ROLE.TRUSTED_ROLE)
+	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
+	const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
+	const accountInstantRole = role(ethers, ROLE.INSTANT_LAYER_ROLE)
+	const instantSetterRole = role(ethers, ROLE.SETTER_ROLE)
+	const actions: UpgradeAction[] = []
+	const parties: Array<Record<string, unknown>> = []
+	const missingRegistrations: string[] = []
+
+	if (!(await instant.hasRole(instantSetterRole, safe))) {
+		throw new Error(`Safe ${safe} does not hold SETTER_ROLE on new InstantLayer ${newInstant}`)
+	}
+	for (const partyBAddress of configured.partyBs) {
+		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
+		const [safeDefaultAdmin, safeManager, instantTrusted, multicastWhitelisted, registered, operator] = await Promise.all([
+			partyB.hasRole(defaultAdminRole, safe),
+			partyB.hasRole(managerRole, safe),
+			partyB.hasRole(trustedRole, newInstant),
+			partyB.multicastWhitelist(newInstant),
+			instant.registeredPartyBs(partyBAddress),
+			instant.hasRole(operatorRole, partyBAddress),
+		])
+		if (!safeDefaultAdmin) throw new Error(`Safe ${safe} does not hold DEFAULT_ADMIN_ROLE on PartyB ${partyBAddress}`)
+		if (!safeManager) {
+			actions.push(
+				action(
+					partyBAddress,
+					partyB.interface.encodeFunctionData("grantRole", [managerRole, safe]),
+					`Grant PartyB ${partyBAddress} MANAGER_ROLE to Safe ${safe}`,
+				),
+			)
+		}
+		if (!instantTrusted) {
+			actions.push(
+				action(
+					partyBAddress,
+					partyB.interface.encodeFunctionData("grantRole", [trustedRole, newInstant]),
+					`Grant new InstantLayer ${newInstant} TRUSTED_ROLE on PartyB ${partyBAddress}`,
+				),
+			)
+		}
+		if (!multicastWhitelisted) {
+			actions.push(
+				action(
+					partyBAddress,
+					partyB.interface.encodeFunctionData("setMulticastWhitelist", [newInstant, true]),
+					`Whitelist new InstantLayer ${newInstant} for PartyB ${partyBAddress} multicast`,
+				),
+			)
+		}
+		if (!registered) missingRegistrations.push(partyBAddress)
+		else if (!operator) {
+			actions.push(
+				action(
+					newInstant,
+					instant.interface.encodeFunctionData("grantRole", [operatorRole, partyBAddress]),
+					`Restore PartyB ${partyBAddress} OPERATOR_ROLE on new InstantLayer ${newInstant}`,
+				),
+			)
+		}
+		parties.push({
+			address: partyBAddress,
+			instantTrusted,
+			multicastWhitelisted,
+			registered,
+			operator,
+		})
+	}
+	if (missingRegistrations.length) {
+		actions.push(
+			action(
+				newInstant,
+				instant.interface.encodeFunctionData("registerPartyBs", [missingRegistrations]),
+				`Register configured PartyB contracts on new InstantLayer ${newInstant}; registration grants OPERATOR_ROLE`,
+			),
+		)
+	}
+	const accountInstantRoleGranted = await accountView.hasRole(newInstant, accountInstantRole)
+	if (!accountInstantRoleGranted) {
+		if (!(await accountView.isRoleAdmin(safe, accountInstantRole))) {
+			throw new Error(`Safe ${safe} cannot administer AccountLayer INSTANT_LAYER_ROLE`)
+		}
+		actions.push(
+			action(
+				input.contracts.accountLayer,
+				accountControl.interface.encodeFunctionData("grantRole", [newInstant, accountInstantRole]),
+				`Grant AccountLayer INSTANT_LAYER_ROLE to new InstantLayer ${newInstant}`,
+			),
+		)
+	}
+	report.safeBatches.partyBWiring = {
+		...report.safeBatches.partyBWiring,
+		status: actions.length ? "required" : "complete",
+		actions,
+	}
+	updateStage(report, "partyBWiring", actions.length ? "required" : "complete", {
+		actionCount: actions.length,
+		partyBs: parties,
+		accountLayerInstantRole: accountInstantRoleGranted,
+		configuration: configured,
+	})
+}
+
 async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport, output: string): Promise<void> {
 	const { buildDiamondCut } = await import("./diamondUpgrade.js")
 	await inspectAuthority(ethers, input, report)
@@ -1366,6 +1579,7 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 	}
 
 	if (!report.addresses.newInstantLayer || !report.addresses.newGaslessLayer || !report.addresses.newGaslessLayerImplementation) return
+	await planPartyBWiring(ethers, input, report)
 	const legacyState = await captureLegacyStateSnapshot(ethers, input, report)
 	const { coreView, coreControl, accountView, accountControl } = await contractsFor(ethers, input)
 	const newInstant = report.addresses.newInstantLayer
@@ -1528,6 +1742,8 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 
 	const cutover: UpgradeAction[] = []
 	const blockingBatches = [
+		...((report.externalActions.partyBAuthority as any)?.actions?.length ? ["partyBAuthority"] : []),
+		...((report.safeBatches.partyBWiring as any)?.actions?.length ? ["partyBWiring"] : []),
 		...(wiring.length ? [wiringBatchId] : []),
 		...(quarantine.length ? ["quarantine"] : []),
 		...(instantState.length ? ["instantState"] : []),
@@ -1668,6 +1884,7 @@ async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, 
 		"authority",
 		"coreCut",
 		"accountCut",
+		"partyBWiring",
 		"wiring",
 		"replacementWiring",
 		"quarantine",
@@ -1744,6 +1961,7 @@ async function runForkRehearsal(
 	const [deployer] = await ethers.getSigners()
 	await ethers.provider.send("hardhat_setBalance", [deployer.address, "0x3635c9adc5dea00000"])
 	const safe = await fundAndImpersonate(ethers, input.governance.safe)
+	const previousAdmin = await fundAndImpersonate(ethers, input.governance.previousAdmin)
 	try {
 		await withCheckpoint(
 			input,
@@ -1755,6 +1973,11 @@ async function runForkRehearsal(
 				await inspectAuthority(ethers, input, forkReport)
 				if ((forkReport.externalActions.accountAuthority as any).actions.length) {
 					throw new Error("Fork rehearsal requires the Safe to already administer AccountLayer SIGNER_SETTER_ROLE")
+				}
+				await executeActions(previousAdmin, (forkReport.externalActions.partyBAuthority as any).actions)
+				await inspectAuthority(ethers, input, forkReport)
+				if ((forkReport.externalActions.partyBAuthority as any).actions.length) {
+					throw new Error("Fork PartyB authority handoff did not reach its post-state")
 				}
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "core", checkpoint)
 				await deployFacetScope(ethers, input, forkReport, forkOutput, "accountLayer", checkpoint)
@@ -1770,6 +1993,11 @@ async function runForkRehearsal(
 				if ((forkReport.safeBatches.authority as any).actions.length || (forkReport.externalActions.accountAuthority as any).actions.length)
 					throw new Error("Fork post-cut authority handoff did not reach its post-state")
 				await planGovernance(ethers, input, forkReport, forkOutput)
+				await executeActions(safe, (forkReport.safeBatches.partyBWiring as any).actions)
+				await planGovernance(ethers, input, forkReport, forkOutput)
+				if ((forkReport.safeBatches.partyBWiring as any).actions.length) {
+					throw new Error("Fork PartyB wiring did not reach its post-state")
+				}
 				await executeActions(safe, (forkReport.safeBatches.wiring as any).actions)
 				await planGovernance(ethers, input, forkReport, forkOutput)
 				if ((forkReport.safeBatches.wiring as any).actions.length) throw new Error("Fork wiring did not reach its post-state")
@@ -1903,6 +2131,9 @@ async function executePhase(hre: any, phase: Phase, inputFile: string, outputFil
 					"peripheral-replacement-v1",
 					sourceMigration,
 				)
+				break
+			case "plan-partyb":
+				await planPartyBWiring(ethers, input, report)
 				break
 			case "plan":
 				await planGovernance(ethers, input, report, outputFile)

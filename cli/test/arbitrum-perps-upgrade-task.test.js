@@ -2,6 +2,7 @@ import {
 	ARBITRUM_PERPS_UPGRADE_PLAN,
 	applyForkRehearsalWaiver,
 	buildArbitrumPerpsUpgradeSourceMigrationEnvironment,
+	parsePartyBAddressInput,
 	safeDispatchChunksForUpgradeBatch,
 	safeDispatchStateKeyForUpgradeBatch,
 } from "../tasks/arbitrum-perps-upgrade.js";
@@ -41,6 +42,7 @@ test("upgrade report batch ids map to independent stable Safe dispatch keys", ()
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("coreCut"), "core-cut");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("accountCut"), "account-cut");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("authority"), "authority");
+	assert.equal(safeDispatchStateKeyForUpgradeBatch("partyBWiring"), "partyb-wiring");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("wiring"), "wiring");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("instantState"), "instant-state");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("gaslessState"), "gasless-state");
@@ -49,6 +51,19 @@ test("upgrade report batch ids map to independent stable Safe dispatch keys", ()
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("quarantine"), "quarantine");
 	assert.equal(safeDispatchStateKeyForUpgradeBatch("cutover"), "cutover");
 	assert.throws(() => safeDispatchStateKeyForUpgradeBatch("unknown"), /Unsupported Arbitrum upgrade Safe batch/);
+});
+
+test("PartyB prompt input normalizes one or more unique addresses", () => {
+	assert.deepEqual(parsePartyBAddressInput("0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"), ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"]);
+	assert.deepEqual(parsePartyBAddressInput("0x9be79D4977D86D440F9e1Ea0d468A58104B9b932, 0x1111111111111111111111111111111111111111"), [
+		"0x9be79D4977D86D440F9e1Ea0d468A58104B9b932",
+		"0x1111111111111111111111111111111111111111",
+	]);
+	assert.throws(() => parsePartyBAddressInput(""), /At least one/);
+	assert.throws(
+		() => parsePartyBAddressInput("0x1111111111111111111111111111111111111111 0x1111111111111111111111111111111111111111"),
+		/duplicates/,
+	);
 });
 
 test("InstantLayer state actions split on template boundaries for independently simulatable Safe batches", () => {

@@ -8,8 +8,10 @@ import {
 	arbitrumPerpsUpgradeCanaryDisposition,
 	buildArbitrumPerpsUpgradeInput,
 	createArbitrumPerpsUpgradeReport,
+	loadArbitrumPerpsUpgradeRuntimeConfig,
 	recordArbitrumPerpsUpgradeCanaryWaiver,
 	validateArbitrumPerpsUpgradeInput,
+	validateArbitrumPerpsUpgradeRuntimeConfig,
 	validateArbitrumPerpsUpgradeReport,
 	validateArbitrumPerpsUpgradeSourceMigration,
 } from "../../deployment-tooling/arbitrum-perps-upgrade.js";
@@ -24,6 +26,7 @@ function input() {
 		recipePath: loaded.identityPath,
 		recipeDigest: loaded.digest,
 		sourceCommit: "a".repeat(40),
+		partyBs: ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"],
 	});
 }
 
@@ -33,10 +36,38 @@ test("Arbitrum upgrade input is a fixed, digest-bound standard document", () => 
 	assert.equal(value.governance.safe, ARBITRUM_PERPS_UPGRADE_TARGET.safe);
 	assert.equal(value.contracts.core, ARBITRUM_PERPS_UPGRADE_TARGET.contracts.core);
 	assert.equal(value.instantLayer.mode, "deploy");
+	assert.deepEqual(value.instantLayer.partyBs, ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"]);
 	assert.equal(value.gaslessLayer.mode, "deploy");
 	assert.equal(value.execution.requireForkRehearsal, true);
 	assert.match(arbitrumPerpsUpgradeInputDigest(value), /^[0-9a-f]{64}$/);
 	assert.equal(arbitrumPerpsUpgradeInputDigest(value), arbitrumPerpsUpgradeInputDigest(structuredClone(value)));
+});
+
+test("Arbitrum runtime config supplies the required InstantLayer PartyB set", () => {
+	const loaded = loadArbitrumPerpsUpgradeRuntimeConfig("tasks/config/arbitrum-perps-upgrade-42161.json");
+	assert.match(loaded.digest, /^[0-9a-f]{64}$/);
+	assert.deepEqual(loaded.config.instantLayer.partyBs, ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"]);
+
+	const withoutPartyB = structuredClone(loaded.config);
+	delete withoutPartyB.instantLayer;
+	assert.deepEqual(validateArbitrumPerpsUpgradeRuntimeConfig(withoutPartyB).instantLayer.partyBs, []);
+});
+
+test("new standard inputs require PartyB while pre-requirement inputs remain resumable", () => {
+	const loaded = loadDeploymentRecipe("deployment-recipes/arbitrum-vibe-production.json");
+	assert.throws(
+		() =>
+			buildArbitrumPerpsUpgradeInput({
+				recipe: loaded.recipe,
+				recipePath: loaded.identityPath,
+				recipeDigest: loaded.digest,
+				sourceCommit: "a".repeat(40),
+			}),
+		/instantLayer.partyBs/,
+	);
+	const legacy = input();
+	delete legacy.instantLayer.partyBs;
+	assert.equal(validateArbitrumPerpsUpgradeInput(legacy), legacy);
 });
 
 test("Arbitrum upgrade input refuses target, authority, source, and live-safety drift", () => {
@@ -46,6 +77,7 @@ test("Arbitrum upgrade input refuses target, authority, source, and live-safety 
 		value => (value.source.commit = "not-a-commit"),
 		value => (value.execution.verify = false),
 		value => (value.execution.requireForkRehearsal = "no"),
+		value => (value.instantLayer.partyBs = []),
 	]) {
 		const changed = structuredClone(input());
 		mutate(changed);
@@ -61,6 +93,7 @@ test("Arbitrum upgrade input digest binds an explicit fork rehearsal waiver", ()
 		recipePath: loaded.identityPath,
 		recipeDigest: loaded.digest,
 		sourceCommit: "a".repeat(40),
+		partyBs: ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"],
 		requireForkRehearsal: false,
 	});
 	assert.equal(waived.execution.requireForkRehearsal, false);

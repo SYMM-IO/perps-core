@@ -7,6 +7,8 @@ export const ARBITRUM_PERPS_UPGRADE_INPUT_API_VERSION = "operations.symm.io/arbi
 export const ARBITRUM_PERPS_UPGRADE_REPORT_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-report-v1";
 export const ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION = "operations.symm.io/task-source-migration-v1";
 export const ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION = "WAIVE PRODUCTION CANARY";
+export const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION = "operations.symm.io/arbitrum-perps-upgrade-runtime-config-v1";
+export const ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH = "tasks/config/arbitrum-perps-upgrade-42161.json";
 
 const ARBITRUM_PERPS_UPGRADE_OPERATIONAL_MIGRATION_FILES = new Set([
 	"cli/task-runner.js",
@@ -110,6 +112,60 @@ function uintString(value, source, field) {
 function boolean(value, source, field) {
 	if (typeof value !== "boolean") fail(source, field, "must be a boolean");
 	return value;
+}
+
+function addressArray(value, source, field, { required = true } = {}) {
+	if (!Array.isArray(value) || (required && value.length === 0)) {
+		fail(source, field, required ? "must be a non-empty address array" : "must be an address array");
+	}
+	const normalized = value.map((entry, index) => address(entry, source, `${field}[${index}]`));
+	if (new Set(normalized.map(entry => entry.toLowerCase())).size !== normalized.length) {
+		fail(source, field, "must not contain duplicate addresses");
+	}
+	return normalized;
+}
+
+export function validateArbitrumPerpsUpgradeRuntimeConfig(value, source = "Arbitrum Perps upgrade runtime config") {
+	const config = object(value, source, "config");
+	exactKeys(config, ["apiVersion", "chainId", "legacyGaslessLayer"], source, "config", ["instantLayer"]);
+	if (config.apiVersion !== ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION) {
+		fail(source, "apiVersion", `must equal ${ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_API_VERSION}`);
+	}
+	if (config.chainId !== ARBITRUM_PERPS_UPGRADE_TARGET.chainId) fail(source, "chainId", "must equal 42161");
+	const legacyGasless = object(config.legacyGaslessLayer, source, "legacyGaslessLayer");
+	exactKeys(legacyGasless, ["address", "relayers"], source, "legacyGaslessLayer");
+	expectedAddress(legacyGasless.address, ARBITRUM_PERPS_UPGRADE_TARGET.contracts.currentGaslessLayer, source, "legacyGaslessLayer.address");
+	const relayers = addressArray(legacyGasless.relayers, source, "legacyGaslessLayer.relayers");
+	let partyBs = [];
+	if (config.instantLayer !== undefined) {
+		const instantLayer = object(config.instantLayer, source, "instantLayer");
+		exactKeys(instantLayer, ["partyBs"], source, "instantLayer");
+		partyBs = addressArray(instantLayer.partyBs, source, "instantLayer.partyBs", { required: false });
+	}
+	return {
+		apiVersion: config.apiVersion,
+		chainId: config.chainId,
+		legacyGaslessLayer: {
+			address: getAddress(legacyGasless.address),
+			relayers,
+		},
+		instantLayer: { partyBs },
+	};
+}
+
+export function loadArbitrumPerpsUpgradeRuntimeConfig(file) {
+	let raw;
+	let parsed;
+	try {
+		raw = fs.readFileSync(file, "utf8");
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(`Cannot read Arbitrum Perps upgrade runtime config ${file}: ${error.message || error}`);
+	}
+	return {
+		config: validateArbitrumPerpsUpgradeRuntimeConfig(parsed, file),
+		digest: createHash("sha256").update(raw).digest("hex"),
+	};
 }
 
 function validateOperations(templates, source) {
@@ -242,9 +298,10 @@ export function validateArbitrumPerpsUpgradeInput(value, source = "Arbitrum Perp
 	for (const key of CONTRACT_KEYS) expectedAddress(contracts[key], ARBITRUM_PERPS_UPGRADE_TARGET.contracts[key], source, `contracts.${key}`);
 
 	const instantLayer = object(input.instantLayer, source, "instantLayer");
-	exactKeys(instantLayer, ["mode", "admin", "templates"], source, "instantLayer");
+	exactKeys(instantLayer, ["mode", "admin", "templates"], source, "instantLayer", ["partyBs"]);
 	if (instantLayer.mode !== "deploy") fail(source, "instantLayer.mode", 'must equal "deploy"');
 	expectedAddress(instantLayer.admin, ARBITRUM_PERPS_UPGRADE_TARGET.safe, source, "instantLayer.admin");
+	if (instantLayer.partyBs !== undefined) addressArray(instantLayer.partyBs, source, "instantLayer.partyBs");
 	validateOperations(instantLayer.templates, source);
 	validateGasless(input.gaslessLayer, source);
 
@@ -329,7 +386,7 @@ export function validateArbitrumPerpsUpgradeSourceMigration(inputValue, migratio
 	};
 }
 
-export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, recipeDigest, sourceCommit, requireForkRehearsal = true }) {
+export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, recipeDigest, sourceCommit, partyBs, requireForkRehearsal = true }) {
 	const recipe = validateDeploymentRecipe(structuredClone(rawRecipe), recipePath || "deployment recipe");
 	if (recipe.network.name !== "arbitrum" || recipe.network.chainId !== 42161 || recipe.network.mode !== "live") {
 		throw new Error("Arbitrum Perps upgrade requires a live Arbitrum recipe");
@@ -349,6 +406,7 @@ export function buildArbitrumPerpsUpgradeInput({ recipe: rawRecipe, recipePath, 
 		instantLayer: {
 			mode: "deploy",
 			admin: ARBITRUM_PERPS_UPGRADE_TARGET.safe,
+			partyBs: addressArray(partyBs, "generated Arbitrum Perps upgrade input", "instantLayer.partyBs"),
 			templates: structuredClone(recipe.core.protocol.instantLayerTemplates),
 		},
 		gaslessLayer: {

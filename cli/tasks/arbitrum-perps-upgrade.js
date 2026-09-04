@@ -1,10 +1,12 @@
 import {
 	ARBITRUM_PERPS_UPGRADE_CANARY_WAIVER_CONFIRMATION,
+	ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
 	ARBITRUM_PERPS_UPGRADE_TARGET,
 	ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,
 	arbitrumPerpsUpgradeInputDigest,
 	buildArbitrumPerpsUpgradeInput,
 	createArbitrumPerpsUpgradeReport,
+	loadArbitrumPerpsUpgradeRuntimeConfig,
 	loadArbitrumPerpsUpgradeInput,
 	recordArbitrumPerpsUpgradeCanaryWaiver,
 	validateArbitrumPerpsUpgradeReport,
@@ -13,6 +15,7 @@ import { PROJECT_ROOT } from "../lib/paths.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
 import { EOA_SIGNER_MODES, SAFE_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner, validateSignerSelection } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
+import { getAddress } from "ethers";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -161,6 +164,7 @@ const SAFE_DISPATCH_STATE_KEYS = Object.freeze({
 	coreCut: "core-cut",
 	accountCut: "account-cut",
 	authority: "authority",
+	partyBWiring: "partyb-wiring",
 	wiring: "wiring",
 	instantState: "instant-state",
 	gaslessState: "gasless-state",
@@ -212,8 +216,8 @@ export function safeDispatchChunksForUpgradeBatch(batchId, actions) {
 	});
 }
 
-async function dispatchBatch(ctx, input, id, name, description) {
-	const report = await runPhase(ctx, input, "plan");
+async function dispatchBatch(ctx, input, id, name, description, { planPhase = "plan" } = {}) {
+	const report = await runPhase(ctx, input, planPhase);
 	const actions = requiredActions(report, "safeBatches", id);
 	if (actions.length === 0) return;
 	const [chunk] = safeDispatchChunksForUpgradeBatch(id, actions);
@@ -251,6 +255,27 @@ async function dispatchBatch(ctx, input, id, name, description) {
 	ctx.wait(`Safe proposal ${delivery.safeTxHash} must execute before this task can continue.`);
 }
 
+async function completePartyBWiring(ctx, input) {
+	let report = await runPhase(ctx, input, "plan-partyb");
+	const authorityActions = requiredActions(report, "externalActions", "partyBAuthority");
+	if (authorityActions.length > 0) {
+		ctx.wait(
+			`Prior admin ${report.externalActions.partyBAuthority.authority} must execute the ${authorityActions.length} PartyB authority handoff action(s) in ${path.relative(ctx.root, input.output)} at externalActions.partyBAuthority.actions, then continue this task.`,
+		);
+	}
+	await dispatchBatch(
+		ctx,
+		input,
+		"partyBWiring",
+		"Arbitrum InstantLayer PartyB wiring",
+		"Grant the configured PartyB permissions, register each PartyB on InstantLayer, and grant AccountLayer INSTANT_LAYER_ROLE.",
+		{ planPhase: "plan-partyb" },
+	);
+	report = await runPhase(ctx, input, "plan-partyb");
+	assertNoActions(report, "externalActions", "partyBAuthority", "PartyB authority handoff");
+	assertNoActions(report, "safeBatches", "partyBWiring", "InstantLayer PartyB wiring");
+}
+
 async function prepareUpgrade({ root, ui }) {
 	const config = path.join(root, RECIPE_PATH);
 	if (!fs.existsSync(config)) throw new Error(`Reviewed production recipe is missing: ${RECIPE_PATH}`);
@@ -258,6 +283,24 @@ async function prepareUpgrade({ root, ui }) {
 	if (dirty) throw new Error("The tracked worktree must be clean before binding a live upgrade to an exact Git commit");
 	const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 	const recipe = loadRecipeContext(config, { plan: false });
+	const runtimeConfigFile = path.join(root, ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH);
+	const runtimeConfig = loadArbitrumPerpsUpgradeRuntimeConfig(runtimeConfigFile);
+	let partyBs = runtimeConfig.config.instantLayer.partyBs;
+	if (partyBs.length === 0) {
+		const entered = await ui.text({
+			message: "PartyB address(es) required by the new InstantLayer (comma or whitespace separated)",
+			validate: value => {
+				try {
+					parsePartyBAddressInput(value);
+					return undefined;
+				} catch (error) {
+					return error.message || String(error);
+				}
+			},
+		});
+		if (entered === null) return null;
+		partyBs = parsePartyBAddressInput(entered);
+	}
 	const skipForkRehearsal = await ui.confirm({
 		message: "Skip the matching Arbitrum fork rehearsal before live deployment?",
 		initialValue: false,
@@ -275,6 +318,7 @@ async function prepareUpgrade({ root, ui }) {
 		recipePath: recipe.identityPath,
 		recipeDigest: recipe.digest,
 		sourceCommit,
+		partyBs,
 		requireForkRehearsal: !skipForkRehearsal,
 	});
 	const inputDigest = arbitrumPerpsUpgradeInputDigest(standardInput);
@@ -291,6 +335,7 @@ async function prepareUpgrade({ root, ui }) {
 			`Core: ${standardInput.contracts.core}`,
 			`AccountLayer: ${standardInput.contracts.accountLayer}`,
 			`Safe: ${standardInput.governance.safe}`,
+			`PartyBs: ${standardInput.instantLayer.partyBs.join(", ")}`,
 			`Input: ${path.relative(root, inputFile)}`,
 			`Output: ${path.relative(root, outputFile)}`,
 		].join("\n"),
@@ -319,6 +364,21 @@ async function prepareUpgrade({ root, ui }) {
 		execution: standardInput.execution,
 		governanceSigner,
 	};
+}
+
+export function parsePartyBAddressInput(value) {
+	const entries = String(value || "")
+		.split(/[\s,]+/)
+		.filter(Boolean)
+		.map(entry => getAddress(entry));
+	if (entries.length === 0) throw new Error("At least one non-zero PartyB address is required");
+	if (entries.some(entry => entry === "0x0000000000000000000000000000000000000000")) {
+		throw new Error("PartyB addresses must be non-zero");
+	}
+	if (new Set(entries.map(entry => entry.toLowerCase())).size !== entries.length) {
+		throw new Error("PartyB addresses must not contain duplicates");
+	}
+	return entries;
 }
 
 async function reconcileUpgrade(ctx, input) {
@@ -482,16 +542,20 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				assertNoActions(report, "externalActions", "accountAuthority", "Scoped AccountLayer authority");
 			});
 			await ctx.step("wiring", PLAN[17].title, () =>
-				dispatchBatch(
-					ctx,
-					input,
-					"wiring",
-					"Arbitrum InstantLayer and GaslessLayer wiring",
-					"Grant roles, bind AccountLayer, install templates, and configure operational fees.",
+				completePartyBWiring(ctx, input).then(() =>
+					dispatchBatch(
+						ctx,
+						input,
+						"wiring",
+						"Arbitrum InstantLayer and GaslessLayer wiring",
+						"Grant roles, bind AccountLayer, install templates, and configure operational fees.",
+					),
 				),
 			);
 			await ctx.step("verify-wiring", PLAN[18].title, async () => {
 				const report = await runPhase(ctx, input, "plan");
+				assertNoActions(report, "externalActions", "partyBAuthority", "PartyB authority handoff");
+				assertNoActions(report, "safeBatches", "partyBWiring", "InstantLayer PartyB wiring");
 				assertNoActions(report, "safeBatches", "wiring", "InstantLayer and GaslessLayer wiring");
 			});
 			await ctx.step("canary", PLAN[19].title, async () => {
@@ -606,6 +670,9 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				assertNoActions(report, "safeBatches", "cutover", "Old InstantLayer cutover");
 			});
 			await ctx.step("safe-hardening", PLAN[22].title, async () => {
+				// Compatibility gate for upgrade runs that completed the original wiring
+				// step before PartyB wiring became a mandatory deployment invariant.
+				await completePartyBWiring(ctx, input);
 				const report = await runPhase(ctx, input, "verify-final");
 				if (report.stages.safeHardening?.status !== "complete") {
 					ctx.wait(

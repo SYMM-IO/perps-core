@@ -4,5 +4,8 @@
 	"legacyGaslessLayer": {
 		"address": "0x1c863aF5affc105EE42B8CAbA617E033A8F3Be22",
 		"relayers": ["0xe13f5af2D489597a86Cf7618668C6112580b67a0"]
+	},
+	"instantLayer": {
+		"partyBs": ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"]
 	}
 }
