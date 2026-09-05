@@ -3,11 +3,8 @@
 	"chainId": 42161,
 	"core": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
 	"safe": "0x89bE952790657297ac03f1954b22B668d819D3d9",
-	"factory": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975",
-	"factoryCodeHash": "0xbc9adfde9f8ef5dc15e82bc7eafc61c2b9022cf07f32d00128e4e899f2768cec",
 	"baselineCommit": "c335a5393dfb87aeb7b4ed40d877f6b713c5b141",
 	"reviewedBlock": 501976277,
-	"reviewedFactoryDeployers": ["0xf12239317e985f6772F86407608B166EfA3E2f05"],
 	"facets": {
 		"PartyALiquidationFacet": {
 			"address": "0x77B8D5E4Cb5577A08e213d9f90F930f0D5b94b22",

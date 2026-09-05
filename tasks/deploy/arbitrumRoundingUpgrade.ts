@@ -6,6 +6,8 @@ import path from "node:path"
 
 import {
 	assertReleaseSource,
+	assertRoundingFactoryIntent,
+	DEPLOYMENTS,
 	digest,
 	FACETS,
 	GETTER,
@@ -26,6 +28,7 @@ import {
 	setCheckpointSimulated,
 	type DeploymentCheckpoint,
 } from "./checkpoint.js"
+import { ensureCreate2Factory } from "./create2Factory.js"
 import { persistSubmittedTransaction } from "./deploymentRecovery.js"
 import { resolveVerificationContractName, verificationProviderForChain } from "./explorer.js"
 import { getConnection } from "./helpers.js"
@@ -64,13 +67,9 @@ export async function assertRoundingRuntime(ethers: any, artifact: any, address:
 }
 
 async function inspect(ethers: any, input: any, report: any) {
+	assertRoundingFactoryIntent(input.create2)
 	const block = await ethers.provider.getBlock("latest")
 	const [deployer] = await ethers.getSigners()
-	if (deployer) {
-		const factory = await ethers.getContractAt(["function hasRole(bytes32,address) view returns(bool)"], input.target.factory)
-		if (!(await factory.hasRole(ethers.id("DEPLOYER_ROLE"), deployer.address, { blockTag: block.number })))
-			throw new Error(`Deployment signer ${deployer.address} lacks CREATE2 factory DEPLOYER_ROLE`)
-	}
 	const view = await ethers.getContractAt(
 		["function getOwner() view returns(address)", "function hasRole(address,bytes32) view returns(bool)"],
 		input.target.core,
@@ -142,23 +141,64 @@ async function checkpointRun(
 	}
 }
 
+export async function assertRoundingFactory(hre: any, ethers: any, entry: any, deployer: string) {
+	if (!entry || entry.artifact !== "Create2Factory" || JSON.stringify(entry.constructorArguments) !== JSON.stringify([deployer, deployer]))
+		throw new Error("Temporary factory must bind both constructor roles to the deployment signer")
+	await assertRoundingRuntime(ethers, await hre.artifacts.readArtifact("Create2Factory"), entry.address)
+	const factory = await ethers.getContractAt("Create2Factory", entry.address)
+	for (const role of [ethers.ZeroHash, ethers.id("DEPLOYER_ROLE")]) {
+		if (!(await factory.hasRole(role, deployer))) throw new Error("Temporary factory deployment signer must hold admin and deployer roles")
+	}
+}
+
 export async function deployRoundingSelection(hre: any, ethers: any, input: any, report: any, checkpoint: DeploymentCheckpoint, persist: () => void) {
-	if (ethers.keccak256(await ethers.provider.getCode(input.target.factory)) !== input.target.factoryCodeHash)
-		throw new Error("CREATE2 factory code differs from the reviewed factory")
-	const vanity = createVanityContext(
-		ethers,
-		buildVanityPlan({
-			factory: input.create2.factory,
-			miningBudget: input.create2.miningBudget,
-			overrides: Object.fromEntries(FACETS.map(name => [`core/${name}`, input.create2.groups.facets])),
-		}),
-	)
+	assertRoundingFactoryIntent(input.create2)
+	const [deployer] = await ethers.getSigners()
+	if (!deployer) throw new Error("Temporary factory requires a deployment signer")
+	if (checkpoint.deployerAddress && checkpoint.deployerAddress.toLowerCase() !== deployer.address.toLowerCase())
+		throw new Error("Deployment signer changed")
+	checkpoint.deployerAddress ||= deployer.address
+	const vanityPlan = buildVanityPlan({
+		factory: input.create2.factory,
+		miningBudget: input.create2.miningBudget,
+		overrides: Object.fromEntries(FACETS.map(name => [`core/${name}`, input.create2.groups.facets])),
+	})
+	if (!vanityPlan) throw new Error("Rounding deployment requires a CREATE2 vanity plan")
+	report.deployments ||= {}
+	const savedFactory = report.deployments.Create2Factory
+	const recoveredFactory = await recoverConfirmedDeployment(checkpoint.transactions || [], "contracts.create2Factory", ethers.provider)
+	const checkpointFactory = checkpoint.contracts.create2Factory?.address
+	for (const saved of [savedFactory?.address, checkpointFactory]) {
+		if (saved && !recoveredFactory) throw new Error("Temporary factory is missing its confirmed creation journal")
+		if (saved && recoveredFactory && saved.toLowerCase() !== recoveredFactory.toLowerCase())
+			throw new Error("Temporary factory report or checkpoint conflicts with transaction journal")
+	}
+	if (!recoveredFactory && Object.keys(report.deployments).length)
+		throw new Error("Upgrade deployments exist without their temporary factory journal")
+	const connection = await getConnection(hre)
+	const { address: factoryAddress } = await ensureCreate2Factory(hre, vanityPlan, {
+		checkpoint,
+		isLive: connection.networkConfig?.type !== "edr-simulated",
+		allowNewFactory: true,
+		logData: false,
+	})
+	const factoryEntry = savedFactory || {
+		address: factoryAddress,
+		artifact: "Create2Factory",
+		constructorArguments: [deployer.address, deployer.address],
+		libraries: {},
+		codeHash: ethers.keccak256(await ethers.provider.getCode(factoryAddress)),
+	}
+	await assertRoundingFactory(hre, ethers, factoryEntry, deployer.address)
+	report.factoryDeployer = deployer.address
+	report.deployments.Create2Factory = factoryEntry
+	persist()
+	const vanity = createVanityContext(ethers, vanityPlan)
 	report.libraries ||= Object.fromEntries(Object.entries(input.target.reuseLibraries).map(([name, entry]: any) => [name, entry.address]))
 	for (const [name, entry] of Object.entries(input.target.reuseLibraries) as any) {
 		if (report.libraries[name]?.toLowerCase() !== entry.address.toLowerCase()) throw new Error(`Reused library address changed: ${name}`)
 	}
 	report.facets ||= {}
-	report.deployments ||= {}
 	for (const name of [...LIBRARIES, ...FACETS]) {
 		const kind = LIBRARIES.includes(name) ? "libraries" : "facets"
 		const spec = kind === "libraries" ? LibrarySpecs.core[name] : FacetSpecs.core[name]
@@ -186,6 +226,7 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 
 async function plan(hre: any, ethers: any, input: any, report: any) {
 	const current = await inspect(ethers, input, report)
+	await assertRoundingFactory(hre, ethers, report.deployments?.Create2Factory, report.factoryDeployer)
 	for (const name of [...LIBRARIES, ...FACETS]) {
 		const deployment = report.deployments?.[name]
 		if (!deployment) throw new Error(`Missing deployment ${name}`)
@@ -296,14 +337,14 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 				if (phase === "reconcile") await checkpointRun(ethers, input, report, false, async () => {})
 				if (["publish", "plan", "verify"].includes(phase)) await plan(hre, ethers, input, report)
 				if (phase === "publish") {
-					for (const name of [...LIBRARIES, ...FACETS]) {
+					for (const name of DEPLOYMENTS) {
 						const entry = report.deployments[name]
 						if (entry.published) continue
 						try {
 							await verifyContract(
 								{
 									address: entry.address,
-									constructorArgs: [],
+									constructorArgs: entry.constructorArguments || [],
 									contract: await resolveVerificationContractName(hre.artifacts, entry.artifact),
 									libraries: entry.libraries,
 									provider: verificationProviderForChain(42161),
@@ -319,7 +360,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 				}
 				if (phase === "verify") {
 					if (report.actions.length) throw new Error("Core cut has not been executed yet")
-					if ([...LIBRARIES, ...FACETS].some(name => !report.deployments[name]?.published)) throw new Error("Explorer publication remains incomplete")
+					if (DEPLOYMENTS.some(name => !report.deployments[name]?.published)) throw new Error("Explorer publication remains incomplete")
 					const view = await ethers.getContractAt(["function liquidationStartPositionCount(address) view returns(uint256)"], input.target.core)
 					if ((await view.liquidationStartPositionCount(ethers.ZeroAddress)) !== 0n) throw new Error("New getter failed zero-address check")
 					report.status = "complete"
