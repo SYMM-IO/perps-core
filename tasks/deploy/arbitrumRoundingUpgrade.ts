@@ -2,7 +2,6 @@ import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import fs from "node:fs"
-import path from "node:path"
 
 import {
 	assertReleaseSource,
@@ -39,12 +38,11 @@ import {
 	reconcileDeploymentTransactions,
 	recoverConfirmedDeployment,
 	resetDeploymentTransactionJournal,
-	send,
 } from "./tx.js"
 import { createVanityContext, deployContract } from "./vanityDeploy.js"
 import { buildVanityPlan } from "./vanityPlan.js"
 
-const PHASES = ["inspect", "rehearse", "deploy", "publish", "plan", "verify", "reconcile"]
+const PHASES = ["inspect", "deploy", "publish", "plan", "verify", "reconcile"]
 const write = (file: string, value: any) => atomicWriteFile(file, JSON.stringify(value, null, 2) + "\n", 0o600)
 
 export async function assertRoundingRuntime(ethers: any, artifact: any, address: string, libraries: Record<string, string> = {}) {
@@ -98,20 +96,16 @@ async function inspect(ethers: any, input: any, report: any) {
 	return selectors
 }
 
-async function checkpointRun(
-	ethers: any,
-	input: any,
-	report: any,
-	simulated: boolean,
-	fn: (checkpoint: DeploymentCheckpoint) => Promise<void>,
-	namespace = "",
-) {
-	setCheckpointSimulated(simulated)
-	const scope = `arbitrum-rounding-862-${digest(input).slice(0, 16)}${namespace}`
+async function checkpointRun(ethers: any, input: any, report: any, fn: (checkpoint: DeploymentCheckpoint) => Promise<void>) {
+	setCheckpointSimulated(false)
+	const scope = `arbitrum-rounding-862-${digest(input).slice(0, 16)}`
 	const lock = acquireCheckpointLock(42161, scope)
 	try {
-		const checkpoint = loadCheckpoint(42161, scope) || createCheckpoint(simulated ? "fork-arbitrum" : "arbitrum", 42161, scope)
-		const manifest = createDeploymentManifest({ input, simulated }, { deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId })
+		const checkpoint = loadCheckpoint(42161, scope) || createCheckpoint("arbitrum", 42161, scope)
+		const manifest = createDeploymentManifest(
+			{ input, simulated: false },
+			{ deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId },
+		)
 		if (checkpoint.manifest) assertCheckpointManifest(checkpoint, manifest)
 		checkpoint.manifest = manifest
 		checkpoint.deploymentId = manifest.deploymentId
@@ -268,8 +262,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 			const { ethers } = connection
 			const simulated = connection.networkConfig?.type === "edr-simulated"
 			if (Number((await ethers.provider.getNetwork()).chainId) !== 42161) throw new Error("Rounding upgrade requires Arbitrum chain 42161")
-			if ((phase === "rehearse") !== simulated || (!simulated && connection.networkName !== "arbitrum"))
-				throw new Error("Incorrect network for upgrade phase")
+			if (simulated || connection.networkName !== "arbitrum") throw new Error("Incorrect network for upgrade phase")
 			if (
 				["deploy", "publish"].includes(phase) &&
 				(process.env.SYMMIO_ROUNDING_UPGRADE_EXECUTE !== "true" || process.env.CONFIRM_CHAIN_ID !== "42161")
@@ -280,61 +273,17 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 			const persist = () => write(output, report)
 			try {
 				if (phase === "inspect") await inspect(ethers, input, report)
-				if (phase === "rehearse") {
-					if (!report.inspection || !report.baseline) throw new Error("Inspect the live baseline first")
-					const block = await ethers.provider.getBlock(report.inspection.blockNumber)
-					if (block?.hash !== report.inspection.blockHash || (await ethers.provider.getBlockNumber()) !== report.inspection.blockNumber)
-						throw new Error("Fork is not pinned to the inspected block")
-					const forkReport: any = { inputDigest, baseline: report.baseline, inspection: report.inspection }
-					const forkFile = path.join(path.dirname(output), "rehearsals", `${Date.now()}-${process.pid}.json`)
-					const [deployer] = await ethers.getSigners()
-					await ethers.provider.send("hardhat_setBalance", [deployer.address, "0x3635c9adc5dea00000"])
-					await ethers.provider.send("hardhat_setBalance", [input.target.safe, "0x3635c9adc5dea00000"])
-					await ethers.provider.send("hardhat_impersonateAccount", [input.target.safe])
-					try {
-						await checkpointRun(
-							ethers,
-							input,
-							forkReport,
-							true,
-							async checkpoint => {
-								await inspect(ethers, input, forkReport)
-								await deployRoundingSelection(hre, ethers, input, forkReport, checkpoint, () => write(forkFile, forkReport))
-								await plan(hre, ethers, input, forkReport)
-								for (const action of forkReport.actions)
-									await send(
-										(await ethers.getSigner(input.target.safe)).sendTransaction({ to: action.to, value: action.value, data: action.data }),
-										"Rehearse Core rounding cut",
-									)
-								await plan(hre, ethers, input, forkReport)
-								if (forkReport.actions.length) throw new Error("Fork cut did not reach the expected selector map")
-							},
-							`-fork-${Date.now()}-${process.pid}`,
-						)
-						forkReport.status = "passed"
-						report.rehearsal = {
-							status: "passed",
-							inputDigest,
-							blockNumber: report.inspection.blockNumber,
-							blockHash: report.inspection.blockHash,
-							evidence: forkFile,
-						}
-					} finally {
-						write(forkFile, forkReport)
-					}
-				}
 				if (phase === "deploy") {
-					if (report.rehearsal?.status !== "passed" || report.rehearsal.inputDigest !== inputDigest)
-						throw new Error("Matching fork rehearsal must pass before live deployment")
+					if (!report.inspection || !report.baseline) throw new Error("Inspect the live baseline before authorizing deployment")
 					const current = await inspect(ethers, input, report)
 					if (
 						Object.keys(current).length !== Object.keys(report.baseline).length ||
 						Object.entries(current).some(([s, a]) => a.toLowerCase() !== report.baseline[s]?.toLowerCase())
 					)
 						throw new Error("Core baseline changed before deployment")
-					await checkpointRun(ethers, input, report, false, checkpoint => deployRoundingSelection(hre, ethers, input, report, checkpoint, persist))
+					await checkpointRun(ethers, input, report, checkpoint => deployRoundingSelection(hre, ethers, input, report, checkpoint, persist))
 				}
-				if (phase === "reconcile") await checkpointRun(ethers, input, report, false, async () => {})
+				if (phase === "reconcile") await checkpointRun(ethers, input, report, async () => {})
 				if (["publish", "plan", "verify"].includes(phase)) await plan(hre, ethers, input, report)
 				if (phase === "publish") {
 					for (const name of DEPLOYMENTS) {
