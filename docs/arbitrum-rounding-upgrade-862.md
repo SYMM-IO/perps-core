@@ -4,7 +4,7 @@ This release applies the bounded uPNL rounding fix to the existing Arbitrum Core
 
 This avoids requiring a role on the previous factory at `0x99B425BC19F99a1B922664c0E4fa8A0870CE9975`. A different factory produces different full facet addresses; the runner mines fresh salts for the same `862` suffix. Core stays at its existing address and its administrator remains the multisig.
 
-The release is isolated from the broader `version_0.8.6` branch. Its contracts are the deployed `c335a539` baseline plus the uPNL rounding patch. The runner binds the exact annotated Git tag, contracts tree, target configuration and recipe digest. It refuses a different checkout or changes during resume.
+The release is isolated from the broader `version_0.8.6` branch. Its contracts are the deployed `c335a539` baseline plus the uPNL rounding patch. The annotated tag `version_0.8.6.2` points to Solidity commit `0eb4b51fdffd15d4d442a63593cdda7cd94873f4`. Later deployment-script changes remain on `release/version_0.8.6.2`; they do not move the Solidity tag. The runner requires that checkout to descend from the tag and have the identical reviewed contracts tree. Each run separately binds the tag commit (`releaseCommit`), script commit (`sourceCommit`), target configuration and recipe digest, and refuses changes during resume.
 
 ## Start the release
 
@@ -15,7 +15,7 @@ cd /home/home/Documents/Development/Symmio/perps-core/.releases/version_0.8.6.2
 ./symmio
 ```
 
-On another machine after the release tag has been published, check out `version_0.8.6.2`, install the repository's pinned Node version and dependencies with `npm ci`, and run `./symmio` from that checkout. The operator is menu-only and accepts no deployment flags.
+On another machine after the release branch and tag have been published, fetch both and check out the reviewed `release/version_0.8.6.2` branch or its exact script commit. Checking out only the Solidity tag does not include later deployment-script updates. Install the repository's pinned Node version and dependencies with `npm ci`, then run `./symmio`. The operator is menu-only and accepts no deployment flags.
 
 1. Select **Other maintenance scripts** → **Arbitrum rounding fix v0.8.6.2**.
 2. Select the Core owner Safe `0x89bE952790657297ac03f1954b22B668d819D3d9` using **Safe Transaction Builder file**. This workflow exports the governance transaction; it does not sign or execute it.
