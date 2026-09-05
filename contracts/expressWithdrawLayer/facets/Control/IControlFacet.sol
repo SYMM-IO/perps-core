@@ -4,7 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IDiamondAccessControl } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
+
 interface IControlEvents {
+	event RoleGranted(bytes32 role, address user);
+	event RoleRevoked(bytes32 role, address user);
+	event RoleAdminAdded(bytes32 role, address admin);
+	event RoleAdminRemoved(bytes32 role, address admin);
 	event GeneralDeposit(address indexed depositor, uint256 amount);
 	event GeneralWithdraw(address indexed recipient, uint256 amount);
 	event AffiliateDeposit(address indexed affiliate, address indexed depositor, uint256 amount);
@@ -29,7 +35,7 @@ interface IControlEvents {
 	event CreditBadDebtRepaid(address indexed affiliate, address indexed payer, uint256 amount);
 }
 
-interface IControlFacet is IControlEvents {
+interface IControlFacet is IControlEvents, IDiamondAccessControl {
 	// ── Config setters ──
 
 	function setSecurityWindow(uint256 _securityWindow) external;
@@ -80,10 +86,12 @@ interface IControlFacet is IControlEvents {
 
 	function withdrawFromAffiliate(address affiliate, uint256 amount) external;
 
-	// ── Role management (owner only) ──
+	// ── Legacy role management adapters ──
 
+	/// @dev Compatibility selector for existing ExpressProvider integrations.
 	function grantRole(bytes32 role, address account) external;
 
+	/// @dev Compatibility selector for existing ExpressProvider integrations.
 	function revokeRole(bytes32 role, address account) external;
 
 	// ── Ownership ──

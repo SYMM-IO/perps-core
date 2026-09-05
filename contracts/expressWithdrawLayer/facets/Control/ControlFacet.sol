@@ -270,16 +270,64 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		emit AffiliateWithdraw(affiliate, msg.sender, amount);
 	}
 
-	// ── Role management (owner only) ──
+	// ── Canonical diamond role management ──
+
+	function setAdmin(address user) external {
+		LibDiamond.enforceIsContractOwner();
+		_requireNonZero(user);
+		_grantRole(user, LibAccessControl.DEFAULT_ADMIN_ROLE);
+	}
+
+	function grantRole(address user, bytes32 role) external {
+		LibAccessControl.enforceRoleAdmin(role);
+		_requireNonZero(user);
+		_grantRole(user, role);
+	}
+
+	function revokeRole(address user, bytes32 role) external {
+		LibAccessControl.enforceRoleAdmin(role);
+		_revokeRole(user, role);
+	}
+
+	function addRoleAdmin(bytes32 role, address admin) external {
+		LibAccessControl.enforceRole(LibAccessControl.DEFAULT_ADMIN_ROLE);
+		_requireNonZero(admin);
+		LibAccessControl.setRoleAdmin(admin, role, true);
+		emit RoleAdminAdded(role, admin);
+	}
+
+	function removeRoleAdmin(bytes32 role, address admin) external {
+		LibAccessControl.enforceRole(LibAccessControl.DEFAULT_ADMIN_ROLE);
+		_requireNonZero(admin);
+		LibAccessControl.setRoleAdmin(admin, role, false);
+		emit RoleAdminRemoved(role, admin);
+	}
+
+	// ── Legacy role-first adapters ──
 
 	function grantRole(bytes32 role, address account) external {
 		LibDiamond.enforceIsContractOwner();
-		LibAccessControl.grantRole(account, role);
+		_requireNonZero(account);
+		_grantRole(account, role);
 	}
 
 	function revokeRole(bytes32 role, address account) external {
 		LibDiamond.enforceIsContractOwner();
-		LibAccessControl.revokeRole(account, role);
+		_revokeRole(account, role);
+	}
+
+	function _grantRole(address user, bytes32 role) internal {
+		LibAccessControl.grantRole(user, role);
+		emit RoleGranted(role, user);
+	}
+
+	function _revokeRole(address user, bytes32 role) internal {
+		LibAccessControl.revokeRole(user, role);
+		emit RoleRevoked(role, user);
+	}
+
+	function _requireNonZero(address user) internal pure {
+		if (user == address(0)) revert LibAccessControl.ZeroAddress();
 	}
 
 	// ── Ownership ──
@@ -294,6 +342,7 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 
 	function transferOwnership(address _newOwner) external {
 		LibDiamond.enforceIsContractOwner();
+		_requireNonZero(_newOwner);
 		LibDiamond.transferOwnership(_newOwner);
 	}
 

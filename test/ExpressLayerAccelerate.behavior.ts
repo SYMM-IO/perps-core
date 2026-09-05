@@ -65,10 +65,10 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 
 		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("SUSPENDER_ROLE")))
 
-		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
-		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
-		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
-		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
+		await expressProvider["grantRole(address,bytes32)"](botSigner.address, SIGNER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](operator.address, OPERATOR_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](locker.address, LOCKER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](unlocker.address, UNLOCK_ROLE)
 		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
 		// User balance in Symmio
@@ -1279,7 +1279,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 			const { expressProvider, user, affiliate, randomCaller, deployer, generalFunding } = fixture
 
 			const WITHDRAWER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE"))
-			await expressProvider.connect(deployer).grantRole(WITHDRAWER_ROLE, deployer.address)
+			await expressProvider.connect(deployer)["grantRole(address,bytes32)"](deployer.address, WITHDRAWER_ROLE)
 
 			const withdrawAmount = 500n * 10n ** 18n
 			const drain = generalFunding - (withdrawAmount - 1n)
@@ -1311,7 +1311,7 @@ export function shouldBehaveLikeExpressLayerAccelerate(): void {
 
 			// Drain affiliate pool (5000 funded, leave only 10)
 			const WITHDRAWER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE"))
-			await expressProvider.connect(deployer).grantRole(WITHDRAWER_ROLE, deployer.address)
+			await expressProvider.connect(deployer)["grantRole(address,bytes32)"](deployer.address, WITHDRAWER_ROLE)
 			await expressProvider.connect(deployer).withdrawFromAffiliate(affiliate, 4990n * 10n ** 18n)
 
 			const withdrawAmount = 500n * 10n ** 18n

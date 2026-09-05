@@ -99,7 +99,8 @@ describe("GaslessLayer onboarding scenario", function () {
 		}
 	}
 
-	it("onboards a user end to end: deposit address, account creation, then one user signature + session-key setup", async function () {
+	// Steps 1-3: deposit address, bridged collateral, relayer-settled account creation.
+	async function settleFundedAccount(): Promise<string> {
 		// ── 1. Show the user their deposit address ─────────────────────────────
 		const depositAddress = await gateway.getGaslessWalletAddress(user.address)
 
@@ -117,6 +118,11 @@ describe("GaslessLayer onboarding scenario", function () {
 		}
 		const subAccount = await gateway.connect(relayer).settleDepositToNewAccount.staticCall(user.address, affiliate, accountData)
 		await gateway.connect(relayer).settleDepositToNewAccount(user.address, affiliate, accountData)
+		return subAccount
+	}
+
+	it("onboards a user end to end: deposit address, account creation, then one user signature + session-key setup", async function () {
+		const subAccount = await settleFundedAccount()
 
 		expect(await context.alViewFacet.ownerOf(subAccount)).to.equal(user.address)
 		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT - DEPOSIT_FEE)
@@ -174,5 +180,70 @@ describe("GaslessLayer onboarding scenario", function () {
 		await expect(
 			gateway.connect(relayer).relayInstantBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []]),
 		).to.be.revertedWithCustomError(context.instantLayer, "MaxUsesExceeded")
+	})
+
+	// 1-click trading setup: the wallet signs exactly once. That single signature grants two
+	// delegates at the same time (a browser session key and a second server-side signer, each with
+	// its own selectors and expiry); the fee approval and the solver binding are then signed by
+	// those delegates and ride the same relayed batch.
+	it("enables 1-click trading for a session key and a second delegate with a single wallet signature", async function () {
+		const subAccount = await settleFundedAccount()
+		const secondDelegate = context.signers.user2
+
+		let walletSignatures = 0
+		const signWithWallet = async (op: any) => {
+			walletSignatures++
+			return user.signTypedData(domain, types, op)
+		}
+
+		const bindSelector = context.bindingFacet.interface.getFunction("bindToPartyB")!.selector
+		const approveSelector = context.accountFacet.interface.getFunction("approveOperationalFee")!.selector
+		const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [await context.symmioPartyB.getAddress()])
+		const approveCallData = context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [FEE_ALLOWANCE]])
+
+		const sessionExpiry = await getBlockTimestamp(3600n)
+		const secondExpiry = await getBlockTimestamp(86400n)
+		const grantCallData = context.instantLayer.interface.encodeFunctionData("grantDelegations", [
+			[
+				{
+					account: { addr: subAccount, isPartyB: false },
+					delegatedSigner: sessionKey.address,
+					selectors: [approveSelector],
+					expiryTimestamp: sessionExpiry,
+				},
+				{
+					account: { addr: subAccount, isPartyB: false },
+					delegatedSigner: secondDelegate.address,
+					selectors: [bindSelector],
+					expiryTimestamp: secondExpiry,
+				},
+			],
+		])
+		const grantOp = createSignedOperation(user.address, instantLayerAddress, grantCallData, subAccount)
+		const grantSig = await signWithWallet(grantOp)
+
+		const approveOp = createSignedOperation(sessionKey.address, symmioAddress, approveCallData, subAccount)
+		const approveSig = await sessionKey.signTypedData(domain, types, approveOp)
+		const bindOp = createSignedOperation(secondDelegate.address, symmioAddress, bindCallData, subAccount)
+		const bindSig = await secondDelegate.signTypedData(domain, types, bindOp)
+
+		const tx = await gateway
+			.connect(relayer)
+			.relayInstantBatch([grantOp, approveOp, bindOp], [grantSig, approveSig, bindSig], [[], [], []], [[], [], []])
+
+		expect(walletSignatures).to.equal(1)
+
+		// Each delegate got exactly the rights it was granted
+		expect(await context.instantLayer.delegations(subAccount, sessionKey.address, approveSelector)).to.equal(sessionExpiry)
+		expect(await context.instantLayer.delegations(subAccount, secondDelegate.address, bindSelector)).to.equal(secondExpiry)
+		expect(await context.instantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.false
+		expect(await context.instantLayer.isDelegationActive(subAccount, secondDelegate.address, approveSelector)).to.be.false
+
+		// Both delegate-signed operations took effect
+		expect((await context.viewFacet.getBindState(subAccount)).partyB).to.equal(await context.symmioPartyB.getAddress())
+		const totalFee = OP_FEE * 3n
+		const [allowance] = await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr)
+		expect(allowance).to.equal(FEE_ALLOWANCE - totalFee)
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, totalFee)
 	})
 })

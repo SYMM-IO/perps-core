@@ -81,12 +81,21 @@
 						No entry point changed shape. There are no new parameters, no new signing scheme, and no new EIP-712 types: the owner signs
 						the grant with the same <code>SignedOperation</code> typehash used for every other operation.
 					</p>
+					<p>
+						A grant can also name several delegates at once. <code>grantDelegations(DelegationInfo[])</code> takes a list of entries for
+						the same account, each with its own delegate, selectors, and expiry, and is accepted as a self-targeted operation exactly like
+						the single form. This is what keeps setup at one wallet signature when an account needs more than one delegate &mdash; a
+						browser session key plus a server-side signer, for example.
+					</p>
 
 					<h2 id="the-grant-operation">The grant operation</h2>
 					<p>A grant operation is an ordinary <code>SignedOperation</code> with two distinguishing properties:</p>
 					<ul>
 						<li><code>target</code> is the InstantLayer contract itself, and</li>
-						<li><code>callData</code> is an ABI-encoded call to <code>grantDelegation(DelegationInfo)</code>.</li>
+						<li>
+							<code>callData</code> is an ABI-encoded call to <code>grantDelegation(DelegationInfo)</code> or
+							<code>grantDelegations(DelegationInfo[])</code>.
+						</li>
 					</ul>
 					<pre><code>DelegationInfo {
     Account account;          // the account granting delegation (must match signerAccount)
@@ -100,6 +109,10 @@
 						selectors, and emits <code>DelegationGranted</code> per selector &mdash; the same shared logic behind the direct and
 						by-signature grant paths.
 					</p>
+					<p>
+						The multi-delegate form runs that same logic once per entry. Every entry must name the operation's
+						<code>signerAccount</code>; an empty list, or an entry for another account, reverts with <code>InvalidDelegation</code>.
+					</p>
 
 					<h2 id="verification-rules">Verification rules</h2>
 					<p>
@@ -108,13 +121,14 @@
 					</p>
 					<ul>
 						<li>
-							Only the <code>grantDelegation</code> selector may target the InstantLayer. Any other self-targeted calldata reverts with
-							<code>InvalidGrantOperation</code>, so the target whitelist never opens other InstantLayer functions to signed operations.
+							Only the <code>grantDelegation</code> and <code>grantDelegations</code> selectors may target the InstantLayer. Any other
+							self-targeted calldata reverts with <code>InvalidGrantOperation</code>, so the target whitelist never opens other
+							InstantLayer functions to signed operations.
 						</li>
 						<li>
 							The operation signer must be the account owner. A delegate can never sign a grant &mdash; not even one holding a
-							delegation over the <code>grantDelegation</code> selector &mdash; so a session key cannot mint further delegations for
-							itself.
+							delegation over the <code>grantDelegation</code> or <code>grantDelegations</code> selector &mdash; so a session key cannot
+							mint further delegations for itself or for anyone else.
 						</li>
 						<li>
 							<code>maxUses</code> must be exactly <code>1</code>. Granting clears pending revocation timestamps, so a replayable grant
@@ -126,8 +140,8 @@
 							selectors, or the expiry after the owner signed.
 						</li>
 						<li>
-							<code>DelegationInfo.account</code> must equal the operation's <code>signerAccount</code>, and PartyB accounts cannot
-							grant.
+							<code>DelegationInfo.account</code> must equal the operation's <code>signerAccount</code> &mdash; for every entry of a
+							multi-delegate grant &mdash; and PartyB accounts cannot grant.
 						</li>
 					</ul>
 					<p>
@@ -154,6 +168,24 @@
 }
 const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp)</code></pre>
 					<p>
+						To authorize more than one delegate under the same signature, encode <code>grantDelegations</code> instead. Each entry is a
+						full <code>DelegationInfo</code>, so the delegates can differ in both scope and lifetime:
+					</p>
+					<pre><code>callData: instantLayer.interface.encodeFunctionData("grantDelegations", [[
+    {   // short-lived browser key, only what it needs for trading
+        account: { addr: subAccount, isPartyB: false },
+        delegatedSigner: sessionKey.address,
+        selectors: [sendQuoteSelector, approveOperationalFeeSelector],
+        expiryTimestamp: now + 3600n,
+    },
+    {   // longer-lived server-side signer, its own selector set
+        account: { addr: subAccount, isPartyB: false },
+        delegatedSigner: serverSigner.address,
+        selectors: [requestToClosePositionSelector],
+        expiryTimestamp: now + 86400n,
+    },
+]])</code></pre>
+					<p>
 						Then submit it in front of the operations that depend on it. Operations signed by the session key list the granted selectors
 						in their calldata and verify against the fresh delegation:
 					</p>
@@ -165,9 +197,9 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 )</code></pre>
 					<p>
 						The GaslessLayer needs no dedicated surface for this: <code>relayInstantBatch</code> forwards a grant operation like any other
-						instant operation, and billing prices it by its <code>grantDelegation</code> selector through the normal fee schedule
-						(<code>setSelectorFeeConfig</code>), including the daily free-operation quota and Virtual Account &rarr; parent payer
-						resolution.
+						instant operation, and billing prices it by its selector (<code>grantDelegation</code> or <code>grantDelegations</code>)
+						through the normal fee schedule (<code>setSelectorFeeConfig</code>), including the daily free-operation quota and Virtual
+						Account &rarr; parent payer resolution.
 					</p>
 
 					<h2 id="onboarding-scenario">Scenario: one-signature onboarding</h2>
@@ -200,6 +232,13 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 						From the user's perspective: one deposit and one signature. Every subsequent action &mdash; and everything in the setup batch
 						beyond the grant itself &mdash; is signed by the session key and relayed gaslessly.
 					</p>
+					<p>
+						The same holds when 1-click trading needs a second delegate next to the session key. The grant operation then encodes
+						<code>grantDelegations</code> with one entry per delegate, the wallet still signs exactly once, and operations signed by
+						either delegate ride the same batch. Two things would quietly add a prompt back: deriving the session key from a wallet
+						signature (the grant must already contain the key's address), and learning the second delegate's address only after the grant
+						was signed.
+					</p>
 					<aside class="callout callout-note">
 						<strong>Deployment wiring.</strong>
 						For this flow the GaslessLayer must hold <code>OPERATOR_ROLE</code> on the InstantLayer and
@@ -210,9 +249,9 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 
 					<h2 id="existing-grant-paths">Existing grant paths</h2>
 					<p>
-						The operation form is additive. <code>grantDelegation</code> as a direct owner call and
-						<code>grantBatchDelegationBySig</code> with its dedicated EIP-712 payload and delegation nonce both keep working unchanged;
-						all three paths share the same validation and write the same delegation storage. For new integrations the operation form is
+						The operation form is additive. <code>grantDelegation</code> and <code>grantDelegations</code> as direct owner calls and
+						<code>grantBatchDelegationBySig</code> with its dedicated EIP-712 payload and delegation nonce all keep working unchanged;
+						every path shares the same validation and writes the same delegation storage. For new integrations the operation form is
 						preferred, since it composes with other operations in a batch and rides the standard operation replay machinery instead of a
 						separate nonce track.
 					</p>

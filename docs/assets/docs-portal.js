@@ -93,6 +93,7 @@
 			["strict-deallocation", "Accounts", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
 			["close-to-liquidation", "Trading & Liquidation", "Close-to-Liquidation Execution"],
+			["gasless-layer", "Gasless Operations", "Gasless Layer"],
 			["explicit-clearing-house-settlements", "Clearing House", "Explicit Clearing House Settlements"],
 			["liquidation-funding-observability", "Liquidation", "Liquidation Funding Observability"],
 			["partya-liquidation-fee-recipient", "Liquidation", "PartyA Liquidation Fee Recipient Cleanup"],
@@ -113,6 +114,7 @@
 			["close-settlement-netting", "Settlement", "Per-Quote Close Settlement Netting"],
 			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
 			["instant-layer-batch-delegation-grant", "InstantLayer", "Batch Delegation Grant Operations"],
+			["diamond-role-management", "Access Control", "Consistent Diamond Role Management"],
 		],
 	};
 

@@ -60,6 +60,7 @@ interface IGaslessLayer {
 	event NativeGasTopUpConfigUpdated(uint256 dailySponsoredNativeLimit, bool revertWhenNativeSponsorLimitExhausted);
 	event NativeGasTopUpFeeBpsUpdated(uint256 feeBps);
 	event TreasuryUpdated(address treasury);
+	event InstantLayerUpdated(address instantLayer);
 
 	// ────────────────────────── Errors ────────────────────────────
 

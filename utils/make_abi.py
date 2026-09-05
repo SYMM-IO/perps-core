@@ -78,6 +78,7 @@ def generate_diamond_abi(subdirs, output_name):
     from multiple subdirectories.
     """
     abi_data = []
+    interface_abi_data = []
     for subdir in subdirs:
         directory_path = os.path.join("artifacts", "contracts", subdir)
         if not os.path.exists(directory_path):
@@ -102,10 +103,14 @@ def generate_diamond_abi(subdirs, output_name):
                     if "abi" in data:
                         # Normalize enum types to uint8
                         normalized_abi = [normalize_abi_types(item) for item in data["abi"]]
-                        abi_data += normalized_abi
+                        if data.get("bytecode") in (None, "", "0x"):
+                            interface_abi_data += normalized_abi
+                        else:
+                            abi_data += normalized_abi
 
-    # Remove duplicates
-    unique_abi_data = remove_duplicates(abi_data)
+    # Implementations may narrow interface mutability (e.g. nonpayable to view).
+    # Prefer their definitions regardless of filesystem traversal order.
+    unique_abi_data = remove_duplicates(abi_data + interface_abi_data)
 
     with open(f"abis/{output_name}.json", "w") as f:
         json.dump(unique_abi_data, f, indent=4)
@@ -160,6 +165,18 @@ def main():
             "accountLayer/storages",
         ],
         "accountLayer",
+    )
+
+    # Generate ExpressProvider diamond ABI (combines Express Withdraw Layer facets, libraries, utils, and storages)
+    print("\n=== Generating ExpressProvider ABI ===")
+    generate_diamond_abi(
+        [
+            "expressWithdrawLayer/facets",
+            "expressWithdrawLayer/libraries",
+            "expressWithdrawLayer/utils",
+            "expressWithdrawLayer/storages",
+        ],
+        "expressProvider",
     )
 
     # Generate ABIs for standalone contracts

@@ -47,6 +47,9 @@ interface IPartyALiquidationEvents {
 		bytes liquidationId
 	);
 	event LiquidationDisputed(address partyA, bytes liquidationId);
+	/// @notice The signed and settled PartyA uPNL differed, but within the rounding allowance, so the liquidation continues.
+	/// @dev `allowance` is the per-position allowance times the open position count at liquidation start.
+	event LiquidationUpnlRoundingAccepted(address partyA, int256 signedUpnl, int256 settledUpnl, uint256 allowance, bytes liquidationId);
 	event ResolveLiquidationDispute(address partyA, address[] partyBs, int256[] amounts, bool disputed, bytes liquidationId);
 	event FullyLiquidatedPartyA(address partyA, bytes liquidationId);
 	/// @notice Raw funding and price PnL calculated while one quote is liquidated.

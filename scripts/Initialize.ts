@@ -66,6 +66,11 @@ export async function initialize(): Promise<RunContext> {
 			.grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))),
 	)
 	await runTx(
+		context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("ENTITY_METADATA_MANAGER_ROLE"))),
+	)
+	await runTx(
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
 	)
 	await runTx(

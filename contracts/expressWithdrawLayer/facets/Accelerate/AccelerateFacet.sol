@@ -133,7 +133,7 @@ contract AccelerateFacet is IAccelerateFacet, IOperatorEvents, Pausable, Reentra
 			)
 		);
 		address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), offer.signature);
-		if (!LibAccessControl.hasRole(LibAccessControl.SIGNER_ROLE, signer)) revert LibErrors.InvalidAccelerateSigner();
+		if (!LibAccessControl.hasRole(signer, LibAccessControl.SIGNER_ROLE)) revert LibErrors.InvalidAccelerateSigner();
 	}
 
 	function _lockPools(address affiliate, uint256 generalAmount, uint256 affiliateAmount) internal {

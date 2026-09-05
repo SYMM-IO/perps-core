@@ -4,11 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
+
 import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountStorage.sol";
 import { AffiliateDetail, AffiliateSelectorConfig, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
 
 /// @notice Read-only interface for accounts, affiliates, roles, and system state
-interface IViewFacet {
+interface IViewFacet is IDiamondAccessControlView {
 	// ==================== Sub-Account View Functions ====================
 
 	/// @notice Returns the full details of a sub-account
@@ -190,16 +192,6 @@ interface IViewFacet {
 	function MAX_NAME_LENGTH() external view returns (uint256);
 
 	// ==================== Role Management ====================
-
-	/// @notice Checks whether a user has a specific role
-	/// @param user The user address
-	/// @param role The role identifier
-	function hasRole(address user, bytes32 role) external view returns (bool);
-
-	/// @notice Checks whether a user is a role admin for a specific role
-	/// @param user The user address
-	/// @param role The role identifier
-	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
 
 	// ==================== Ownership ====================
 

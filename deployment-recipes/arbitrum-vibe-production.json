@@ -173,6 +173,229 @@
 							"sourceOffsets": [0]
 						}
 					]
+				},
+				{
+					"name": "InstantOpenAndSetFundingFee",
+					"instantOpenMode": true,
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantCloseAndSetFundingFee",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantCloseWithAllocationAndSetFundingFee",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantOpenNoMarginAndSetFundingFee",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						}
+					]
+				},
+				{
+					"name": "InstantOpenAndSettleUpnl",
+					"instantOpenMode": true,
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [448],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						}
+					]
+				},
+				{
+					"name": "InstantOpenAndSetFundingFeeAndSettleUpnl",
+					"instantOpenMode": true,
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [448],
+							"sourceIndices": [1],
+							"sourceOffsets": [0]
+						}
+					]
+				},
+				{
+					"name": "InstantOpenNoMarginAndSettleUpnl",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [448],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						}
+					]
+				},
+				{
+					"name": "InstantOpenNoMarginAndSetFundingFeeAndSettleUpnl",
+					"operations": [
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [0],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						},
+						{
+							"insertionPoints": [],
+							"sourceIndices": [],
+							"sourceOffsets": []
+						},
+						{
+							"insertionPoints": [448],
+							"sourceIndices": [0],
+							"sourceOffsets": [0]
+						}
+					]
 				}
 			]
 		},
