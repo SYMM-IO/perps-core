@@ -37,68 +37,6 @@ function atomicWrite(file, value) {
 	}
 }
 
-function artifactFiles(root) {
-	const directory = path.join(root, "artifacts", "contracts");
-	if (!fs.existsSync(directory)) return [];
-	const result = [];
-	const visit = entry => {
-		const stat = fs.statSync(entry);
-		if (stat.isDirectory()) {
-			for (const child of fs.readdirSync(entry).sort()) visit(path.join(entry, child));
-		} else if (stat.isFile() && entry.endsWith(".json") && !entry.endsWith(".dbg.json")) result.push(entry);
-	};
-	visit(directory);
-	return result;
-}
-
-function loadInterfaces(root) {
-	const result = [];
-	for (const file of artifactFiles(root)) {
-		try {
-			const artifact = JSON.parse(fs.readFileSync(file, "utf8"));
-			if (!Array.isArray(artifact.abi)) continue;
-			result.push(new Interface(artifact.abi));
-		} catch {}
-	}
-	return result;
-}
-
-function jsonInputValue(value) {
-	const stable = stableValue(value);
-	if (Array.isArray(stable) || (stable && typeof stable === "object")) return JSON.stringify(stable);
-	return String(stable);
-}
-
-function methodForAction(action, interfaces) {
-	if (action.data === "0x" || action.data.length < 10) return null;
-	const matches = new Map();
-	for (const candidate of interfaces) {
-		let fragment;
-		try {
-			fragment = candidate.getFunction(action.data.slice(0, 10));
-			if (!fragment) continue;
-			const decoded = candidate.decodeFunctionData(fragment, action.data);
-			const contractInputsValues = {};
-			fragment.inputs.forEach((input, index) => {
-				contractInputsValues[input.name || `arg${index}`] = jsonInputValue(decoded[index]);
-			});
-			matches.set(fragment.format("sighash"), {
-				contractMethod: {
-					inputs: fragment.inputs.map(input => ({
-						internalType: input.type,
-						name: input.name,
-						type: input.type,
-					})),
-					name: fragment.name,
-					payable: fragment.payable,
-				},
-				contractInputsValues,
-			});
-		} catch {}
-	}
-	return matches.size === 1 ? [...matches.values()][0] : null;
-}
-
 export function validateSafeActions(actions) {
 	if (!Array.isArray(actions) || actions.length === 0) throw new Error("Safe action batch must contain at least one transaction");
 	return actions.map((action, index) => {
@@ -115,11 +53,41 @@ export function validateSafeActions(actions) {
 	});
 }
 
-export function createSafeBatch({ root, chainId, safeAddress, name, description, actions, createdAt = Date.now() }) {
+export function validateSafeBatchTransport(batch) {
+	if (!batch || typeof batch !== "object" || Array.isArray(batch)) throw new Error("Safe batch must be an object");
+	const normalizedActions = validateSafeActions(batch.actions);
+	const transactionBuilder = batch.transactionBuilder;
+	if (!transactionBuilder || typeof transactionBuilder !== "object" || Array.isArray(transactionBuilder)) {
+		throw new Error("Safe batch requires a Transaction Builder document");
+	}
+	if (transactionBuilder.chainId !== String(batch.chainId)) throw new Error("Safe Transaction Builder chain ID differs from reviewed intent");
+	if (transactionBuilder.meta?.createdFromSafeAddress !== batch.safeAddress) {
+		throw new Error("Safe Transaction Builder address differs from reviewed intent");
+	}
+	if (!Array.isArray(transactionBuilder.transactions) || transactionBuilder.transactions.length !== normalizedActions.length) {
+		throw new Error("Safe Transaction Builder action count differs from reviewed intent");
+	}
+	for (const [index, action] of normalizedActions.entries()) {
+		const transaction = transactionBuilder.transactions[index];
+		if (!transaction || typeof transaction !== "object" || Array.isArray(transaction)) {
+			throw new Error(`Safe Transaction Builder action ${index + 1} must be an object`);
+		}
+		if (transaction.to !== action.to) throw new Error(`Safe Transaction Builder action ${index + 1} target differs from reviewed intent`);
+		if (transaction.value !== action.value) throw new Error(`Safe Transaction Builder action ${index + 1} value differs from reviewed intent`);
+		if (transaction.data !== action.data) {
+			throw new Error(`Safe Transaction Builder action ${index + 1} calldata differs from reviewed intent`);
+		}
+		if (transaction.contractMethod !== null || transaction.contractInputsValues !== null) {
+			throw new Error(`Safe Transaction Builder action ${index + 1} must use byte-exact raw calldata`);
+		}
+	}
+	return batch;
+}
+
+export function createSafeBatch({ chainId, safeAddress, name, description, actions, createdAt = Date.now() }) {
 	if (!Number.isSafeInteger(Number(chainId)) || Number(chainId) < 1) throw new Error(`Invalid Safe batch chain ID ${JSON.stringify(chainId)}`);
 	if (!isAddress(safeAddress) || /^0x0{40}$/i.test(safeAddress)) throw new Error("Safe batch requires a non-zero Safe address");
 	const normalizedActions = validateSafeActions(actions);
-	const interfaces = loadInterfaces(root);
 	const transactionBuilder = {
 		version: "1.0",
 		chainId: String(chainId),
@@ -131,16 +99,13 @@ export function createSafeBatch({ root, chainId, safeAddress, name, description,
 			createdFromSafeAddress: getAddress(safeAddress),
 			createdFromOwnerAddress: "",
 		},
-		transactions: normalizedActions.map(action => {
-			const decoded = methodForAction(action, interfaces);
-			return {
-				to: action.to,
-				value: action.value,
-				data: decoded ? null : action.data,
-				contractMethod: decoded?.contractMethod || null,
-				contractInputsValues: decoded?.contractInputsValues || null,
-			};
-		}),
+		transactions: normalizedActions.map(action => ({
+			to: action.to,
+			value: action.value,
+			data: action.data,
+			contractMethod: null,
+			contractInputsValues: null,
+		})),
 	};
 	const intent = {
 		apiVersion: BATCH_API_VERSION,
@@ -150,11 +115,14 @@ export function createSafeBatch({ root, chainId, safeAddress, name, description,
 		description: description || "",
 		actions: normalizedActions,
 	};
-	return { ...intent, transactionBuilder, digest: safeBatchDigest(intent) };
+	return validateSafeBatchTransport({ ...intent, transactionBuilder, digest: safeBatchDigest(intent) });
 }
 
 export function writeSafeBatch(file, batch) {
+	validateSafeBatchTransport(batch);
 	atomicWrite(file, batch.transactionBuilder);
+	const written = JSON.parse(fs.readFileSync(file, "utf8"));
+	validateSafeBatchTransport({ ...batch, transactionBuilder: written });
 	return file;
 }
 

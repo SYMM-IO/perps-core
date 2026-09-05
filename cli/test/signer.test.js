@@ -7,7 +7,8 @@ import {
 	signerEnvironment,
 	validateSignerSelection,
 } from "../signer/index.js";
-import { createSafeBatch, safeBatchDigest, writeSafeBatch, writeSafeIntent } from "../signer/safe-batch.js";
+import { createSafeBatch, safeBatchDigest, validateSafeBatchTransport, writeSafeBatch, writeSafeIntent } from "../signer/safe-batch.js";
+import { decodeMultiSendData, encodeMultiSendData } from "@safe-global/protocol-kit";
 import { Interface, Wallet } from "ethers";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -29,7 +30,7 @@ function artifactRoot() {
 	return root;
 }
 
-test("Safe export is importable, ABI-decoded, and digest-bound to execution intent", () => {
+test("Safe export preserves raw calldata and is digest-bound to execution intent", () => {
 	const root = artifactRoot();
 	const iface = new Interface(["function setLimit(uint256 limit)"]);
 	const input = {
@@ -45,9 +46,9 @@ test("Safe export is importable, ABI-decoded, and digest-bound to execution inte
 	assert.equal(first.digest, second.digest, "UI metadata must not alter the execution digest");
 	assert.equal(first.transactionBuilder.version, "1.0");
 	assert.equal(first.transactionBuilder.chainId, "42161");
-	assert.equal(first.transactionBuilder.transactions[0].contractMethod.name, "setLimit");
-	assert.deepEqual(first.transactionBuilder.transactions[0].contractInputsValues, { limit: "7" });
-	assert.equal(first.transactionBuilder.transactions[0].data, null);
+	assert.equal(first.transactionBuilder.transactions[0].contractMethod, null);
+	assert.equal(first.transactionBuilder.transactions[0].contractInputsValues, null);
+	assert.equal(first.transactionBuilder.transactions[0].data, input.actions[0].data);
 	assert.equal(first.transactionBuilder.transactions[0].contractName, undefined);
 
 	const { digest, transactionBuilder, ...intent } = first;
@@ -58,8 +59,65 @@ test("Safe export is importable, ABI-decoded, and digest-bound to execution inte
 	const intentPath = path.join(root, "out", "intent.json");
 	writeSafeBatch(builderPath, first);
 	writeSafeIntent(intentPath, first);
-	assert.equal(JSON.parse(fs.readFileSync(builderPath, "utf8")).transactions[0].contractMethod.name, "setLimit");
+	assert.equal(JSON.parse(fs.readFileSync(builderPath, "utf8")).transactions[0].data, input.actions[0].data);
 	assert.equal(JSON.parse(fs.readFileSync(intentPath, "utf8")).digest, digest);
+});
+
+test("Safe export keeps complex Diamond-cut tuple calldata byte-exact and fails closed on transport drift", () => {
+	const root = artifactRoot();
+	const iface = new Interface([
+		"function diamondCut((address facetAddress,uint8 action,bytes4[] functionSelectors)[] _diamondCut,address _init,bytes _calldata)",
+	]);
+	const calldata = iface.encodeFunctionData("diamondCut", [
+		[
+			[TARGET, 1, ["0x12345678", "0x90abcdef"]],
+			["0x3333333333333333333333333333333333333333", 2, ["0xdeadbeef"]],
+		],
+		"0x0000000000000000000000000000000000000000",
+		"0x",
+	]);
+	const secondCalldata = iface.encodeFunctionData("diamondCut", [
+		[["0x4444444444444444444444444444444444444444", 1, ["0x11223344"]]],
+		"0x0000000000000000000000000000000000000000",
+		"0x",
+	]);
+	const batch = createSafeBatch({
+		chainId: 42161,
+		safeAddress: SAFE,
+		name: "Core Diamond cut",
+		actions: [
+			{ to: TARGET, value: "0", data: calldata, description: "Install reviewed Core selectors part 1" },
+			{ to: TARGET, value: "0", data: secondCalldata, description: "Install reviewed Core selectors part 2" },
+		],
+		createdAt: 1,
+	});
+	assert.match(calldata, /^0x1f931c1c/);
+	assert.equal(batch.transactionBuilder.transactions[0].data, calldata);
+	assert.equal(batch.transactionBuilder.transactions[1].data, secondCalldata);
+	assert.equal(validateSafeBatchTransport(batch), batch);
+	const transactions = batch.transactionBuilder.transactions.map(transaction => ({
+		operation: 0,
+		to: transaction.to,
+		value: transaction.value,
+		data: transaction.data,
+	}));
+	const packed = encodeMultiSendData(transactions);
+	const multiSendCall = new Interface(["function multiSend(bytes transactions)"]).encodeFunctionData("multiSend", [packed]);
+	assert.deepEqual(decodeMultiSendData(multiSendCall), transactions, "Safe MultiSend packing must preserve every reviewed call byte");
+
+	const builderPath = path.join(root, "out", "diamond-cut.json");
+	writeSafeBatch(builderPath, batch);
+	assert.equal(JSON.parse(fs.readFileSync(builderPath, "utf8")).transactions[0].data, calldata);
+
+	const missingCalldata = structuredClone(batch);
+	missingCalldata.transactionBuilder.transactions[0].data = null;
+	assert.throws(() => validateSafeBatchTransport(missingCalldata), /calldata differs from reviewed intent/);
+	assert.throws(() => writeSafeBatch(builderPath, missingCalldata), /calldata differs from reviewed intent/);
+	assert.equal(
+		JSON.parse(fs.readFileSync(builderPath, "utf8")).transactions[0].data,
+		calldata,
+		"a rejected rewrite must preserve the reviewed file",
+	);
 });
 
 test("private keys remain transient, are masked, and never serialize into task input", async () => {
