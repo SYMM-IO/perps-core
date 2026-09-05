@@ -131,8 +131,17 @@ contract ViewFacet is IViewFacet {
 
 	// ── Access control ──
 
+	function hasRole(address user, bytes32 role) external view returns (bool) {
+		return LibAccessControl.hasRole(user, role);
+	}
+
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
+		return LibAccessControl.isRoleAdmin(user, role);
+	}
+
+	/// @dev Compatibility adapter for the original ExpressProvider selector.
 	function hasRole(bytes32 role, address account) external view returns (bool) {
-		return LibAccessControl.hasRole(role, account);
+		return LibAccessControl.hasRole(account, role);
 	}
 
 	// ── Credit line ──

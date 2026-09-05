@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="description" content="Role-based reading paths and a complete map of all 31 Symmio Core v0.8.6 release chapters." />
+		<meta name="description" content="Role-based reading paths and a complete map of all 34 Symmio Core v0.8.6 release chapters." />
 		<title>Symmio Core v0.8.6 Overview</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
 		<script>
@@ -48,8 +48,8 @@
 						<div>
 							<h1>Symmio Core v0.8.6 Overview</h1>
 							<p class="hero-copy">
-								Start here for a role-based route through all 31 release chapters, from protocol safety and settlement to
-								AccountLayer, Express Withdrawal, integrations, and operations.
+								Start here for a role-based route through all 34 release chapters, from protocol safety and settlement to
+								AccountLayer, Express Withdrawal, Gasless Layer, integrations, and operations.
 							</p>
 						</div>
 					</div>
@@ -57,9 +57,9 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						The v0.8.6 release notes cover 31 changes and two companion guides. Each numbered chapter explains one behavior change, its
-						limits, and the integrations that must respond. This overview and the detailed Express operator runbook are unnumbered
-						companions.
+						The v0.8.6 release notes cover 34 changes and four companion pages. Each numbered chapter explains one behavior change, its
+						limits, and the integrations that must respond. This overview, the detailed Express operator runbook, and two focused
+						compatibility notes are unnumbered companions.
 					</p>
 
 					<h2 id="how-to-use">How to use these notes</h2>
@@ -99,9 +99,19 @@
 					<h3 id="operators-and-solvers">Operators and solvers</h3>
 					<p>
 						Follow the Express design and runbook pair, then review <a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a>,
+						<a href="gasless-layer.html#deployment">Gasless Layer deployment and wiring</a>,
 						<a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a>,
 						<a href="partyb-funding-nonces.html">PartyB Funding Update Nonces</a>, and
 						<a href="symbol-adjustment.html#runbook">the symbol-adjustment runbook</a>.
+					</p>
+
+					<h3 id="gasless-integrators">Gasless integrators</h3>
+					<p>
+						Start with <a href="gasless-layer.html">Gasless Layer</a> for the signed relay, deterministic-wallet, native top-up,
+						cross-chain deposit, fee, and deployment model. Continue with <a href="operational-fees.html">Operational Fees</a>,
+						<a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a>, and
+						<a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a> for the three
+						protocol interfaces the layer relies on.
 					</p>
 
 					<h3 id="accountlayer-builders">AccountLayer builders</h3>
@@ -121,6 +131,13 @@
 						settlement model. <a href="express-deposit-removal.html">Express Deposit Removal</a> removes the unrelated v0.8.5 AccountLayer
 						deposit split. The <a href="express-bot-operations-checklist.html">operator runbook</a> is the companion implementation
 						reference.
+					</p>
+
+					<h3 id="gasless-operations">Gasless operations</h3>
+					<p>
+						<a href="gasless-layer.html">Gasless Layer</a> adds role-gated relaying for signed InstantLayer and deterministic-wallet
+						operations, sponsored or collateral-paid native gas top-ups, and settlement of bridged collateral into wallet-owned accounts.
+						It uses Core operational-fee allowances and AccountLayer ownership without moving signature authority to the relayer.
 					</p>
 
 					<h3 id="accounts-and-authorization">Accounts and authorization</h3>

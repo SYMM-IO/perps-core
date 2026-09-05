@@ -265,7 +265,7 @@ contract SymmioHookFacet is ISymmioHookFacet, Pausable, ReentrancyGuard {
 		);
 
 		address signer = ECDSA.recover(LibAccessControl.hashTypedDataV4(structHash), offer.signature);
-		if (!LibAccessControl.hasRole(LibAccessControl.SIGNER_ROLE, signer)) revert LibErrors.InvalidSigner();
+		if (!LibAccessControl.hasRole(signer, LibAccessControl.SIGNER_ROLE)) revert LibErrors.InvalidSigner();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

@@ -51,10 +51,10 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("SUSPENDER_ROLE")))
 
 		// Configure ExpressProvider via roles
-		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
-		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
-		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
-		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
+		await expressProvider["grantRole(address,bytes32)"](botSigner.address, SIGNER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](operator.address, OPERATOR_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](locker.address, LOCKER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](unlocker.address, UNLOCK_ROLE)
 		// Deploy MockMuonSignatureVerifier for credit line
 		const muonVerifier = await ethers.deployContract("MockMuonSignatureVerifier")
 
@@ -1184,7 +1184,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 
 			const { parts, providerData } = await initiateWindowedWithdraw(fixture)
 
-			await expressProvider.revokeRole(SIGNER_ROLE, botSigner.address)
+			await expressProvider["revokeRole(address,bytes32)"](botSigner.address, SIGNER_ROLE)
 
 			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWithCustomError(
 				expressProvider,
@@ -1704,6 +1704,53 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	describe("Access Control", function () {
+		it("uses the canonical owner-to-default-admin path", async function () {
+			const { deployer, user, expressProvider } = await deployFixture()
+			const defaultAdminRole = ethers.keccak256(ethers.toUtf8Bytes("DEFAULT_ADMIN_ROLE"))
+
+			expect(await expressProvider["hasRole(address,bytes32)"](deployer.address, defaultAdminRole)).to.be.true
+			await expect(expressProvider.setAdmin(user.address)).to.emit(expressProvider, "RoleGranted").withArgs(defaultAdminRole, user.address)
+			expect(await expressProvider["hasRole(address,bytes32)"](user.address, defaultAdminRole)).to.be.true
+		})
+
+		it("allows a delegated role admin to grant and revoke only its role", async function () {
+			const { deployer, user, receiver, expressProvider } = await deployFixture()
+
+			await expressProvider.addRoleAdmin(OPERATOR_ROLE, user.address)
+			expect(await expressProvider.isRoleAdmin(user.address, OPERATOR_ROLE)).to.be.true
+			await expressProvider.connect(user)["grantRole(address,bytes32)"](receiver.address, OPERATOR_ROLE)
+			expect(await expressProvider["hasRole(address,bytes32)"](receiver.address, OPERATOR_ROLE)).to.be.true
+
+			await expressProvider.connect(user)["revokeRole(address,bytes32)"](receiver.address, OPERATOR_ROLE)
+			expect(await expressProvider["hasRole(address,bytes32)"](receiver.address, OPERATOR_ROLE)).to.be.false
+
+			await expressProvider.connect(deployer).removeRoleAdmin(OPERATOR_ROLE, user.address)
+			await expect(expressProvider.connect(user)["grantRole(address,bytes32)"](receiver.address, OPERATOR_ROLE)).to.be.revertedWithCustomError(
+				expressProvider,
+				"MustBeRoleAdmin",
+			)
+		})
+
+		it("keeps setAdmin owner-only and rejects zero-address grants", async function () {
+			const { user, expressProvider } = await deployFixture()
+
+			await expect(expressProvider.connect(user).setAdmin(user.address)).to.be.revertedWith("LibDiamond: Must be contract owner")
+			await expect(expressProvider.setAdmin(ethers.ZeroAddress)).to.be.revertedWithCustomError(expressProvider, "ZeroAddress")
+			await expect(expressProvider["grantRole(address,bytes32)"](ethers.ZeroAddress, OPERATOR_ROLE)).to.be.revertedWithCustomError(
+				expressProvider,
+				"ZeroAddress",
+			)
+		})
+
+		it("keeps the original role-first owner adapters", async function () {
+			const { user, expressProvider } = await deployFixture()
+
+			await expressProvider["grantRole(bytes32,address)"](OPERATOR_ROLE, user.address)
+			expect(await expressProvider["hasRole(bytes32,address)"](OPERATOR_ROLE, user.address)).to.be.true
+			await expressProvider["revokeRole(bytes32,address)"](OPERATOR_ROLE, user.address)
+			expect(await expressProvider["hasRole(bytes32,address)"](OPERATOR_ROLE, user.address)).to.be.false
+		})
+
 		it("should reject non-SYMMIO calling onWithdrawRequest (OnlySymmio)", async function () {
 			const { expressProvider, user } = await deployFixture()
 
@@ -1986,7 +2033,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			await expect(expressProvider.connect(user).withdrawFromGeneral(100n)).to.be.revert(ethers)
 
 			// Grant WITHDRAWER_ROLE to user
-			await expressProvider.grantRole(WITHDRAWER_ROLE, user.address)
+			await expressProvider["grantRole(address,bytes32)"](user.address, WITHDRAWER_ROLE)
 
 			// Now user can withdraw from general
 			const generalAmt = 1_000n * 10n ** 18n
@@ -2000,27 +2047,27 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			expect(await expressProvider.affiliateBalances(affiliate)).to.equal(affiliateFunding - frontendAmt)
 
 			// Revoke and verify access is denied again
-			await expressProvider.revokeRole(WITHDRAWER_ROLE, user.address)
+			await expressProvider["revokeRole(address,bytes32)"](user.address, WITHDRAWER_ROLE)
 			await expect(expressProvider.connect(user).withdrawFromGeneral(100n)).to.be.revert(ethers)
 		})
 
 		it("should verify role assignments via hasRole", async function () {
 			const { botSigner, operator, locker, unlocker, expressProvider } = await deployFixture()
 
-			expect(await expressProvider.hasRole(OPERATOR_ROLE, operator.address)).to.be.true
-			expect(await expressProvider.hasRole(SIGNER_ROLE, botSigner.address)).to.be.true
-			expect(await expressProvider.hasRole(LOCKER_ROLE, locker.address)).to.be.true
-			expect(await expressProvider.hasRole(UNLOCK_ROLE, unlocker.address)).to.be.true
+			expect(await expressProvider["hasRole(address,bytes32)"](operator.address, OPERATOR_ROLE)).to.be.true
+			expect(await expressProvider["hasRole(address,bytes32)"](botSigner.address, SIGNER_ROLE)).to.be.true
+			expect(await expressProvider["hasRole(address,bytes32)"](locker.address, LOCKER_ROLE)).to.be.true
+			expect(await expressProvider["hasRole(address,bytes32)"](unlocker.address, UNLOCK_ROLE)).to.be.true
 		})
 
 		it("should allow admin to grant and revoke roles", async function () {
 			const { user, expressProvider } = await deployFixture()
 
-			await expressProvider.grantRole(OPERATOR_ROLE, user.address)
-			expect(await expressProvider.hasRole(OPERATOR_ROLE, user.address)).to.be.true
+			await expressProvider["grantRole(address,bytes32)"](user.address, OPERATOR_ROLE)
+			expect(await expressProvider["hasRole(address,bytes32)"](user.address, OPERATOR_ROLE)).to.be.true
 
-			await expressProvider.revokeRole(OPERATOR_ROLE, user.address)
-			expect(await expressProvider.hasRole(OPERATOR_ROLE, user.address)).to.be.false
+			await expressProvider["revokeRole(address,bytes32)"](user.address, OPERATOR_ROLE)
+			expect(await expressProvider["hasRole(address,bytes32)"](user.address, OPERATOR_ROLE)).to.be.false
 		})
 
 		it("should reject setSecurityWindow below minimum", async function () {

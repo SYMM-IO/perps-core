@@ -14,6 +14,7 @@ const { keccak256 } = sha3
 const DISPUTE_ROLE = `0x${keccak256("DISPUTE_ROLE")}`
 const PARTY_B_MANAGER_ROLE = `0x${keccak256("PARTY_B_MANAGER_ROLE")}`
 const AFFILIATE_MANAGER_ROLE = `0x${keccak256("AFFILIATE_MANAGER_ROLE")}`
+const ENTITY_METADATA_MANAGER_ROLE = `0x${keccak256("ENTITY_METADATA_MANAGER_ROLE")}`
 const SYMBOL_MANAGER_ROLE = `0x${keccak256("SYMBOL_MANAGER_ROLE")}`
 const SUSPENDER_ROLE = `0x${keccak256("SUSPENDER_ROLE")}`
 const PAUSER_ROLE = `0x${keccak256("PAUSER_ROLE")}`
@@ -50,6 +51,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SUSPENDER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), UNPAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), AFFILIATE_MANAGER_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), ENTITY_METADATA_MANAGER_ROLE)
 		// New V2 roles
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), FEE_ADMIN_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), COOLDOWN_ADMIN_ROLE)
@@ -185,6 +187,57 @@ export function shouldBehaveLikeControlFacet(): void {
 			await expect(context.controlFacet.connect(owner).deregisterPartyB(await hedger.getAddress(), 1)).to.be.revertedWith(
 				"ControlFacet: Invalid index",
 			)
+		})
+	})
+
+	describe("setEntityMetadata", () => {
+		const metadata = {
+			name: "Symmio entity",
+			brandColor: "#00ffcc",
+			metadata: "ipfs://entity-metadata",
+		}
+
+		it("allows an entity metadata manager to set metadata for any entity type", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), ENTITY_METADATA_MANAGER_ROLE)
+			await context.controlFacet.connect(owner).registerOperationalFeeCharger(await hedger3.getAddress())
+
+			await expect(context.controlFacet.connect(user2).setEntityMetadata(await context.signers.liquidator.getAddress(), metadata))
+				.to.emit(context.controlFacet, "SetEntityMetadata")
+				.withArgs(await context.signers.liquidator.getAddress(), Object.values(metadata))
+			await expect(context.controlFacet.connect(user2).setEntityMetadata(await hedger3.getAddress(), metadata)).to.not.be.reverted
+
+			expect(await context.viewFacet.getEntityMetadata(await context.signers.liquidator.getAddress())).to.deep.equal(Object.values(metadata))
+			expect(await context.viewFacet.getEntityMetadata(await hedger3.getAddress())).to.deep.equal(Object.values(metadata))
+		})
+
+		it("does not infer generic metadata authority from entity-specific manager roles", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), AFFILIATE_MANAGER_ROLE)
+			await context.controlFacet.connect(owner).grantRole(await hedger3.getAddress(), PARTY_B_MANAGER_ROLE)
+
+			await expect(context.controlFacet.connect(user2).setEntityMetadata(await hedger.getAddress(), metadata)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+			await expect(context.controlFacet.connect(hedger3).setEntityMetadata(await hedger.getAddress(), metadata)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+		})
+
+		it("keeps the legacy setters with their original role checks", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PARTY_B_MANAGER_ROLE)
+			await context.controlFacet.connect(owner).grantRole(await hedger3.getAddress(), AFFILIATE_MANAGER_ROLE)
+
+			await expect(context.controlFacet.connect(user2).setPartyBMetadata(await hedger.getAddress(), metadata)).to.not.be.reverted
+			await expect(context.controlFacet.connect(user2).setAffiliateMetadata(await hedger.getAddress(), metadata)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+
+			await expect(context.controlFacet.connect(hedger3).setAffiliateMetadata(await user2.getAddress(), metadata)).to.not.be.reverted
+			await expect(context.controlFacet.connect(hedger3).setPartyBMetadata(await user2.getAddress(), metadata)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+
+			expect(await context.viewFacet.getEntityMetadata(await hedger.getAddress())).to.deep.equal(Object.values(metadata))
+			expect(await context.viewFacet.getEntityMetadata(await user2.getAddress())).to.deep.equal(Object.values(metadata))
 		})
 	})
 

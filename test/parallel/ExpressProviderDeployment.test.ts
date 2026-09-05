@@ -21,7 +21,7 @@ describe("ExpressProvider deployment helper", function () {
 		expect(await provider.owner()).to.equal(deployer.address)
 		expect(await provider.pendingOwner()).to.equal(finalAdmin.address)
 		expect(await provider.accountLayer()).to.equal(await accountLayer.getAddress())
-		expect(await provider.hasRole(ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE")), finalAdmin.address)).to.equal(true)
+		expect(await provider["hasRole(address,bytes32)"](finalAdmin.address, ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE")))).to.equal(true)
 
 		await (await provider.connect(finalAdmin).acceptOwnership()).wait()
 		expect(await provider.owner()).to.equal(finalAdmin.address)

@@ -196,14 +196,6 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit SetSolverFeeReceiverForTag(partyB, receiver, tag);
 	}
 
-	/// @notice Sets the metadata for a Party B, including display name and other identifying information.
-	/// @param partyB The address of the Party B to set metadata for.
-	/// @param metadata The EntityMetadata struct containing the Party B's metadata.
-	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		MAStorage.layout().entitiesMetadata[partyB] = metadata;
-		emit SetEntityMetadata(partyB, metadata);
-	}
-
 	/// @notice Registers a new affiliate (frontend partner) into the system.
 	/// @param affiliate The address to register as an affiliate.
 	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
@@ -247,9 +239,24 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		emit CancelAffiliateShutdown(affiliate);
 	}
 
-	/// @notice Sets the metadata for an affiliate, including display name and other identifying information.
-	/// @param affiliate The address of the affiliate to set metadata for.
-	/// @param metadata The EntityMetadata struct containing the affiliate's metadata.
+	/// @notice Sets display and identifying metadata for a protocol entity.
+	/// @dev Uses a dedicated role because entities span Party Bs, affiliates, liquidators, fee chargers, and providers.
+	/// @param entity The address whose metadata is being set.
+	/// @param metadata The entity's display and identifying metadata.
+	function setEntityMetadata(address entity, EntityMetadata memory metadata) external onlyRole(LibAccessibility.ENTITY_METADATA_MANAGER_ROLE) {
+		MAStorage.layout().entitiesMetadata[entity] = metadata;
+		emit SetEntityMetadata(entity, metadata);
+	}
+
+	/// @notice Sets metadata through the legacy Party B-specific interface.
+	/// @dev Kept for backward compatibility with integrations authorized through PARTY_B_MANAGER_ROLE.
+	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		MAStorage.layout().entitiesMetadata[partyB] = metadata;
+		emit SetEntityMetadata(partyB, metadata);
+	}
+
+	/// @notice Sets metadata through the legacy affiliate-specific interface.
+	/// @dev Kept for backward compatibility with integrations authorized through AFFILIATE_MANAGER_ROLE.
 	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
 		MAStorage.layout().entitiesMetadata[affiliate] = metadata;
 		emit SetEntityMetadata(affiliate, metadata);

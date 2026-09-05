@@ -13,13 +13,14 @@ enum AdjustmentState {
 	CANCELLED
 }
 
-/// @notice Preparation, quote-processing, and funding-restoration phase inside an open physical-restatement window.
+/// @notice Preparation, funding-settlement, quote-processing, and funding-restoration phase inside an open physical-restatement window.
 enum RestatementPhase {
 	NONE,
 	FUNDING_PREPARATION,
 	QUOTE_PROCESSING,
 	ABORT_FUNDING_RESTORATION,
-	FINALIZATION_FUNDING_RESTORATION
+	FINALIZATION_FUNDING_RESTORATION,
+	FUNDING_SETTLEMENT
 }
 
 /// @notice A symbol's corporate-action adjustment state. Only the latest adjustment is stored;
@@ -51,7 +52,7 @@ struct SymbolAdjustment {
 	/// @notice Whether a restatement maintenance window is currently open.
 	/// @dev Freezes the symbol and gates quote rewrites, abort, and finalization to an explicitly opened window.
 	bool restating;
-	/// @notice Whether any quote rewrite or pending-quote removal occurred in the current restatement window.
+	/// @notice Whether any quote rewrite occurred in the current restatement window.
 	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory.
 	///      This is a mutation-safety flag, not the open-position completeness check enforced by the inventory checkpoints below.
 	bool restatementMutated;
@@ -83,6 +84,10 @@ struct SymbolAdjustment {
 	/// @notice Shared rate-resumption timestamp selected when finalization begins.
 	/// @dev Batched restoration uses this timestamp so every PartyB resumes funding at one economic boundary.
 	uint256 fundingRestorationTimestamp;
+	/// @notice Whether the open window settles old-basis funding before quote rewrites.
+	/// @dev Snapshotted from the global accumulated-funding switch when the PartyB manifest is sealed, so a switch flipped
+	///      mid-window cannot change what a rewrite requires after quotes have already been rewritten.
+	bool fundingSettlementRequired;
 }
 
 /// @notice Funding rates saved while a symbol is physically restated.
@@ -137,6 +142,10 @@ library SymbolAdjustmentStorage {
 		/// @notice Symbol-wide LONG and SHORT old-basis quantities remaining in the prepared PartyB manifest.
 		/// @dev Finalization is blocked until both exact quantity totals reach zero for the current restatement epoch.
 		mapping(uint256 => RestatementInventoryTotals) restatementInventoryTotals;
+		/// @notice Symbol-wide old-basis quantities whose accumulated funding must be settled before any quote is rewritten.
+		mapping(uint256 => RestatementInventoryTotals) restatementFundingSettlementTotals;
+		/// @notice Last restatement epoch in which each quote's old-basis funding was settled during the funding-only pass.
+		mapping(uint256 => uint256) quoteFundingSettledEpoch;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

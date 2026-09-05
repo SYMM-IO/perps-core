@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Gasless Layer relays signed InstantLayer and wallet operations, sponsors native gas, and settles bridged collateral into wallet-owned SYMMIO accounts."
+		/>
+		<title>Gasless Layer - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#architecture">Architecture and authority</a>
+				<a class="toc-link level-2" href="#signed-operations">Signed operation relays</a>
+				<a class="toc-link level-3" href="#instant-operations">InstantLayer batches and templates</a>
+				<a class="toc-link level-3" href="#delegation-relay">Delegation relay</a>
+				<a class="toc-link level-3" href="#wallet-operations">GaslessWallet operations</a>
+				<a class="toc-link level-2" href="#native-top-ups">Native gas top-ups</a>
+				<a class="toc-link level-2" href="#cross-chain-deposits">Cross-chain deposit settlement</a>
+				<a class="toc-link level-2" href="#fees">Operational fees and billing</a>
+				<a class="toc-link level-3" href="#selector-pricing">Selector pricing</a>
+				<a class="toc-link level-3" href="#billing-identity">Billing identity and fallback</a>
+				<a class="toc-link level-3" href="#fee-timing">Fee timing and atomicity</a>
+				<a class="toc-link level-2" href="#deployment">Deployment and wiring</a>
+				<a class="toc-link level-2" href="#integration-checklist">Integration checklist</a>
+				<a class="toc-link level-2" href="#events">Events</a>
+				<a class="toc-link level-2" href="#boundaries">Security and service boundaries</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Gasless Layer</h1>
+							<p class="hero-copy">
+								Gasless Layer lets an approved relayer pay chain gas for user-authorized SYMMIO actions. It forwards signed
+								InstantLayer and wallet operations, sends signed native-gas top-ups, and moves bridged collateral from a deterministic
+								wallet into a wallet-owned account.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<nav class="reader-map" aria-label="Gasless Layer reading map">
+					<a href="#signed-operations">
+						<span>Frontend path</span>
+						<strong>Build signed operations</strong>
+						<small>Choose an InstantLayer, delegation, or deterministic-wallet route.</small>
+					</a>
+					<a href="#fees">
+						<span>Fee path</span>
+						<strong>Resolve the real payer</strong>
+						<small>Selector prices, daily quota, multipliers, and Virtual Account fallback determine the charge.</small>
+					</a>
+					<a href="#deployment">
+						<span>Operator path</span>
+						<strong>Wire all three dependencies</strong>
+						<small>Core, AccountLayer, and InstantLayer each provide a required permission or state source.</small>
+					</a>
+					<a href="#boundaries">
+						<span>Review path</span>
+						<strong>Separate signatures from service trust</strong>
+						<small>Some outcomes are signed by the user. New-account settings are supplied by the relayer.</small>
+					</a>
+				</nav>
+
+				<article class="doc-article" id="full-document" tabindex="-1">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Gasless Layer is a UUPS-upgradeable contract between an off-chain relayer and three SYMMIO contracts. The relayer pays the
+						network fee and submits the transaction. InstantLayer still verifies signed protocol operations, Gasless Layer verifies its
+						own native-top-up and wallet-operation signatures, Core owns operational-fee allowances, and AccountLayer supplies account
+						ownership and Virtual Account relationships.
+					</p>
+					<p>The contract exposes five user journeys:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Journey</th>
+									<th>Entrypoint</th>
+									<th>Authority checked by</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Independent signed operations</td>
+									<td><code>relayInstantBatch</code></td>
+									<td>InstantLayer, or Gasless Layer for wallet-targeted operations</td>
+								</tr>
+								<tr>
+									<td>Registered operation template</td>
+									<td><code>relayInstantTemplate</code></td>
+									<td>InstantLayer</td>
+								</tr>
+								<tr>
+									<td>Delegation setup</td>
+									<td><code>relayGrantBatchDelegationBySig</code></td>
+									<td>InstantLayer</td>
+								</tr>
+								<tr>
+									<td>Native gas top-up</td>
+									<td><code>relayNativeGasTopUp</code></td>
+									<td>Gasless Layer</td>
+								</tr>
+								<tr>
+									<td>Bridged collateral settlement</td>
+									<td><code>settleDepositToNewAccount</code> or <code>settleDepositToExistingAccount</code></td>
+									<td>Gasless Layer plus AccountLayer ownership checks</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<h2 id="architecture">Architecture and authority</h2>
+					<pre><code class="language-mermaid">flowchart LR
+    User[User or delegated signer] -- signed intent --> Relayer[Approved relayer]
+    Relayer -- pays chain gas --> Layer[Gasless Layer proxy]
+    Layer -- signed operations --> Instant[InstantLayer]
+    Layer -- fees and deposits --> Core[SYMMIO Core]
+    Layer -- ownership and account creation --> Accounts[AccountLayer]
+    Bridge[Bridge] -- collateral --> Wallet[Deterministic GaslessWallet]
+    Layer -- deploys, sweeps, or executes --> Wallet
+</code></pre>
+					<p>
+						Only an address with <code>RELAYER_ROLE</code> can call a relay or deposit-settlement entrypoint. This lets the service
+						simulate requests, apply off-chain abuse controls, and decide which transactions it will fund. The role does not replace the
+						signature and ownership checks described below.
+					</p>
+
+					<h2 id="signed-operations">Signed operation relays</h2>
+					<h3 id="instant-operations">InstantLayer batches and templates</h3>
+					<p>
+						<code>relayInstantBatch</code> forwards independent <code>SignedOperation</code> payloads. A batch may contain ordinary
+						InstantLayer operations, GaslessWallet operations, or both. Pure InstantLayer batches use one <code>executeBatch</code> call.
+						Mixed batches preserve order and execute one operation at a time so wallet calls and InstantLayer calls remain in the same
+						atomic transaction.
+					</p>
+					<p>
+						<code>relayInstantTemplate</code> forwards a registered InstantLayer template. The InstantLayer owns template shape, result
+						chaining, signature checks, flex-field checks, nonces, and deadlines. Templates cannot contain GaslessWallet operations.
+					</p>
+
+					<h3 id="delegation-relay">Delegation relay</h3>
+					<p>
+						<code>relayGrantBatchDelegationBySig</code> forwards the InstantLayer's standalone <code>SignedDelegation</code> form. The
+						signed payload fixes the account, delegated signer, selectors, expiry, nonce, deadline, and salt. One relay call consumes one
+						free daily operation or one configured delegation fee, regardless of how many selectors the delegation grants.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Two delegation forms</strong> A delegation may use this dedicated entrypoint or travel as a regular signed operation
+						inside a batch or template. See <a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a> for
+						the in-batch form.
+					</aside>
+
+					<h3 id="wallet-operations">GaslessWallet operations</h3>
+					<p>
+						Each owner has a deterministic <code>GaslessWallet</code> address derived with CREATE2 from the Gasless Layer proxy. The
+						wallet may receive bridged collateral before deployment. When first needed, the layer deploys the wallet at the precomputed
+						address. Only the Gasless Layer proxy can make it transfer assets or execute calls.
+					</p>
+					<p>
+						A wallet operation reuses the <code>SignedOperation</code> envelope, but its target must equal the signer's expected
+						GaslessWallet and its calldata must encode <code>GaslessWallet.execute(Call[])</code>. Gasless Layer verifies the
+						gateway-domain signature, deadline, and sequential account nonce before executing the calls.
+					</p>
+					<ul>
+						<li>The account owner may sign directly.</li>
+						<li>
+							A delegated signer needs an active InstantLayer delegation for the wallet-execution sentinel and every inner call
+							selector.
+						</li>
+						<li>
+							Wallet calls have no target allowlist. The owner's signature binds the complete call list. A delegated signer is checked
+							by selector, not by target, so a grant authorizes that selector wherever the wallet can call it.
+						</li>
+						<li>PartyB wallet operations are rejected.</li>
+						<li>Any failed inner call reverts the whole wallet operation and the surrounding relay transaction.</li>
+					</ul>
+
+					<h2 id="native-top-ups">Native gas top-ups</h2>
+					<p>
+						A user signs <code>NativeGasTopUpRequest</code> with the payer account, recipient wallet, collateral budget, minimum native
+						amount, nonce, and deadline. The relayer supplies the native currency as <code>msg.value</code>. Gasless Layer checks the
+						signature and sends that value only to the signed recipient.
+					</p>
+					<p>
+						The actual native amount must meet <code>minNativeAmountOut</code> and must not exceed <code>maxNativeGasTopUpAmount</code>.
+						Sponsorship is tracked per resolved payer and UTC day. While the request fits inside <code>dailySponsoredNativeLimit</code>,
+						Core charges no collateral. Once it does not fit, policy either reverts or charges the signed
+						<code>collateralAmount</code> plus <code>collateralAmount * nativeGasTopUpFeeBps / 10000</code> through Core.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Zero is restrictive here</strong> A zero sponsored limit puts every top-up on the exhausted path. A zero
+						<code>maxNativeGasTopUpAmount</code> rejects every positive top-up. Operators must configure the amount cap before enabling
+						this route.
+					</aside>
+
+					<h2 id="cross-chain-deposits">Cross-chain deposit settlement</h2>
+					<p>
+						A frontend first reads <code>getGaslessWalletAddress(ownerWallet)</code> and routes bridged collateral to that address. The
+						relayer later settles the wallet's entire collateral balance through one of two paths:
+					</p>
+					<ul>
+						<li>
+							<code>settleDepositToNewAccount</code> creates a wallet-owned SubAccount under the supplied affiliate, then deposits the
+							net collateral. The relayer supplies the account name, metadata, isolation type, and single-VA setting.
+						</li>
+						<li>
+							<code>settleDepositToExistingAccount</code> deposits only when AccountLayer reports that the wallet owns the target
+							SubAccount.
+						</li>
+					</ul>
+					<p>
+						Gasless Layer sends the flat <code>depositFee</code> to <code>treasury</code> and deposits the remainder into Core.
+						<code>minimumDeposit</code> must remain greater than <code>depositFee</code>. A balance below the minimum stays at the
+						deterministic wallet until more collateral arrives or governance changes the fee policy.
+					</p>
+					<aside class="callout callout-risk">
+						<strong>New-account settings are not user-signed</strong> The relayer supplies the affiliate and account settings for
+						<code>settleDepositToNewAccount</code>. The transaction still creates an account owned by the requested wallet, but the
+						service must preserve the user's off-chain choice correctly.
+					</aside>
+
+					<h2 id="fees">Operational fees and billing</h2>
+					<h3 id="selector-pricing">Selector pricing</h3>
+					<p>
+						The relayer never submits an operational-fee amount. Gasless Layer reads each operation selector, applies an explicit
+						<code>selectorFeeConfigs</code> value when configured, and otherwise uses <code>defaultSelectorFee</code>. Wallet operations
+						sum the prices of their inner call selectors. Core then applies the payer's approved multiplier for the Gasless Layer charger.
+					</p>
+					<p>
+						The first <code>dailyFreeOpsLimit</code> operations for a billing account in each UTC day waive their base fee. A zero limit
+						means there is no free quota. After the quota, <code>revertWhenFreeQuotaExhausted</code> either blocks the relay or lets
+						normal selector pricing continue. A wallet envelope consumes one quota use even when it contains several inner calls.
+					</p>
+
+					<h3 id="billing-identity">Billing identity and fallback</h3>
+					<p>
+						A SubAccount, PartyB, EOA, or unknown address pays as itself. A Virtual Account normally bills its parent SubAccount. If the
+						parent cannot cover an operation with both its remaining allowance and its free plus allocated balance, an existing signer
+						Virtual Account may pay that operation from its own allowance and balance. When neither can pay, the charge stays assigned to
+						the parent and Core reverts.
+					</p>
+					<p>
+						Billing and authorization deliberately use different account resolution. A deleted Virtual Account keeps its parent for
+						billing because its returned funds sit there. It does not inherit the parent's wallet or delegation authority after deletion.
+					</p>
+
+					<h3 id="fee-timing">Fee timing and atomicity</h3>
+					<p>
+						Batches and templates execute before Gasless Layer collects their operational fees. This lets an operation approve or increase
+						the Gasless Layer allowance used by the same transaction. Gasless Layer then consolidates each payer's amount and calls
+						<code>core.chargeOperationalFee</code> once per distinct payer.
+					</p>
+					<p>
+						The complete transaction remains atomic. If fee settlement fails after execution, every InstantLayer action, wallet call,
+						quota write, nonce change, and fee charge rolls back. The relayer still spends gas on the failed transaction, and an earlier
+						operation that consumes balance or changes account status can cause the final fee charge to fail.
+					</p>
+					<p>
+						The dedicated delegation relay computes its fee or quota use before forwarding the delegation. A later InstantLayer failure
+						still rolls that state back in the same transaction.
+					</p>
+
+					<h2 id="deployment">Deployment and wiring</h2>
+					<p>
+						Gasless Layer depends on deployed Core, AccountLayer, and InstantLayer addresses. The deployment operator deploys four linked
+						libraries, then the implementation and ERC1967 proxy. It records the implementation, libraries, initializer arguments,
+						verification data, and checkpoint state so an interrupted deployment can resume.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>System</th>
+									<th>Required wiring</th>
+									<th>Why it is needed</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Gasless Layer</td>
+									<td>Final admin, <code>CONFIG_ADMIN_ROLE</code>, and declared <code>RELAYER_ROLE</code> holders</td>
+									<td>Upgrade, policy, and relay authority</td>
+								</tr>
+								<tr>
+									<td>Core</td>
+									<td>Register the proxy as an operational-fee charger and route its fee receiver to the treasury</td>
+									<td>Fee collection without stranding fees on the proxy</td>
+								</tr>
+								<tr>
+									<td>InstantLayer</td>
+									<td>Grant the Gasless Layer proxy <code>OPERATOR_ROLE</code></td>
+									<td>Batch and template forwarding</td>
+								</tr>
+								<tr>
+									<td>AccountLayer</td>
+									<td>Grant the Gasless Layer proxy <code>ACCOUNT_CREATOR_ROLE</code></td>
+									<td><code>settleDepositToNewAccount</code></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<aside class="callout callout-important">
+						<strong>Check the AccountLayer grant separately</strong> The current Gasless Layer component post-state inspection checks Core
+						charger registration, the Core fee receiver, and InstantLayer operator authority. It does not check
+						<code>ACCOUNT_CREATOR_ROLE</code>. New-account settlement will revert until that grant exists.
+					</aside>
+
+					<h2 id="integration-checklist">Integration checklist</h2>
+					<ol>
+						<li>Read the proxy address and chain ID into every EIP-712 domain. Do not sign against an implementation address.</li>
+						<li>Use <code>getGaslessWalletAddress</code> from the deployed proxy before displaying a deposit or withdrawal address.</li>
+						<li>
+							Quote the fee with <code>getAccountOperationalFee</code>, but simulate the complete relay because earlier operations can
+							change the payer's final balance or allowance.
+						</li>
+						<li>Track InstantLayer replay headers, native top-up nonces, and wallet-operation nonces as separate replay spaces.</li>
+						<li>Index per-operation <code>OperationalFeeRouted</code> events instead of inferring one payer from a batch total.</li>
+						<li>Keep the off-chain request bound to the affiliate and account settings used for new-account settlement.</li>
+					</ol>
+
+					<h2 id="events">Events</h2>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Event</th>
+									<th>Meaning</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>InstantBatchRelayed</code>, <code>InstantTemplateRelayed</code></td>
+									<td>Feature-level success and total fee for a batch or template</td>
+								</tr>
+								<tr>
+									<td><code>OperationalFeeRouted</code></td>
+									<td>Signer, resolved payer, and fee for each operation</td>
+								</tr>
+								<tr>
+									<td><code>DelegationBySigRelayed</code>, <code>WalletOperationRelayed</code></td>
+									<td>Accepted delegation and deterministic-wallet execution</td>
+								</tr>
+								<tr>
+									<td><code>NativeGasTopUpRelayed</code>, <code>DailyNativeGasSponsored</code></td>
+									<td>Native amount sent, collateral charge, and sponsored usage</td>
+								</tr>
+								<tr>
+									<td><code>DepositSettledToNewAccount</code>, <code>DepositSettledToExistingAccount</code></td>
+									<td>Destination SubAccount, net deposit, and flat deposit fee</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<h2 id="boundaries">Security and service boundaries</h2>
+					<ul>
+						<li>The off-chain relayer service is not implemented by the Gasless Layer contract. Availability remains operational.</li>
+						<li>A relayer may refuse or delay a request. It cannot forge a valid InstantLayer, wallet, or native-top-up signature.</li>
+						<li>
+							<code>DEFAULT_ADMIN_ROLE</code> can authorize UUPS upgrades. <code>CONFIG_ADMIN_ROLE</code> can change fees, quotas,
+							sponsorship policy, and the deposit-fee treasury. Core's fee admin separately controls the operational-fee receiver.
+						</li>
+						<li>
+							The current collateral token cannot be recovered through <code>recoverNonCollateralToken</code>. Settlement expects a
+							standard non-rebasing, no-transfer-fee ERC20.
+						</li>
+						<li>
+							GaslessWallet creation bytecode determines every derived wallet address. Changing that bytecode changes the computed
+							address for wallets that have not yet been deployed.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

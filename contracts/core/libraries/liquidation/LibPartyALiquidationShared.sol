@@ -52,6 +52,8 @@ library LibPartyALiquidationShared {
 			liquidationTimestamp: liquidationTimestamp
 		});
 		accountLayout.liquidators[partyA].push(msg.sender);
+		uint256 positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
+		accountLayout.liquidationStartPositionCounts[partyA] = positionsCount;
 
 		// Classify liquidation severity and cap the liquidator fee.
 		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];
@@ -61,7 +63,7 @@ library LibPartyALiquidationShared {
 		uint256 lockedLfAndCva = lockedLf + lockedCva;
 		if (availableBalanceShortfall < lockedLf) {
 			uint256 remainingLf = lockedLf - availableBalanceShortfall;
-			uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * QuoteStorage.layout().partyAPositionsCount[partyA];
+			uint256 maxLf = maLayout.maxLiquidationProfitPerPosition * positionsCount;
 			if (remainingLf > maxLf) {
 				accountLayout.balances[maLayout.liquidationInsuranceVault] += remainingLf - maxLf;
 				remainingLf = maxLf;

@@ -57,10 +57,10 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 		await context.controlFacet.connect(deployer).grantRole(deployer.address, ethers.keccak256(ethers.toUtf8Bytes("SUSPENDER_ROLE")))
 
 		// Configure ExpressProvider via roles
-		await expressProvider.grantRole(SIGNER_ROLE, botSigner.address)
-		await expressProvider.grantRole(OPERATOR_ROLE, operator.address)
-		await expressProvider.grantRole(LOCKER_ROLE, locker.address)
-		await expressProvider.grantRole(UNLOCK_ROLE, unlocker.address)
+		await expressProvider["grantRole(address,bytes32)"](botSigner.address, SIGNER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](operator.address, OPERATOR_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](locker.address, LOCKER_ROLE)
+		await expressProvider["grantRole(address,bytes32)"](unlocker.address, UNLOCK_ROLE)
 		// Configure credit line on diamond
 		await expressProvider.setCreditLineMuonConfig(await muonVerifier.getAddress(), 1n, 60n)
 
@@ -4447,11 +4447,11 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			await expect(expressProvider.connect(affiliateOwner).setPaused(true)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
 
-			await expressProvider.connect(deployer).grantRole(PAUSER_ROLE, affiliateOwner.address)
+			await expressProvider.connect(deployer)["grantRole(address,bytes32)"](affiliateOwner.address, PAUSER_ROLE)
 			await expressProvider.connect(affiliateOwner).setPaused(true)
 			expect(await expressProvider.paused()).to.equal(true)
 
-			await expressProvider.connect(deployer).revokeRole(PAUSER_ROLE, affiliateOwner.address)
+			await expressProvider.connect(deployer)["revokeRole(address,bytes32)"](affiliateOwner.address, PAUSER_ROLE)
 			await expect(expressProvider.connect(affiliateOwner).setPaused(false)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
 			expect(await expressProvider.paused()).to.equal(true)
 		})
@@ -5210,7 +5210,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 			const allSigners = await ethers.getSigners()
 			const stranger = allSigners[19]
-			expect(await expressProvider.hasRole(ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE")), stranger.address)).to.equal(false)
+			expect(await expressProvider["hasRole(address,bytes32)"](stranger.address, ethers.keccak256(ethers.toUtf8Bytes("WITHDRAWER_ROLE")))).to.equal(
+				false,
+			)
 
 			await collateral.mint(stranger.address, badDebt)
 			await collateral.connect(stranger).approve(await expressProvider.getAddress(), badDebt)

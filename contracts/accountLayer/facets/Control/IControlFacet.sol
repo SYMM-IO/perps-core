@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IAccountLayerErrors } from "../../interfaces/IAccountLayerErrors.sol";
+import { IDiamondAccessControl } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
 
 /// @notice Events emitted by the ControlFacet
 interface IControlFacetEvents {
@@ -14,6 +15,10 @@ interface IControlFacetEvents {
 	event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
 	/// @notice Emitted when a role admin is added or removed
 	event RoleAdminSet(bytes32 indexed role, address indexed account, bool status, address indexed sender);
+	/// @notice Emitted when a role admin is added through the canonical diamond interface
+	event RoleAdminAdded(bytes32 role, address admin);
+	/// @notice Emitted when a role admin is removed through the canonical diamond interface
+	event RoleAdminRemoved(bytes32 role, address admin);
 	/// @notice Emitted when the AccountManager proxy bytecode is updated
 	event AccountManagerImplementationUpdated(bytes oldImplementation, bytes newImplementation);
 	/// @notice Emitted when the global signer is changed
@@ -37,7 +42,7 @@ interface IControlFacetEvents {
 }
 
 /// @notice Administrative interface for role management, pause control, and system configuration
-interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
+interface IControlFacet is IControlFacetEvents, IAccountLayerErrors, IDiamondAccessControl {
 	// ==================== Ownership ====================
 
 	/// @notice Initiates a two-step ownership transfer to a new address
@@ -52,17 +57,8 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors {
 
 	// ==================== Role Management ====================
 
-	/// @notice Grants a role to a user
-	/// @param user The address to receive the role
-	/// @param role The role identifier to grant
-	function grantRole(address user, bytes32 role) external;
-
-	/// @notice Revokes a role from a user
-	/// @param user The address to lose the role
-	/// @param role The role identifier to revoke
-	function revokeRole(address user, bytes32 role) external;
-
 	/// @notice Adds or removes an address as a role admin for a specific role
+	/// @dev Compatibility adapter. New callers should use addRoleAdmin or removeRoleAdmin.
 	/// @param user The address to set as role admin
 	/// @param role The role identifier to manage
 	/// @param status Whether the user should be a role admin

@@ -352,8 +352,17 @@ export interface ExpressProviderResolvedConfig {
 	registerOnCore: boolean
 }
 
-/** Roles Init grants to whoever it is initialized with — here, the deployer. */
-const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"]
+/** Roles Init grants to whoever it is initialized with — here, the deployer. DEFAULT_ADMIN_ROLE stays last so revocation cannot strand narrower roles. */
+const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE", "DEFAULT_ADMIN_ROLE"]
+
+async function expressRoleReader(ethers: any, address: string, view: any): Promise<(user: string, role: string) => Promise<boolean>> {
+	const loupe = await ethers.getContractAt("IDiamondLoupe", address)
+	const canonicalHasRole = view.interface.getFunction("hasRole(address,bytes32)")!
+	const hasCanonicalRoleView = (await loupe.facetAddress(canonicalHasRole.selector)) !== ethers.ZeroAddress
+	return hasCanonicalRoleView
+		? (user: string, role: string) => view["hasRole(address,bytes32)"](user, role)
+		: (user: string, role: string) => view["hasRole(bytes32,address)"](role, user)
+}
 
 /**
  * Canonical read-only ExpressProvider post-state probe shared by deploy and status.
@@ -372,6 +381,7 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
+	const hasRole = await expressRoleReader(ethers, address, view)
 
 	const [
 		runtimeCode,
@@ -442,7 +452,7 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 
 	for (const [role, holders] of Object.entries(input.roles)) {
 		const hash = roleHash(role)
-		const states = await Promise.all(holders.map((holder: string) => view.hasRole(hash, ethers.getAddress(holder))))
+		const states = await Promise.all(holders.map((holder: string) => hasRole(ethers.getAddress(holder), hash)))
 		for (const [index, holder] of holders.entries()) {
 			check(`${role} for ${ethers.getAddress(holder)}`, states[index], "true", String(states[index]))
 		}
@@ -450,12 +460,12 @@ export async function inspectExpressProviderPostState(ethers: any, input: Expres
 
 	// Init grants these to the deployer. The final admin must hold them, and the deployer
 	// must not, or a compromised deployer key still controls the provider's money paths.
-	const adminRoleStates = await Promise.all(EXPRESS_INIT_ADMIN_ROLES.map(role => view.hasRole(roleHash(role), admin)))
+	const adminRoleStates = await Promise.all(EXPRESS_INIT_ADMIN_ROLES.map(role => hasRole(admin, roleHash(role))))
 	for (const [index, role] of EXPRESS_INIT_ADMIN_ROLES.entries()) {
 		check(`final admin ${role}`, adminRoleStates[index], "true", String(adminRoleStates[index]))
 	}
 	if (admin !== deployer) {
-		const deployerRoleStates = await Promise.all(EXPRESS_INIT_ADMIN_ROLES.map(role => view.hasRole(roleHash(role), deployer)))
+		const deployerRoleStates = await Promise.all(EXPRESS_INIT_ADMIN_ROLES.map(role => hasRole(deployer, roleHash(role))))
 		for (const [index, role] of EXPRESS_INIT_ADMIN_ROLES.entries()) {
 			check(`deployer ${role} revoked`, !deployerRoleStates[index], "false", String(deployerRoleStates[index]))
 		}
@@ -1377,6 +1387,7 @@ export async function deployAndConfigureExpressProvider(
 	const view = await ethers.getContractAt(EXPRESS_FACETS.ViewFacet, address)
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 	const connected = control.connect(deployer)
+	const hasRole = await expressRoleReader(ethers, address, view)
 
 	// Every setter is state-checked first so a resumed run repeats nothing it already proved.
 	const [currentVerifier, currentAppId, currentFreshness] = await Promise.all([
@@ -1465,14 +1476,18 @@ export async function deployAndConfigureExpressProvider(
 	for (const [role, holders] of Object.entries(resolved.roles)) {
 		const hash = roleHash(role)
 		for (const holder of holders) {
-			if (await view.hasRole(hash, holder)) continue
-			await send(connected.grantRole(hash, holder), `grant ExpressProvider ${role} to ${holder}`)
+			if (await hasRole(holder, hash)) continue
+			await send(connected["grantRole(address,bytes32)"](holder, hash), `grant ExpressProvider ${role} to ${holder}`)
 		}
 	}
 	for (const role of EXPRESS_INIT_ADMIN_ROLES) {
 		const hash = roleHash(role)
-		if (await view.hasRole(hash, resolved.admin)) continue
-		await send(connected.grantRole(hash, resolved.admin), `grant ExpressProvider ${role} to final admin`)
+		if (await hasRole(resolved.admin, hash)) continue
+		if (role === "DEFAULT_ADMIN_ROLE") {
+			await send(connected.setAdmin(resolved.admin), "set ExpressProvider default admin")
+		} else {
+			await send(connected["grantRole(address,bytes32)"](resolved.admin, hash), `grant ExpressProvider ${role} to final admin`)
+		}
 	}
 
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", resolved.core)
@@ -1493,15 +1508,15 @@ export async function deployAndConfigureExpressProvider(
 	}
 
 	// Strip the deployer only after the final admin provably holds each role, then hand over
-	// ownership. Ordering matters: revokeRole is owner-gated, so it must precede the transfer.
+	// ownership. DEFAULT_ADMIN_ROLE stays last because it authorizes the narrower revocations.
 	if (resolved.admin !== resolved.deployer) {
 		for (const role of EXPRESS_INIT_ADMIN_ROLES) {
 			const hash = roleHash(role)
-			if (!(await view.hasRole(hash, resolved.admin))) {
+			if (!(await hasRole(resolved.admin, hash))) {
 				throw new Error(`Refusing to revoke deployer ExpressProvider ${role}: final admin ${resolved.admin} does not hold it`)
 			}
-			if (await view.hasRole(hash, resolved.deployer)) {
-				await send(connected.revokeRole(hash, resolved.deployer), `revoke deployer ExpressProvider ${role}`)
+			if (await hasRole(resolved.deployer, hash)) {
+				await send(connected["revokeRole(address,bytes32)"](resolved.deployer, hash), `revoke deployer ExpressProvider ${role}`)
 			}
 		}
 		const [owner, pendingOwner] = await Promise.all([control.owner(), control.pendingOwner()])
@@ -1648,7 +1663,7 @@ interface ExpressPatchItem {
 	/** Direct-execution route when the signer is authorized. */
 	method: string
 	args: unknown[]
-	authority: "setter" | "owner" | "providerAdmin"
+	authority: "setter" | "owner" | "roleAdmin" | "providerAdmin"
 }
 
 export interface ExpressPatchDrift {
@@ -1673,6 +1688,18 @@ export async function computeExpressPatchDrift(
 	const control = await ethers.getContractAt(EXPRESS_CONTROL_FACET, address)
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 	const items: ExpressPatchItem[] = []
+	const loupe = await ethers.getContractAt("IDiamondLoupe", address)
+	const canonicalGrant = control.interface.getFunction("grantRole(address,bytes32)")!
+	const canonicalRoleControlInstalled = (await loupe.facetAddress(canonicalGrant.selector)) !== ethers.ZeroAddress
+	const hasRole = await expressRoleReader(ethers, address, view)
+	const defaultAdminRole = roleHash("DEFAULT_ADMIN_ROLE")
+	const [deployerIsDefaultAdmin, adminIsDefaultAdmin] = canonicalRoleControlInstalled
+		? await Promise.all([hasRole(desired.deployer, defaultAdminRole), hasRole(desired.admin, defaultAdminRole)])
+		: [false, false]
+	// An upgraded legacy provider has the new selector but no role-admin state until its
+	// owner calls setAdmin. Keep its patch path usable through the owner-only adapters;
+	// once either recipe actor is seeded, all subsequent patches use the canonical API.
+	const hasCanonicalRoleControl = canonicalRoleControlInstalled && (deployerIsDefaultAdmin || adminIsDefaultAdmin)
 	const setter = (id: string, description: string, method: string, args: unknown[]) =>
 		items.push({ id, description, to: address, data: control.interface.encodeFunctionData(method, args), method, args, authority: "setter" })
 
@@ -1707,15 +1734,17 @@ export async function computeExpressPatchDrift(
 		for (const [role, holders] of Object.entries(desired.roles)) {
 			for (const holder of holders) {
 				wanted.add(`${role}:${holder.toLowerCase()}`)
-				if (!(await view.hasRole(roleHash(role), holder))) {
+				if (!(await hasRole(holder, roleHash(role)))) {
+					const method = hasCanonicalRoleControl ? "grantRole(address,bytes32)" : "grantRole(bytes32,address)"
+					const args = hasCanonicalRoleControl ? [holder, roleHash(role)] : [roleHash(role), holder]
 					items.push({
 						id: `grant:${role}:${holder.toLowerCase()}`,
 						description: `Grant ExpressProvider ${role} to ${holder}`,
 						to: address,
-						data: control.interface.encodeFunctionData("grantRole", [roleHash(role), holder]),
-						method: "grantRole",
-						args: [roleHash(role), holder],
-						authority: "owner",
+						data: control.interface.encodeFunctionData(method, args),
+						method,
+						args,
+						authority: hasCanonicalRoleControl ? "roleAdmin" : "owner",
 					})
 				}
 			}
@@ -1723,15 +1752,17 @@ export async function computeExpressPatchDrift(
 		for (const [role, holders] of Object.entries(baseline?.roles ?? {})) {
 			for (const holder of holders) {
 				if (wanted.has(`${role}:${holder.toLowerCase()}`)) continue
-				if (!(await view.hasRole(roleHash(role), holder))) continue
+				if (!(await hasRole(holder, roleHash(role)))) continue
+				const method = hasCanonicalRoleControl ? "revokeRole(address,bytes32)" : "revokeRole(bytes32,address)"
+				const args = hasCanonicalRoleControl ? [holder, roleHash(role)] : [roleHash(role), holder]
 				items.push({
 					id: `revoke:${role}:${holder.toLowerCase()}`,
 					description: `Revoke ExpressProvider ${role} from ${holder} (removed from the recipe)`,
 					to: address,
-					data: control.interface.encodeFunctionData("revokeRole", [roleHash(role), holder]),
-					method: "revokeRole",
-					args: [roleHash(role), holder],
-					authority: "owner",
+					data: control.interface.encodeFunctionData(method, args),
+					method,
+					args,
+					authority: hasCanonicalRoleControl ? "roleAdmin" : "owner",
 				})
 			}
 		}
@@ -1897,9 +1928,14 @@ async function patchExpressProvider(
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", resolved.core)
 	const owner = ethers.getAddress(await control.owner())
 	const ownerIsDeployer = owner === resolved.deployer
+	const hasRole = await expressRoleReader(ethers, address, view)
 	const [deployerIsSetter, adminIsSetter] = await Promise.all([
-		view.hasRole(roleHash("SETTER_ROLE"), resolved.deployer),
-		view.hasRole(roleHash("SETTER_ROLE"), resolved.admin),
+		hasRole(resolved.deployer, roleHash("SETTER_ROLE")),
+		hasRole(resolved.admin, roleHash("SETTER_ROLE")),
+	])
+	const [deployerIsDefaultAdmin, adminIsDefaultAdmin] = await Promise.all([
+		hasRole(resolved.deployer, roleHash("DEFAULT_ADMIN_ROLE")),
+		hasRole(resolved.admin, roleHash("DEFAULT_ADMIN_ROLE")),
 	])
 	const needs = new Set(drift.items.map(item => item.authority))
 	if (needs.has("owner") && !ownerIsDeployer && owner !== resolved.admin) {
@@ -1907,6 +1943,9 @@ async function patchExpressProvider(
 	}
 	if (needs.has("setter") && !deployerIsSetter && !adminIsSetter) {
 		throw new Error(`AUTHORITY_MISSING: neither deployer ${resolved.deployer} nor admin ${resolved.admin} holds ExpressProvider SETTER_ROLE`)
+	}
+	if (needs.has("roleAdmin") && !deployerIsDefaultAdmin && !adminIsDefaultAdmin) {
+		throw new Error(`AUTHORITY_MISSING: neither deployer ${resolved.deployer} nor admin ${resolved.admin} holds ExpressProvider DEFAULT_ADMIN_ROLE`)
 	}
 	if (needs.has("providerAdmin")) {
 		const providerAdminRole = roleHash("PROVIDER_ADMIN_ROLE")
@@ -1922,6 +1961,7 @@ async function patchExpressProvider(
 	const canExecute: Record<ExpressPatchItem["authority"], boolean> = {
 		setter: !safeActionsOnly && deployerIsSetter,
 		owner: !safeActionsOnly && ownerIsDeployer,
+		roleAdmin: !safeActionsOnly && deployerIsDefaultAdmin,
 		providerAdmin: !safeActionsOnly && (await coreView.hasRole(resolved.deployer, roleHash("PROVIDER_ADMIN_ROLE"))),
 	}
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", resolved.core)

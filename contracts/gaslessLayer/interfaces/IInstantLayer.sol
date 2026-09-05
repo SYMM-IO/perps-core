@@ -79,6 +79,12 @@ interface IInstantLayer {
 	///      later operations in the same batch use the fresh delegation.
 	function grantDelegation(DelegationInfo calldata info) external;
 
+	/// @notice Grant delegation to several delegates of one account in a single call.
+	/// @dev Never called by the gateway directly. Encoded as the callData of one owner-signed
+	///      SignedOperation targeting the InstantLayer, it lets a single wallet signature grant a
+	///      session key and any further delegates at once inside a relayed batch.
+	function grantDelegations(DelegationInfo[] calldata infos) external;
+
 	/// @notice Return whether a delegate currently has permission for a delegator/selector pair.
 	function isDelegationActive(address delegator, address delegate, bytes4 selector) external view returns (bool);
 }

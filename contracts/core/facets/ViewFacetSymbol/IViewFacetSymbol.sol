@@ -72,6 +72,12 @@ interface IViewFacetSymbol {
 
 	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256);
 
+	function getQuoteFundingSettledEpoch(uint256 quoteId) external view returns (uint256);
+
+	function getRestatementFundingSettlementProgress(
+		uint256 symbolId
+	) external view returns (uint256 epoch, bool fundingSettlementRequired, uint256 remainingLong, uint256 remainingShort);
+
 	function getRestatementInventoryProgress(
 		uint256 symbolId,
 		address partyB

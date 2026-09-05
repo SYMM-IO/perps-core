@@ -150,6 +150,24 @@ contract MockInstantLayer is IInstantLayer {
 		}
 	}
 
+	/// @notice Mirrors the real InstantLayer's multi-delegate grant: every entry is applied and the
+	///         last one is recorded in the `lastDelegation*` probes.
+	function grantDelegations(DelegationInfo[] calldata infos) external {
+		if (forceDelegationFailure) revert ForcedDelegationFailure();
+		for (uint256 i = 0; i < infos.length; i++) {
+			DelegationInfo calldata info = infos[i];
+			lastDelegationAccount = info.account.addr;
+			lastDelegationIsPartyB = info.account.isPartyB;
+			lastDelegationDelegate = info.delegatedSigner;
+			lastDelegationSelectorCount = info.selectors.length;
+			lastDelegationFirstSelector = info.selectors.length == 0 ? bytes4(0) : info.selectors[0];
+			lastDelegationExpiry = info.expiryTimestamp;
+			for (uint256 j = 0; j < info.selectors.length; j++) {
+				delegations[info.account.addr][info.delegatedSigner][info.selectors[j]] = info.expiryTimestamp;
+			}
+		}
+	}
+
 	function _executeTarget(SignedOperation calldata signedOp) internal returns (bytes memory result) {
 		if (signedOp.target == signerContextTarget) {
 			IMockSignerContext(signerContextTarget).setSignerOverride(signedOp.signerAccount.addr);

@@ -254,6 +254,10 @@ library AccountStorage {
 		///      can classify funding and realized PnL without changing the public settlement-state tuple.
 		///      Pre-upgrade pending settlements retain the legacy realized-PnL-only classification because this value is zero.
 		mapping(address => mapping(address => int256)) partyALiquidationSettlementFundingFees;
+		/// @notice Open position count of a PartyA when its liquidation started.
+		/// @dev Sizes the uPNL rounding allowance for the whole liquidation, so closing positions in batches does not shrink it.
+		///      Kept beside LiquidationDetail so the public liquidation-detail tuple stays unchanged. Cleared when the liquidation ends.
+		mapping(address => uint256) liquidationStartPositionCounts;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

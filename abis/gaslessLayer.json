@@ -737,6 +737,19 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": false,
+                "internalType": "address",
+                "name": "instantLayer",
+                "type": "address"
+            }
+        ],
+        "name": "InstantLayerUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": true,
                 "internalType": "address",
                 "name": "relayer",
@@ -2402,6 +2415,19 @@
             }
         ],
         "name": "setDepositFeeConfig",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "instantLayer_",
+                "type": "address"
+            }
+        ],
+        "name": "setInstantLayer",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

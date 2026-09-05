@@ -14,6 +14,7 @@ library LibAccessibility {
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant PARTY_B_MANAGER_ROLE = keccak256("PARTY_B_MANAGER_ROLE");
 	bytes32 public constant AFFILIATE_MANAGER_ROLE = keccak256("AFFILIATE_MANAGER_ROLE");
+	bytes32 public constant ENTITY_METADATA_MANAGER_ROLE = keccak256("ENTITY_METADATA_MANAGER_ROLE");
 	bytes32 public constant DISPUTE_ROLE = keccak256("DISPUTE_ROLE");
 	bytes32 public constant SUSPENDED_FUNDS_WITHDRAWER_ROLE = keccak256("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
 	bytes32 public constant PROTOCOL_CONFIG_ROLE = keccak256("PROTOCOL_CONFIG_ROLE");
