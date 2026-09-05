@@ -1,6 +1,6 @@
-import { FACETS, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
+import { assertRoundingFactoryIntent, FACETS, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { createSafeBatch, validateSafeBatchTransport } from "../signer/safe-batch.js";
-import { ROUNDING_PLAN } from "../tasks/arbitrum-rounding-upgrade.js";
+import { createArbitrumRoundingUpgradeTask, ROUNDING_PLAN } from "../tasks/arbitrum-rounding-upgrade.js";
 import { Interface, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -79,4 +79,17 @@ test("operator flow rehearses before authorizing deployment and ends with on-cha
 		ids.some(id => /account|instant|gasless/.test(id)),
 		false,
 	);
+});
+
+test("temporary factory intent rejects the inaccessible reused factory and accepts the operator wallet", () => {
+	assert.doesNotThrow(() => assertRoundingFactoryIntent({ factory: { mode: "deploy" } }));
+	assert.throws(
+		() => assertRoundingFactoryIntent({ factory: { mode: "reuse", address: "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975" } }),
+		/new temporary/,
+	);
+	assert.throws(() => assertRoundingFactoryIntent({ factory: { mode: "deploy", address: ZeroAddress } }), /new temporary/);
+	const task = createArbitrumRoundingUpgradeTask(value => value);
+	assert.equal(task.signerPolicy({}).expectedAddress, undefined);
+	assert(task.version > 2);
+	assert.match(ROUNDING_PLAN.find(step => step.id === "authorize").title, /nine/);
 });
