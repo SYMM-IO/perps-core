@@ -29,13 +29,26 @@ The task stops and resumes at stable boundaries:
 5. Export or propose any remaining Safe Core authority action (currently `FEE_ADMIN_ROLE`), then export an independent Safe PartyB wiring batch. The Safe batch only registers every configured PartyB on the new InstantLayer (which also grants the PartyB `OPERATOR_ROLE`) and grants the new InstantLayer `INSTANT_LAYER_ROLE` on AccountLayer. It does not require or transfer PartyB administrative roles. After that batch is independently verified, the task pauses for the prior PartyB administrator to grant the new InstantLayer `TRUSTED_ROLE` and enable its multicast-whitelist entry on each PartyB. The task re-reads all five states before proceeding, then executes the remaining new-layer and GaslessLayer wiring batch. Each continuation recomputes only the missing actions from chain state.
 6. Before the canary decision, pin the legacy runtime state to an exact Arbitrum block and export three independent Safe action groups as needed: InstantLayer templates and their active/instant-open flags, GaslessLayer fee/quota policy, and reused Liquidator Proxy Core-role wiring. InstantLayer state is emitted as ordered, independently resumable Safe files covering at most four complete template IDs per file; an add and its active/instant-open corrections are never separated. The task re-reads on-chain state after every file and exports only the next remaining template range. The template migration preserves IDs and refuses any name or operation conflict. Gasless selector overrides are reconstructed from `SelectorFeeConfigUpdated` events starting at the old proxy deployment block; `SYMMIO_ARBITRUM_HISTORY_RPC_URL` may override the public historical-event RPC without recording its URL. The report retains the block hash, full state snapshot, operator list, action sets, and post-state checks. The reviewed new GaslessLayer treasury is retained; per-account usage, nonces, and balances are not copied.
 7. Record a successful production canary before exporting the cutover batch that revokes the old InstantLayer's Core and AccountLayer roles. If the operator deliberately accepts cutover without runtime canary evidence, select the explicit waiver path, type `WAIVE PRODUCTION CANARY`, and record a durable reason. The report records that gate as `skipped`, emits a warning, and never represents the waiver as a passed canary.
-8. Add the production Safe owners and raise the threshold above 1. The task completes only after it reads the hardened Safe state and every other invariant from chain state.
+8. Review the optional Safe owner and threshold hardening step. Choose **Skip Safe hardening for this upgrade** to complete without changing the Safe, or wait while production owners and a threshold above 1 are configured. A skip is recorded as `skipped`, bound to this input and Safe; it is never reported as observed hardening. All other final checks still have to pass.
 
 Safe export or proposal is not treated as execution. The task enters `waiting_external`, names the exact artifact or proposal, and verifies the resulting contract state when continued. Cancellation never rolls back confirmed effects and remains pending while any transaction outcome is unresolved.
 
 File exports use byte-exact raw calldata: every Transaction Builder entry carries a non-null `data` value copied from the digest-bound intent, while `contractMethod` and `contractInputsValues` remain null. The exporter validates that target, value, calldata, action count, chain, and Safe address match the reviewed intent before and after writing the file. This avoids asking the Safe UI to reconstruct complex tuple-array calls such as `diamondCut` from decoded JSON values. Always discard an older browser draft and freshly import a regenerated file; before execution, confirm that every expected transaction has non-null calldata. Continuing the task after execution independently checks the resulting selector surface rather than treating a successful Safe receipt as proof that the cut ran.
 
 No new release tag is required by this flow. The standard input pins the exact source commit used to build and deploy, while the report keeps source parity, explorer publication, receipt evidence, wiring checks, and final custody/governance handover as separate proof layers.
+
+## Finish a run waiting on optional Safe hardening
+
+Choose **Continue active task**, then **Skip Safe hardening for this upgrade**. The runner preserves completed steps and confirmed transactions and rechecks the remaining on-chain invariants before completing the report. Once complete, a new deployment task can start. The single-active-task rule still applies.
+
+If the main checkout has newer Solidity than the unfinished run, use the prepared `ops/arbitrum-v086-handover` checkout based on that run's original `c335a539` contracts:
+
+```bash
+cd .releases/arbitrum-v086-handover
+./symmio
+```
+
+This local checkout shares the existing task state and deployment data. Use the repository's pinned Node version, choose **Continue active task**, and enter the displayed `MIGRATE ...` phrase to bind the reviewed operational updates. The source check still refuses Solidity changes. Complete the optional-hardening decision there, then use the separate `release/version_0.8.6.2` checkout for the rounding release. The Solidity tag `version_0.8.6.2` is unaffected by this handover.
 
 ## Contaminated peripheral recovery
 

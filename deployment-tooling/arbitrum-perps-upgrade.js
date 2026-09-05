@@ -525,3 +525,101 @@ export function validateArbitrumPerpsUpgradeReport(value, input, source = "Arbit
 	string(report.updatedAt, source, "updatedAt");
 	return report;
 }
+
+export function recordArbitrumPerpsUpgradeSafeHardeningSkip(report, skippedAt = new Date().toISOString()) {
+	if (!report?.stages || typeof report.inputDigest !== "string" || !report.inputDigest || Number.isNaN(Date.parse(skippedAt)))
+		throw new Error("Safe hardening skip requires a bound report and valid timestamp");
+	report.stages.safeHardening = {
+		...report.stages.safeHardening,
+		status: "skipped",
+		decision: "operator-skipped",
+		inputDigest: report.inputDigest,
+		safe: ARBITRUM_PERPS_UPGRADE_TARGET.safe,
+		skippedAt,
+	};
+	return report;
+}
+
+export function arbitrumPerpsUpgradeSafeHardeningDisposition(report) {
+	const safeState = report?.stages?.inspect?.safe;
+	const threshold = Number(safeState?.threshold || 0);
+	const ownerCount = Array.isArray(safeState?.owners) ? safeState.owners.length : 0;
+	const validSafe = Number.isSafeInteger(threshold) && threshold >= 1 && ownerCount >= threshold;
+	const hardened = validSafe && threshold > 1;
+	const stage = report?.stages?.safeHardening;
+	const skipped =
+		!hardened &&
+		validSafe &&
+		stage?.status === "skipped" &&
+		stage.decision === "operator-skipped" &&
+		stage.inputDigest === report.inputDigest &&
+		stage.safe === ARBITRUM_PERPS_UPGRADE_TARGET.safe &&
+		typeof stage.skippedAt === "string" &&
+		!Number.isNaN(Date.parse(stage.skippedAt));
+	return {
+		threshold,
+		ownerCount,
+		hardened,
+		skipped,
+		satisfied: hardened || skipped,
+		status: hardened ? "passed" : skipped ? "skipped" : "pending",
+	};
+}
+
+export function finalizeArbitrumPerpsUpgradeReport(report, timestamp = new Date().toISOString()) {
+	const requiredBatches = [
+		"authority",
+		"coreCut",
+		"accountCut",
+		"partyBWiring",
+		"wiring",
+		"replacementWiring",
+		"quarantine",
+		"instantState",
+		"gaslessState",
+		"liquidatorState",
+		"cutover",
+	].filter(id => report.safeBatches[id]?.actions?.length > 0);
+	const external = Object.entries(report.externalActions)
+		.filter(([, entry]) => entry.actions?.length > 0)
+		.map(([id]) => id);
+	const hardening = arbitrumPerpsUpgradeSafeHardeningDisposition(report);
+	report.stages.safeHardening = {
+		...(hardening.skipped ? report.stages.safeHardening : {}),
+		status: hardening.hardened ? "complete" : hardening.skipped ? "skipped" : "waiting_external",
+		threshold: hardening.threshold,
+		ownerCount: hardening.ownerCount,
+		requirement: "Optional: add production Safe owners and raise the threshold above 1, or skip for this upgrade",
+		updatedAt: timestamp,
+	};
+	const canary = arbitrumPerpsUpgradeCanaryDisposition(report);
+	const replacementRequired = Boolean(report.stages.peripheralReplacement?.discardedInstantLayer);
+	const publicationComplete =
+		report.stages.publication?.status === "complete" && (!replacementRequired || report.stages.peripheralPublication?.status === "complete");
+	const complete = requiredBatches.length === 0 && external.length === 0 && hardening.satisfied && canary.satisfied && publicationComplete;
+	report.checks = [
+		{
+			check: "governance actions",
+			status: requiredBatches.length === 0 && external.length === 0 ? "passed" : "pending",
+			pendingSafeBatches: requiredBatches,
+			pendingExternalActions: external,
+		},
+		{ check: "explorer publication", status: publicationComplete ? "passed" : "pending" },
+		{ check: "operator canary", status: canary.status },
+		{ check: "Safe hardening", status: hardening.status, threshold: hardening.threshold, ownerCount: hardening.ownerCount },
+	];
+	report.lifecycle = complete ? "complete" : "waiting_external";
+	report.stages.finalVerification = {
+		status: report.lifecycle,
+		pendingSafeBatches: requiredBatches,
+		pendingExternalActions: external,
+		publicationComplete,
+		canaryComplete: canary.status === "passed",
+		canaryWaived: canary.waived,
+		canarySatisfied: canary.satisfied,
+		safeHardened: hardening.hardened,
+		safeHardeningSkipped: hardening.skipped,
+		updatedAt: timestamp,
+	};
+	return report;
+}

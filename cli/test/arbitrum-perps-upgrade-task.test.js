@@ -1,6 +1,7 @@
 import {
 	ARBITRUM_PERPS_UPGRADE_PLAN,
 	applyForkRehearsalWaiver,
+	chooseOptionalSafeHardening,
 	buildArbitrumPerpsUpgradeSourceMigrationEnvironment,
 	parsePartyBAddressInput,
 	safeDispatchChunksForUpgradeBatch,
@@ -9,6 +10,50 @@ import {
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
+
+test("Safe hardening offers skip or wait without changing the active task step identity", async () => {
+	const report = { inputDigest: "reviewed-input", stages: { inspect: { safe: { owners: ["owner"], threshold: "1" } } } };
+	let prompts = 0;
+	await chooseOptionalSafeHardening(
+		{
+			ui: {
+				select: async prompt => {
+					prompts++;
+					assert.equal(prompt.options.length, 2);
+					return "skip";
+				},
+			},
+		},
+		report,
+	);
+	assert.equal(report.stages.safeHardening.status, "skipped");
+	await chooseOptionalSafeHardening(
+		{
+			ui: {
+				select: async () => {
+					throw new Error("Skip must survive continuation");
+				},
+			},
+		},
+		report,
+	);
+	assert.equal(prompts, 1);
+	const pending = { inputDigest: "another-input", stages: { inspect: report.stages.inspect } };
+	await assert.rejects(
+		chooseOptionalSafeHardening(
+			{
+				ui: { select: async () => "wait" },
+				wait: message => {
+					throw new Error(message);
+				},
+			},
+			pending,
+		),
+		/continue and choose to skip/,
+	);
+	assert.equal(pending.stages.safeHardening, undefined);
+	assert.equal(ARBITRUM_PERPS_UPGRADE_PLAN[22].id, "safe-hardening");
+});
 
 test("fork rehearsal waiver remains distinct from passed rehearsal evidence", () => {
 	const report = { lifecycle: "failed", stages: {} };

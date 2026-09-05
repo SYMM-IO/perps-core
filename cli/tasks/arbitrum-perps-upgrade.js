@@ -9,6 +9,8 @@ import {
 	loadArbitrumPerpsUpgradeRuntimeConfig,
 	loadArbitrumPerpsUpgradeInput,
 	recordArbitrumPerpsUpgradeCanaryWaiver,
+	arbitrumPerpsUpgradeSafeHardeningDisposition,
+	recordArbitrumPerpsUpgradeSafeHardeningSkip,
 	validateArbitrumPerpsUpgradeReport,
 } from "../../deployment-tooling/arbitrum-perps-upgrade.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
@@ -143,6 +145,27 @@ export function applyForkRehearsalWaiver(report, forkBlockNumber, skippedAt = ne
 	};
 	if (report.lifecycle !== "complete") report.lifecycle = "in_progress";
 	return report;
+}
+
+export async function chooseOptionalSafeHardening(ctx, report) {
+	const hardening = arbitrumPerpsUpgradeSafeHardeningDisposition(report);
+	if (hardening.satisfied) return;
+	const choice = await ctx.ui.select({
+		message: `Safe hardening is optional. Current Safe: ${hardening.ownerCount} owner(s), threshold ${hardening.threshold}.`,
+		options: [
+			{ value: "skip", label: "Skip Safe hardening for this upgrade" },
+			{ value: "wait", label: "Wait for production owners and threshold changes" },
+		],
+		initialValue: "skip",
+	});
+	if (choice === null) {
+		ctx.requestPause();
+		ctx.checkpoint();
+		return;
+	}
+	if (choice !== "skip")
+		ctx.wait(`Update Safe ${ARBITRUM_PERPS_UPGRADE_TARGET.safe} owners and threshold, or continue and choose to skip Safe hardening.`);
+	else recordArbitrumPerpsUpgradeSafeHardeningSkip(report);
 }
 
 function validateUpgradeTaskInput(input) {
@@ -672,11 +695,8 @@ export function createArbitrumPerpsUpgradeTask(common) {
 				// step before PartyB wiring became a mandatory deployment invariant.
 				await completePartyBWiring(ctx, input);
 				const report = await runPhase(ctx, input, "verify-final");
-				if (report.stages.safeHardening?.status !== "complete") {
-					ctx.wait(
-						`Add the production owners to Safe ${ARBITRUM_PERPS_UPGRADE_TARGET.safe}, raise its threshold above 1, then continue this task.`,
-					);
-				}
+				await chooseOptionalSafeHardening(ctx, report);
+				writeReport(input, report);
 			});
 			return ctx.step("final-report", PLAN[23].title, async () => {
 				const report = await runPhase(ctx, input, "verify-final");
