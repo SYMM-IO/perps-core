@@ -162,6 +162,18 @@ def main():
         "accountLayer",
     )
 
+    # Generate ExpressProvider diamond ABI (combines Express Withdraw Layer facets, libraries, utils, and storages)
+    print("\n=== Generating ExpressProvider ABI ===")
+    generate_diamond_abi(
+        [
+            "expressWithdrawLayer/facets",
+            "expressWithdrawLayer/libraries",
+            "expressWithdrawLayer/utils",
+            "expressWithdrawLayer/storages",
+        ],
+        "expressProvider",
+    )
+
     # Generate ABIs for standalone contracts
     standalone_contracts = [
         ("helpers/accounts/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
