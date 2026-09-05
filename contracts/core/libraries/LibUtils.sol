@@ -25,4 +25,12 @@ library LibUtils {
 		array_[index] = array_[array_.length - 1];
 		array_.pop();
 	}
+
+	/// @notice Returns |a - b| for two signed values without intermediate overflow.
+	/// @dev For a >= b the true difference lies in [0, 2^256), so the two's-complement subtraction is exact.
+	function absDiff(int256 a, int256 b) internal pure returns (uint256) {
+		unchecked {
+			return a >= b ? uint256(a) - uint256(b) : uint256(b) - uint256(a);
+		}
+	}
 }

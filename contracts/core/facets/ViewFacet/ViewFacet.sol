@@ -550,6 +550,12 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().liquidationTimeout;
 	}
 
+	/// @notice Returns the open position count recorded when the PartyA's current liquidation started, or zero outside liquidation.
+	/// @param partyA The address of party A.
+	function liquidationStartPositionCount(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().liquidationStartPositionCounts[partyA];
+	}
+
 	/// @notice Returns the liquidation timestamp of a party B for a given party A.
 	/// @param partyB The address of party B.
 	/// @param partyA The address of party A.
