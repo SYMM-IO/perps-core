@@ -91,7 +91,8 @@ export function createArbitrumRoundingUpgradeTask(common) {
 			ui.note(
 				[
 					`Release: ${RELEASE_TAG}`,
-					`Source: ${standardInput.sourceCommit}`,
+					`Solidity release: ${standardInput.releaseCommit}`,
+					`Deployment scripts: ${standardInput.sourceCommit}`,
 					`Core: ${standardInput.target.core}`,
 					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
 					`Libraries: ${LIBRARIES.join(", ")}`,
