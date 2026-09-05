@@ -69,9 +69,11 @@ test("rounding cut enforces suffix, exact scope, and the new getter", () => {
 	assert.throws(() => planRoundingCut(baseline, baseline, facets, oldFacets), /new rounding getter/);
 });
 
-test("operator flow rehearses before authorizing deployment and ends with on-chain verification", () => {
+test("operator flow goes from live inspection to authorization and deployment without a fork rehearsal", () => {
 	const ids = ROUNDING_PLAN.map(step => step.id);
-	assert(ids.indexOf("rehearse") < ids.indexOf("authorize"));
+	assert.equal(ids.includes("rehearse"), false);
+	assert.equal(ids[ids.indexOf("inspect") + 1], "authorize");
+	assert.equal(ids[ids.indexOf("authorize") + 1], "deploy");
 	assert(ids.indexOf("authorize") < ids.indexOf("deploy"));
 	assert(ids.indexOf("publish") < ids.indexOf("core-cut"));
 	assert.equal(ids.at(-1), "verify");
@@ -90,6 +92,6 @@ test("temporary factory intent rejects the inaccessible reused factory and accep
 	assert.throws(() => assertRoundingFactoryIntent({ factory: { mode: "deploy", address: ZeroAddress } }), /new temporary/);
 	const task = createArbitrumRoundingUpgradeTask(value => value);
 	assert.equal(task.signerPolicy({}).expectedAddress, undefined);
-	assert(task.version > 2);
+	assert(task.version > 3);
 	assert.match(ROUNDING_PLAN.find(step => step.id === "authorize").title, /nine/);
 });

@@ -17,7 +17,6 @@ import path from "node:path";
 export const ROUNDING_PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile the tagged rounding-only release" },
 	{ id: "inspect", phase: "prepare", title: "Verify the Core baseline, Safe owner and reused libraries" },
-	{ id: "rehearse", phase: "rehearsal", title: "Rehearse the four-facet upgrade on the inspected Arbitrum fork" },
 	{ id: "authorize", phase: "authorization", title: "Authorize nine contract deployments on Arbitrum" },
 	{ id: "deploy", phase: "deployment", title: "Deploy a temporary factory, four libraries and four facets ending in 862" },
 	{ id: "publish", phase: "publication", title: "Publish the nine new contracts on Arbiscan" },
@@ -36,10 +35,10 @@ const environment = (input, extra = {}) => ({
 	...extra,
 });
 
-async function runPhase(ctx, input, phase, { network = "arbitrum", env = {} } = {}) {
+async function runPhase(ctx, input, phase, { env = {} } = {}) {
 	await ctx.runProcess(
 		"./node_modules/.bin/hardhat",
-		["internal:arbitrum-rounding-upgrade", "--phase", phase, "--input", input.input, "--output", input.output, "--network", network],
+		["internal:arbitrum-rounding-upgrade", "--phase", phase, "--input", input.input, "--output", input.output, "--network", "arbitrum"],
 		{ env: environment(input, env) },
 	);
 	return readReport(input);
@@ -48,12 +47,12 @@ async function runPhase(ctx, input, phase, { network = "arbitrum", env = {} } = 
 export function createArbitrumRoundingUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-rounding-upgrade-862",
-		version: 3,
+		version: 4,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum rounding fix v0.8.6.2",
 		description:
-			"Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export the rehearsed Core cut to the Safe.",
+			"Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export the Core cut to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
@@ -63,7 +62,6 @@ export function createArbitrumRoundingUpgradeTask(common) {
 		],
 		artifacts: [
 			"tag-bound input and report",
-			"fork rehearsal",
 			"deployment checkpoint and receipts",
 			"Safe Transaction Builder JSON",
 			"Arbiscan publication and selector verification",
@@ -129,12 +127,6 @@ export function createArbitrumRoundingUpgradeTask(common) {
 			};
 			await step("compile", () => ctx.runProcess("npm", ["run", "compile"], { env: environment(input) }));
 			await step("inspect", () => runPhase(ctx, input, "inspect"));
-			await step("rehearse", () =>
-				runPhase(ctx, input, "rehearse", {
-					network: "fork-arbitrum",
-					env: { FORK_BLOCK_NUMBER: String(readReport(input).inspection.blockNumber) },
-				}),
-			);
 			await step("authorize", async () => {
 				const confirmed = await ctx.ui.text({
 					message: `Type DEPLOY ${RELEASE_TAG} ON 42161 to authorize a temporary factory (your wallet is admin and deployer), four libraries and four facets`,
