@@ -397,6 +397,7 @@ library ClearingHouseFacetImpl {
 
 		// Delete liquidation details
 		delete accountLayout.liquidationDetails[partyA];
+		delete accountLayout.liquidationStartPositionCounts[partyA];
 
 		// Delete takeover details
 		delete chLayout.partyATakeoverDetails[partyA];
