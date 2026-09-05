@@ -14,6 +14,7 @@ export const LIBRARIES = Object.freeze([
 	"ClearingHouseFacetImpl",
 ]);
 export const FACETS = Object.freeze(["PartyALiquidationFacet", "PartyALiquidationSnapshotFacet", "ClearingHouseFacet", "ViewFacet"]);
+export const DEPLOYMENTS = Object.freeze(["Create2Factory", ...LIBRARIES, ...FACETS]);
 export const GETTER = new Interface(["function liquidationStartPositionCount(address) view returns (uint256)"]).getFunction(
 	"liquidationStartPositionCount",
 ).selector;
@@ -45,6 +46,11 @@ export function assertReleaseSource(root, input) {
 	return commit;
 }
 
+export function assertRoundingFactoryIntent(create2) {
+	if (JSON.stringify(create2?.factory) !== JSON.stringify({ mode: "deploy" }))
+		throw new Error("Release requires a new temporary CREATE2 factory administered by the deployment signer");
+}
+
 export function buildRoundingInput(root) {
 	const sourceCommit = assertReleaseSource(root);
 	const target = JSON.parse(fs.readFileSync(path.join(root, TARGET_PATH), "utf8"));
@@ -52,11 +58,10 @@ export function buildRoundingInput(root) {
 	const create2 = recipe.create2;
 	if (recipe.name !== "arbitrum-vibe-stage" || getAddress(recipe.governance.admin) !== getAddress(target.safe))
 		throw new Error("Stage recipe must assign governance.admin to the reviewed Core multisig");
-	if (create2?.factory?.mode !== "reuse" || getAddress(create2.factory.address) !== getAddress(target.factory))
-		throw new Error("Release must reuse the reviewed CREATE2 factory");
+	assertRoundingFactoryIntent(create2);
 	if (JSON.stringify(create2.groups?.facets) !== JSON.stringify({ suffix: "862" })) throw new Error("Release facets must use exactly suffix 862");
 	return {
-		apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v1",
+		apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v2",
 		release: RELEASE_TAG,
 		sourceCommit,
 		targetDigest: fileDigest(path.join(root, TARGET_PATH)),
