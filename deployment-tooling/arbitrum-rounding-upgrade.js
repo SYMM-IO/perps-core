@@ -20,21 +20,31 @@ export const GETTER = new Interface(["function liquidationStartPositionCount(add
 ).selector;
 export const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export const fileDigest = file => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const gitAt = (root, args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 
 export function assertReleaseSource(root, input) {
-	const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+	const git = args => gitAt(root, args);
 	if (git(["status", "--porcelain", "--untracked-files=no"])) throw new Error("Release requires a clean tracked worktree");
 	const commit = git(["rev-parse", "HEAD"]);
-	if (git(["rev-parse", `${RELEASE_TAG}^{commit}`]) !== commit) throw new Error(`Run ./symmio from the checkout tagged ${RELEASE_TAG}`);
+	const releaseCommit = git(["rev-parse", `${RELEASE_TAG}^{commit}`]);
 	const target = JSON.parse(fs.readFileSync(path.join(root, TARGET_PATH), "utf8"));
-	if (git(["rev-parse", "HEAD:contracts"]) !== target.contractsTree) throw new Error("Contracts differ from the reviewed rounding-only release");
+	if (git(["rev-parse", "HEAD:contracts"]) !== target.contractsTree || git(["rev-parse", `${releaseCommit}:contracts`]) !== target.contractsTree)
+		throw new Error("Contracts differ from the reviewed rounding-only release");
+	if (git(["log", "-1", "--format=%H", releaseCommit, "--", "contracts"]) !== releaseCommit)
+		throw new Error(`${RELEASE_TAG} must point to the contract source change, not a later tooling commit`);
+	try {
+		git(["merge-base", "--is-ancestor", releaseCommit, commit]);
+	} catch {
+		throw new Error(`Run ./symmio from a descendant of ${RELEASE_TAG} with the same contracts`);
+	}
 	if (
 		input &&
 		(input.sourceCommit !== commit ||
+			input.releaseCommit !== releaseCommit ||
 			input.targetDigest !== fileDigest(path.join(root, TARGET_PATH)) ||
 			input.recipeDigest !== fileDigest(path.join(root, RECIPE_PATH)))
 	) {
-		throw new Error("Release source, target, or recipe changed since preparation");
+		throw new Error("Release tag, tooling source, target, or recipe changed since preparation");
 	}
 	if (
 		input &&
@@ -42,7 +52,7 @@ export function assertReleaseSource(root, input) {
 			digest(input.target) !== digest(target) ||
 			digest(input.create2) !== digest(JSON.parse(fs.readFileSync(path.join(root, RECIPE_PATH), "utf8")).create2))
 	)
-		throw new Error("Input differs from the tagged release target or CREATE2 configuration");
+		throw new Error("Input differs from the release target or CREATE2 configuration");
 	return commit;
 }
 
@@ -61,8 +71,9 @@ export function buildRoundingInput(root) {
 	assertRoundingFactoryIntent(create2);
 	if (JSON.stringify(create2.groups?.facets) !== JSON.stringify({ suffix: "862" })) throw new Error("Release facets must use exactly suffix 862");
 	return {
-		apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v2",
+		apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v3",
 		release: RELEASE_TAG,
+		releaseCommit: gitAt(root, ["rev-parse", `${RELEASE_TAG}^{commit}`]),
 		sourceCommit,
 		targetDigest: fileDigest(path.join(root, TARGET_PATH)),
 		recipeDigest: fileDigest(path.join(root, RECIPE_PATH)),
