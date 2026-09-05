@@ -13,6 +13,7 @@ import { LibPartyBState } from "../extensions/LibPartyBState.sol";
 import { LibQuote } from "../LibQuote.sol";
 import { LibQuoteState } from "../extensions/LibQuoteState.sol";
 import { LibQuoteFunding } from "../LibQuoteFunding.sol";
+import { LibUtils } from "../LibUtils.sol";
 import { SharedEvents } from "../SharedEvents.sol";
 import { LockedValuesOps } from "../LibLockedValues.sol";
 import {
@@ -34,6 +35,12 @@ library LibPartyALiquidationProcess {
 	using LibQuoteState for Quote;
 
 	event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
+
+	/// @dev Raw accounting units by which the signed aggregate PartyA uPNL may differ from the per-quote settlement total,
+	///      per open position at liquidation start. Each quote truncates its price PnL once and its funding once, while
+	///      the aggregate truncates the group's price PnL once and its funding once per quote plus once per group. Every
+	///      truncation error is below one unit, so the integer difference is at most three units per position.
+	uint256 internal constant UPNL_ROUNDING_ALLOWANCE_PER_POSITION = 3;
 
 	/// @notice Liquidates all pending (not yet opened) positions of Party A
 	function liquidatePendingPositionsPartyA(address partyA) public returns (uint256[] memory liquidatedAmounts, bytes memory liquidationId) {
@@ -235,10 +242,20 @@ library LibPartyALiquidationProcess {
 			LibConnections.removeConnectionIfNoPositions(partyA, partyBsToCheck[i]);
 		}
 
-		// If all positions are closed but signed PartyA uPNL does not match accumulated settlement, require dispute resolution.
-		if (quoteLayout.partyAPositionsCount[partyA] == 0 && liquidationDetail.partyAAccumulatedUpnl != liquidationDetail.upnl) {
-			liquidationDetail.disputed = true;
-			return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
+		// Once all positions are closed, the accumulated per-quote settlement must match the signed PartyA uPNL up to the
+		// rounding allowance; anything beyond that requires dispute resolution.
+		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
+			int256 signedUpnl = liquidationDetail.upnl;
+			int256 settledUpnl = liquidationDetail.partyAAccumulatedUpnl;
+			uint256 difference = LibUtils.absDiff(settledUpnl, signedUpnl);
+			if (difference != 0) {
+				uint256 allowance = UPNL_ROUNDING_ALLOWANCE_PER_POSITION * accountLayout.liquidationStartPositionCounts[partyA];
+				if (difference > allowance) {
+					liquidationDetail.disputed = true;
+					return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
+				}
+				emit IPartyALiquidationEvents.LiquidationUpnlRoundingAccepted(partyA, signedUpnl, settledUpnl, allowance, liquidationId);
+			}
 		}
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 	}
@@ -458,6 +475,7 @@ library LibPartyALiquidationProcess {
 		// Clear liquidation bookkeeping and bump nonce to invalidate old Muon payloads.
 		delete accountLayout.liquidators[partyA];
 		delete accountLayout.liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId];
+		delete accountLayout.liquidationStartPositionCounts[partyA];
 		delete accountLayout.liquidationDetails[partyA].liquidationType;
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;

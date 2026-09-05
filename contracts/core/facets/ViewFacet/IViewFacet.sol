@@ -142,6 +142,8 @@ interface IViewFacet {
 
 	function liquidationTimeout() external view returns (uint256);
 
+	function liquidationStartPositionCount(address partyA) external view returns (uint256);
+
 	function partyBLiquidationTimestamp(address partyB, address partyA) external view returns (uint256);
 
 	function coolDownsOfMA() external view returns (uint256, uint256, uint256, uint256);
