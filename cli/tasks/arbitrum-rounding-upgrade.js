@@ -22,6 +22,8 @@ export const ROUNDING_PLAN = Object.freeze([
 	{ id: "publish", phase: "publication", title: "Publish the nine new contracts on Arbiscan" },
 	{ id: "core-cut", phase: "execution", title: "Export the Core cut for execution through the Safe" },
 	{ id: "verify", phase: "verification", title: "Verify all Core selectors and the new getter" },
+	{ id: "core-unpause", phase: "execution", title: "Export a separate Core global-unpause transaction for the Safe" },
+	{ id: "verify-unpause", phase: "verification", title: "Verify the Core global pause flag is cleared" },
 ]);
 
 const readReport = input => {
@@ -47,12 +49,12 @@ async function runPhase(ctx, input, phase, { env = {} } = {}) {
 export function createArbitrumRoundingUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-rounding-upgrade-862",
-		version: 4,
+		version: 5,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum rounding fix v0.8.6.2",
 		description:
-			"Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export the Core cut to the Safe.",
+			"Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
@@ -63,7 +65,7 @@ export function createArbitrumRoundingUpgradeTask(common) {
 		artifacts: [
 			"tag-bound input and report",
 			"deployment checkpoint and receipts",
-			"Safe Transaction Builder JSON",
+			"Separate Safe Transaction Builder JSON files for the Core cut and global unpause",
 			"Arbiscan publication and selector verification",
 		],
 		resumePolicy: { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" },
@@ -153,6 +155,26 @@ export function createArbitrumRoundingUpgradeTask(common) {
 				ctx.wait(`Import ${delivery.builderPath} in Safe Transaction Builder, execute the Core cut, then choose Continue active task.`);
 			});
 			await step("verify", () => runPhase(ctx, input, "verify"));
+			await step("core-unpause", async () => {
+				const report = await runPhase(ctx, input, "plan-unpause");
+				if (!report.unpause.actions.length) {
+					ctx.ui.note("Core is already globally unpaused; no unpause transaction is needed.");
+					return;
+				}
+				const delivery = await dispatchSafeActions(ctx, input.governanceSigner, report.unpause.actions, {
+					root: ctx.root,
+					chainId: 42161,
+					network: "arbitrum",
+					name: `${RELEASE_TAG} Core global unpause`,
+					description: "Clear the Core global pause flag after verifying the rounding upgrade. Other pause flags are unchanged.",
+					stateKey: "rounding-core-unpause",
+					processEnv: environment(input),
+				});
+				report.unpauseDelivery = delivery;
+				atomicWrite(input.output, report);
+				ctx.wait(`Import ${delivery.builderPath} in Safe Transaction Builder, execute unpauseGlobal(), then choose Continue active task.`);
+			});
+			await step("verify-unpause", () => runPhase(ctx, input, "verify-unpause"));
 		},
 		reconcile: async (ctx, input) => {
 			if (!ctx.state.transactions.some(t => ["submitted", "unresolved", "timed_out"].includes(t.status))) return { unresolved: [] };
