@@ -18,6 +18,7 @@ import { shouldBehaveLikeFuzzTest } from "../FuzzTest.behavior.js"
 import { shouldBehaveLikeHooks } from "../Hooks.behavior.js"
 import { shouldBehaveLikeInstantLayer } from "../InstantLayer.behavior.js"
 import { shouldBehaveLikeLiquidationFacet } from "../LiquidationFacet.behavior.js"
+import { shouldBehaveLikeLiquidationUpnlRoundingAllowance } from "../LiquidationUpnlRoundingAllowance.behavior.js"
 import { shouldBehaveLikeLockQuote } from "../LockQuote.behavior.js"
 import { shouldBehaveLikeMigration } from "../Migration.behavior.js"
 import { shouldBehaveLikeMultiAccount } from "../MultiAccount.behavior.js"
@@ -78,6 +79,9 @@ describe("UnitTests", function () {
 
 		describe("Liquidation", async function () {
 			shouldBehaveLikeLiquidationFacet()
+		})
+		describe("LiquidationUpnlRoundingAllowance", async function () {
+			shouldBehaveLikeLiquidationUpnlRoundingAllowance()
 		})
 
 		describe("FundingRate", async function () {
