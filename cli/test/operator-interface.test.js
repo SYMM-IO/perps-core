@@ -75,7 +75,10 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 12);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 13);
+	const rounding = entries.find(item => item.id === "maintenance.arbitrum-rounding-upgrade-862");
+	assert.equal(rounding.title, "Arbitrum rounding fix v0.8.6.2");
+	assert.deepEqual(rounding.supportedNetworks, ["arbitrum"]);
 	const arbitrumUpgrade = entries.find(item => item.id === "maintenance.arbitrum-perps-upgrade");
 	assert.equal(arbitrumUpgrade.title, "Arbitrum Perps Core v0.8.6 upgrade");
 	assert.deepEqual(arbitrumUpgrade.supportedNetworks, ["arbitrum"]);
