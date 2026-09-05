@@ -76,7 +76,8 @@ test("operator flow goes from live inspection to authorization and deployment wi
 	assert.equal(ids[ids.indexOf("authorize") + 1], "deploy");
 	assert(ids.indexOf("authorize") < ids.indexOf("deploy"));
 	assert(ids.indexOf("publish") < ids.indexOf("core-cut"));
-	assert.equal(ids.at(-1), "verify");
+	assert(ids.indexOf("verify") < ids.indexOf("core-unpause"));
+	assert.equal(ids.at(-1), "verify-unpause");
 	assert.equal(
 		ids.some(id => /account|instant|gasless/.test(id)),
 		false,
@@ -92,6 +93,6 @@ test("temporary factory intent rejects the inaccessible reused factory and accep
 	assert.throws(() => assertRoundingFactoryIntent({ factory: { mode: "deploy", address: ZeroAddress } }), /new temporary/);
 	const task = createArbitrumRoundingUpgradeTask(value => value);
 	assert.equal(task.signerPolicy({}).expectedAddress, undefined);
-	assert(task.version > 3);
+	assert(task.version > 4);
 	assert.match(ROUNDING_PLAN.find(step => step.id === "authorize").title, /nine/);
 });
