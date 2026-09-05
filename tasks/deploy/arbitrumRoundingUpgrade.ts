@@ -42,7 +42,7 @@ import {
 import { createVanityContext, deployContract } from "./vanityDeploy.js"
 import { buildVanityPlan } from "./vanityPlan.js"
 
-const PHASES = ["inspect", "deploy", "publish", "plan", "verify", "reconcile"]
+const PHASES = ["inspect", "deploy", "publish", "plan", "verify", "plan-unpause", "verify-unpause", "reconcile"]
 const write = (file: string, value: any) => atomicWriteFile(file, JSON.stringify(value, null, 2) + "\n", 0o600)
 
 export async function assertRoundingRuntime(ethers: any, artifact: any, address: string, libraries: Record<string, string> = {}) {
@@ -247,7 +247,29 @@ async function plan(hre: any, ethers: any, input: any, report: any) {
 	return planned
 }
 
-export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgrade", "Adapter for the tagged Arbitrum rounding-only release")
+export async function planRoundingUnpause(ethers: any, input: any, report: any) {
+	if (report.actions?.length !== 0 || !report.verifiedBlock) throw new Error("Verify the installed Core cut before planning unpause")
+	const blockNumber = await ethers.provider.getBlockNumber()
+	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
+	const pauseState = await view.pauseState({ blockTag: blockNumber })
+	const unpause: any = { blockNumber, globalPaused: pauseState[0], pauseState: Array.from(pauseState), actions: [] }
+	report.unpause = unpause
+	if (!unpause.globalPaused) return unpause
+	if (!(await view.hasRole(input.target.safe, ethers.id("UNPAUSER_ROLE"), { blockTag: blockNumber })))
+		throw new Error(`Core multisig ${input.target.safe} must hold UNPAUSER_ROLE before exporting unpause`)
+	const iface = new ethers.Interface(["function unpauseGlobal()"])
+	const action = {
+		to: input.target.core,
+		value: "0",
+		data: iface.encodeFunctionData("unpauseGlobal"),
+		description: `Unpause Core globally after the verified ${input.release} cut; preserve other pause flags`,
+	}
+	await ethers.provider.call({ to: action.to, from: input.target.safe, data: action.data, blockTag: blockNumber })
+	unpause.actions = [action]
+	return unpause
+}
+
+export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgrade", "Adapter for the Arbitrum rounding-only Solidity release")
 	.addOption({ name: "phase", type: ArgumentType.STRING, defaultValue: "inspect" })
 	.addOption({ name: "input", type: ArgumentType.STRING, defaultValue: "" })
 	.addOption({ name: "output", type: ArgumentType.STRING, defaultValue: "" })
@@ -284,7 +306,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 					await checkpointRun(ethers, input, report, checkpoint => deployRoundingSelection(hre, ethers, input, report, checkpoint, persist))
 				}
 				if (phase === "reconcile") await checkpointRun(ethers, input, report, async () => {})
-				if (["publish", "plan", "verify"].includes(phase)) await plan(hre, ethers, input, report)
+				if (["publish", "plan", "verify", "plan-unpause", "verify-unpause"].includes(phase)) await plan(hre, ethers, input, report)
 				if (phase === "publish") {
 					for (const name of DEPLOYMENTS) {
 						const entry = report.deployments[name]
@@ -307,13 +329,22 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 						persist()
 					}
 				}
-				if (phase === "verify") {
+				if (["verify", "plan-unpause", "verify-unpause"].includes(phase)) {
 					if (report.actions.length) throw new Error("Core cut has not been executed yet")
 					if (DEPLOYMENTS.some(name => !report.deployments[name]?.published)) throw new Error("Explorer publication remains incomplete")
 					const view = await ethers.getContractAt(["function liquidationStartPositionCount(address) view returns(uint256)"], input.target.core)
 					if ((await view.liquidationStartPositionCount(ethers.ZeroAddress)) !== 0n) throw new Error("New getter failed zero-address check")
-					report.status = "complete"
+					report.status = "upgrade_verified"
 					report.verifiedBlock = await ethers.provider.getBlockNumber()
+				}
+				if (phase === "plan-unpause") await planRoundingUnpause(ethers, input, report)
+				if (phase === "verify-unpause") {
+					const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
+					const blockNumber = await ethers.provider.getBlockNumber()
+					const pauseState = await view.pauseState({ blockTag: blockNumber })
+					if (pauseState[0]) throw new Error("Core remains globally paused; execute the separate Safe unpause transaction")
+					report.unpause = { ...(report.unpause || {}), globalPaused: false, pauseState: Array.from(pauseState), verifiedBlock: blockNumber }
+					report.status = "complete"
 				}
 			} finally {
 				persist()
