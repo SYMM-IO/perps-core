@@ -10,6 +10,9 @@ import {
 	createArbitrumPerpsUpgradeReport,
 	loadArbitrumPerpsUpgradeRuntimeConfig,
 	recordArbitrumPerpsUpgradeCanaryWaiver,
+	recordArbitrumPerpsUpgradeSafeHardeningSkip,
+	arbitrumPerpsUpgradeSafeHardeningDisposition,
+	finalizeArbitrumPerpsUpgradeReport,
 	validateArbitrumPerpsUpgradeInput,
 	validateArbitrumPerpsUpgradeRuntimeConfig,
 	validateArbitrumPerpsUpgradeReport,
@@ -29,6 +32,63 @@ function input() {
 		partyBs: ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"],
 	});
 }
+
+function readyForHardening() {
+	const report = createArbitrumPerpsUpgradeReport(input());
+	report.stages.inspect = { safe: { owners: [ARBITRUM_PERPS_UPGRADE_TARGET.safe], threshold: "1" } };
+	report.stages.publication = { status: "complete" };
+	recordArbitrumPerpsUpgradeCanaryWaiver(report, "Already reviewed operator decision");
+	return report;
+}
+
+test("optional Safe hardening can finish an otherwise verified upgrade while remaining skipped", () => {
+	const report = readyForHardening();
+	finalizeArbitrumPerpsUpgradeReport(report);
+	assert.equal(report.lifecycle, "waiting_external");
+	recordArbitrumPerpsUpgradeSafeHardeningSkip(report);
+	finalizeArbitrumPerpsUpgradeReport(report);
+	assert.equal(report.lifecycle, "complete");
+	assert.equal(report.stages.safeHardening.status, "skipped");
+	assert.equal(report.stages.finalVerification.safeHardened, false);
+	assert.equal(report.stages.finalVerification.safeHardeningSkipped, true);
+	assert.equal(report.checks.find(check => check.check === "Safe hardening").status, "skipped");
+	finalizeArbitrumPerpsUpgradeReport(report);
+	assert.equal(report.lifecycle, "complete");
+});
+
+test("skipping Safe hardening cannot bypass unresolved actions, publication, canary or invalid Safe state", () => {
+	for (const change of [
+		report => {
+			report.safeBatches.wiring = { actions: [{}] };
+		},
+		report => {
+			report.externalActions.accountAuthority = { actions: [{}] };
+		},
+		report => {
+			report.stages.publication.status = "pending";
+		},
+		report => {
+			delete report.stages.canary;
+		},
+		report => {
+			report.stages.inspect.safe.threshold = "0";
+		},
+		report => {
+			report.stages.safeHardening.inputDigest = "different-run";
+		},
+	]) {
+		const report = recordArbitrumPerpsUpgradeSafeHardeningSkip(readyForHardening());
+		change(report);
+		assert.equal(finalizeArbitrumPerpsUpgradeReport(report).lifecycle, "waiting_external");
+	}
+});
+
+test("a later hardened Safe is reported as observed, rather than skipped", () => {
+	const report = recordArbitrumPerpsUpgradeSafeHardeningSkip(readyForHardening());
+	report.stages.inspect.safe = { owners: [ARBITRUM_PERPS_UPGRADE_TARGET.safe, "0x1111111111111111111111111111111111111111"], threshold: "2" };
+	assert.equal(arbitrumPerpsUpgradeSafeHardeningDisposition(report).status, "passed");
+	assert.equal(finalizeArbitrumPerpsUpgradeReport(report).stages.safeHardening.status, "complete");
+});
 
 test("Arbitrum upgrade input is a fixed, digest-bound standard document", () => {
 	const value = input();

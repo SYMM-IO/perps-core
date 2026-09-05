@@ -152,3 +152,13 @@ export function arbitrumPerpsUpgradeCanaryDisposition(report: ArbitrumPerpsUpgra
 	waived: boolean
 }
 export function validateArbitrumPerpsUpgradeReport(value: unknown, input: ArbitrumPerpsUpgradeInput, source?: string): ArbitrumPerpsUpgradeReport
+export function recordArbitrumPerpsUpgradeSafeHardeningSkip(report: ArbitrumPerpsUpgradeReport, skippedAt?: string): ArbitrumPerpsUpgradeReport
+export function arbitrumPerpsUpgradeSafeHardeningDisposition(report: ArbitrumPerpsUpgradeReport): {
+	threshold: number
+	ownerCount: number
+	hardened: boolean
+	skipped: boolean
+	satisfied: boolean
+	status: "passed" | "skipped" | "pending"
+}
+export function finalizeArbitrumPerpsUpgradeReport(report: ArbitrumPerpsUpgradeReport, timestamp?: string): ArbitrumPerpsUpgradeReport

@@ -8,9 +8,9 @@ import path from "node:path"
 import {
 	ARBITRUM_PERPS_UPGRADE_RUNTIME_CONFIG_PATH,
 	ARBITRUM_PERPS_UPGRADE_TARGET,
-	arbitrumPerpsUpgradeCanaryDisposition,
 	arbitrumPerpsUpgradeInputDigest,
 	createArbitrumPerpsUpgradeReport,
+	finalizeArbitrumPerpsUpgradeReport,
 	loadArbitrumPerpsUpgradeRuntimeConfig,
 	loadArbitrumPerpsUpgradeInput,
 	validateArbitrumPerpsUpgradeSourceMigration,
@@ -1868,61 +1868,7 @@ async function publishReplacementPeripherals(hre: any, input: ArbitrumPerpsUpgra
 
 async function inspectFinalState(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport, output: string): Promise<void> {
 	await planGovernance(ethers, input, report, output)
-	const requiredBatches = [
-		"authority",
-		"coreCut",
-		"accountCut",
-		"partyBWiring",
-		"wiring",
-		"replacementWiring",
-		"quarantine",
-		"instantState",
-		"gaslessState",
-		"liquidatorState",
-		"cutover",
-	].filter(id => (report.safeBatches[id] as any)?.actions?.length > 0)
-	const external = Object.entries(report.externalActions)
-		.filter(([, entry]: any) => entry.actions?.length > 0)
-		.map(([id]) => id)
-	const safeState = (report.stages.inspect as any)?.safe
-	const threshold = Number(safeState?.threshold || 0)
-	const ownerCount = Array.isArray(safeState?.owners) ? safeState.owners.length : 0
-	const safeHardened = threshold > 1 && ownerCount >= threshold
-	updateStage(report, "safeHardening", safeHardened ? "complete" : "waiting_external", {
-		threshold,
-		ownerCount,
-		requirement: "Add the production owners and raise the Safe threshold above 1 after wiring and canary completion",
-	})
-	const canary = arbitrumPerpsUpgradeCanaryDisposition(report)
-	const canaryComplete = canary.status === "passed"
-	const canaryWaived = canary.waived
-	const replacementRequired = Boolean((report.stages.peripheralReplacement as any)?.discardedInstantLayer)
-	const publicationComplete =
-		(report.stages.publication as any)?.status === "complete" &&
-		(!replacementRequired || (report.stages.peripheralPublication as any)?.status === "complete")
-	const complete = requiredBatches.length === 0 && external.length === 0 && safeHardened && canary.satisfied && publicationComplete
-	report.checks = [
-		{
-			check: "governance actions",
-			status: requiredBatches.length === 0 && external.length === 0 ? "passed" : "pending",
-			pendingSafeBatches: requiredBatches,
-			pendingExternalActions: external,
-		},
-		{ check: "explorer publication", status: publicationComplete ? "passed" : "pending" },
-		{ check: "operator canary", status: canary.status },
-		{ check: "Safe hardening", status: safeHardened ? "passed" : "pending", threshold, ownerCount },
-	]
-	report.lifecycle = complete ? "complete" : "waiting_external"
-	updateStage(report, "finalVerification", complete ? "complete" : "waiting_external", {
-		pendingSafeBatches: requiredBatches,
-		pendingExternalActions: external,
-		publicationComplete,
-		canaryComplete,
-		canaryWaived,
-		canarySatisfied: canary.satisfied,
-		safeHardened,
-	})
-	if (complete) report.lifecycle = "complete"
+	finalizeArbitrumPerpsUpgradeReport(report)
 }
 
 async function fundAndImpersonate(ethers: any, address: string): Promise<any> {
