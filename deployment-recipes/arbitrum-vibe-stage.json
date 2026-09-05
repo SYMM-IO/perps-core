@@ -29,8 +29,7 @@
 	},
 	"create2": {
 		"factory": {
-			"mode": "reuse",
-			"address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975"
+			"mode": "deploy"
 		},
 		"groups": {
 			"diamonds": {

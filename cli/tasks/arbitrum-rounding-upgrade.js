@@ -18,9 +18,9 @@ export const ROUNDING_PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile the tagged rounding-only release" },
 	{ id: "inspect", phase: "prepare", title: "Verify the Core baseline, Safe owner and reused libraries" },
 	{ id: "rehearse", phase: "rehearsal", title: "Rehearse the four-facet upgrade on the inspected Arbitrum fork" },
-	{ id: "authorize", phase: "authorization", title: "Authorize eight contract deployments on Arbitrum" },
-	{ id: "deploy", phase: "deployment", title: "Deploy four libraries and four facets ending in 862" },
-	{ id: "publish", phase: "publication", title: "Publish the eight new contracts on Arbiscan" },
+	{ id: "authorize", phase: "authorization", title: "Authorize nine contract deployments on Arbitrum" },
+	{ id: "deploy", phase: "deployment", title: "Deploy a temporary factory, four libraries and four facets ending in 862" },
+	{ id: "publish", phase: "publication", title: "Publish the nine new contracts on Arbiscan" },
 	{ id: "core-cut", phase: "execution", title: "Export the Core cut for execution through the Safe" },
 	{ id: "verify", phase: "verification", title: "Verify all Core selectors and the new getter" },
 ]);
@@ -48,11 +48,12 @@ async function runPhase(ctx, input, phase, { network = "arbitrum", env = {} } = 
 export function createArbitrumRoundingUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-rounding-upgrade-862",
-		version: 1,
+		version: 3,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum rounding fix v0.8.6.2",
-		description: "Deploy four libraries and four facets ending in 862, rehearse the Core cut, export it to the Safe, and verify execution.",
+		description:
+			"Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export the rehearsed Core cut to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
@@ -68,14 +69,10 @@ export function createArbitrumRoundingUpgradeTask(common) {
 			"Arbiscan publication and selector verification",
 		],
 		resumePolicy: { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" },
-		signerPolicy: input => ({
-			role: "Contract deployment signer",
+		signerPolicy: () => ({
+			role: "Contract deployment signer and temporary factory admin",
 			allowedModes: EOA_SIGNER_MODES.filter(mode => mode !== SIGNER_MODES.LOCAL_NODE),
 			initialMode: SIGNER_MODES.KEYSTORE,
-			expectedAddress:
-				JSON.parse(fs.readFileSync(input.input, "utf8")).target.reviewedFactoryDeployers?.length === 1
-					? JSON.parse(fs.readFileSync(input.input, "utf8")).target.reviewedFactoryDeployers[0]
-					: undefined,
 		}),
 		prepare: async ({ ui, root = PROJECT_ROOT }) => {
 			const standardInput = buildRoundingInput(root);
@@ -98,6 +95,7 @@ export function createArbitrumRoundingUpgradeTask(common) {
 					`Release: ${RELEASE_TAG}`,
 					`Source: ${standardInput.sourceCommit}`,
 					`Core: ${standardInput.target.core}`,
+					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
 					`Libraries: ${LIBRARIES.join(", ")}`,
 					`Facets (suffix 862): ${FACETS.join(", ")}`,
 					`Output: ${path.relative(root, output)}`,
@@ -139,7 +137,7 @@ export function createArbitrumRoundingUpgradeTask(common) {
 			);
 			await step("authorize", async () => {
 				const confirmed = await ctx.ui.text({
-					message: `Type DEPLOY ${RELEASE_TAG} ON 42161 to authorize four libraries and four facets`,
+					message: `Type DEPLOY ${RELEASE_TAG} ON 42161 to authorize a temporary factory (your wallet is admin and deployer), four libraries and four facets`,
 					validate: value => (value === `DEPLOY ${RELEASE_TAG} ON 42161` ? undefined : "Type the displayed release and chain phrase"),
 				});
 				if (confirmed === null) ctx.requestPause();
