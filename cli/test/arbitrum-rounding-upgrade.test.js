@@ -105,6 +105,8 @@ test("production is a separate Ledger task requiring verified pause before cut a
 	const production = createArbitrumRoundingUpgradeTask(value => value, "production");
 	const stage = createArbitrumRoundingUpgradeTask(value => value);
 	assert.notEqual(production.id, stage.id);
+	assert.match(stage.title, /stage \/ Safe/);
+	assert.match(production.title, /production \/ Ledger/);
 	assert.equal(stage.version, 5);
 	assert.equal(production.version, 1);
 	assert.deepEqual(production.plan(), PRODUCTION_ROUNDING_PLAN);

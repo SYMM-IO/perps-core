@@ -90,7 +90,7 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 		version: production ? 1 : 5,
 		category: "maintenance",
 		risk: "transaction",
-		title: production ? "Arbitrum Vibe production rounding fix v0.8.6.2" : "Arbitrum rounding fix v0.8.6.2",
+		title: production ? "Arbitrum Vibe production / Ledger rounding fix v0.8.6.2" : "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2",
 		description: production
 			? "Deploy the rounding fix to Vibe production; pause with the owner Ledger, verify and execute the cut, then unpause with the Ledger."
 			: "Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
