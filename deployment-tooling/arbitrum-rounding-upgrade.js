@@ -44,7 +44,9 @@ export function assertReleaseSource(root, input, profile = input?.profile || "st
 	const releaseCommit = git(["rev-parse", `${RELEASE_TAG}^{commit}`]);
 	const target = JSON.parse(fs.readFileSync(path.join(root, targetPath), "utf8"));
 	if (git(["rev-parse", "HEAD:contracts"]) !== target.contractsTree || git(["rev-parse", `${releaseCommit}:contracts`]) !== target.contractsTree)
-		throw new Error("Contracts differ from the reviewed rounding-only release");
+		throw new Error(
+			"Contracts differ from the reviewed rounding-only release; run ./symmio from .releases/version_0.8.6.2 or a clean descendant with the tagged contracts",
+		);
 	if (git(["log", "-1", "--format=%H", releaseCommit, "--", "contracts"]) !== releaseCommit)
 		throw new Error(`${RELEASE_TAG} must point to the contract source change, not a later tooling commit`);
 	try {
