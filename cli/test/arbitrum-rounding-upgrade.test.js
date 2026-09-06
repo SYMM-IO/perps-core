@@ -1,8 +1,12 @@
 import { assertRoundingFactoryIntent, FACETS, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { createSafeBatch, validateSafeBatchTransport } from "../signer/safe-batch.js";
-import { createArbitrumRoundingUpgradeTask, ROUNDING_PLAN } from "../tasks/arbitrum-rounding-upgrade.js";
+import { createArbitrumRoundingUpgradeTask, ROUNDING_PLAN, PRODUCTION_ROUNDING_PLAN } from "../tasks/arbitrum-rounding-upgrade.js";
+import { runLedgerPhase } from "../tasks/arbitrum-rounding-upgrade.js";
 import { Interface, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 function fixture() {
@@ -95,4 +99,79 @@ test("temporary factory intent rejects the inaccessible reused factory and accep
 	assert.equal(task.signerPolicy({}).expectedAddress, undefined);
 	assert(task.version > 4);
 	assert.match(ROUNDING_PLAN.find(step => step.id === "authorize").title, /nine/);
+});
+
+test("production is a separate Ledger task requiring verified pause before cut and verified cut before unpause", () => {
+	const production = createArbitrumRoundingUpgradeTask(value => value, "production");
+	const stage = createArbitrumRoundingUpgradeTask(value => value);
+	assert.notEqual(production.id, stage.id);
+	assert.equal(stage.version, 5);
+	assert.equal(production.version, 1);
+	assert.deepEqual(production.plan(), PRODUCTION_ROUNDING_PLAN);
+	const ids = production.plan().map(s => s.id);
+	assert.equal(ids.length, 11);
+	assert.deepEqual(ids.slice(4), ["publish", "core-pause", "verify-pause", "core-cut", "verify", "core-unpause", "verify-unpause"]);
+	assert.equal(
+		stage.plan().some(s => s.id === "core-pause"),
+		false,
+	);
+	assert.equal(production.resumePolicy.sourceDrift, "refuse");
+});
+
+test("governance subprocess binds the Ledger while preserving the deployment signer's environment", async t => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), "rounding-ledger-"));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const config = path.join(directory, "recipe.json"),
+		output = path.join(directory, "report.json");
+	const address = "0x77A955776Ee1dd3E9C800c3214ed489441d74b94";
+	fs.writeFileSync(
+		config,
+		JSON.stringify({
+			apiVersion: "deployment.symm.io/v1",
+			kind: "DeploymentRecipe",
+			name: "ledger-test",
+			network: { name: "arbitrum", chainId: 42161, mode: "live" },
+			secrets: {
+				deployer: "hardhat-keystore://TEAM_DEPLOYER",
+				rpc: "hardhat-keystore://RPC_ARBITRUM",
+				explorer: "hardhat-keystore://ETHERSCAN_APIKEY",
+			},
+			execution: { logLevel: "verbose", verify: true, confirmations: 1, txTimeoutSeconds: 300, slowNoticeSeconds: 30 },
+			governance: { admin: address },
+			core: { mode: "skip" },
+			partyB: { mode: "skip", adlEnabled: false },
+			symbolManager: { mode: "skip" },
+			expressProvider: { mode: "skip" },
+			gaslessLayer: { mode: "skip" },
+		}),
+	);
+	fs.writeFileSync(output, JSON.stringify({ inputDigest: "test-bound-input" }));
+	const input = {
+		config,
+		output,
+		input: "input.json",
+		inputDigest: "test-bound-input",
+		governanceSigner: { mode: "ledger", address, derivation: "ledger-live" },
+	};
+	const before = { ...process.env };
+	let captured;
+	await runLedgerPhase(
+		{
+			runProcess: async (command, args, options) => {
+				captured = { command, args, options };
+			},
+		},
+		input,
+		"execute-cut",
+	);
+	assert(captured.args.includes("execute-cut"));
+	assert.equal(captured.options.env.SYMMIO_SIGNER_MODE, "ledger");
+	assert.equal(captured.options.env.SYMMIO_EXPECTED_SIGNER, address);
+	assert.equal(captured.options.env.SYMMIO_LEDGER_DERIVATION, "ledger-live");
+	assert.equal(captured.options.env.CONFIRM_CHAIN_ID, "42161");
+	assert.deepEqual({ ...process.env }, before);
+	await assert.rejects(
+		runLedgerPhase({}, { ...input, governanceSigner: { mode: "hardhat-keystore", key: "TEAM_DEPLOYER" } }, "execute-cut"),
+		/requires Ledger signing/,
+	);
 });
