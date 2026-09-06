@@ -1,0 +1,40 @@
+{
+	"release": "version_0.8.6.2",
+	"chainId": 42161,
+	"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+	"owner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+	"governanceMode": "ledger",
+	"collateral": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+	"baselineCommit": "c335a5393dfb87aeb7b4ed40d877f6b713c5b141",
+	"reviewedBlock": 502343421,
+	"reviewedBlockHash": "0xfa9dd26def20caec88ef90652cbc3c57cfa84a38b89aef0227c12002121e8769",
+	"facets": {
+		"PartyALiquidationFacet": {
+			"address": "0x3BF1A01b2cc792da64FE7145d8c653796fD2E861",
+			"codeHash": "0xc7cebabca0fb17a5a8ec394b7862afcc17b158ae4276c883a5ceaa944faa3a19"
+		},
+		"PartyALiquidationSnapshotFacet": {
+			"address": "0xEd579a2eDc140D786d5c82691Af89FDA4e98a861",
+			"codeHash": "0x40a0597860c46615fa6b459249dcc002445f1013d899db6c5dd706f55f380d55"
+		},
+		"ClearingHouseFacet": {
+			"address": "0x42B9cF1A7c2482Eb42157E6d2B8B15c9Fb20e861",
+			"codeHash": "0x1853deeca57f79303dc3705c6dd9d3601dc37b8eb9d4475b0ee2326ed7174e74"
+		},
+		"ViewFacet": {
+			"address": "0x9d8FE8c29b4AC8ecC382FD7DD10A6FDd795ca861",
+			"codeHash": "0x60221201bf537fed49c0751487e8f94b7a429b32fec1f081a524faf7747aa8a6"
+		}
+	},
+	"reuseLibraries": {
+		"LibQuoteFunding": {
+			"address": "0x02D2cAd57ddF23c2eD371cC7C171796DcFF34f9A",
+			"codeHash": "0x5451ca9455aa3cf44854890805e20aeaf70b55bd99898080f6e75c0996866ba1"
+		},
+		"LibQuoteClose": {
+			"address": "0x8C7B58951A6835690b402C12Ed1698F60D01E515",
+			"codeHash": "0x47e7a0deca41910727607b5c07517c2ca942a1fbc9955934edc7c9475bcb0707"
+		}
+	},
+	"contractsTree": "4fcfb35a924f13394da1e9eda17c5451cfe6d191"
+}

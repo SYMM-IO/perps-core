@@ -1,0 +1,63 @@
+{
+	"$schema": "../deployment-tooling/deployment-recipe.schema.json",
+	"apiVersion": "deployment.symm.io/v1",
+	"kind": "DeploymentRecipe",
+	"name": "arbitrum-vibe-production-862",
+	"network": {
+		"name": "arbitrum",
+		"chainId": 42161,
+		"mode": "live"
+	},
+	"secrets": {
+		"deployer": "hardhat-keystore://TEAM_DEPLOYER",
+		"rpc": "hardhat-keystore://RPC_ARBITRUM",
+		"explorer": "hardhat-keystore://ETHERSCAN_APIKEY"
+	},
+	"execution": {
+		"logLevel": "verbose",
+		"verify": true,
+		"confirmations": 1,
+		"txTimeoutSeconds": 300,
+		"slowNoticeSeconds": 30
+	},
+	"governance": {
+		"admin": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
+	},
+	"create2": {
+		"factory": {
+			"mode": "deploy"
+		},
+		"groups": {
+			"diamonds": {
+				"prefix": "573310"
+			},
+			"facets": {
+				"suffix": "862"
+			}
+		},
+		"miningBudget": 200000000
+	},
+	"core": {
+		"mode": "skip",
+		"collateral": {
+			"mode": "reuse",
+			"address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+		}
+	},
+	"partyB": {
+		"mode": "skip",
+		"adlEnabled": false
+	},
+	"symbolManager": {
+		"mode": "skip"
+	},
+	"expressProvider": {
+		"mode": "skip"
+	},
+	"gaslessLayer": {
+		"mode": "skip"
+	},
+	"liquidator": {
+		"mode": "skip"
+	}
+}
