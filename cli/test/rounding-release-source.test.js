@@ -71,7 +71,7 @@ test("changed Solidity or moving the tag to a tooling commit is refused", t => {
 	fixture.write("contracts/Test.sol", "pragma solidity >=0.8.18; contract Test { uint256 public changed; }\n");
 	assert.throws(() => buildRoundingInput(fixture.root), /clean tracked worktree/);
 	fixture.commit(["contracts/Test.sol"]);
-	assert.throws(() => buildRoundingInput(fixture.root), /Contracts differ/);
+	assert.throws(() => buildRoundingInput(fixture.root), /Contracts differ.*\.releases\/version_0\.8\.6\.2/);
 });
 
 test("production binds a separate recipe and target without moving the Solidity release tag", t => {
