@@ -4,12 +4,13 @@ import {
 	digest,
 	FACETS,
 	LIBRARIES,
-	RECIPE_PATH,
 	RELEASE_TAG,
+	roundingProfile,
+	roundingOwner,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
-import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner, validateSignerSelection } from "../signer/index.js";
+import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner, signerEnvironment, validateSignerSelection } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -24,6 +25,28 @@ export const ROUNDING_PLAN = Object.freeze([
 	{ id: "verify", phase: "verification", title: "Verify all Core selectors and the new getter" },
 	{ id: "core-unpause", phase: "execution", title: "Export a separate Core global-unpause transaction for the Safe" },
 	{ id: "verify-unpause", phase: "verification", title: "Verify the Core global pause flag is cleared" },
+]);
+export const PRODUCTION_ROUNDING_PLAN = Object.freeze([
+	...ROUNDING_PLAN.slice(0, 5).map(step => ({
+		...step,
+		title:
+			step.id === "inspect"
+				? "Verify the production baseline, Ledger owner and reused libraries"
+				: step.id === "authorize"
+					? "Authorize nine deployments and the Ledger pause, cut and unpause"
+					: step.title,
+	})),
+	{ id: "core-pause", phase: "execution", title: "Pause production Core using the owner Ledger" },
+	{ id: "verify-pause", phase: "verification", title: "Verify Core is globally paused before the production cut" },
+	...ROUNDING_PLAN.slice(5).map(step => ({
+		...step,
+		title:
+			step.id === "core-cut"
+				? "Execute the paused Core cut using the owner Ledger"
+				: step.id === "core-unpause"
+					? "Unpause verified production Core using the owner Ledger"
+					: step.title,
+	})),
 ]);
 
 const readReport = input => {
@@ -46,26 +69,44 @@ async function runPhase(ctx, input, phase, { env = {} } = {}) {
 	return readReport(input);
 }
 
-export function createArbitrumRoundingUpgradeTask(common) {
+export async function runLedgerPhase(ctx, input, phase) {
+	const selection = validateSignerSelection(input.governanceSigner, { allowSafe: false });
+	if (selection.mode !== SIGNER_MODES.LEDGER) throw new Error("Production governance requires Ledger signing");
+	return runPhase(ctx, input, phase, {
+		env: {
+			...signerEnvironment(selection),
+			SYMMIO_ROUNDING_UPGRADE_EXECUTE: "true",
+			CONFIRM_CHAIN_ID: "42161",
+		},
+	});
+}
+
+export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
+	const { recipePath } = roundingProfile(profile);
+	const production = profile === "production";
+	const plan = production ? PRODUCTION_ROUNDING_PLAN : ROUNDING_PLAN;
 	return common({
-		id: "maintenance.arbitrum-rounding-upgrade-862",
-		version: 5,
+		id: production ? "maintenance.arbitrum-vibe-production-rounding-upgrade-862" : "maintenance.arbitrum-rounding-upgrade-862",
+		version: production ? 1 : 5,
 		category: "maintenance",
 		risk: "transaction",
-		title: "Arbitrum rounding fix v0.8.6.2",
-		description:
-			"Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
+		title: production ? "Arbitrum Vibe production rounding fix v0.8.6.2" : "Arbitrum rounding fix v0.8.6.2",
+		description: production
+			? "Deploy the rounding fix to Vibe production; pause with the owner Ledger, verify and execute the cut, then unpause with the Ledger."
+			: "Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
-			{ id: "config", label: "Stage recipe", type: "recipe", required: true },
+			{ id: "config", label: production ? "Production recipe" : "Stage recipe", type: "recipe", required: true },
 			...["input", "output", "inputDigest", "sourceCommit"].map(id => ({ id, label: id, type: "string", required: true })),
-			{ id: "governanceSigner", label: "Core owner Safe", type: "selection", required: true },
+			{ id: "governanceSigner", label: production ? "Core owner Ledger" : "Core owner Safe", type: "selection", required: true },
 		],
 		artifacts: [
 			"tag-bound input and report",
 			"deployment checkpoint and receipts",
-			"Separate Safe Transaction Builder JSON files for the Core cut and global unpause",
+			production
+				? "Separate Ledger governance checkpoint, transaction previews and pause/cut/unpause receipts"
+				: "Separate Safe Transaction Builder JSON files for the Core cut and global unpause",
 			"Arbiscan publication and selector verification",
 		],
 		resumePolicy: { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" },
@@ -75,18 +116,18 @@ export function createArbitrumRoundingUpgradeTask(common) {
 			initialMode: SIGNER_MODES.KEYSTORE,
 		}),
 		prepare: async ({ ui, root = PROJECT_ROOT }) => {
-			const standardInput = buildRoundingInput(root);
+			const standardInput = buildRoundingInput(root, profile);
 			const inputDigest = digest(standardInput);
 			const directory = path.join(root, "tasks", "data", "42161", "rounding-upgrades", inputDigest);
 			const input = path.join(directory, "input.json");
 			const output = path.join(directory, "report.json");
 			const governanceSigner = await selectSigner(ui, {
-				role: "Core owner Safe",
-				allowedModes: [SIGNER_MODES.SAFE_FILE],
-				initialMode: SIGNER_MODES.SAFE_FILE,
+				role: production ? "Core owner Ledger" : "Core owner Safe",
+				allowedModes: [production ? SIGNER_MODES.LEDGER : SIGNER_MODES.SAFE_FILE],
+				initialMode: production ? SIGNER_MODES.LEDGER : SIGNER_MODES.SAFE_FILE,
 				network: "arbitrum",
 				chainId: 42161,
-				safeAddress: standardInput.target.safe,
+				...(production ? { expectedAddress: roundingOwner(standardInput) } : { safeAddress: roundingOwner(standardInput) }),
 			});
 			if (!governanceSigner) return null;
 			atomicWrite(input, standardInput);
@@ -96,6 +137,7 @@ export function createArbitrumRoundingUpgradeTask(common) {
 					`Solidity release: ${standardInput.releaseCommit}`,
 					`Deployment scripts: ${standardInput.sourceCommit}`,
 					`Core: ${standardInput.target.core}`,
+					...(production ? ["Required Ledger sequence: pause, verify pause, diamondCut, verify upgrade, unpause"] : []),
 					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
 					`Libraries: ${LIBRARIES.join(", ")}`,
 					`Facets (suffix 862): ${FACETS.join(", ")}`,
@@ -107,7 +149,7 @@ export function createArbitrumRoundingUpgradeTask(common) {
 				network: "arbitrum",
 				chainId: 42161,
 				mode: "live",
-				config: path.join(root, RECIPE_PATH),
+				config: path.join(root, recipePath),
 				input,
 				output,
 				inputDigest,
@@ -115,34 +157,49 @@ export function createArbitrumRoundingUpgradeTask(common) {
 				governanceSigner,
 			};
 		},
-		plan: () => ROUNDING_PLAN.map(step => ({ ...step })),
+		plan: () => plan.map(step => ({ ...step })),
 		run: async (ctx, input) => {
 			const standard = JSON.parse(fs.readFileSync(input.input, "utf8"));
+			if ((standard.profile || "stage") !== profile || path.resolve(input.config) !== path.join(ctx.root, recipePath))
+				throw new Error("Rounding task profile or recipe path changed");
 			if (digest(standard) !== input.inputDigest || input.sourceCommit !== standard.sourceCommit)
 				throw new Error("Rounding task input changed");
 			assertReleaseSource(ctx.root, standard);
 			const governance = validateSignerSelection(input.governanceSigner);
-			if (governance.mode !== SIGNER_MODES.SAFE_FILE || governance.safeAddress.toLowerCase() !== standard.target.safe.toLowerCase())
-				throw new Error("Use the reviewed Core owner Safe export");
+			if (
+				production
+					? governance.mode !== SIGNER_MODES.LEDGER || governance.address.toLowerCase() !== roundingOwner(standard).toLowerCase()
+					: governance.mode !== SIGNER_MODES.SAFE_FILE || governance.safeAddress.toLowerCase() !== roundingOwner(standard).toLowerCase()
+			)
+				throw new Error(production ? "Use the reviewed Core owner Ledger" : "Use the reviewed Core owner Safe export");
 			const step = (id, fn) => {
-				const entry = ROUNDING_PLAN.find(s => s.id === id);
+				const entry = plan.find(s => s.id === id);
 				return ctx.step(id, entry.title, fn, { phase: entry.phase });
 			};
 			await step("compile", () => ctx.runProcess("npm", ["run", "compile"], { env: environment(input) }));
 			await step("inspect", () => runPhase(ctx, input, "inspect"));
 			await step("authorize", async () => {
+				const phrase = `${production ? "UPGRADE VIBE PRODUCTION" : "DEPLOY"} ${RELEASE_TAG} ON 42161`;
 				const confirmed = await ctx.ui.text({
-					message: `Type DEPLOY ${RELEASE_TAG} ON 42161 to authorize a temporary factory (your wallet is admin and deployer), four libraries and four facets`,
-					validate: value => (value === `DEPLOY ${RELEASE_TAG} ON 42161` ? undefined : "Type the displayed release and chain phrase"),
+					message: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and four facets${production ? "; then Ledger pause, verified diamond cut and unpause" : ""}`,
+					validate: value => (value === phrase ? undefined : "Type the displayed release and chain phrase"),
 				});
 				if (confirmed === null) ctx.requestPause();
 			});
 			for (const phase of ["deploy", "publish"])
 				await step(phase, () => runPhase(ctx, input, phase, { env: { SYMMIO_ROUNDING_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: "42161" } }));
+			if (production) {
+				await step("core-pause", async () => {
+					await runLedgerPhase(ctx, input, "execute-pause");
+				});
+				await step("verify-pause", () => runPhase(ctx, input, "verify-pause"));
+			}
 			await step("core-cut", async () => {
+				if (production) return runLedgerPhase(ctx, input, "execute-cut");
 				const report = await runPhase(ctx, input, "plan");
 				if (!report.actions.length) return;
 				const delivery = await dispatchSafeActions(ctx, input.governanceSigner, report.actions, {
+					root: ctx.root,
 					chainId: 42161,
 					network: "arbitrum",
 					name: `${RELEASE_TAG} Core rounding fix`,
@@ -156,6 +213,7 @@ export function createArbitrumRoundingUpgradeTask(common) {
 			});
 			await step("verify", () => runPhase(ctx, input, "verify"));
 			await step("core-unpause", async () => {
+				if (production) return runLedgerPhase(ctx, input, "execute-unpause");
 				const report = await runPhase(ctx, input, "plan-unpause");
 				if (!report.unpause.actions.length) {
 					ctx.ui.note("Core is already globally unpaused; no unpause transaction is needed.");
@@ -178,9 +236,20 @@ export function createArbitrumRoundingUpgradeTask(common) {
 		},
 		reconcile: async (ctx, input) => {
 			if (!ctx.state.transactions.some(t => ["submitted", "unresolved", "timed_out"].includes(t.status))) return { unresolved: [] };
-			const report = await runPhase(ctx, input, "reconcile", { env: { SYMMIO_RECIPE_READ_ONLY: "true" } });
+			let report = await runPhase(ctx, input, "reconcile", { env: { SYMMIO_RECIPE_READ_ONLY: "true" } });
+			if (
+				production &&
+				ctx.state.transactions.some(
+					t =>
+						t.from?.toLowerCase() === input.governanceSigner.address.toLowerCase() &&
+						["submitted", "unresolved", "timed_out"].includes(t.status),
+				)
+			)
+				report = await runLedgerPhase(ctx, input, "reconcile-governance");
 			for (const transaction of ctx.state.transactions) {
-				const updated = report.transactions?.find(t => t.hash.toLowerCase() === transaction.hash.toLowerCase());
+				const updated = [...(report.transactions || []), ...(report.governanceTransactions || [])].find(
+					t => t.hash.toLowerCase() === transaction.hash.toLowerCase(),
+				);
 				if (updated) Object.assign(transaction, updated);
 			}
 			return { unresolved: ctx.state.transactions.filter(t => ["submitted", "unresolved", "timed_out"].includes(t.status)).map(t => t.hash) };

@@ -1310,6 +1310,7 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 
 const MAINTENANCE_TASKS = [
 	createArbitrumRoundingUpgradeTask(common),
+	createArbitrumRoundingUpgradeTask(common, "production"),
 	createArbitrumPerpsUpgradeTask(common),
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
 	SYMBOL_SYNC_FETCH_TASK,

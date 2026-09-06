@@ -7,6 +7,20 @@ import path from "node:path";
 export const RELEASE_TAG = "version_0.8.6.2";
 export const RECIPE_PATH = "deployment-recipes/arbitrum-vibe-stage.json";
 export const TARGET_PATH = "tasks/config/arbitrum-rounding-upgrade-42161.json";
+export const ROUNDING_PROFILES = Object.freeze({
+	stage: Object.freeze({ recipePath: RECIPE_PATH, targetPath: TARGET_PATH, recipeName: "arbitrum-vibe-stage" }),
+	production: Object.freeze({
+		recipePath: "deployment-recipes/arbitrum-vibe-production-862.json",
+		targetPath: "tasks/config/arbitrum-rounding-upgrade-vibe-production-42161.json",
+		recipeName: "arbitrum-vibe-production-862",
+	}),
+});
+export function roundingProfile(profile = "stage") {
+	if (!Object.hasOwn(ROUNDING_PROFILES, profile)) throw new Error(`Unknown rounding upgrade profile: ${profile}`);
+	return ROUNDING_PROFILES[profile];
+}
+export const requiresRoundingPause = input => input?.profile === "production";
+export const roundingOwner = input => getAddress(input.target.owner || input.target.safe);
 export const LIBRARIES = Object.freeze([
 	"LibPartyALiquidationLegacySetup",
 	"LibPartyALiquidationSnapshotSetup",
@@ -22,12 +36,13 @@ export const digest = value => createHash("sha256").update(JSON.stringify(value)
 export const fileDigest = file => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const gitAt = (root, args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 
-export function assertReleaseSource(root, input) {
+export function assertReleaseSource(root, input, profile = input?.profile || "stage") {
+	const { targetPath, recipePath } = roundingProfile(profile);
 	const git = args => gitAt(root, args);
 	if (git(["status", "--porcelain", "--untracked-files=no"])) throw new Error("Release requires a clean tracked worktree");
 	const commit = git(["rev-parse", "HEAD"]);
 	const releaseCommit = git(["rev-parse", `${RELEASE_TAG}^{commit}`]);
-	const target = JSON.parse(fs.readFileSync(path.join(root, TARGET_PATH), "utf8"));
+	const target = JSON.parse(fs.readFileSync(path.join(root, targetPath), "utf8"));
 	if (git(["rev-parse", "HEAD:contracts"]) !== target.contractsTree || git(["rev-parse", `${releaseCommit}:contracts`]) !== target.contractsTree)
 		throw new Error("Contracts differ from the reviewed rounding-only release");
 	if (git(["log", "-1", "--format=%H", releaseCommit, "--", "contracts"]) !== releaseCommit)
@@ -41,8 +56,8 @@ export function assertReleaseSource(root, input) {
 		input &&
 		(input.sourceCommit !== commit ||
 			input.releaseCommit !== releaseCommit ||
-			input.targetDigest !== fileDigest(path.join(root, TARGET_PATH)) ||
-			input.recipeDigest !== fileDigest(path.join(root, RECIPE_PATH)))
+			input.targetDigest !== fileDigest(path.join(root, targetPath)) ||
+			input.recipeDigest !== fileDigest(path.join(root, recipePath)))
 	) {
 		throw new Error("Release tag, tooling source, target, or recipe changed since preparation");
 	}
@@ -50,7 +65,8 @@ export function assertReleaseSource(root, input) {
 		input &&
 		(input.release !== RELEASE_TAG ||
 			digest(input.target) !== digest(target) ||
-			digest(input.create2) !== digest(JSON.parse(fs.readFileSync(path.join(root, RECIPE_PATH), "utf8")).create2))
+			digest(input.create2) !== digest(JSON.parse(fs.readFileSync(path.join(root, recipePath), "utf8")).create2) ||
+			(profile === "production" && input.apiVersion !== "operations.symm.io/arbitrum-rounding-upgrade-v4"))
 	)
 		throw new Error("Input differs from the release target or CREATE2 configuration");
 	return commit;
@@ -61,22 +77,26 @@ export function assertRoundingFactoryIntent(create2) {
 		throw new Error("Release requires a new temporary CREATE2 factory administered by the deployment signer");
 }
 
-export function buildRoundingInput(root) {
-	const sourceCommit = assertReleaseSource(root);
-	const target = JSON.parse(fs.readFileSync(path.join(root, TARGET_PATH), "utf8"));
-	const recipe = JSON.parse(fs.readFileSync(path.join(root, RECIPE_PATH), "utf8"));
+export function buildRoundingInput(root, profile = "stage") {
+	const { targetPath, recipePath, recipeName } = roundingProfile(profile);
+	const sourceCommit = assertReleaseSource(root, undefined, profile);
+	const target = JSON.parse(fs.readFileSync(path.join(root, targetPath), "utf8"));
+	const recipe = JSON.parse(fs.readFileSync(path.join(root, recipePath), "utf8"));
+	if (profile === "production" && (target.governanceMode !== "ledger" || !target.owner))
+		throw new Error("Production target must bind its Ledger owner");
 	const create2 = recipe.create2;
-	if (recipe.name !== "arbitrum-vibe-stage" || getAddress(recipe.governance.admin) !== getAddress(target.safe))
-		throw new Error("Stage recipe must assign governance.admin to the reviewed Core multisig");
+	if (recipe.name !== recipeName || getAddress(recipe.governance.admin) !== roundingOwner({ target }))
+		throw new Error(`${profile} recipe must assign governance.admin to the reviewed Core owner`);
 	assertRoundingFactoryIntent(create2);
 	if (JSON.stringify(create2.groups?.facets) !== JSON.stringify({ suffix: "862" })) throw new Error("Release facets must use exactly suffix 862");
 	return {
-		apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v3",
+		apiVersion: `operations.symm.io/arbitrum-rounding-upgrade-v${profile === "production" ? 4 : 3}`,
+		...(profile === "production" ? { profile } : {}),
 		release: RELEASE_TAG,
 		releaseCommit: gitAt(root, ["rev-parse", `${RELEASE_TAG}^{commit}`]),
 		sourceCommit,
-		targetDigest: fileDigest(path.join(root, TARGET_PATH)),
-		recipeDigest: fileDigest(path.join(root, RECIPE_PATH)),
+		targetDigest: fileDigest(path.join(root, targetPath)),
+		recipeDigest: fileDigest(path.join(root, recipePath)),
 		target,
 		create2,
 	};
