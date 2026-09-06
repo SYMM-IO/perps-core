@@ -4,6 +4,8 @@ import {
 	RECIPE_PATH,
 	RELEASE_TAG,
 	TARGET_PATH,
+	ROUNDING_PROFILES,
+	requiresRoundingPause,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -70,4 +72,35 @@ test("changed Solidity or moving the tag to a tooling commit is refused", t => {
 	assert.throws(() => buildRoundingInput(fixture.root), /clean tracked worktree/);
 	fixture.commit(["contracts/Test.sol"]);
 	assert.throws(() => buildRoundingInput(fixture.root), /Contracts differ/);
+});
+
+test("production binds a separate recipe and target without moving the Solidity release tag", t => {
+	const fixture = releaseFixture(t);
+	const profile = ROUNDING_PROFILES.production;
+	const target = JSON.parse(fs.readFileSync(path.join(fixture.root, TARGET_PATH)));
+	target.core = "0x2222222222222222222222222222222222222222";
+	target.owner = target.safe;
+	target.governanceMode = "ledger";
+	delete target.safe;
+	const recipe = JSON.parse(fs.readFileSync(path.join(fixture.root, RECIPE_PATH)));
+	recipe.name = profile.recipeName;
+	fixture.write(profile.targetPath, JSON.stringify(target));
+	fixture.write(profile.recipePath, JSON.stringify(recipe));
+	fixture.commit([profile.targetPath, profile.recipePath]);
+	const stage = buildRoundingInput(fixture.root);
+	const production = buildRoundingInput(fixture.root, "production");
+	assert.equal(production.profile, "production");
+	assert.equal(production.apiVersion, "operations.symm.io/arbitrum-rounding-upgrade-v4");
+	assert.equal(production.releaseCommit, stage.releaseCommit);
+	assert.notEqual(production.targetDigest, stage.targetDigest);
+	assert.notEqual(production.recipeDigest, stage.recipeDigest);
+	assert.equal(requiresRoundingPause(production), true);
+	assert.equal(requiresRoundingPause(stage), false);
+	assert.doesNotThrow(() => assertReleaseSource(fixture.root, production));
+	assert.throws(() => assertReleaseSource(fixture.root, { ...production, profile: "stage" }), /changed since preparation/);
+	assert.throws(() => assertReleaseSource(fixture.root, { ...production, apiVersion: stage.apiVersion }), /differs from the release target/);
+	assert.throws(() => buildRoundingInput(fixture.root, "unknown"), /Unknown rounding upgrade profile/);
+	fixture.write(profile.recipePath, JSON.stringify({ ...recipe, governance: { admin: target.core } }));
+	fixture.commit([profile.recipePath]);
+	assert.throws(() => buildRoundingInput(fixture.root, "production"), /reviewed Core owner/);
 });
