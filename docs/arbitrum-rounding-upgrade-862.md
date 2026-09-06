@@ -1,5 +1,7 @@
 # Arbitrum rounding fix: version_0.8.6.2
 
+For the Ledger-owned Vibe production Core at `0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A`, use the separate [production pause/cut/unpause workflow](arbitrum-vibe-production-rounding-upgrade-862.md).
+
 This release applies the bounded uPNL rounding fix to the existing Arbitrum Core at `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`. It deploys a temporary CREATE2 factory, four libraries and four facets: nine contracts in total. The selected deployment wallet receives both `DEFAULT_ADMIN_ROLE` and `DEPLOYER_ROLE` on the new factory. Each new facet address **ends in `862`**.
 
 This avoids requiring a role on the previous factory at `0x99B425BC19F99a1B922664c0E4fa8A0870CE9975`. A different factory produces different full facet addresses; the runner mines fresh salts for the same `862` suffix. Core stays at its existing address and its administrator remains the multisig.
