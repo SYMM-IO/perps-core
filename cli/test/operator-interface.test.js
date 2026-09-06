@@ -77,10 +77,10 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
 	assert.equal(entries.filter(item => item.category === "maintenance").length, 14);
 	const rounding = entries.find(item => item.id === "maintenance.arbitrum-rounding-upgrade-862");
-	assert.equal(rounding.title, "Arbitrum rounding fix v0.8.6.2");
+	assert.equal(rounding.title, "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2");
 	assert.deepEqual(rounding.supportedNetworks, ["arbitrum"]);
 	const productionRounding = entries.find(item => item.id === "maintenance.arbitrum-vibe-production-rounding-upgrade-862");
-	assert.equal(productionRounding.title, "Arbitrum Vibe production rounding fix v0.8.6.2");
+	assert.equal(productionRounding.title, "Arbitrum Vibe production / Ledger rounding fix v0.8.6.2");
 	assert.deepEqual(productionRounding.supportedNetworks, ["arbitrum"]);
 	assert.equal(productionRounding.risk, "transaction");
 	const arbitrumUpgrade = entries.find(item => item.id === "maintenance.arbitrum-perps-upgrade");
