@@ -12,6 +12,8 @@ import {
 	GETTER,
 	LIBRARIES,
 	planRoundingCut,
+	requiresRoundingPause,
+	roundingOwner,
 	selectorMap,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js"
 import { FacetSpecs, LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
@@ -30,7 +32,9 @@ import {
 import { ensureCreate2Factory } from "./create2Factory.js"
 import { persistSubmittedTransaction } from "./deploymentRecovery.js"
 import { resolveVerificationContractName, verificationProviderForChain } from "./explorer.js"
+import { completeGovernanceTransactionRequest } from "./governanceActions.js"
 import { getConnection } from "./helpers.js"
+import { logger } from "./logger.js"
 import {
 	bindDeploymentTransactionWriteAhead,
 	clearDeploymentTransactionWriteAhead,
@@ -38,11 +42,27 @@ import {
 	reconcileDeploymentTransactions,
 	recoverConfirmedDeployment,
 	resetDeploymentTransactionJournal,
+	send,
 } from "./tx.js"
 import { createVanityContext, deployContract } from "./vanityDeploy.js"
 import { buildVanityPlan } from "./vanityPlan.js"
 
-const PHASES = ["inspect", "deploy", "publish", "plan", "verify", "plan-unpause", "verify-unpause", "reconcile"]
+const PHASES = [
+	"inspect",
+	"deploy",
+	"publish",
+	"execute-pause",
+	"execute-cut",
+	"execute-unpause",
+	"reconcile-governance",
+	"plan-pause",
+	"verify-pause",
+	"plan",
+	"verify",
+	"plan-unpause",
+	"verify-unpause",
+	"reconcile",
+]
 const write = (file: string, value: any) => atomicWriteFile(file, JSON.stringify(value, null, 2) + "\n", 0o600)
 
 export async function assertRoundingRuntime(ethers: any, artifact: any, address: string, libraries: Record<string, string> = {}) {
@@ -69,13 +89,20 @@ async function inspect(ethers: any, input: any, report: any) {
 	const block = await ethers.provider.getBlock("latest")
 	const [deployer] = await ethers.getSigners()
 	const view = await ethers.getContractAt(
-		["function getOwner() view returns(address)", "function hasRole(address,bytes32) view returns(bool)"],
+		[
+			"function getOwner() view returns(address)",
+			"function hasRole(address,bytes32) view returns(bool)",
+			"function getCollateral() view returns(address)",
+		],
 		input.target.core,
 	)
-	if ((await view.getOwner({ blockTag: block.number })).toLowerCase() !== input.target.safe.toLowerCase())
-		throw new Error("The reviewed Safe must own Core")
-	if (!(await view.hasRole(input.target.safe, ethers.id("DEFAULT_ADMIN_ROLE"), { blockTag: block.number })))
-		throw new Error("The reviewed Safe must hold Core DEFAULT_ADMIN_ROLE")
+	if ((await view.getOwner({ blockTag: block.number })).toLowerCase() !== roundingOwner(input).toLowerCase())
+		throw new Error("The reviewed owner must own Core")
+	if (!(await view.hasRole(roundingOwner(input), ethers.id("DEFAULT_ADMIN_ROLE"), { blockTag: block.number })))
+		throw new Error("The reviewed owner must hold Core DEFAULT_ADMIN_ROLE")
+	if (requiresRoundingPause(input)) await assertRoundingPauseAuthority(ethers, input, block.number)
+	if (input.target.collateral && (await view.getCollateral({ blockTag: block.number })).toLowerCase() !== input.target.collateral.toLowerCase())
+		throw new Error("Production Core collateral differs from the reviewed target")
 	const loupe = await ethers.getContractAt("DiamondLoupeFacet", input.target.core)
 	const selectors = selectorMap(await loupe.facets({ blockTag: block.number }))
 	if (!report.baseline) {
@@ -87,7 +114,7 @@ async function inspect(ethers: any, input: any, report: any) {
 				throw new Error(`Baseline code mismatch for ${name}`)
 		}
 		report.baseline = selectors
-		report.inspection = { blockNumber: block.number, blockHash: block.hash, owner: input.target.safe, deployer: deployer?.address }
+		report.inspection = { blockNumber: block.number, blockHash: block.hash, owner: roundingOwner(input), deployer: deployer?.address }
 	}
 	for (const [name, entry] of Object.entries(input.target.reuseLibraries) as any) {
 		if (ethers.keccak256(await ethers.provider.getCode(entry.address, block.number)) !== entry.codeHash)
@@ -96,27 +123,29 @@ async function inspect(ethers: any, input: any, report: any) {
 	return selectors
 }
 
-async function checkpointRun(ethers: any, input: any, report: any, fn: (checkpoint: DeploymentCheckpoint) => Promise<void>) {
+async function checkpointRun(ethers: any, input: any, report: any, fn: (checkpoint: DeploymentCheckpoint) => Promise<void>, governance = false) {
+	const recordKey = governance ? "governanceTransactions" : "transactions"
 	setCheckpointSimulated(false)
-	const scope = `arbitrum-rounding-862-${digest(input).slice(0, 16)}`
+	const scope = `arbitrum-rounding-862-${governance ? "governance-" : ""}${digest(input).slice(0, 16)}`
 	const lock = acquireCheckpointLock(42161, scope)
 	try {
 		const checkpoint = loadCheckpoint(42161, scope) || createCheckpoint("arbitrum", 42161, scope)
 		const manifest = createDeploymentManifest(
-			{ input, simulated: false },
+			{ input, simulated: false, ...(governance ? { role: "governance" } : {}) },
 			{ deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId },
 		)
 		if (checkpoint.manifest) assertCheckpointManifest(checkpoint, manifest)
 		checkpoint.manifest = manifest
 		checkpoint.deploymentId = manifest.deploymentId
 		const signer = (await ethers.getSigners())[0]
-		if (signer && checkpoint.deployerAddress && checkpoint.deployerAddress.toLowerCase() !== signer.address.toLowerCase())
+		const signerAddress = signer ? await signer.getAddress() : undefined
+		if (signerAddress && checkpoint.deployerAddress && checkpoint.deployerAddress.toLowerCase() !== signerAddress.toLowerCase())
 			throw new Error("Deployment signer changed")
-		checkpoint.deployerAddress ||= signer?.address
+		checkpoint.deployerAddress ||= signerAddress
 		try {
 			await reconcileDeploymentTransactions(checkpoint.transactions || [], ethers.provider, checkpoint.deployerAddress)
 		} finally {
-			report.transactions = checkpoint.transactions || []
+			report[recordKey] = checkpoint.transactions || []
 			saveCheckpoint(checkpoint)
 		}
 		resetDeploymentTransactionJournal()
@@ -124,7 +153,7 @@ async function checkpointRun(ethers: any, input: any, report: any, fn: (checkpoi
 		try {
 			await fn(checkpoint)
 		} finally {
-			report.transactions = [
+			report[recordKey] = [
 				...new Map([...(checkpoint.transactions || []), ...getDeploymentTransactionJournal()].map(r => [r.hash.toLowerCase(), r])).values(),
 			]
 			saveCheckpoint(checkpoint)
@@ -243,20 +272,82 @@ async function plan(hre: any, ethers: any, input: any, report: any) {
 				},
 			]
 		: []
-	if (planned.calldata) await ethers.provider.call({ to: input.target.core, from: input.target.safe, data: planned.calldata })
+	if (planned.calldata) await ethers.provider.call({ to: input.target.core, from: roundingOwner(input), data: planned.calldata })
 	return planned
+}
+
+export async function assertRoundingPauseAuthority(ethers: any, input: any, blockNumber: number) {
+	const view = await ethers.getContractAt(["function hasRole(address,bytes32) view returns(bool)"], input.target.core)
+	for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"])
+		if (!(await view.hasRole(roundingOwner(input), ethers.id(role), { blockTag: blockNumber })))
+			throw new Error(`Core owner ${roundingOwner(input)} must hold ${role} for the production pause/cut/unpause workflow`)
+}
+
+export async function requireRoundingPaused(ethers: any, input: any, report: any) {
+	const blockNumber = await ethers.provider.getBlockNumber()
+	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
+	const pauseState = Array.from(await view.pauseState({ blockTag: blockNumber }))
+	if (!pauseState[0]) throw new Error("Core must be globally paused before executing or verifying the production cut; execute the Core pause first")
+	report.pause = {
+		...report.pause,
+		globalPaused: true,
+		pauseState,
+		verifiedBlock: report.pause?.verifiedBlock || blockNumber,
+		lastCheckedBlock: blockNumber,
+	}
+	return report.pause
+}
+
+export async function planRoundingPause(ethers: any, input: any, report: any) {
+	if (!requiresRoundingPause(input)) throw new Error("Mandatory Core pause belongs to the production rounding profile")
+	const blockNumber = await ethers.provider.getBlockNumber()
+	await assertRoundingPauseAuthority(ethers, input, blockNumber)
+	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
+	const pauseState = Array.from(await view.pauseState({ blockTag: blockNumber }))
+	report.pause = {
+		...report.pause,
+		initialBlock: report.pause?.initialBlock || blockNumber,
+		initialPauseState: report.pause?.initialPauseState || pauseState,
+		blockNumber,
+		globalPaused: pauseState[0],
+		pauseState,
+		actions: [],
+	}
+	if (pauseState[0]) return report.pause
+	const iface = new ethers.Interface(["function pauseGlobal()"])
+	const action = {
+		to: input.target.core,
+		value: "0",
+		data: iface.encodeFunctionData("pauseGlobal"),
+		description: "Pause Core globally before the production rounding cut",
+	}
+	await ethers.provider.call({ to: action.to, from: roundingOwner(input), data: action.data, blockTag: blockNumber })
+	report.pause.actions = [action]
+	return report.pause
+}
+
+export async function guardRoundingCut(ethers: any, input: any, report: any) {
+	if (!requiresRoundingPause(input) || !report.actions?.length) return
+	await requireRoundingPaused(ethers, input, report)
+	if (
+		report.actions.length !== 1 ||
+		report.actions[0].to.toLowerCase() !== input.target.core.toLowerCase() ||
+		!report.actions[0].data.startsWith("0x1f931c1c")
+	)
+		throw new Error("Expected exactly one Core diamondCut for the production upgrade")
 }
 
 export async function planRoundingUnpause(ethers: any, input: any, report: any) {
 	if (report.actions?.length !== 0 || !report.verifiedBlock) throw new Error("Verify the installed Core cut before planning unpause")
+	if (requiresRoundingPause(input) && !report.pause?.verifiedBlock) throw new Error("Production pause verification is missing")
 	const blockNumber = await ethers.provider.getBlockNumber()
 	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
 	const pauseState = await view.pauseState({ blockTag: blockNumber })
 	const unpause: any = { blockNumber, globalPaused: pauseState[0], pauseState: Array.from(pauseState), actions: [] }
 	report.unpause = unpause
 	if (!unpause.globalPaused) return unpause
-	if (!(await view.hasRole(input.target.safe, ethers.id("UNPAUSER_ROLE"), { blockTag: blockNumber })))
-		throw new Error(`Core multisig ${input.target.safe} must hold UNPAUSER_ROLE before exporting unpause`)
+	if (!(await view.hasRole(roundingOwner(input), ethers.id("UNPAUSER_ROLE"), { blockTag: blockNumber })))
+		throw new Error(`Core owner ${roundingOwner(input)} must hold UNPAUSER_ROLE before exporting unpause`)
 	const iface = new ethers.Interface(["function unpauseGlobal()"])
 	const action = {
 		to: input.target.core,
@@ -264,9 +355,48 @@ export async function planRoundingUnpause(ethers: any, input: any, report: any) 
 		data: iface.encodeFunctionData("unpauseGlobal"),
 		description: `Unpause Core globally after the verified ${input.release} cut; preserve other pause flags`,
 	}
-	await ethers.provider.call({ to: action.to, from: input.target.safe, data: action.data, blockTag: blockNumber })
+	await ethers.provider.call({ to: action.to, from: roundingOwner(input), data: action.data, blockTag: blockNumber })
 	unpause.actions = [action]
 	return unpause
+}
+
+export async function executeRoundingOwnerAction(ethers: any, input: any, report: any, phase: string, actions: any[]) {
+	if (!requiresRoundingPause(input) || input.target.governanceMode !== "ledger")
+		throw new Error("Production governance requires the reviewed Ledger owner")
+	const methods: Record<string, string> = {
+		"execute-pause": "pauseGlobal()",
+		"execute-cut": "diamondCut((address,uint8,bytes4[])[],address,bytes)",
+		"execute-unpause": "unpauseGlobal()",
+	}
+	const method = methods[phase]
+	if (!method) throw new Error("Unsupported production governance phase")
+	const [signer] = await ethers.getSigners()
+	if (!signer || ethers.getAddress(await signer.getAddress()) !== roundingOwner(input))
+		throw new Error("Governance signer does not match the reviewed Core owner")
+	if (actions.length === 0) return
+	if (actions.length !== 1) throw new Error("Each Ledger governance phase must contain exactly one transaction")
+	const action = actions[0]
+	if (
+		action.to.toLowerCase() !== input.target.core.toLowerCase() ||
+		action.value !== "0" ||
+		action.data.slice(0, 10) !== ethers.id(method).slice(0, 10)
+	)
+		throw new Error("Governance action differs from its reviewed phase or Core target")
+	if (phase === "execute-cut") await requireRoundingPaused(ethers, input, report)
+	if (phase === "execute-unpause" && (!report.verifiedBlock || !report.pause?.verifiedBlock || report.actions?.length !== 0))
+		throw new Error("Verify the paused production cut before unpausing")
+	await ethers.provider.call({ from: roundingOwner(input), to: action.to, data: action.data, value: 0n })
+	const request = await completeGovernanceTransactionRequest(ethers.provider, {
+		from: roundingOwner(input),
+		to: action.to,
+		data: action.data,
+		value: 0n,
+	})
+	if (phase === "execute-cut") await requireRoundingPaused(ethers, input, report)
+	logger.info(`Ledger governance: ${method}; Core ${action.to}; owner ${roundingOwner(input)}; value 0; gas limit ${request.gasLimit}`)
+	report.governancePreviews ||= {}
+	report.governancePreviews[phase] = { to: action.to, value: "0", data: action.data, method, owner: roundingOwner(input) }
+	await send(signer.sendTransaction(request), `version_0.8.6.2 production ${method}`)
 }
 
 export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgrade", "Adapter for the Arbitrum rounding-only Solidity release")
@@ -286,10 +416,15 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 			if (Number((await ethers.provider.getNetwork()).chainId) !== 42161) throw new Error("Rounding upgrade requires Arbitrum chain 42161")
 			if (simulated || connection.networkName !== "arbitrum") throw new Error("Incorrect network for upgrade phase")
 			if (
-				["deploy", "publish"].includes(phase) &&
+				["deploy", "publish", "execute-pause", "execute-cut", "execute-unpause"].includes(phase) &&
 				(process.env.SYMMIO_ROUNDING_UPGRADE_EXECUTE !== "true" || process.env.CONFIRM_CHAIN_ID !== "42161")
 			)
 				throw new Error("Live deployment requires explicit chain authorization")
+			if (
+				["execute-pause", "execute-cut", "execute-unpause", "reconcile-governance"].includes(phase) &&
+				(!requiresRoundingPause(input) || input.target.governanceMode !== "ledger" || process.env.SYMMIO_SIGNER_MODE !== "ledger")
+			)
+				throw new Error("Production governance must run with its selected Ledger signer")
 			const report = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { inputDigest, release: input.release }
 			if (report.inputDigest !== inputDigest) throw new Error("Upgrade report input mismatch")
 			const persist = () => write(output, report)
@@ -306,7 +441,33 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 					await checkpointRun(ethers, input, report, checkpoint => deployRoundingSelection(hre, ethers, input, report, checkpoint, persist))
 				}
 				if (phase === "reconcile") await checkpointRun(ethers, input, report, async () => {})
-				if (["publish", "plan", "verify", "plan-unpause", "verify-unpause"].includes(phase)) await plan(hre, ethers, input, report)
+				if (phase === "reconcile-governance") await checkpointRun(ethers, input, report, async () => {}, true)
+				if (["execute-pause", "execute-cut", "execute-unpause"].includes(phase)) {
+					await checkpointRun(
+						ethers,
+						input,
+						report,
+						async () => {
+							await plan(hre, ethers, input, report)
+							if (DEPLOYMENTS.some(name => !report.deployments[name]?.published))
+								throw new Error("Publish all deployments before production governance")
+							let actions = report.actions
+							if (phase === "execute-pause") actions = (await planRoundingPause(ethers, input, report)).actions
+							if (phase === "execute-cut") await guardRoundingCut(ethers, input, report)
+							if (phase === "execute-unpause") actions = (await planRoundingUnpause(ethers, input, report)).actions
+							await executeRoundingOwnerAction(ethers, input, report, phase, actions)
+						},
+						true,
+					)
+				}
+				if (["publish", "plan-pause", "verify-pause", "plan", "verify", "plan-unpause", "verify-unpause"].includes(phase))
+					await plan(hre, ethers, input, report)
+				if (phase === "plan-pause") {
+					if (DEPLOYMENTS.some(name => !report.deployments[name]?.published)) throw new Error("Publish all deployments before pausing Core")
+					await planRoundingPause(ethers, input, report)
+				}
+				if (phase === "verify-pause") await requireRoundingPaused(ethers, input, report)
+				if (phase === "plan") await guardRoundingCut(ethers, input, report)
 				if (phase === "publish") {
 					for (const name of DEPLOYMENTS) {
 						const entry = report.deployments[name]
@@ -331,6 +492,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 				}
 				if (["verify", "plan-unpause", "verify-unpause"].includes(phase)) {
 					if (report.actions.length) throw new Error("Core cut has not been executed yet")
+					if (requiresRoundingPause(input) && phase === "verify") await requireRoundingPaused(ethers, input, report)
 					if (DEPLOYMENTS.some(name => !report.deployments[name]?.published)) throw new Error("Explorer publication remains incomplete")
 					const view = await ethers.getContractAt(["function liquidationStartPositionCount(address) view returns(uint256)"], input.target.core)
 					if ((await view.liquidationStartPositionCount(ethers.ZeroAddress)) !== 0n) throw new Error("New getter failed zero-address check")
@@ -342,7 +504,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 					const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
 					const blockNumber = await ethers.provider.getBlockNumber()
 					const pauseState = await view.pauseState({ blockTag: blockNumber })
-					if (pauseState[0]) throw new Error("Core remains globally paused; execute the separate Safe unpause transaction")
+					if (pauseState[0]) throw new Error("Core remains globally paused; execute the separate owner unpause transaction")
 					report.unpause = { ...(report.unpause || {}), globalPaused: false, pauseState: Array.from(pauseState), verifiedBlock: blockNumber }
 					report.status = "complete"
 				}
