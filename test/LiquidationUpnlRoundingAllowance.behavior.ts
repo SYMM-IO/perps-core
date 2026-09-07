@@ -122,9 +122,15 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		return pnl - funding
 	}
 
-	const startLiquidation = async (signedUpnl: bigint, price: bigint, state: any) => {
-		const allocated = (await user.getBalanceInfo()).allocatedBalances
-		const sig = await getDummyLiquidationSig("0x10", signedUpnl, [1n], [price], signedUpnl, allocated)
+	const startLiquidation = async (
+		signedUpnl: bigint,
+		price: bigint,
+		state: any,
+		overrides: { totalUnrealizedLoss?: bigint; liquidationAllocatedBalance?: bigint } = {},
+	) => {
+		const allocated = overrides.liquidationAllocatedBalance ?? (await user.getBalanceInfo()).allocatedBalances
+		const totalUnrealizedLoss = overrides.totalUnrealizedLoss ?? signedUpnl
+		const sig = await getDummyLiquidationSig("0x10", signedUpnl, [1n], [price], totalUnrealizedLoss, allocated)
 		const facet = context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator)
 		await facet.liquidatePartyAWithSnapshot(userAddr, snapshotSig(sig, []))
 		await facet.setSymbolsPriceWithSnapshot(userAddr, snapshotSig(sig, [state]))
@@ -277,6 +283,23 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			const facet = await startLiquidation(signedUpnl, price, wrongState)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(true)
+		})
+	})
+
+	describe("OVERDUE loss rounding", function () {
+		it("saturates a one-unit loss mismatch instead of reverting", async function () {
+			const quoteId = await openLong(INCIDENT_QUANTITY)
+			await advanceEpochs(4n)
+			const price = await normalLiquidationPrice([quoteId], INCIDENT_QUANTITY)
+			const state = await signedState(hedgerAddr, 1n, price)
+			const signedUpnl = await quoteLevelUpnl([quoteId], price)
+			const facet = await startLiquidation(signedUpnl, price, state, {
+				liquidationAllocatedBalance: 0n,
+				totalUnrealizedLoss: signedUpnl + 1n,
+			})
+
+			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.OVERDUE))
+			await expect(facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])).to.not.be.reverted
 		})
 	})
 
