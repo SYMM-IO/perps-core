@@ -33,6 +33,7 @@ import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.s
 ///      the Diamond continues to expose the same composite IControlFacet ABI.
 contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	error IncompatibleSignatureVerifier();
+	uint256 private constant MAX_LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION = 3;
 
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
@@ -311,6 +312,15 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
 		emit SetPendingQuotesValidLength(MAStorage.layout().pendingQuotesValidLength, pendingQuotesValidLength);
 		MAStorage.layout().pendingQuotesValidLength = pendingQuotesValidLength;
+	}
+
+	/// @notice Sets the raw-unit rounding allowance per position for Party A liquidation settlement.
+	/// @dev Zero preserves strict equality. Three is the proven maximum once aggregate funding and oracle notional are exact.
+	function setLiquidationUpnlRoundingAllowancePerPosition(uint256 allowance) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+		require(allowance <= MAX_LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION, "ControlFacet: Invalid liquidation rounding allowance");
+		MAStorage.Layout storage maLayout = MAStorage.layout();
+		emit SetLiquidationUpnlRoundingAllowancePerPosition(maLayout.liquidationUpnlRoundingAllowancePerPosition, allowance);
+		maLayout.liquidationUpnlRoundingAllowancePerPosition = allowance;
 	}
 
 	/// @notice Sets the address where trading fees collected for a specific affiliate will be sent.

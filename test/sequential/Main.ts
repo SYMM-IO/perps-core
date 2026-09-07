@@ -3,6 +3,7 @@ import { shouldBehaveLikeAccountFacet } from "../AccountFacet.behavior.js"
 import { shouldBehaveLikeAccountLayer } from "../AccountLayer.behavior.js"
 import { shouldBehaveLikeAccountLayerAffiliate } from "../AccountLayerAffiliate.behavior.js"
 import { shouldBehaveLikeAccountManager } from "../AccountManager.behavior.js"
+import { shouldBehaveLikeAggregateFundingRounding } from "../AggregateFundingRounding.behavior.js"
 import { shouldBehaveLikeAggregateViews } from "../AggregateViews.behavior.js"
 import { shouldBehaveLikeBridgeFacet } from "../BridgeFacet.behavior.js"
 import { shouldBehaveLikeCancelQuote } from "../CancelQuote.behavior.js"
@@ -82,6 +83,9 @@ describe("UnitTests", function () {
 		})
 		describe("LiquidationUpnlRoundingAllowance", async function () {
 			shouldBehaveLikeLiquidationUpnlRoundingAllowance()
+		})
+		describe("AggregateFundingRounding", async function () {
+			shouldBehaveLikeAggregateFundingRounding()
 		})
 
 		describe("FundingRate", async function () {

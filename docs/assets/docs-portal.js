@@ -115,6 +115,7 @@
 			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
 			["instant-layer-batch-delegation-grant", "InstantLayer", "Batch Delegation Grant Operations"],
 			["diamond-role-management", "Access Control", "Consistent Diamond Role Management"],
+			["liquidation-rounding-and-funding-aggregate-repair", "Liquidation & Funding", "Liquidation Rounding and Funding Aggregate Repair"],
 		],
 	};
 

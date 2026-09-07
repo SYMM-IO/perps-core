@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Explains the bounded PartyA liquidation rounding allowance and the exact funding aggregate updates and repair path that make the bound safe."
+		/>
+		<title>Liquidation Rounding and Funding Aggregate Repair - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#rounding">Why liquidation totals can differ</a>
+				<a class="toc-link level-2" href="#funding">Why partial closes left dust</a>
+				<a class="toc-link level-2" href="#repair">Repairing existing groups</a>
+				<a class="toc-link level-2" href="#rollout">Safe rollout</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Liquidation Rounding and Funding Aggregate Repair</h1>
+							<p class="hero-copy">
+								v0.8.6 separates harmless integer rounding from a real liquidation mismatch and keeps stored funding totals equal to
+								the sum of their open quotes.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Muon calculates one total from position groups. Liquidation settles the same account quote by quote. Integer division can make
+						those two correct paths differ by a few raw accounting units. The contract now records how many positions existed when
+						liquidation started and can accept only a small limit per position.
+					</p>
+					<p>
+						That limit is controlled by <code>PROTOCOL_CONFIG_ROLE</code>, starts at <code>0</code>, and cannot be set above
+						<code>3</code>. A value of <code>0</code> keeps the old strict check. A larger mismatch still opens a dispute.
+					</p>
+					<aside class="callout callout-note">
+						<strong>The limit is a safety switch, not free tolerance.</strong> Keep it at zero until funding aggregates are repaired and
+						Muon uses exact aggregate notional.
+					</aside>
+
+					<h2 id="rounding">Why liquidation totals can differ</h2>
+					<p>Consider two values with decimals that the contract cannot store:</p>
+					<pre><code>Quote-by-quote: cut(4.8) + cut(5.8) = 4 + 5 = 9
+Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
+					<p>
+						Neither answer means the price or funding data is false. The difference comes from where the decimal part is removed. Price
+						PnL can lose less than one unit per quote, and funding can lose less than two. This gives a maximum of three raw units for
+						each position, provided the stored totals and Muon inputs are exact.
+					</p>
+					<p>
+						The position count is saved at liquidation start, so closing positions in several batches cannot shrink or grow the limit.
+						When a non-zero difference is accepted, <code>LiquidationUpnlRoundingAccepted</code> records both totals and the limit used.
+					</p>
+
+					<h2 id="funding">Why partial closes left dust</h2>
+					<p>
+						A funding group stores the sum of each open quote's rounded contribution. The old close path rounded the closed slice on its
+						own. Because rounding does not always split cleanly, a 60% close followed by a 40% close could leave one raw unit after the
+						position reached zero.
+					</p>
+					<pre><code>Old behavior: remove cut(closed amount × funding)
+New behavior: remove cut(old open amount × funding)
+                   − cut(new open amount × funding)</code></pre>
+					<p>
+						The new calculation makes the stored value exactly match the remaining quote after every partial close. When the last position
+						in a pair or global PartyB group closes, its funding total is also set to zero. Reopening the same group then starts without
+						old dust.
+					</p>
+
+					<h2 id="repair">Repairing existing groups</h2>
+					<p>
+						<code>resyncAggregateFunding</code> lets <code>MIGRATION_ROLE</code> rebuild one PartyA, PartyB, symbol, and position-side
+						group from its active quotes. It repairs the two pair totals and changes the global PartyB total only by that pair's
+						correction, so other accounts are preserved.
+					</p>
+					<p>
+						The repair is blocked while either party is in liquidation. If any value changes, PartyA and PartyB UPNL counters are raised
+						so older Muon signatures become invalid. <code>AggregateFundingResynced</code> records the old and new values.
+					</p>
+
+					<h2 id="rollout">Safe rollout</h2>
+					<ol>
+						<li>Deploy the contract changes. The rounding allowance remains zero.</li>
+						<li>Pause affected actions and scan funding groups for differences from their active quotes.</li>
+						<li>Call <code>resyncAggregateFunding</code> for each affected group and verify its event.</li>
+						<li>Move Muon to the exact aggregate-notional calculation.</li>
+						<li>Deploy the separate rule that books an accepted residual to the liquidation insurance vault.</li>
+						<li>Set the allowance, up to three raw units per starting position.</li>
+					</ol>
+					<p>
+						Setting the allowance back to zero restores strict equality. This change does not decide where an accepted accounting residual
+						should be booked; that requires the separate liquidation residual-settlement change.
+					</p>
+				</article>
+			</main>
+		</div>
+	</body>
+</html>

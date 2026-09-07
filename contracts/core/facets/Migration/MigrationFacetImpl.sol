@@ -14,9 +14,21 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
+import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
+
+	struct AggregateFundingResyncResult {
+		int256 oldPartyAFunding;
+		int256 oldPartyBFunding;
+		int256 newFunding;
+		int256 oldGlobalFunding;
+		int256 newGlobalFunding;
+	}
 
 	/// @notice Backfills v0.8.5 quote-derived state for existing quotes
 	/// @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
@@ -141,6 +153,45 @@ library MigrationFacetImpl {
 
 			migrationLayout.crossLockedValuesMigrated[partyB][partyA] = true;
 			partyAsProcessed++;
+		}
+	}
+
+	/// @notice Rebuilds one PartyA/PartyB/symbol/side weighted paid-funding group from active quotes.
+	/// @dev The global PartyB value is changed only by this pair's correction, preserving all other PartyAs.
+	function resyncAggregateFunding(
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) internal returns (AggregateFundingResyncResult memory result) {
+		require(!MAStorage.layout().liquidationStatus[partyA], "MigrationFacet: PartyA is in liquidation");
+		partyB.requireNotLiquidating(partyA);
+
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		uint256[] storage quoteIds = quoteLayout.partyBOpenPositions[partyB][partyA];
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			if (quote.symbolId == symbolId && quote.positionType == positionType) {
+				result.newFunding += LibAggregateFunding.calculateWeightedPaidFunding(LibQuote.quoteOpenAmount(quote), quote.accumulatedPaidFunding);
+			}
+		}
+
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		result.oldPartyAFunding = aggregatedLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
+		result.oldPartyBFunding = aggregatedLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
+		result.oldGlobalFunding = aggregatedLayout.partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
+		result.newGlobalFunding = result.oldGlobalFunding - result.oldPartyBFunding + result.newFunding;
+
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding = result.newFunding;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding = result.newFunding;
+		aggregatedLayout.partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding = result.newGlobalFunding;
+
+		if (
+			result.oldPartyAFunding != result.newFunding ||
+			result.oldPartyBFunding != result.newFunding ||
+			result.oldGlobalFunding != result.newGlobalFunding
+		) {
+			LibAccount.increaseBothUpnlCounters(partyB, partyA);
 		}
 	}
 }

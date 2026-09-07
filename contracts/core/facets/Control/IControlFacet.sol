@@ -74,6 +74,8 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet, IDiamondAcces
 
 	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external;
 
+	function setLiquidationUpnlRoundingAllowancePerPosition(uint256 allowance) external;
+
 	function setDeallocateDebounceTime(uint256 deallocateDebounceTime) external;
 
 	function setInvalidBridgedAmountsPool(address pool) external;

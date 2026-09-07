@@ -556,6 +556,11 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().liquidationStartPositionCounts[partyA];
 	}
 
+	/// @notice Returns the raw-unit liquidation rounding allowance applied per position captured at liquidation start.
+	function liquidationUpnlRoundingAllowancePerPosition() external view returns (uint256) {
+		return MAStorage.layout().liquidationUpnlRoundingAllowancePerPosition;
+	}
+
 	/// @notice Returns the liquidation timestamp of a party B for a given party A.
 	/// @param partyB The address of party B.
 	/// @param partyA The address of party A.
