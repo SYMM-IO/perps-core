@@ -1,6 +1,11 @@
 import { assertRoundingFactoryIntent, FACETS, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { createSafeBatch, validateSafeBatchTransport } from "../signer/safe-batch.js";
-import { createArbitrumRoundingUpgradeTask, ROUNDING_PLAN, PRODUCTION_ROUNDING_PLAN } from "../tasks/arbitrum-rounding-upgrade.js";
+import {
+	bindProductionLedger,
+	createArbitrumRoundingUpgradeTask,
+	ROUNDING_PLAN,
+	PRODUCTION_ROUNDING_PLAN,
+} from "../tasks/arbitrum-rounding-upgrade.js";
 import { runLedgerPhase } from "../tasks/arbitrum-rounding-upgrade.js";
 import { Interface, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
@@ -118,6 +123,44 @@ test("production is a separate Ledger task requiring verified pause before cut a
 		false,
 	);
 	assert.equal(production.resumePolicy.sourceDrift, "refuse");
+	assert.equal(production.inputs.find(input => input.id === "governanceSigner").required, false);
+	assert.match(production.inputs.find(input => input.id === "governanceSigner").label, /after publication/);
+});
+
+test("production binds the Ledger only at the pause boundary and waits if the admin is unavailable", async () => {
+	const owner = "0x77A955776Ee1dd3E9C800c3214ed489441d74b94";
+	const standard = { target: { owner } };
+	let bound;
+	const selected = await bindProductionLedger(
+		{
+			ui: {
+				note: () => {},
+				text: async () => owner,
+				select: async ({ message }) => (message.startsWith("Deployment") ? "ledger" : "ledger-live"),
+				confirm: async () => true,
+			},
+			getSigner: () => null,
+			bindSigner: (_role, selection) => (bound = selection),
+			wait: () => assert.fail("Ledger is available"),
+		},
+		standard,
+	);
+	assert.equal(selected, bound);
+	assert.deepEqual(bound, { mode: "ledger", address: owner, derivation: "ledger-live" });
+	await assert.rejects(
+		bindProductionLedger(
+			{
+				ui: { select: async () => "later", text: async () => assert.fail("No Ledger address is needed to wait") },
+				getSigner: () => null,
+				bindSigner: () => assert.fail("Ledger must not be bound"),
+				wait: message => {
+					throw new Error(message);
+				},
+			},
+			standard,
+		),
+		/admin is available.*Continue active task/,
+	);
 });
 
 test("governance subprocess binds the Ledger while preserving the deployment signer's environment", async t => {
@@ -172,6 +215,18 @@ test("governance subprocess binds the Ledger while preserving the deployment sig
 	assert.equal(captured.options.env.SYMMIO_LEDGER_DERIVATION, "ledger-live");
 	assert.equal(captured.options.env.CONFIRM_CHAIN_ID, "42161");
 	assert.deepEqual({ ...process.env }, before);
+	const { governanceSigner: boundSigner, ...deferredInput } = input;
+	await runLedgerPhase(
+		{
+			state: { signing: { governance: boundSigner } },
+			runProcess: async (_command, _args, { env }) => {
+				assert.equal(env.SYMMIO_EXPECTED_SIGNER, address);
+				assert.equal(env.SYMMIO_SIGNER_MODE, "ledger");
+			},
+		},
+		deferredInput,
+		"reconcile-governance",
+	);
 	await assert.rejects(
 		runLedgerPhase({}, { ...input, governanceSigner: { mode: "hardhat-keystore", key: "TEAM_DEPLOYER" } }, "execute-cut"),
 		/requires Ledger signing/,
