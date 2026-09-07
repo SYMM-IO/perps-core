@@ -1,5 +1,7 @@
 # Arbitrum rounding fix: version_0.8.6.2
 
+This is the historical stage rounding upgrade. For the funding facet upgrade on the same stage Core, use the [stage funding workflow with suffix 863](arbitrum-vibe-stage-funding-upgrade-863.md). The stage recipe now uses 863; the 862 configuration below describes the completed run's source snapshot.
+
 For the Ledger-owned Vibe production Core at `0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A`, use the separate [production pause/cut/unpause workflow](arbitrum-vibe-production-rounding-upgrade-862.md).
 
 This release applies the bounded uPNL rounding fix to the existing Arbitrum Core at `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`. It deploys a temporary CREATE2 factory, four libraries and four facets: nine contracts in total. The selected deployment wallet receives both `DEFAULT_ADMIN_ROLE` and `DEPLOYER_ROLE` on the new factory. Each new facet address **ends in `862`**.
