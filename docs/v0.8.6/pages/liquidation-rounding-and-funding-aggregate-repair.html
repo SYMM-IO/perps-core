@@ -71,6 +71,11 @@
 						That limit is controlled by <code>PROTOCOL_CONFIG_ROLE</code>, starts at <code>0</code>, and cannot be set above
 						<code>3</code>. A value of <code>0</code> keeps the old strict check. A larger mismatch still opens a dispute.
 					</p>
+					<p>
+						When the difference is inside the limit, settlement uses the smaller same-direction amount supported by both Muon and the
+						quote calculation. If they disagree about which side won, the rounded payment is zero. The removed part is never written to a
+						balance or separate accounting field.
+					</p>
 					<aside class="callout callout-note">
 						<strong>The limit is a safety switch, not free tolerance.</strong> Keep it at zero until funding aggregates are repaired and
 						Muon uses exact aggregate notional.
@@ -86,8 +91,9 @@ Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 						each position, provided the stored totals and Muon inputs are exact.
 					</p>
 					<p>
-						The position count is saved at liquidation start, so closing positions in several batches cannot shrink or grow the limit.
-						When a non-zero difference is accepted, <code>LiquidationUpnlRoundingAccepted</code> records both totals and the limit used.
+						The position count is saved at liquidation start, so closing positions in several batches cannot shrink or grow the limit. The
+						final settlement amount is the smaller magnitude when both calculations agree on its direction. For example, losses of 100 and
+						101 settle at 100. No rounding residual is stored or assigned to another account.
 					</p>
 
 					<h2 id="funding">Why partial closes left dust</h2>
@@ -145,12 +151,12 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 						<li>Pause affected actions and scan funding groups for differences from their active quotes.</li>
 						<li>Call <code>resyncAggregateFunding</code> for each affected group and verify its event.</li>
 						<li>Add the deployed chain and diamond address to <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.</li>
-						<li>Deploy the separate rule that books an accepted residual to the liquidation insurance vault.</li>
 						<li>Set the allowance, up to three raw units per starting position.</li>
 					</ol>
 					<p>
-						Setting the allowance back to zero restores strict equality. This change does not decide where an accepted accounting residual
-						should be booked; that requires the separate liquidation residual-settlement change.
+						Setting the allowance back to zero restores strict equality. When the allowance accepts a difference, both parties settle
+						using the smaller same-direction amount. The discarded difference is not a payment and is not stored, emitted, or assigned to
+						a vault or account.
 					</p>
 				</article>
 			</main>

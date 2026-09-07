@@ -109,10 +109,7 @@ library LibPartyALiquidationProcess {
 		liquidationId = liquidationDetail.liquidationId;
 
 		_requireActivePartyALiquidationAndRecordAction(maLayout, partyA);
-
-		// Track PartyBs touched in this batch so connections can be cleaned once after positions close.
-		address[] memory partyBsToCheck = new address[](quoteIds.length);
-		uint256 uniquePartyBs = 0;
+		require(quoteIds.length > 0, "LiquidationFacet: Empty quote list");
 
 		for (uint256 index = 0; index < quoteIds.length; index++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[index]];
@@ -209,18 +206,6 @@ library LibPartyALiquidationProcess {
 			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
 			averageClosedPrices[index] = quote.avgClosedPrice;
 
-			// Record this PartyB for post-loop connection cleanup.
-			bool found = false;
-			for (uint256 j = 0; j < uniquePartyBs; j++) {
-				if (partyBsToCheck[j] == quote.partyB) {
-					found = true;
-					break;
-				}
-			}
-			if (!found) {
-				partyBsToCheck[uniquePartyBs++] = quote.partyB;
-			}
-
 			emit SharedEvents.TradeVolumeRecorded(
 				quote.id,
 				(liquidatedAmounts[index] * liquidationPrice) / 1e18,
@@ -232,14 +217,10 @@ library LibPartyALiquidationProcess {
 			);
 		}
 
-		// Remove PartyB connections whose pending/open exposure is now gone.
-		for (uint256 i = 0; i < uniquePartyBs; i++) {
-			LibConnections.removeConnectionIfNoPositions(partyA, partyBsToCheck[i]);
-		}
-
 		// Once all positions are closed, allow only the configured, position-count-scaled rounding difference.
 		// The setting defaults to zero and must stay disabled until stored funding aggregates match their quote sums
-		// and the oracle uses exact aggregate notional; anything beyond the configured allowance is disputed.
+		// and the oracle uses exact aggregate notional. An accepted difference is settled at the smaller amount
+		// supported by both calculations; anything beyond the configured allowance is disputed.
 		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
 			int256 signedUpnl = liquidationDetail.upnl;
 			int256 settledUpnl = liquidationDetail.partyAAccumulatedUpnl;
@@ -248,12 +229,74 @@ library LibPartyALiquidationProcess {
 				uint256 allowance = maLayout.liquidationUpnlRoundingAllowancePerPosition * accountLayout.liquidationStartPositionCounts[partyA];
 				if (difference > allowance) {
 					liquidationDetail.disputed = true;
+					_removeClosedPartyBConnections(accountLayout, partyA);
 					return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 				}
-				emit IPartyALiquidationEvents.LiquidationUpnlRoundingAccepted(partyA, signedUpnl, settledUpnl, allowance, liquidationId);
+				_capSettlementToSmallerUpnl(accountLayout, partyA, signedUpnl, settledUpnl);
 			}
+			_removeClosedPartyBConnections(accountLayout, partyA);
 		}
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
+	}
+
+	/// @dev Caps an accepted rounding difference to the smaller same-direction uPNL. If the two
+	///      calculations disagree on which party won, neither side receives the disputed dust.
+	///      The cap is applied to existing PartyB buckets and leaves no residual state behind.
+	function _capSettlementToSmallerUpnl(AccountStorage.Layout storage accountLayout, address partyA, int256 signedUpnl, int256 settledUpnl) private {
+		int256 cappedUpnl = _smallerSameDirectionUpnl(signedUpnl, settledUpnl);
+		uint256 remainingReduction = LibUtils.absDiff(settledUpnl, cappedUpnl);
+		bool reducePositiveAmounts = settledUpnl > cappedUpnl;
+		address[] storage partyBs = accountLayout.connectedPartyBs[partyA];
+
+		for (uint256 i = 0; i < partyBs.length && remainingReduction != 0; i++) {
+			address partyB = partyBs[i];
+			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][partyB];
+			int256 expectedAmount = settlementState.expectedAmount;
+			if (!settlementState.pending || (reducePositiveAmounts ? expectedAmount <= 0 : expectedAmount >= 0)) continue;
+
+			uint256 expectedMagnitude = SignedMath.abs(expectedAmount);
+			uint256 reduction = Math.min(expectedMagnitude, remainingReduction);
+			if (reducePositiveAmounts) {
+				settlementState.expectedAmount -= int256(reduction);
+				if (settlementState.actualAmount > 0) {
+					settlementState.actualAmount -= int256(Math.min(uint256(settlementState.actualAmount), reduction));
+				}
+			} else {
+				settlementState.expectedAmount += int256(reduction);
+				if (settlementState.actualAmount < 0) {
+					settlementState.actualAmount += int256(Math.min(SignedMath.abs(settlementState.actualAmount), reduction));
+				}
+			}
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, settlementState.actualAmount);
+			remainingReduction -= reduction;
+		}
+
+		require(remainingReduction == 0, "LiquidationFacet: Invalid rounding cap");
+		accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl = cappedUpnl;
+
+		// A positive signed uPNL can be swept into PartyA's deferred balance before quote-level
+		// settlement is known. Keep at most the positive amount supported by both calculations.
+		if (signedUpnl > cappedUpnl && signedUpnl > 0) {
+			uint256 deferredReduction = uint256(signedUpnl - cappedUpnl);
+			require(accountLayout.partyADeferredBalance[partyA] >= deferredReduction, "LiquidationFacet: Invalid positive rounding cap");
+			accountLayout.partyADeferredBalance[partyA] -= deferredReduction;
+		}
+	}
+
+	function _smallerSameDirectionUpnl(int256 signedUpnl, int256 settledUpnl) private pure returns (int256) {
+		if (signedUpnl > 0 && settledUpnl > 0) return signedUpnl < settledUpnl ? signedUpnl : settledUpnl;
+		if (signedUpnl < 0 && settledUpnl < 0) return signedUpnl > settledUpnl ? signedUpnl : settledUpnl;
+		return 0;
+	}
+
+	/// @dev Connections are kept until the final quote closes so every pending PartyB settlement
+	///      bucket is available when the aggregate rounding cap is applied.
+	function _removeClosedPartyBConnections(AccountStorage.Layout storage accountLayout, address partyA) private {
+		uint256 index = accountLayout.connectedPartyBs[partyA].length;
+		while (index > 0) {
+			LibConnections.removeConnectionIfNoPositions(partyA, accountLayout.connectedPartyBs[partyA][index - 1]);
+			index--;
+		}
 	}
 
 	/// @notice Resolves a liquidation dispute by overriding settlement amounts for Party Bs
