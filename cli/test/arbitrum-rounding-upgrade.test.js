@@ -1,4 +1,10 @@
-import { assertRoundingFactoryIntent, FACETS, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
+import {
+	assertRoundingFactoryIntent,
+	roundingFacets,
+	roundingDeployments,
+	GETTER,
+	planRoundingCut,
+} from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { createSafeBatch, validateSafeBatchTransport } from "../signer/safe-batch.js";
 import {
 	bindProductionLedger,
@@ -14,16 +20,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-function fixture() {
+function fixture(profile = "stage") {
 	const baseline = { "0x12345678": "0x1111111111111111111111111111111111111111" };
 	const facets = {},
 		oldFacets = {};
-	for (const [i, name] of FACETS.entries()) {
+	for (const [i, name] of roundingFacets(profile).entries()) {
 		const old = "0x" + String(i + 2).repeat(40);
 		const selector = "0x" + String(i + 2).repeat(8);
 		oldFacets[name] = { address: old };
 		baseline[selector] = old;
-		facets[name] = { address: "0x" + String(i + 6).repeat(37) + "862", selectors: [selector, ...(name === "ViewFacet" ? [GETTER] : [])] };
+		facets[name] = { address: "0x" + (i + 6).toString(16).repeat(37) + "862", selectors: [selector, ...(name === "ViewFacet" ? [GETTER] : [])] };
 	}
 	return { baseline, facets, oldFacets };
 }
@@ -64,6 +70,31 @@ test("rounding cut refuses unrelated or partial concurrent selector changes", ()
 	assert.throws(() => planRoundingCut(baseline, { ...baseline, "0x99999999": oldFacets.ViewFacet.address }, facets, oldFacets), /changed outside/);
 	facets.ViewFacet.selectors.push("0x12345678");
 	assert.throws(() => planRoundingCut(baseline, baseline, facets, oldFacets), /outside the reviewed/);
+});
+
+test("production replaces the funding facet alongside rounding and refuses missing or incomplete funding scope", () => {
+	const { baseline, facets, oldFacets } = fixture("production");
+	const fundingSelector = facets.FundingRateFacet.selectors[0];
+	const result = planRoundingCut(baseline, baseline, facets, oldFacets, "production");
+	assert.equal(result.desired[fundingSelector].toLowerCase(), facets.FundingRateFacet.address.toLowerCase());
+	assert.equal(result.desired["0x12345678"], baseline["0x12345678"]);
+	assert.equal(result.cut.filter(group => group.action === 1).length, 5);
+	assert.equal(result.cut.filter(group => group.action === 0).length, 1);
+	assert.deepEqual(planRoundingCut(baseline, result.desired, facets, oldFacets, "production").cut, []);
+	assert.equal(roundingDeployments("production").length, 10);
+	assert.equal(roundingDeployments("stage").length, 9);
+	assert.throws(() => planRoundingCut(baseline, baseline, facets, oldFacets), /Exactly four/);
+	const missing = structuredClone(facets);
+	delete missing.FundingRateFacet;
+	assert.throws(() => planRoundingCut(baseline, baseline, missing, oldFacets, "production"), /Exactly five.*FundingRateFacet/);
+	const wrongSuffix = structuredClone(facets);
+	wrongSuffix.FundingRateFacet.address = oldFacets.FundingRateFacet.address;
+	assert.throws(() => planRoundingCut(baseline, baseline, wrongSuffix, oldFacets, "production"), /FundingRateFacet does not end in 862/);
+	const omitted = structuredClone(facets);
+	omitted.FundingRateFacet.selectors = [];
+	assert.throws(() => planRoundingCut(baseline, baseline, omitted, oldFacets, "production"), /FundingRateFacet would omit/);
+	const incompleteCut = { ...result.desired, [fundingSelector]: baseline[fundingSelector] };
+	assert.throws(() => planRoundingCut(baseline, incompleteCut, facets, oldFacets, "production"), /changed outside/);
 });
 
 test("rounding cut enforces suffix, exact scope, and the new getter", () => {
@@ -113,7 +144,10 @@ test("production is a separate Ledger task requiring verified pause before cut a
 	assert.match(stage.title, /stage \/ Safe/);
 	assert.match(production.title, /production \/ Ledger/);
 	assert.equal(stage.version, 5);
-	assert.equal(production.version, 1);
+	assert.equal(production.version, 3);
+	assert.match(production.title, /rounding \+ funding/);
+	assert.match(production.plan().find(s => s.id === "deploy").title, /five facets ending in 862/);
+	assert.match(production.plan().find(s => s.id === "publish").title, /ten/);
 	assert.deepEqual(production.plan(), PRODUCTION_ROUNDING_PLAN);
 	const ids = production.plan().map(s => s.id);
 	assert.equal(ids.length, 11);

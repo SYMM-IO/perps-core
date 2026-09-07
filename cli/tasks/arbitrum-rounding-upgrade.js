@@ -2,9 +2,9 @@ import {
 	assertReleaseSource,
 	buildRoundingInput,
 	digest,
-	FACETS,
 	LIBRARIES,
 	RELEASE_TAG,
+	roundingFacets,
 	roundingProfile,
 	roundingOwner,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
@@ -29,12 +29,13 @@ export const ROUNDING_PLAN = Object.freeze([
 export const PRODUCTION_ROUNDING_PLAN = Object.freeze([
 	...ROUNDING_PLAN.slice(0, 5).map(step => ({
 		...step,
-		title:
-			step.id === "inspect"
-				? "Verify the production baseline, Ledger owner and reused libraries"
-				: step.id === "authorize"
-					? "Authorize nine deployments and the Ledger pause, cut and unpause"
-					: step.title,
+		title: {
+			compile: "Compile the tagged rounding and funding release",
+			inspect: "Verify the production baseline, Ledger owner and reused libraries",
+			authorize: "Authorize ten deployments and the Ledger pause, cut and unpause",
+			deploy: "Deploy a temporary factory, four libraries and five facets ending in 862",
+			publish: "Publish the ten new contracts on Arbiscan",
+		}[step.id],
 	})),
 	{ id: "core-pause", phase: "execution", title: "Pause production Core using the owner Ledger" },
 	{ id: "verify-pause", phase: "verification", title: "Verify Core is globally paused before the production cut" },
@@ -116,17 +117,18 @@ export async function bindProductionLedger(ctx, standard) {
 }
 
 export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
-	const { recipePath } = roundingProfile(profile);
+	const { recipePath, releaseTag } = roundingProfile(profile);
 	const production = profile === "production";
+	const facets = roundingFacets(profile);
 	const plan = production ? PRODUCTION_ROUNDING_PLAN : ROUNDING_PLAN;
 	return common({
 		id: production ? "maintenance.arbitrum-vibe-production-rounding-upgrade-862" : "maintenance.arbitrum-rounding-upgrade-862",
-		version: production ? 1 : 5,
+		version: production ? 3 : 5,
 		category: "maintenance",
 		risk: "transaction",
-		title: production ? "Arbitrum Vibe production / Ledger rounding fix v0.8.6.2" : "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2",
+		title: production ? "Arbitrum Vibe production / Ledger rounding + funding v0.8.6.2" : "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2",
 		description: production
-			? "Deploy the rounding fix to Vibe production; pause with the owner Ledger, verify and execute the cut, then unpause with the Ledger."
+			? "Deploy and publish ten contracts for the rounding and bound-solver funding fixes; then pause, cut, verify and unpause with the owner Ledger."
 			: "Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
@@ -174,19 +176,19 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			atomicWrite(input, standardInput);
 			ui.note(
 				[
-					`Release: ${RELEASE_TAG}`,
+					`Release: ${releaseTag}`,
 					`Solidity release: ${standardInput.releaseCommit}`,
 					`Deployment scripts: ${standardInput.sourceCommit}`,
 					`Core: ${standardInput.target.core}`,
 					...(production
-						? ["Ledger is requested after nine deployments and publication: pause, verify pause, diamondCut, verify upgrade, unpause"]
+						? ["Ledger is requested after ten deployments and publication: pause, verify pause, diamondCut, verify upgrade, unpause"]
 						: []),
 					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
 					`Libraries: ${LIBRARIES.join(", ")}`,
-					`Facets (suffix 862): ${FACETS.join(", ")}`,
+					`Facets (suffix 862): ${facets.join(", ")}`,
 					`Output: ${path.relative(root, output)}`,
 				].join("\n"),
-				"Rounding-only upgrade",
+				production ? "Production rounding and funding upgrade" : "Rounding-only upgrade",
 			);
 			return {
 				network: "arbitrum",
@@ -220,9 +222,9 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			await step("compile", () => ctx.runProcess("npm", ["run", "compile"], { env: environment(input) }));
 			await step("inspect", () => runPhase(ctx, input, "inspect"));
 			await step("authorize", async () => {
-				const phrase = `${production ? "UPGRADE VIBE PRODUCTION" : "DEPLOY"} ${RELEASE_TAG} ON 42161`;
+				const phrase = `${production ? "UPGRADE VIBE PRODUCTION" : "DEPLOY"} ${releaseTag} ON 42161`;
 				const confirmed = await ctx.ui.text({
-					message: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and four facets${production ? "; then Ledger pause, verified diamond cut and unpause" : ""}`,
+					message: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and ${production ? "five" : "four"} facets${production ? "; then Ledger pause, verified diamond cut and unpause" : ""}`,
 					validate: value => (value === phrase ? undefined : "Type the displayed release and chain phrase"),
 				});
 				if (confirmed === null) ctx.requestPause();

@@ -80,7 +80,7 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	assert.equal(rounding.title, "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2");
 	assert.deepEqual(rounding.supportedNetworks, ["arbitrum"]);
 	const productionRounding = entries.find(item => item.id === "maintenance.arbitrum-vibe-production-rounding-upgrade-862");
-	assert.equal(productionRounding.title, "Arbitrum Vibe production / Ledger rounding fix v0.8.6.2");
+	assert.equal(productionRounding.title, "Arbitrum Vibe production / Ledger rounding + funding v0.8.6.2");
 	assert.deepEqual(productionRounding.supportedNetworks, ["arbitrum"]);
 	assert.equal(productionRounding.risk, "transaction");
 	const arbitrumUpgrade = entries.find(item => item.id === "maintenance.arbitrum-perps-upgrade");
