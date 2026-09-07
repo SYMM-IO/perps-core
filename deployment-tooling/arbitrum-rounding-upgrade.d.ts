@@ -19,7 +19,8 @@ export const GETTER: string
 export function digest(value: unknown): string
 export function selectorDigest(selectors: Record<string, string>): string
 export function fileDigest(file: string): string
-export function assertReleaseSource(root: string, input?: any, profile?: string): string
+export function validateRoundingSourceMigration(root: string, input: any, migration: any, currentCommit?: string): any
+export function assertReleaseSource(root: string, input?: any, profile?: string, migration?: any): string
 export function buildRoundingInput(root: string, profile?: string): any
 export function assertRoundingFactoryIntent(create2: any): void
 export function selectorMap(facets: any[]): Record<string, string>

@@ -123,6 +123,7 @@ function hashSourceTree(root) {
 		"cli",
 		"contracts",
 		"deployment",
+		"deployment-tooling",
 		"scripts",
 		"tasks",
 		"utils",
@@ -475,6 +476,25 @@ export function createTaskRunner(options = {}) {
 			ui: runtime.ui,
 			state,
 			emit,
+			migratePlan(nextPlan, reason) {
+				if (state.sourceMigrations?.at(-1)?.to !== state.sourceHash || state.transactions.some(tx => UNCERTAIN_TX_STATUSES.has(tx.status)))
+					throw new Error("Plan migration requires confirmed source migration and resolved transactions");
+				const plan = validatePlan(definition.id, nextPlan);
+				const retained = plan.filter(step => state.completedSteps.includes(step.id));
+				if (
+					retained.length !== state.completedSteps.length ||
+					retained.some(
+						(step, index) => step.id !== state.completedSteps[index] || step.phase !== state.plan.find(old => old.id === step.id)?.phase,
+					)
+				)
+					throw new Error("Plan migration must preserve completed steps in order and phase");
+				const migration = { at: now(), reason, previousPlan: state.plan, previousPlanHash: state.planHash, nextPlanHash: digest(plan) };
+				state.planMigrations ||= [];
+				state.planMigrations.push(migration);
+				state.plan = plan;
+				state.planHash = digest(plan);
+				emit("task.plan.migrated", { migration });
+			},
 			bindSigner(role, selection) {
 				if (!/^[a-z][a-z0-9.-]*$/.test(role)) throw new Error(`Invalid signer role ${JSON.stringify(role)}`);
 				const valid = validateSignerSelection(selection);

@@ -7,11 +7,14 @@ import {
 	roundingFacets,
 	roundingProfile,
 	roundingOwner,
+	roundingDeployments,
+	validateRoundingSourceMigration,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
 import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, selectSigner, signerEnvironment, validateSignerSelection } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -26,7 +29,7 @@ export const ROUNDING_PLAN = Object.freeze([
 	{ id: "core-unpause", phase: "execution", title: "Export a separate Core global-unpause transaction for the Safe" },
 	{ id: "verify-unpause", phase: "verification", title: "Verify the Core global pause flag is cleared" },
 ]);
-export const PRODUCTION_ROUNDING_PLAN = Object.freeze([
+export const PREVIOUS_PRODUCTION_ROUNDING_PLAN = Object.freeze([
 	...ROUNDING_PLAN.slice(0, 5).map(step => ({
 		...step,
 		title: {
@@ -48,6 +51,14 @@ export const PRODUCTION_ROUNDING_PLAN = Object.freeze([
 					? "Unpause verified production Core using the owner Ledger"
 					: step.title,
 	})),
+]);
+export const PRODUCTION_ROUNDING_PLAN = Object.freeze([
+	...PREVIOUS_PRODUCTION_ROUNDING_PLAN.slice(0, 5).map(step => ({
+		...step,
+		title: step.id === "authorize" ? "Authorize ten deployments and the Ledger diamond cut" : step.title,
+	})),
+	{ id: "core-cut", phase: "execution", title: "Execute the Core cut using the owner Ledger" },
+	{ id: "verify", phase: "verification", title: "Verify all Core selectors, runtime bytecode and publication" },
 ]);
 export const STAGE_FUNDING_PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile the tagged funding release" },
@@ -77,12 +88,51 @@ const environment = (input, extra = {}) => ({
 });
 
 async function runPhase(ctx, input, phase, { env = {} } = {}) {
+	const migration = productionSourceMigration(ctx, input);
 	await ctx.runProcess(
 		"./node_modules/.bin/hardhat",
 		["internal:arbitrum-rounding-upgrade", "--phase", phase, "--input", input.input, "--output", input.output, "--network", "arbitrum"],
-		{ env: environment(input, env) },
+		{ env: environment(input, { ...env, SYMMIO_ROUNDING_SOURCE_MIGRATION: migration ? JSON.stringify(migration) : "" }) },
 	);
 	return readReport(input);
+}
+
+export function productionSourceMigration(ctx, input) {
+	if (!ctx.state?.sourceMigrations?.length) return undefined;
+	const standard = JSON.parse(fs.readFileSync(input.input, "utf8"));
+	const migration = {
+		taskId: ctx.state.taskId,
+		taskRunId: ctx.state.runId,
+		inputDigest: input.inputDigest,
+		originalCommit: input.sourceCommit,
+		currentCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: ctx.root, encoding: "utf8" }).trim(),
+		sourceHash: ctx.state.sourceHash,
+		migrations: ctx.state.sourceMigrations,
+	};
+	return validateRoundingSourceMigration(ctx.root, standard, migration);
+}
+
+export function migrateProductionCutPlan(ctx, input, migration) {
+	if (JSON.stringify(ctx.state.plan) === JSON.stringify(PRODUCTION_ROUNDING_PLAN)) return;
+	if (!migration || JSON.stringify(ctx.state.plan) !== JSON.stringify(PREVIOUS_PRODUCTION_ROUNDING_PLAN))
+		throw new Error("Production plan differs from the supported pause-to-cut migration");
+	const report = readReport(input);
+	if (
+		JSON.stringify(ctx.state.completedSteps) !== JSON.stringify(["compile", "inspect", "authorize", "deploy", "publish"]) ||
+		ctx.state.transactions.length !== 10 ||
+		ctx.state.transactions.some(tx => tx.status !== "confirmed") ||
+		report.governanceTransactions?.length ||
+		report.pause ||
+		report.unpause ||
+		report.verifiedBlock ||
+		roundingDeployments("production").some(name => !report.deployments?.[name]?.published)
+	)
+		throw new Error("Production plan migration requires ten published deployments and no started governance actions");
+	ctx.migratePlan(
+		PRODUCTION_ROUNDING_PLAN.map(step => ({ ...step })),
+		"Remove production pause and unpause; preserve deployments and execute only the verified Ledger cut",
+	);
+	ctx.ui.note("Production resume now performs only the Ledger diamond cut and verification. The ten deployments and their evidence are preserved.");
 }
 
 const governanceSigner = (ctx, input) => ctx.getSigner?.("governance") || ctx.state?.signing?.governance || input.governanceSigner;
@@ -112,12 +162,12 @@ export async function bindProductionLedger(ctx, standard) {
 		message: "Deployment and explorer verification are complete. Continue with the Core owner Ledger?",
 		options: [
 			{ value: "later", label: "Wait for admin", hint: "Save progress and continue this task when the Ledger is available" },
-			{ value: "ledger", label: "Connect Ledger and continue", hint: "The admin will pause Core, execute the cut and unpause" },
+			{ value: "ledger", label: "Connect Ledger and continue", hint: "The admin will execute the Core cut, followed by verification" },
 		],
 		initialValue: "later",
 	});
 	const waitForAdmin = () =>
-		ctx.wait(`Ledger owner ${owner} is required to pause Core. Connect it when the admin is available, then choose Continue active task.`);
+		ctx.wait(`Ledger owner ${owner} is required for the Core cut. Connect it when the admin is available, then choose Continue active task.`);
 	if (next !== "ledger") return waitForAdmin();
 	const selection = await selectSigner(ctx.ui, {
 		role: "Core owner Ledger",
@@ -155,7 +205,7 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 		description: funding
 			? "Deploy and verify a temporary factory and funding facet ending in 863; export separate Safe files for missing roles, pause, funding cut and unpause."
 			: production
-				? "Deploy and publish ten contracts for the rounding and bound-solver funding fixes; then pause, cut, verify and unpause with the owner Ledger."
+				? "Deploy and publish ten contracts for the rounding and bound-solver funding fixes; execute the owner Ledger cut and verify the upgrade."
 				: "Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
@@ -173,11 +223,11 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			"tag-bound input and report",
 			"deployment checkpoint and receipts",
 			production
-				? "Separate Ledger governance checkpoint, transaction previews and pause/cut/unpause receipts"
+				? "Separate Ledger governance checkpoint, diamond-cut preview and receipt"
 				: "Separate Safe Transaction Builder JSON files for the Core cut and global unpause",
 			"Arbiscan publication and selector verification",
 		],
-		resumePolicy: { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" },
+		resumePolicy: { strategy: "stable-step-id", sourceDrift: production ? "confirm" : "refuse", inputDrift: "refuse" },
 		signerPolicy: () => ({
 			role: "Contract deployment signer and temporary factory admin",
 			allowedModes: EOA_SIGNER_MODES.filter(mode => mode !== SIGNER_MODES.LOCAL_NODE),
@@ -208,7 +258,9 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 					`Deployment scripts: ${standardInput.sourceCommit}`,
 					`Core: ${standardInput.target.core}`,
 					...(production
-						? ["Ledger is requested after ten deployments and publication: pause, verify pause, diamondCut, verify upgrade, unpause"]
+						? [
+								"Ledger is requested after ten deployments and publication: diamondCut, then verify the upgrade; pause flags are preserved",
+							]
 						: []),
 					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
 					`New libraries: ${roundingLibraries(profile).join(", ") || "None; reuse the reviewed LibQuoteFunding"}`,
@@ -237,7 +289,9 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 				throw new Error("Rounding task profile or recipe path changed");
 			if (digest(standard) !== input.inputDigest || input.sourceCommit !== standard.sourceCommit)
 				throw new Error("Rounding task input changed");
-			assertReleaseSource(ctx.root, standard);
+			const migration = productionSourceMigration(ctx, input);
+			assertReleaseSource(ctx.root, standard, profile, migration);
+			if (production) migrateProductionCutPlan(ctx, input, migration);
 			if (!production) {
 				const governance = validateSignerSelection(input.governanceSigner);
 				if (governance.mode !== SIGNER_MODES.SAFE_FILE || governance.safeAddress.toLowerCase() !== roundingOwner(standard).toLowerCase())
@@ -256,7 +310,7 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 				const confirmed = await ctx.ui.text({
 					message: funding
 						? `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer) and FundingRateFacet; then Safe role grants, pause, verified cut and unpause`
-						: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and ${production ? "five" : "four"} facets${production ? "; then Ledger pause, verified diamond cut and unpause" : ""}`,
+						: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and ${production ? "five" : "four"} facets${production ? "; then Ledger diamond cut and verification" : ""}`,
 					validate: value => (value === phrase ? undefined : "Type the displayed release and chain phrase"),
 				});
 				if (confirmed === null) ctx.requestPause();
@@ -293,15 +347,11 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 					await step(`verify-${key}`, () => runPhase(ctx, input, `verify-${key}`));
 				}
 			}
-			if (production) {
-				await step("core-pause", async () => {
-					await bindProductionLedger(ctx, standard);
-					await runLedgerPhase(ctx, input, "execute-pause");
-				});
-				await step("verify-pause", () => runPhase(ctx, input, "verify-pause"));
-			}
 			await step("core-cut", async () => {
-				if (production) return runLedgerPhase(ctx, input, "execute-cut");
+				if (production) {
+					await bindProductionLedger(ctx, standard);
+					return runLedgerPhase(ctx, input, "execute-cut");
+				}
 				const report = await runPhase(ctx, input, "plan");
 				if (!report.actions.length) return;
 				const delivery = await dispatchSafeActions(ctx, input.governanceSigner, report.actions, {
@@ -320,8 +370,8 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 				ctx.wait(`Import ${delivery.builderPath} in Safe Transaction Builder, execute the Core cut, then choose Continue active task.`);
 			});
 			await step("verify", () => runPhase(ctx, input, "verify"));
+			if (production) return;
 			await step("core-unpause", async () => {
-				if (production) return runLedgerPhase(ctx, input, "execute-unpause");
 				const report = await runPhase(ctx, input, "plan-unpause");
 				if (!report.unpause.actions.length) {
 					ctx.ui.note("Core is already globally unpaused; no unpause transaction is needed.");

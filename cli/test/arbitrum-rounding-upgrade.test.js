@@ -183,7 +183,7 @@ test("temporary factory intent rejects the inaccessible reused factory and accep
 	assert.match(ROUNDING_PLAN.find(step => step.id === "authorize").title, /nine/);
 });
 
-test("production is a separate Ledger task requiring verified pause before cut and verified cut before unpause", () => {
+test("production is a separate Ledger task with only cut and verification after deployment", () => {
 	const production = createArbitrumRoundingUpgradeTask(value => value, "production");
 	const stage = createArbitrumRoundingUpgradeTask(value => value);
 	assert.notEqual(production.id, stage.id);
@@ -196,18 +196,18 @@ test("production is a separate Ledger task requiring verified pause before cut a
 	assert.match(production.plan().find(s => s.id === "publish").title, /ten/);
 	assert.deepEqual(production.plan(), PRODUCTION_ROUNDING_PLAN);
 	const ids = production.plan().map(s => s.id);
-	assert.equal(ids.length, 11);
-	assert.deepEqual(ids.slice(4), ["publish", "core-pause", "verify-pause", "core-cut", "verify", "core-unpause", "verify-unpause"]);
+	assert.equal(ids.length, 7);
+	assert.deepEqual(ids.slice(4), ["publish", "core-cut", "verify"]);
 	assert.equal(
 		stage.plan().some(s => s.id === "core-pause"),
 		false,
 	);
-	assert.equal(production.resumePolicy.sourceDrift, "refuse");
+	assert.equal(production.resumePolicy.sourceDrift, "confirm");
 	assert.equal(production.inputs.find(input => input.id === "governanceSigner").required, false);
 	assert.match(production.inputs.find(input => input.id === "governanceSigner").label, /after publication/);
 });
 
-test("production binds the Ledger only at the pause boundary and waits if the admin is unavailable", async () => {
+test("production binds the Ledger only at the cut boundary and waits if the admin is unavailable", async () => {
 	const owner = "0x77A955776Ee1dd3E9C800c3214ed489441d74b94";
 	const standard = { target: { owner } };
 	let bound;
