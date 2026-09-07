@@ -3987,9 +3987,9 @@ export function shouldBehaveLikeAggregateViews(): void {
 				const partyB = await hedger.getAddress()
 				const [legacy, partyAData, partyBData, partyBGlobalData] = await Promise.all([
 					context.viewFacetAggregate.getPartyAUpnlData(partyA, partyB, 0, 1),
-					context.viewFacetAggregate.getPartyAUpnlDataV2(partyA, partyB, 0, 1),
-					context.viewFacetAggregate.getPartyBUpnlDataV2(partyB, partyA, 0, 1),
-					context.viewFacetAggregate.getPartyBGlobalUpnlDataV2(partyB, 0, 1),
+					context.viewFacetAggregate.getPartyAExactNotionalUpnlData(partyA, partyB, 0, 1),
+					context.viewFacetAggregate.getPartyBExactNotionalUpnlData(partyB, partyA, 0, 1),
+					context.viewFacetAggregate.getPartyBGlobalExactNotionalUpnlData(partyB, 0, 1),
 				])
 
 				for (const [row] of [partyAData, partyBData, partyBGlobalData]) {
@@ -3999,7 +3999,7 @@ export function shouldBehaveLikeAggregateViews(): void {
 					expect(row.aggregatedNotional).to.equal(expectedNotional)
 				}
 
-				// The old average-price view loses the remainder; V2 preserves it.
+				// The old average-price view loses the remainder; the exact-notional view preserves it.
 				expect(legacy[0].avgOpenPrice * legacy[0].aggregatedAmount).to.not.equal(expectedNotional)
 			})
 		})

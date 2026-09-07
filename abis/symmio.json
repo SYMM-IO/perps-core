@@ -17613,6 +17613,67 @@
                 "type": "uint256"
             }
         ],
+        "name": "getPartyAExactNotionalUpnlData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedNotional",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "fundingDebt",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct IViewFacetAggregate.ExactNotionalUpnlData[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
         "name": "getPartyAUpnlData",
         "outputs": [
             {
@@ -17644,67 +17705,6 @@
                     }
                 ],
                 "internalType": "struct IViewFacetAggregate.UpnlData[]",
-                "name": "",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "start",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "size",
-                "type": "uint256"
-            }
-        ],
-        "name": "getPartyAUpnlDataV2",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum PositionType",
-                        "name": "positionType",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "aggregatedAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "aggregatedNotional",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "fundingDebt",
-                        "type": "int256"
-                    }
-                ],
-                "internalType": "struct IViewFacetAggregate.UpnlDataV2[]",
                 "name": "",
                 "type": "tuple[]"
             }
@@ -18212,6 +18212,67 @@
                 "type": "address"
             },
             {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
+        "name": "getPartyBExactNotionalUpnlData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedNotional",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "fundingDebt",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct IViewFacetAggregate.ExactNotionalUpnlData[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
                 "internalType": "uint256",
                 "name": "symbolId",
                 "type": "uint256"
@@ -18297,6 +18358,62 @@
                 "type": "uint256"
             }
         ],
+        "name": "getPartyBGlobalExactNotionalUpnlData",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "aggregatedNotional",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "fundingDebt",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct IViewFacetAggregate.ExactNotionalUpnlData[]",
+                "name": "",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "start",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "size",
+                "type": "uint256"
+            }
+        ],
         "name": "getPartyBGlobalUpnlData",
         "outputs": [
             {
@@ -18328,62 +18445,6 @@
                     }
                 ],
                 "internalType": "struct IViewFacetAggregate.UpnlData[]",
-                "name": "",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "start",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "size",
-                "type": "uint256"
-            }
-        ],
-        "name": "getPartyBGlobalUpnlDataV2",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum PositionType",
-                        "name": "positionType",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "aggregatedAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "aggregatedNotional",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "fundingDebt",
-                        "type": "int256"
-                    }
-                ],
-                "internalType": "struct IViewFacetAggregate.UpnlDataV2[]",
                 "name": "",
                 "type": "tuple[]"
             }
@@ -18445,67 +18506,6 @@
                     }
                 ],
                 "internalType": "struct IViewFacetAggregate.UpnlData[]",
-                "name": "",
-                "type": "tuple[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "start",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "size",
-                "type": "uint256"
-            }
-        ],
-        "name": "getPartyBUpnlDataV2",
-        "outputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "symbolId",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum PositionType",
-                        "name": "positionType",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "aggregatedAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "aggregatedNotional",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "fundingDebt",
-                        "type": "int256"
-                    }
-                ],
-                "internalType": "struct IViewFacetAggregate.UpnlDataV2[]",
                 "name": "",
                 "type": "tuple[]"
             }
