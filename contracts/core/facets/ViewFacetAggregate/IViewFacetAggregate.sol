@@ -39,6 +39,15 @@ interface IViewFacetAggregate {
 		int256 fundingDebt;
 	}
 
+	/// @dev Uses the exact stored notional instead of a rounded average open price.
+	struct UpnlDataV2 {
+		uint256 symbolId;
+		PositionType positionType;
+		uint256 aggregatedAmount;
+		uint256 aggregatedNotional;
+		int256 fundingDebt;
+	}
+
 	// ============ Position Aggregate View Functions ============
 
 	function getPartyBAggregatedPositionBySymbol(
@@ -163,4 +172,10 @@ interface IViewFacetAggregate {
 	function getPartyBUpnlData(address partyB, address partyA, uint256 start, uint256 size) external view returns (UpnlData[] memory);
 
 	function getPartyBGlobalUpnlData(address partyB, uint256 start, uint256 size) external view returns (UpnlData[] memory);
+
+	function getPartyAUpnlDataV2(address partyA, address partyB, uint256 start, uint256 size) external view returns (UpnlDataV2[] memory);
+
+	function getPartyBUpnlDataV2(address partyB, address partyA, uint256 start, uint256 size) external view returns (UpnlDataV2[] memory);
+
+	function getPartyBGlobalUpnlDataV2(address partyB, uint256 start, uint256 size) external view returns (UpnlDataV2[] memory);
 }

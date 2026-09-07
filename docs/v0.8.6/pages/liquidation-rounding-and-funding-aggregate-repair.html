@@ -42,6 +42,7 @@
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#rounding">Why liquidation totals can differ</a>
 				<a class="toc-link level-2" href="#funding">Why partial closes left dust</a>
+				<a class="toc-link level-2" href="#exact-notional">Exact Muon PnL input</a>
 				<a class="toc-link level-2" href="#repair">Repairing existing groups</a>
 				<a class="toc-link level-2" href="#rollout">Safe rollout</a>
 			</div>
@@ -104,6 +105,28 @@ New behavior: remove cut(old open amount × funding)
 						old dust.
 					</p>
 
+					<h2 id="exact-notional">Exact Muon PnL input</h2>
+					<p>
+						The original UPNL views return an average open price. Dividing notional by amount to make that average can drop a remainder.
+						Multiplying the rounded average by the amount later cannot restore it.
+					</p>
+					<pre><code>Old LONG price PnL: (price − rounded average) × amount / 1e18
+New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
+					<p>
+						The new <code>getPartyAUpnlDataV2</code>, <code>getPartyBUpnlDataV2</code>, and <code>getPartyBGlobalUpnlDataV2</code> views
+						return the stored <code>aggregatedNotional</code>. The old views remain unchanged for existing readers. Muon enables the V2
+						path only for contract addresses listed in <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
+					</p>
+					<p>
+						Muon now calculates each funded group once. That same result is added to total UPNL and, when negative, to total unrealized
+						loss. This prevents the two signed fields from disagreeing because they rounded the same group in different ways.
+					</p>
+					<aside class="callout callout-note">
+						<strong>OVERDUE safety.</strong> A rounding-sized mismatch can make a calculated loss reduction one unit larger than a quote's
+						loss. The reduction is now capped at that quote's loss, so the liquidation reaches the normal dispute check instead of
+						reverting.
+					</aside>
+
 					<h2 id="repair">Repairing existing groups</h2>
 					<p>
 						<code>resyncAggregateFunding</code> lets <code>MIGRATION_ROLE</code> rebuild one PartyA, PartyB, symbol, and position-side
@@ -120,7 +143,7 @@ New behavior: remove cut(old open amount × funding)
 						<li>Deploy the contract changes. The rounding allowance remains zero.</li>
 						<li>Pause affected actions and scan funding groups for differences from their active quotes.</li>
 						<li>Call <code>resyncAggregateFunding</code> for each affected group and verify its event.</li>
-						<li>Move Muon to the exact aggregate-notional calculation.</li>
+						<li>Add the deployed chain and diamond address to <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.</li>
 						<li>Deploy the separate rule that books an accepted residual to the liquidation insurance vault.</li>
 						<li>Set the allowance, up to three raw units per starting position.</li>
 					</ol>

@@ -3958,5 +3958,50 @@ export function shouldBehaveLikeAggregateViews(): void {
 				expect(globalUpnlData[0].fundingDebt).to.equal(-totalFunding)
 			})
 		})
+
+		describe("exact-notional UPNL data", function () {
+			it("returns the stored notional for partyA, partyB, and global partyB views", async function () {
+				const firstAmount = decimal(100n)
+				const secondAmount = decimal(200n)
+				const firstPrice = decimal(1n)
+				const secondPrice = decimal(2n)
+
+				const firstQuoteId = await user.sendQuote(
+					limitQuoteRequestBuilder().positionType(PositionType.LONG).quantity(firstAmount).price(firstPrice).maxFundingRate(decimal(1n)).build(),
+				)
+				await hedger.lockQuote(firstQuoteId)
+				await hedger.openPosition(firstQuoteId, limitOpenRequestBuilder().filledAmount(firstAmount).openPrice(firstPrice).price(firstPrice).build())
+
+				const secondQuoteId = await user.sendQuote(
+					limitQuoteRequestBuilder().positionType(PositionType.LONG).quantity(secondAmount).price(secondPrice).maxFundingRate(decimal(1n)).build(),
+				)
+				await hedger.lockQuote(secondQuoteId)
+				await hedger.openPosition(
+					secondQuoteId,
+					limitOpenRequestBuilder().filledAmount(secondAmount).openPrice(secondPrice).price(secondPrice).build(),
+				)
+
+				const expectedAmount = firstAmount + secondAmount
+				const expectedNotional = firstAmount * firstPrice + secondAmount * secondPrice
+				const partyA = await user.getAddress()
+				const partyB = await hedger.getAddress()
+				const [legacy, partyAData, partyBData, partyBGlobalData] = await Promise.all([
+					context.viewFacetAggregate.getPartyAUpnlData(partyA, partyB, 0, 1),
+					context.viewFacetAggregate.getPartyAUpnlDataV2(partyA, partyB, 0, 1),
+					context.viewFacetAggregate.getPartyBUpnlDataV2(partyB, partyA, 0, 1),
+					context.viewFacetAggregate.getPartyBGlobalUpnlDataV2(partyB, 0, 1),
+				])
+
+				for (const [row] of [partyAData, partyBData, partyBGlobalData]) {
+					expect(row.symbolId).to.equal(1n)
+					expect(row.positionType).to.equal(PositionType.LONG)
+					expect(row.aggregatedAmount).to.equal(expectedAmount)
+					expect(row.aggregatedNotional).to.equal(expectedNotional)
+				}
+
+				// The old average-price view loses the remainder; V2 preserves it.
+				expect(legacy[0].avgOpenPrice * legacy[0].aggregatedAmount).to.not.equal(expectedNotional)
+			})
+		})
 	})
 }

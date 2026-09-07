@@ -176,7 +176,8 @@ library LibPartyALiquidationProcess {
 					uint256 lossAmount = uint256(-pnlWithFunding);
 					// In OVERDUE, `deficit` is the residual loss after PartyA's allocation, LF, and CVA are exhausted.
 					// adjusted quote loss = quote loss - quote's share of the residual unrealized loss deficit
-					uint256 adjustedLoss = lossAmount - ((lossAmount * liquidationDetail.deficit) / uint256(-liquidationDetail.totalUnrealizedLoss));
+					uint256 lossReduction = (lossAmount * liquidationDetail.deficit) / uint256(-liquidationDetail.totalUnrealizedLoss);
+					uint256 adjustedLoss = lossAmount - Math.min(lossAmount, lossReduction);
 					settlementState.actualAmount -= int256(adjustedLoss);
 					settlementState.expectedAmount += pnlWithFunding;
 				}
