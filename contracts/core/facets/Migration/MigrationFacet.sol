@@ -9,6 +9,7 @@ import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { IMigrationFacet } from "./IMigrationFacet.sol";
 import { MigrationFacetImpl } from "./MigrationFacetImpl.sol";
+import { PositionType } from "../../storages/QuoteStorage.sol";
 
 contract MigrationFacet is Accessibility, IMigrationFacet {
 	/// @notice Backfill quote-derived state for v0.8.4 -> v0.8.5 upgrade
@@ -28,6 +29,33 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		uint256 partyAsProcessed = MigrationFacetImpl.migrateCrossLockedValues(partyB, partyAs);
 		emit CrossLockedValuesMigrated(partyB, partyAsProcessed);
+	}
+
+	/// @notice Rebuilds one weighted paid-funding aggregate from its active quotes.
+	/// @dev Run while protocol actions are paused. Reverts if either party is in liquidation.
+	function resyncAggregateFunding(
+		address partyA,
+		address partyB,
+		uint256 symbolId,
+		PositionType positionType
+	) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		MigrationFacetImpl.AggregateFundingResyncResult memory result = MigrationFacetImpl.resyncAggregateFunding(
+			partyA,
+			partyB,
+			symbolId,
+			positionType
+		);
+		emit AggregateFundingResynced(
+			partyA,
+			partyB,
+			symbolId,
+			positionType,
+			result.oldPartyAFunding,
+			result.oldPartyBFunding,
+			result.newFunding,
+			result.oldGlobalFunding,
+			result.newGlobalFunding
+		);
 	}
 
 	/// @notice Check if a quote has been migrated

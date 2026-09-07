@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IMigrationEvents } from "./IMigrationEvents.sol";
+import { PositionType } from "../../storages/QuoteStorage.sol";
 
 interface IMigrationFacet is IMigrationEvents {
 	/// @notice Backfill v0.8.5 quote-derived state for existing active positions
@@ -15,6 +16,9 @@ interface IMigrationFacet is IMigrationEvents {
 	/// @param partyB The partyB to migrate
 	/// @param partyAs All partyA addresses that have positions with this partyB
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) external;
+
+	/// @notice Rebuild one aggregate funding group from its active quotes.
+	function resyncAggregateFunding(address partyA, address partyB, uint256 symbolId, PositionType positionType) external;
 
 	/// @notice Check if a quote has been migrated
 	/// @param quoteId The quote ID to check

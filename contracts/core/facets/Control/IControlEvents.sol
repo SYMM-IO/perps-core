@@ -81,6 +81,7 @@ interface IControlEvents is IExecutionContextEvents {
 	event SetLiquidatorShare(uint256 oldLiquidatorShare, uint256 newLiquidatorShare);
 	event SetForceCloseGapRatio(uint256 symbolId, uint256 oldForceCloseGapRatio, uint256 newForceCloseGapRatio);
 	event SetPendingQuotesValidLength(uint256 oldPendingQuotesValidLength, uint256 newPendingQuotesValidLength);
+	event SetLiquidationUpnlRoundingAllowancePerPosition(uint256 oldAllowance, uint256 newAllowance);
 	event SetDeallocateDebounceTime(uint256 oldDeallocateDebounceTime, uint256 newDeallocateDebounceTime);
 	event SetInvalidBridgedAmountsPool(address oldInvalidBridgedAmountsPool, address newInvalidBridgedAmountsPool);
 	event PauseGlobal();

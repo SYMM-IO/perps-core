@@ -36,12 +36,6 @@ library LibPartyALiquidationProcess {
 
 	event LiquidationEscrowCreated(address indexed partyA, bytes liquidationId, uint256 amount);
 
-	/// @dev Raw accounting units by which the signed aggregate PartyA uPNL may differ from the per-quote settlement total,
-	///      per open position at liquidation start. Each quote truncates its price PnL once and its funding once, while
-	///      the aggregate truncates the group's price PnL once and its funding once per quote plus once per group. Every
-	///      truncation error is below one unit, so the integer difference is at most three units per position.
-	uint256 internal constant UPNL_ROUNDING_ALLOWANCE_PER_POSITION = 3;
-
 	/// @notice Liquidates all pending (not yet opened) positions of Party A
 	function liquidatePendingPositionsPartyA(address partyA) public returns (uint256[] memory liquidatedAmounts, bytes memory liquidationId) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -242,14 +236,15 @@ library LibPartyALiquidationProcess {
 			LibConnections.removeConnectionIfNoPositions(partyA, partyBsToCheck[i]);
 		}
 
-		// Once all positions are closed, the accumulated per-quote settlement must match the signed PartyA uPNL up to the
-		// rounding allowance; anything beyond that requires dispute resolution.
+		// Once all positions are closed, allow only the configured, position-count-scaled rounding difference.
+		// The setting defaults to zero and must stay disabled until stored funding aggregates match their quote sums
+		// and the oracle uses exact aggregate notional; anything beyond the configured allowance is disputed.
 		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
 			int256 signedUpnl = liquidationDetail.upnl;
 			int256 settledUpnl = liquidationDetail.partyAAccumulatedUpnl;
 			uint256 difference = LibUtils.absDiff(settledUpnl, signedUpnl);
 			if (difference != 0) {
-				uint256 allowance = UPNL_ROUNDING_ALLOWANCE_PER_POSITION * accountLayout.liquidationStartPositionCounts[partyA];
+				uint256 allowance = maLayout.liquidationUpnlRoundingAllowancePerPosition * accountLayout.liquidationStartPositionCounts[partyA];
 				if (difference > allowance) {
 					liquidationDetail.disputed = true;
 					return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
