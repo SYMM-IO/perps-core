@@ -10,6 +10,7 @@ import {
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { createTaskRunner } from "../task-runner.js";
 import { TASK_DEFINITIONS } from "../tasks/registry.js";
+import { Interface, id, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -57,6 +58,170 @@ function addFundingRelease(fixture) {
 	fixture.git(["tag", PRODUCTION_RELEASE_TAG]);
 	return releaseCommit;
 }
+
+function stageFundingFixture(t) {
+	const fixture = releaseFixture(t);
+	addFundingRelease(fixture);
+	const profile = ROUNDING_PROFILES["stage-funding"];
+	const recipe = JSON.parse(fs.readFileSync(new URL(`../../${profile.recipePath}`, import.meta.url)));
+	const target = JSON.parse(fs.readFileSync(new URL(`../../${profile.targetPath}`, import.meta.url)));
+	target.contractsTree = fixture.git(["rev-parse", "HEAD:contracts"]);
+	fixture.write(profile.recipePath, JSON.stringify(recipe));
+	fixture.write(profile.targetPath, JSON.stringify(target));
+	fixture.write(".gitignore", ".symmio/\ntasks/data/\n");
+	fixture.commit([profile.recipePath, profile.targetPath, ".gitignore"]);
+	return { ...fixture, profile, recipe, target };
+}
+
+test("stage funding pins suffix 863 and the funding Solidity tag without changing production's 862 suffix", t => {
+	const fixture = stageFundingFixture(t);
+	const input = buildRoundingInput(fixture.root, "stage-funding");
+	assert.equal(input.apiVersion, "operations.symm.io/arbitrum-funding-upgrade-v1");
+	assert.equal(input.release, PRODUCTION_RELEASE_TAG);
+	assert.equal(input.create2.groups.facets.suffix, "863");
+	assert.equal(requiresRoundingPause(input), true);
+	assert.doesNotThrow(() => assertReleaseSource(fixture.root, input));
+	assert.throws(
+		() => assertReleaseSource(fixture.root, { ...input, apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v3" }),
+		/differs from/,
+	);
+	assert.equal(
+		JSON.parse(fs.readFileSync(new URL("../../deployment-recipes/arbitrum-vibe-production-862.json", import.meta.url))).create2.groups.facets
+			.suffix,
+		"862",
+	);
+	fixture.recipe.create2.groups.facets.suffix = "862";
+	fixture.write(fixture.profile.recipePath, JSON.stringify(fixture.recipe));
+	fixture.commit([fixture.profile.recipePath]);
+	assert.throws(() => buildRoundingInput(fixture.root, "stage-funding"), /exactly suffix 863/);
+});
+
+test("stage funding exports distinct Safe files and resumes through roles, pause, cut, verification and unpause", async t => {
+	const fixture = stageFundingFixture(t);
+	const base = TASK_DEFINITIONS.find(task => task.id === "maintenance.arbitrum-vibe-stage-funding-upgrade-863");
+	const core = fixture.target.core,
+		safe = fixture.target.safe;
+	const iface = new Interface([
+		"function grantRole(address,bytes32)",
+		"function pauseGlobal()",
+		"function unpauseGlobal()",
+		"function diamondCut((address facetAddress,uint8 action,bytes4[] functionSelectors)[],address,bytes)",
+	]);
+	const action = (method, args = []) => ({ to: core, value: "0", data: iface.encodeFunctionData(method, args), description: method });
+	let roles = false,
+		paused = false,
+		installed = false,
+		verified = false,
+		unpaused = false;
+	const phases = [];
+	const ui = {
+		note: () => {},
+		select: async () => "hardhat-keystore",
+		confirm: async () => false,
+		text: async ({ message }) => (message.endsWith("keystore key") ? "NEW_DEPLOYER" : "UPGRADE VIBE STAGE FUNDING 863 ON 42161"),
+	};
+	const input = await base.prepare({ root: fixture.root, ui });
+	assert.equal(input.governanceSigner.mode, "safe-file");
+	const task = {
+		...base,
+		run: async (ctx, prepared) =>
+			base.run(
+				{
+					...ctx,
+					runProcess: async (command, args) => {
+						const phase = command === "npm" ? "compile" : args[args.indexOf("--phase") + 1];
+						phases.push(phase);
+						const report = fs.existsSync(prepared.output)
+							? JSON.parse(fs.readFileSync(prepared.output))
+							: { inputDigest: prepared.inputDigest };
+						if (phase === "plan-roles")
+							report.roles = {
+								actions: roles
+									? []
+									: [action("grantRole", [safe, id("PAUSER_ROLE")]), action("grantRole", [safe, id("UNPAUSER_ROLE")])],
+							};
+						if (phase === "verify-roles") assert(roles);
+						if (phase === "plan-pause") {
+							assert(roles);
+							report.pause = { actions: paused ? [] : [action("pauseGlobal")] };
+						}
+						if (phase === "verify-pause") assert(paused);
+						if (phase === "plan") {
+							assert(paused);
+							report.actions = installed
+								? []
+								: [
+										action("diamondCut", [
+											[
+												{
+													facetAddress: "0x1111111111111111111111111111111111111863",
+													action: 1,
+													functionSelectors: ["0xfe9e82df"],
+												},
+											],
+											ZeroAddress,
+											"0x",
+										]),
+									];
+						}
+						if (phase === "verify") {
+							assert(installed && paused);
+							verified = true;
+						}
+						if (phase === "plan-unpause") {
+							assert(verified);
+							report.unpause = { actions: unpaused ? [] : [action("unpauseGlobal")] };
+						}
+						if (phase === "verify-unpause") assert(unpaused);
+						fs.writeFileSync(prepared.output, JSON.stringify(report));
+					},
+				},
+				prepared,
+			),
+	};
+	task.handler = task.run;
+	const runner = createTaskRunner({ root: fixture.root, definitions: [task] });
+	let state = await runner.start(task.id, { input, ui });
+	assert.equal(state.status, "waiting_external", state.lastError);
+	assert.deepEqual(state.completedSteps, ["compile", "inspect", "authorize", "deploy", "publish"]);
+	const originalInputHash = state.inputHash;
+	const files = [];
+	const checkExport = (key, method, count) => {
+		const delivery = state.safeDispatches[key];
+		files.push(delivery.builderPath);
+		const batch = JSON.parse(fs.readFileSync(delivery.builderPath));
+		assert.equal(batch.transactions.length, count);
+		for (const tx of batch.transactions) {
+			assert.equal(tx.to.toLowerCase(), core.toLowerCase());
+			assert.equal(tx.value, "0");
+			assert.equal(iface.parseTransaction({ data: tx.data }).name, method);
+		}
+	};
+	checkExport("funding-core-roles", "grantRole", 2);
+	state = await runner.resumeActive({ ui });
+	assert.equal(state.status, "waiting_external");
+	assert.equal(state.safeDispatches["funding-core-roles"].builderPath, files[0]);
+	roles = true;
+	state = await runner.resumeActive({ ui });
+	assert.equal(state.status, "waiting_external", state.lastError);
+	checkExport("funding-core-pause", "pauseGlobal", 1);
+	paused = true;
+	state = await runner.resumeActive({ ui });
+	assert.equal(state.status, "waiting_external", state.lastError);
+	checkExport("rounding-core-cut", "diamondCut", 1);
+	assert.equal(verified, false);
+	installed = true;
+	state = await runner.resumeActive({ ui });
+	assert.equal(state.status, "waiting_external", state.lastError);
+	checkExport("rounding-core-unpause", "unpauseGlobal", 1);
+	unpaused = true;
+	state = await runner.resumeActive({ ui });
+	assert.equal(state.status, "completed", state.lastError);
+	assert.equal(state.inputHash, originalInputHash);
+	assert.equal(new Set(files).size, 4);
+	assert.equal(phases.filter(p => p === "deploy").length, 1);
+	assert.equal(phases.filter(p => p === "publish").length, 1);
+});
 
 test("Solidity tag stays fixed while a clean descendant binds its deployment-script commit", t => {
 	const fixture = releaseFixture(t);

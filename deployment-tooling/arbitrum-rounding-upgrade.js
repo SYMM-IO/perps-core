@@ -16,12 +16,23 @@ export const ROUNDING_PROFILES = Object.freeze({
 		recipeName: "arbitrum-vibe-production-862",
 		releaseTag: PRODUCTION_RELEASE_TAG,
 	}),
+	"stage-funding": Object.freeze({
+		recipePath: RECIPE_PATH,
+		targetPath: "tasks/config/arbitrum-funding-upgrade-vibe-stage-42161.json",
+		recipeName: "arbitrum-vibe-stage",
+		releaseTag: PRODUCTION_RELEASE_TAG,
+	}),
 });
 export function roundingProfile(profile = "stage") {
 	if (!Object.hasOwn(ROUNDING_PROFILES, profile)) throw new Error(`Unknown rounding upgrade profile: ${profile}`);
 	return ROUNDING_PROFILES[profile];
 }
-export const requiresRoundingPause = input => input?.profile === "production";
+export const requiresRoundingPause = input => ["production", "stage-funding"].includes(input?.profile);
+export const isStageFunding = input => input?.profile === "stage-funding";
+export const roundingSuffix = (profile = "stage") => {
+	roundingProfile(profile);
+	return profile === "stage-funding" ? "863" : "862";
+};
 export const roundingOwner = input => getAddress(input.target.owner || input.target.safe);
 export const LIBRARIES = Object.freeze([
 	"LibPartyALiquidationLegacySetup",
@@ -32,15 +43,29 @@ export const LIBRARIES = Object.freeze([
 export const FACETS = Object.freeze(["PartyALiquidationFacet", "PartyALiquidationSnapshotFacet", "ClearingHouseFacet", "ViewFacet"]);
 export const DEPLOYMENTS = Object.freeze(["Create2Factory", ...LIBRARIES, ...FACETS]);
 export const PRODUCTION_FACETS = Object.freeze([...FACETS, "FundingRateFacet"]);
+const FUNDING_FACETS = Object.freeze(["FundingRateFacet"]);
+export const roundingLibraries = (profile = "stage") => {
+	roundingProfile(profile);
+	return profile === "stage-funding" ? [] : LIBRARIES;
+};
 export function roundingFacets(profile = "stage") {
 	roundingProfile(profile);
+	if (profile === "stage-funding") return FUNDING_FACETS;
 	return profile === "production" ? PRODUCTION_FACETS : FACETS;
 }
-export const roundingDeployments = (profile = "stage") => ["Create2Factory", ...LIBRARIES, ...roundingFacets(profile)];
+export const roundingDeployments = (profile = "stage") => ["Create2Factory", ...roundingLibraries(profile), ...roundingFacets(profile)];
 export const GETTER = new Interface(["function liquidationStartPositionCount(address) view returns (uint256)"]).getFunction(
 	"liquidationStartPositionCount",
 ).selector;
 export const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+export const selectorDigest = selectors =>
+	digest(
+		Object.fromEntries(
+			Object.entries(selectors)
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([s, a]) => [s.toLowerCase(), a.toLowerCase()]),
+		),
+	);
 export const fileDigest = file => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const gitAt = (root, args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 
@@ -76,7 +101,8 @@ export function assertReleaseSource(root, input, profile = input?.profile || "st
 		(input.release !== releaseTag ||
 			digest(input.target) !== digest(target) ||
 			digest(input.create2) !== digest(JSON.parse(fs.readFileSync(path.join(root, recipePath), "utf8")).create2) ||
-			(profile === "production" && input.apiVersion !== "operations.symm.io/arbitrum-rounding-upgrade-v5"))
+			(profile === "production" && input.apiVersion !== "operations.symm.io/arbitrum-rounding-upgrade-v5") ||
+			(profile === "stage-funding" && input.apiVersion !== "operations.symm.io/arbitrum-funding-upgrade-v1"))
 	)
 		throw new Error("Input differs from the release target or CREATE2 configuration");
 	return commit;
@@ -94,14 +120,20 @@ export function buildRoundingInput(root, profile = "stage") {
 	const recipe = JSON.parse(fs.readFileSync(path.join(root, recipePath), "utf8"));
 	if (profile === "production" && (target.governanceMode !== "ledger" || !target.owner))
 		throw new Error("Production target must bind its Ledger owner");
+	if (profile === "stage-funding" && (target.governanceMode !== "safe-file" || !target.safe || !target.baselineSelectorDigest))
+		throw new Error("Stage funding target must bind its Safe and installed selector baseline");
 	const create2 = recipe.create2;
 	if (recipe.name !== recipeName || getAddress(recipe.governance.admin) !== roundingOwner({ target }))
 		throw new Error(`${profile} recipe must assign governance.admin to the reviewed Core owner`);
 	assertRoundingFactoryIntent(create2);
-	if (JSON.stringify(create2.groups?.facets) !== JSON.stringify({ suffix: "862" })) throw new Error("Release facets must use exactly suffix 862");
+	const suffix = roundingSuffix(profile);
+	if (JSON.stringify(create2.groups?.facets) !== JSON.stringify({ suffix })) throw new Error(`Release facets must use exactly suffix ${suffix}`);
 	return {
-		apiVersion: `operations.symm.io/arbitrum-rounding-upgrade-v${profile === "production" ? 5 : 3}`,
-		...(profile === "production" ? { profile } : {}),
+		apiVersion:
+			profile === "stage-funding"
+				? "operations.symm.io/arbitrum-funding-upgrade-v1"
+				: `operations.symm.io/arbitrum-rounding-upgrade-v${profile === "production" ? 5 : 3}`,
+		...(profile !== "stage" ? { profile } : {}),
 		release: releaseTag,
 		releaseCommit: gitAt(root, ["rev-parse", `${releaseTag}^{commit}`]),
 		sourceCommit,
@@ -126,15 +158,19 @@ export function planRoundingCut(baseline, current, facets, oldFacets, profile = 
 	const selected = roundingFacets(profile);
 	if (Object.keys(facets).sort().join() !== [...selected].sort().join())
 		throw new Error(
-			profile === "production"
-				? "Exactly five production facets including FundingRateFacet are required"
-				: "Exactly four rounding facets are required",
+			profile === "stage-funding"
+				? "Exactly FundingRateFacet is required for the stage funding upgrade"
+				: profile === "production"
+					? "Exactly five production facets including FundingRateFacet are required"
+					: "Exactly four rounding facets are required",
 		);
-	if (!facets.ViewFacet.selectors.includes(GETTER)) throw new Error("ViewFacet must expose the new rounding getter");
+	if (profile === "stage-funding") {
+		if (!baseline[GETTER]) throw new Error("Stage funding upgrade requires the installed rounding getter");
+	} else if (!facets.ViewFacet.selectors.includes(GETTER)) throw new Error("ViewFacet must expose the new rounding getter");
 	const desired = { ...baseline };
 	for (const name of selected) {
 		const facet = facets[name];
-		if (!facet.address.toLowerCase().endsWith("862")) throw new Error(`${name} does not end in 862`);
+		if (!facet.address.toLowerCase().endsWith(roundingSuffix(profile))) throw new Error(`${name} does not end in ${roundingSuffix(profile)}`);
 		for (const selector of facet.selectors) {
 			if (selector === GETTER && name === "ViewFacet") {
 				if (baseline[selector]) throw new Error("Rounding getter already exists in baseline");
