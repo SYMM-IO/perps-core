@@ -2,8 +2,8 @@ import {
 	assertReleaseSource,
 	buildRoundingInput,
 	digest,
-	LIBRARIES,
-	RELEASE_TAG,
+	roundingLibraries,
+	roundingSuffix,
 	roundingFacets,
 	roundingProfile,
 	roundingOwner,
@@ -48,6 +48,21 @@ export const PRODUCTION_ROUNDING_PLAN = Object.freeze([
 					? "Unpause verified production Core using the owner Ledger"
 					: step.title,
 	})),
+]);
+export const STAGE_FUNDING_PLAN = Object.freeze([
+	{ id: "compile", phase: "prepare", title: "Compile the tagged funding release" },
+	{ id: "inspect", phase: "prepare", title: "Verify the installed stage rounding baseline, Safe owner and funding library" },
+	{ id: "authorize", phase: "authorization", title: "Authorize two deployments and the Safe role, pause, cut and unpause workflow" },
+	{ id: "deploy", phase: "deployment", title: "Deploy a temporary factory and FundingRateFacet ending in 863" },
+	{ id: "publish", phase: "publication", title: "Publish both new contracts on Arbiscan" },
+	{ id: "core-roles", phase: "execution", title: "Export missing Core pause role grants for the Safe" },
+	{ id: "verify-roles", phase: "verification", title: "Verify the Safe holds both pause roles" },
+	{ id: "core-pause", phase: "execution", title: "Export the Core global-pause transaction for the Safe" },
+	{ id: "verify-pause", phase: "verification", title: "Verify Core is globally paused before exporting the funding cut" },
+	{ id: "core-cut", phase: "execution", title: "Export the funding-only Core cut for the Safe" },
+	{ id: "verify", phase: "verification", title: "Verify the funding replacement and preserved selectors while Core stays paused" },
+	{ id: "core-unpause", phase: "execution", title: "Export a separate Core global-unpause transaction for the Safe" },
+	{ id: "verify-unpause", phase: "verification", title: "Verify the Core global pause flag is cleared" },
 ]);
 
 const readReport = input => {
@@ -119,17 +134,29 @@ export async function bindProductionLedger(ctx, standard) {
 export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 	const { recipePath, releaseTag } = roundingProfile(profile);
 	const production = profile === "production";
+	const funding = profile === "stage-funding";
 	const facets = roundingFacets(profile);
-	const plan = production ? PRODUCTION_ROUNDING_PLAN : ROUNDING_PLAN;
+	const suffix = roundingSuffix(profile);
+	const plan = funding ? STAGE_FUNDING_PLAN : production ? PRODUCTION_ROUNDING_PLAN : ROUNDING_PLAN;
 	return common({
-		id: production ? "maintenance.arbitrum-vibe-production-rounding-upgrade-862" : "maintenance.arbitrum-rounding-upgrade-862",
-		version: production ? 3 : 5,
+		id: funding
+			? "maintenance.arbitrum-vibe-stage-funding-upgrade-863"
+			: production
+				? "maintenance.arbitrum-vibe-production-rounding-upgrade-862"
+				: "maintenance.arbitrum-rounding-upgrade-862",
+		version: funding ? 2 : production ? 3 : 5,
 		category: "maintenance",
 		risk: "transaction",
-		title: production ? "Arbitrum Vibe production / Ledger rounding + funding v0.8.6.2" : "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2",
-		description: production
-			? "Deploy and publish ten contracts for the rounding and bound-solver funding fixes; then pause, cut, verify and unpause with the owner Ledger."
-			: "Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
+		title: funding
+			? "Arbitrum Vibe stage / Safe funding upgrade (863)"
+			: production
+				? "Arbitrum Vibe production / Ledger rounding + funding v0.8.6.2"
+				: "Arbitrum Vibe stage / Safe rounding fix v0.8.6.2",
+		description: funding
+			? "Deploy and verify a temporary factory and funding facet ending in 863; export separate Safe files for missing roles, pause, funding cut and unpause."
+			: production
+				? "Deploy and publish ten contracts for the rounding and bound-solver funding fixes; then pause, cut, verify and unpause with the owner Ledger."
+				: "Deploy a temporary factory owned by your deployment wallet, four libraries and four facets ending in 862; export separate Core cut and global-unpause files to the Safe.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
@@ -184,11 +211,12 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 						? ["Ledger is requested after ten deployments and publication: pause, verify pause, diamondCut, verify upgrade, unpause"]
 						: []),
 					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
-					`Libraries: ${LIBRARIES.join(", ")}`,
-					`Facets (suffix 862): ${facets.join(", ")}`,
+					`New libraries: ${roundingLibraries(profile).join(", ") || "None; reuse the reviewed LibQuoteFunding"}`,
+					`Facets (suffix ${suffix}): ${facets.join(", ")}`,
+					...(funding ? ["Two deployments; Safe role grants, pause, verified funding-only cut, then unpause"] : []),
 					`Output: ${path.relative(root, output)}`,
 				].join("\n"),
-				production ? "Production rounding and funding upgrade" : "Rounding-only upgrade",
+				funding ? "Stage funding-only upgrade" : production ? "Production rounding and funding upgrade" : "Rounding-only upgrade",
 			);
 			return {
 				network: "arbitrum",
@@ -222,15 +250,49 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			await step("compile", () => ctx.runProcess("npm", ["run", "compile"], { env: environment(input) }));
 			await step("inspect", () => runPhase(ctx, input, "inspect"));
 			await step("authorize", async () => {
-				const phrase = `${production ? "UPGRADE VIBE PRODUCTION" : "DEPLOY"} ${releaseTag} ON 42161`;
+				const phrase = funding
+					? "UPGRADE VIBE STAGE FUNDING 863 ON 42161"
+					: `${production ? "UPGRADE VIBE PRODUCTION" : "DEPLOY"} ${releaseTag} ON 42161`;
 				const confirmed = await ctx.ui.text({
-					message: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and ${production ? "five" : "four"} facets${production ? "; then Ledger pause, verified diamond cut and unpause" : ""}`,
+					message: funding
+						? `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer) and FundingRateFacet; then Safe role grants, pause, verified cut and unpause`
+						: `Type ${phrase} to authorize a temporary factory (your deployment wallet is admin and deployer), four libraries and ${production ? "five" : "four"} facets${production ? "; then Ledger pause, verified diamond cut and unpause" : ""}`,
 					validate: value => (value === phrase ? undefined : "Type the displayed release and chain phrase"),
 				});
 				if (confirmed === null) ctx.requestPause();
 			});
 			for (const phase of ["deploy", "publish"])
 				await step(phase, () => runPhase(ctx, input, phase, { env: { SYMMIO_ROUNDING_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: "42161" } }));
+			if (funding) {
+				for (const [id, phase, key, title, description] of [
+					[
+						"core-roles",
+						"plan-roles",
+						"roles",
+						"Stage Core pause roles",
+						"Grant missing PAUSER_ROLE and UNPAUSER_ROLE to the Core owner Safe.",
+					],
+					["core-pause", "plan-pause", "pause", "Stage Core global pause", "Pause Core globally before the stage funding cut."],
+				]) {
+					await step(id, async () => {
+						const report = await runPhase(ctx, input, phase);
+						if (!report[key].actions.length) return;
+						const delivery = await dispatchSafeActions(ctx, input.governanceSigner, report[key].actions, {
+							root: ctx.root,
+							chainId: 42161,
+							network: "arbitrum",
+							name: title,
+							description,
+							stateKey: `funding-${id}`,
+							processEnv: environment(input),
+						});
+						report[`${key}Delivery`] = delivery;
+						atomicWrite(input.output, report);
+						ctx.wait(`Import ${delivery.builderPath} in Safe Transaction Builder, execute ${title}, then choose Continue active task.`);
+					});
+					await step(`verify-${key}`, () => runPhase(ctx, input, `verify-${key}`));
+				}
+			}
 			if (production) {
 				await step("core-pause", async () => {
 					await bindProductionLedger(ctx, standard);
@@ -246,8 +308,10 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 					root: ctx.root,
 					chainId: 42161,
 					network: "arbitrum",
-					name: `${RELEASE_TAG} Core rounding fix`,
-					description: "Replace the four rounding-release facets and add the starting-position-count getter.",
+					name: funding ? "Stage Core funding upgrade (863)" : `${releaseTag} Core rounding fix`,
+					description: funding
+						? "Replace the seven FundingRateFacet selectors; preserve the installed rounding facets, with no added selectors or initializer."
+						: "Replace the four rounding-release facets and add the starting-position-count getter.",
 					stateKey: "rounding-core-cut",
 					processEnv: environment(input),
 				});
@@ -267,8 +331,8 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 					root: ctx.root,
 					chainId: 42161,
 					network: "arbitrum",
-					name: `${RELEASE_TAG} Core global unpause`,
-					description: "Clear the Core global pause flag after verifying the rounding upgrade. Other pause flags are unchanged.",
+					name: `${releaseTag} Core global unpause`,
+					description: "Clear the Core global pause flag after verifying the upgrade. Other pause flags are unchanged.",
 					stateKey: "rounding-core-unpause",
 					processEnv: environment(input),
 				});

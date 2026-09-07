@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { roundingDeployments, roundingFacets, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js"
+import { roundingDeployments, roundingFacets, roundingSuffix, GETTER, planRoundingCut } from "../../deployment-tooling/arbitrum-rounding-upgrade.js"
 import {
 	assertRoundingFactory,
 	assertRoundingRuntime,
@@ -14,7 +14,7 @@ import { LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest
 import { ethers, hre } from "../helpers/hardhat-connection.js"
 
 describe("Arbitrum rounding and funding release deployment", function () {
-	for (const profile of ["stage", "production"]) {
+	for (const profile of ["stage", "production", "stage-funding"]) {
 		it(`${profile}: deploys the full scope with a wallet-administered factory and recovers without transactions`, async function () {
 			const deployments = roundingDeployments(profile)
 			const facets = roundingFacets(profile)
@@ -23,7 +23,7 @@ describe("Arbitrum rounding and funding release deployment", function () {
 			const [deployer, coreAdmin] = await ethers.getSigners()
 			const addresses: Record<string, string> = {}
 			const reuseLibraries: Record<string, { address: string; codeHash: string }> = {}
-			for (const name of ["LibQuoteFunding", "LibQuoteClose"]) {
+			for (const name of profile === "stage-funding" ? ["LibQuoteFunding"] : ["LibQuoteFunding", "LibQuoteClose"]) {
 				const spec = LibrarySpecs.core[name]
 				const artifact = await hre.artifacts.readArtifact(spec.artifact)
 				const factory = await ethers.getContractFactoryFromArtifact(deploymentOnlyArtifact(artifact), {
@@ -40,7 +40,7 @@ describe("Arbitrum rounding and funding release deployment", function () {
 				target: { safe: coreAdmin.address, reuseLibraries },
 				create2: {
 					factory: { mode: "deploy" },
-					groups: { diamonds: { prefix: "573310" }, facets: { suffix: "862" } },
+					groups: { diamonds: { prefix: "573310" }, facets: { suffix: roundingSuffix(profile) } },
 					miningBudget: 200000000,
 				},
 			}
@@ -58,17 +58,18 @@ describe("Arbitrum rounding and funding release deployment", function () {
 			expect(await create2.hasRole(await create2.DEPLOYER_ROLE(), deployer.address)).to.equal(true)
 			expect(await create2.hasRole(ethers.ZeroHash, coreAdmin.address)).to.equal(false)
 			for (const name of facets) {
-				expect(report.facets[name].address.toLowerCase().endsWith("862"), name).to.equal(true)
+				expect(report.facets[name].address.toLowerCase().endsWith(roundingSuffix(profile)), name).to.equal(true)
 				expect(report.facets[name].selectors.length, name).to.be.greaterThan(0)
 			}
-			expect(report.facets.ViewFacet.selectors).to.include(GETTER)
+			if (profile !== "stage-funding") expect(report.facets.ViewFacet.selectors).to.include(GETTER)
 			expect(report.libraries.LibQuoteFunding).to.equal(addresses.LibQuoteFunding)
 			expect(report.libraries.LibQuoteClose).to.equal(addresses.LibQuoteClose)
-			if (profile === "production") {
+			if (profile !== "stage") {
 				expect(Object.values(report.deployments.FundingRateFacet.libraries)).to.deep.equal([addresses.LibQuoteFunding])
 				expect(report.facets.FundingRateFacet.selectors).to.have.length(7)
 				// Plan from the actual deployed ABIs, including every funding selector, and decode the resulting cut.
 				const baseline: Record<string, string> = {}
+				if (profile === "stage-funding") baseline[GETTER] = coreAdmin.address
 				const oldFacets = Object.fromEntries(facets.map((name, i) => [name, { address: ethers.getAddress("0x" + (i + 1).toString(16).repeat(40)) }]))
 				for (const name of facets)
 					for (const selector of report.facets[name].selectors) {
@@ -84,6 +85,11 @@ describe("Arbitrum rounding and funding release deployment", function () {
 				expect(Array.from(fundingCut.functionSelectors)).to.deep.equal(report.facets.FundingRateFacet.selectors)
 				expect(decoded.init).to.equal(ethers.ZeroAddress)
 				expect(decoded.data).to.equal("0x")
+				if (profile === "stage-funding") {
+					expect(decoded.cut).to.have.length(1)
+					expect(cut.desired[GETTER]).to.equal(coreAdmin.address)
+					expect(Object.keys(cut.desired)).to.have.length(Object.keys(baseline).length)
+				}
 				for (const name of deployments) report.deployments[name].published = name !== "FundingRateFacet"
 				expect(() => assertRoundingPublication(input, report)).to.throw(/FundingRateFacet/)
 				report.deployments.FundingRateFacet.published = true
@@ -104,7 +110,7 @@ describe("Arbitrum rounding and funding release deployment", function () {
 			const changedSigner = { ...checkpoint, deployerAddress: coreAdmin.address }
 			await expectFailure(() => deployRoundingSelection(hre, ethers, input, report, changedSigner, () => {}), /Deployment signer changed/)
 			expect(await ethers.provider.getTransactionCount(deployer.address)).to.equal(before + deployments.length)
-			const process = report.deployments.LibPartyALiquidationProcess
+			const process = report.deployments[profile === "stage-funding" ? "FundingRateFacet" : "LibPartyALiquidationProcess"]
 			let mismatch: unknown
 			try {
 				await assertRoundingRuntime(

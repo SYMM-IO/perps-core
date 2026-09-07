@@ -9,6 +9,10 @@ import {
 	digest,
 	GETTER,
 	LIBRARIES,
+	isStageFunding,
+	roundingLibraries,
+	roundingSuffix,
+	selectorDigest,
 	planRoundingCut,
 	requiresRoundingPause,
 	roundingOwner,
@@ -48,6 +52,8 @@ import { createVanityContext, deployContract } from "./vanityDeploy.js"
 import { buildVanityPlan } from "./vanityPlan.js"
 
 const PHASES = [
+	"plan-roles",
+	"verify-roles",
 	"inspect",
 	"deploy",
 	"publish",
@@ -84,7 +90,7 @@ export async function assertRoundingRuntime(ethers: any, artifact: any, address:
 	if (expected.toLowerCase() !== actual) throw new Error(`Runtime bytecode or linked-library mismatch at ${address}`)
 }
 
-async function inspect(ethers: any, input: any, report: any) {
+export async function inspectRoundingUpgrade(ethers: any, input: any, report: any) {
 	assertRoundingFactoryIntent(input.create2)
 	const block = await ethers.provider.getBlock("latest")
 	const [deployer] = await ethers.getSigners()
@@ -100,13 +106,29 @@ async function inspect(ethers: any, input: any, report: any) {
 		throw new Error("The reviewed owner must own Core")
 	if (!(await view.hasRole(roundingOwner(input), ethers.id("DEFAULT_ADMIN_ROLE"), { blockTag: block.number })))
 		throw new Error("The reviewed owner must hold Core DEFAULT_ADMIN_ROLE")
-	if (requiresRoundingPause(input)) await assertRoundingPauseAuthority(ethers, input, block.number)
+	if (requiresRoundingPause(input) && !isStageFunding(input)) await assertRoundingPauseAuthority(ethers, input, block.number)
 	if (input.target.collateral && (await view.getCollateral({ blockTag: block.number })).toLowerCase() !== input.target.collateral.toLowerCase())
 		throw new Error("Production Core collateral differs from the reviewed target")
 	const loupe = await ethers.getContractAt("DiamondLoupeFacet", input.target.core)
 	const selectors = selectorMap(await loupe.facets({ blockTag: block.number }))
+	for (const [name, entry] of Object.entries(input.target.preserveFacets || {}) as any) {
+		if (
+			!Object.values(selectors).some(a => a.toLowerCase() === entry.address.toLowerCase()) ||
+			ethers.keccak256(await ethers.provider.getCode(entry.address, block.number)) !== entry.codeHash
+		)
+			throw new Error(`Preserved rounding facet changed: ${name}`)
+	}
+	if (isStageFunding(input)) {
+		if (report.baseline && selectorDigest(report.baseline) !== input.target.baselineSelectorDigest)
+			throw new Error("Saved stage selector baseline differs from the reviewed target")
+		const funding = await ethers.getContractAt(["function isAccumulatedFundingActivated() view returns(bool)"], input.target.core)
+		if (!(await funding.isAccumulatedFundingActivated({ blockTag: block.number }))) throw new Error("Stage accumulated funding must remain enabled")
+	}
 	if (!report.baseline) {
-		if (selectors[GETTER]) throw new Error("Rounding getter is already installed; refuse a new release run")
+		if (isStageFunding(input)) {
+			if (!selectors[GETTER] || selectorDigest(selectors) !== input.target.baselineSelectorDigest)
+				throw new Error("Stage selectors differ from the reviewed installed rounding baseline")
+		} else if (selectors[GETTER]) throw new Error("Rounding getter is already installed; refuse a new release run")
 		for (const [name, entry] of Object.entries(input.target.facets) as any) {
 			if (!Object.values(selectors).some(a => a.toLowerCase() === entry.address.toLowerCase()))
 				throw new Error(`Baseline facet ${name} is not installed`)
@@ -176,6 +198,7 @@ export async function assertRoundingFactory(hre: any, ethers: any, entry: any, d
 
 export async function deployRoundingSelection(hre: any, ethers: any, input: any, report: any, checkpoint: DeploymentCheckpoint, persist: () => void) {
 	const facets = roundingFacets(input.profile)
+	const librariesToDeploy = roundingLibraries(input.profile)
 	assertRoundingFactoryIntent(input.create2)
 	const [deployer] = await ethers.getSigners()
 	if (!deployer) throw new Error("Temporary factory requires a deployment signer")
@@ -223,7 +246,7 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 		if (report.libraries[name]?.toLowerCase() !== entry.address.toLowerCase()) throw new Error(`Reused library address changed: ${name}`)
 	}
 	report.facets ||= {}
-	for (const name of [...LIBRARIES, ...facets]) {
+	for (const name of [...librariesToDeploy, ...facets]) {
 		const kind = LIBRARIES.includes(name) ? "libraries" : "facets"
 		const spec = kind === "libraries" ? LibrarySpecs.core[name] : FacetSpecs.core[name]
 		const artifact = await hre.artifacts.readArtifact(spec.artifact)
@@ -239,7 +262,8 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 			recovered ||
 			(await deployContract(vanity, { key: `core/${name}`, component, label: `${input.release} ${name}`, factory, checkpoint })).address
 		await assertRoundingRuntime(ethers, artifact, address, libraries)
-		if (kind === "facets" && !address.toLowerCase().endsWith("862")) throw new Error(`${name}: missing 862 suffix`)
+		if (kind === "facets" && !address.toLowerCase().endsWith(roundingSuffix(input.profile)))
+			throw new Error(`${name}: missing ${roundingSuffix(input.profile)} suffix`)
 		report.deployments[name] = { address, artifact: spec.artifact, libraries, codeHash: ethers.keccak256(await ethers.provider.getCode(address)) }
 		if (kind === "libraries") report.libraries[name] = address
 		else
@@ -250,9 +274,9 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 
 async function plan(hre: any, ethers: any, input: any, report: any) {
 	const facets = roundingFacets(input.profile)
-	const current = await inspect(ethers, input, report)
+	const current = await inspectRoundingUpgrade(ethers, input, report)
 	await assertRoundingFactory(hre, ethers, report.deployments?.Create2Factory, report.factoryDeployer)
-	for (const name of [...LIBRARIES, ...facets]) {
+	for (const name of [...roundingLibraries(input.profile), ...facets]) {
 		const deployment = report.deployments?.[name]
 		if (!deployment) throw new Error(`Missing deployment ${name}`)
 		const spec = LIBRARIES.includes(name) ? LibrarySpecs.core[name] : FacetSpecs.core[name]
@@ -270,7 +294,9 @@ async function plan(hre: any, ethers: any, input: any, report: any) {
 					to: input.target.core,
 					value: "0",
 					data: planned.calldata,
-					description: `Install ${input.release}: ${facets.length} facets, one new getter, no initializer`,
+					description: isStageFunding(input)
+						? "Install stage funding facet ending in 863: replace seven selectors, no additions or initializer"
+						: `Install ${input.release}: ${facets.length} facets, one new getter, no initializer`,
 				},
 			]
 		: []
@@ -282,14 +308,52 @@ export async function assertRoundingPauseAuthority(ethers: any, input: any, bloc
 	const view = await ethers.getContractAt(["function hasRole(address,bytes32) view returns(bool)"], input.target.core)
 	for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"])
 		if (!(await view.hasRole(roundingOwner(input), ethers.id(role), { blockTag: blockNumber })))
-			throw new Error(`Core owner ${roundingOwner(input)} must hold ${role} for the production pause/cut/unpause workflow`)
+			throw new Error(`Core owner ${roundingOwner(input)} must hold ${role} for the pause/cut/unpause workflow`)
+}
+
+export async function planStageFundingRoles(ethers: any, input: any, report: any) {
+	if (!isStageFunding(input) || input.target.governanceMode !== "safe-file") throw new Error("Role grants belong to the stage funding Safe profile")
+	assertRoundingPublication(input, report)
+	const blockNumber = await ethers.provider.getBlockNumber()
+	const owner = roundingOwner(input)
+	const view = await ethers.getContractAt(
+		["function getOwner() view returns(address)", "function hasRole(address,bytes32) view returns(bool)"],
+		input.target.core,
+	)
+	if (
+		(await view.getOwner({ blockTag: blockNumber })).toLowerCase() !== owner.toLowerCase() ||
+		!(await view.hasRole(owner, ethers.id("DEFAULT_ADMIN_ROLE"), { blockTag: blockNumber }))
+	)
+		throw new Error("Reviewed stage Safe must own Core and hold DEFAULT_ADMIN_ROLE before role grants")
+	const iface = new ethers.Interface(["function grantRole(address user,bytes32 role)"])
+	const actions = []
+	for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"]) {
+		if (await view.hasRole(owner, ethers.id(role), { blockTag: blockNumber })) continue
+		const action = {
+			to: input.target.core,
+			value: "0",
+			data: iface.encodeFunctionData("grantRole", [owner, ethers.id(role)]),
+			description: `Grant ${role} to the Core owner Safe for the stage funding upgrade`,
+		}
+		await ethers.provider.call({ to: action.to, from: owner, data: action.data, blockTag: blockNumber })
+		actions.push(action)
+	}
+	report.roles = { ...report.roles, blockNumber, actions }
+	return report.roles
+}
+
+export async function verifyStageFundingRoles(ethers: any, input: any, report: any) {
+	if (!isStageFunding(input)) throw new Error("Role verification belongs to the stage funding profile")
+	const blockNumber = await ethers.provider.getBlockNumber()
+	await assertRoundingPauseAuthority(ethers, input, blockNumber)
+	report.roles = { ...report.roles, actions: [], verifiedBlock: blockNumber }
 }
 
 export async function requireRoundingPaused(ethers: any, input: any, report: any) {
 	const blockNumber = await ethers.provider.getBlockNumber()
 	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
 	const pauseState = Array.from(await view.pauseState({ blockTag: blockNumber }))
-	if (!pauseState[0]) throw new Error("Core must be globally paused before executing or verifying the production cut; execute the Core pause first")
+	if (!pauseState[0]) throw new Error("Core must be globally paused before executing or verifying the cut; execute the Core pause first")
 	report.pause = {
 		...report.pause,
 		globalPaused: true,
@@ -301,7 +365,7 @@ export async function requireRoundingPaused(ethers: any, input: any, report: any
 }
 
 export async function planRoundingPause(ethers: any, input: any, report: any) {
-	if (!requiresRoundingPause(input)) throw new Error("Mandatory Core pause belongs to the production rounding profile")
+	if (!requiresRoundingPause(input)) throw new Error("Core pause requires a profile with the pause/cut/unpause workflow")
 	const blockNumber = await ethers.provider.getBlockNumber()
 	await assertRoundingPauseAuthority(ethers, input, blockNumber)
 	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
@@ -321,7 +385,7 @@ export async function planRoundingPause(ethers: any, input: any, report: any) {
 		to: input.target.core,
 		value: "0",
 		data: iface.encodeFunctionData("pauseGlobal"),
-		description: "Pause Core globally before the production rounding cut",
+		description: "Pause Core globally before the verified upgrade cut",
 	}
 	await ethers.provider.call({ to: action.to, from: roundingOwner(input), data: action.data, blockTag: blockNumber })
 	report.pause.actions = [action]
@@ -336,12 +400,12 @@ export async function guardRoundingCut(ethers: any, input: any, report: any) {
 		report.actions[0].to.toLowerCase() !== input.target.core.toLowerCase() ||
 		!report.actions[0].data.startsWith("0x1f931c1c")
 	)
-		throw new Error("Expected exactly one Core diamondCut for the production upgrade")
+		throw new Error("Expected exactly one Core diamondCut for the upgrade")
 }
 
 export async function planRoundingUnpause(ethers: any, input: any, report: any) {
 	if (report.actions?.length !== 0 || !report.verifiedBlock) throw new Error("Verify the installed Core cut before planning unpause")
-	if (requiresRoundingPause(input) && !report.pause?.verifiedBlock) throw new Error("Production pause verification is missing")
+	if (requiresRoundingPause(input) && !report.pause?.verifiedBlock) throw new Error("Core pause verification is missing")
 	const blockNumber = await ethers.provider.getBlockNumber()
 	const view = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
 	const pauseState = await view.pauseState({ blockTag: blockNumber })
@@ -439,10 +503,10 @@ export const arbitrumRoundingUpgradeTask = task(
 			if (report.inputDigest !== inputDigest) throw new Error("Upgrade report input mismatch")
 			const persist = () => write(output, report)
 			try {
-				if (phase === "inspect") await inspect(ethers, input, report)
+				if (phase === "inspect") await inspectRoundingUpgrade(ethers, input, report)
 				if (phase === "deploy") {
 					if (!report.inspection || !report.baseline) throw new Error("Inspect the live baseline before authorizing deployment")
-					const current = await inspect(ethers, input, report)
+					const current = await inspectRoundingUpgrade(ethers, input, report)
 					if (
 						Object.keys(current).length !== Object.keys(report.baseline).length ||
 						Object.entries(current).some(([s, a]) => a.toLowerCase() !== report.baseline[s]?.toLowerCase())
@@ -469,14 +533,21 @@ export const arbitrumRoundingUpgradeTask = task(
 						true,
 					)
 				}
-				if (["publish", "plan-pause", "verify-pause", "plan", "verify", "plan-unpause", "verify-unpause"].includes(phase))
+				if (
+					["publish", "plan-roles", "verify-roles", "plan-pause", "verify-pause", "plan", "verify", "plan-unpause", "verify-unpause"].includes(phase)
+				)
 					await plan(hre, ethers, input, report)
+				if (phase === "plan-roles") await planStageFundingRoles(ethers, input, report)
+				if (phase === "verify-roles") await verifyStageFundingRoles(ethers, input, report)
 				if (phase === "plan-pause") {
 					assertRoundingPublication(input, report)
 					await planRoundingPause(ethers, input, report)
 				}
 				if (phase === "verify-pause") await requireRoundingPaused(ethers, input, report)
-				if (phase === "plan") await guardRoundingCut(ethers, input, report)
+				if (phase === "plan") {
+					assertRoundingPublication(input, report)
+					await guardRoundingCut(ethers, input, report)
+				}
 				if (phase === "publish") {
 					for (const name of roundingDeployments(input.profile)) {
 						const entry = report.deployments[name]

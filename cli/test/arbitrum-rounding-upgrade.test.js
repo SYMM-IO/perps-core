@@ -72,6 +72,52 @@ test("rounding cut refuses unrelated or partial concurrent selector changes", ()
 	assert.throws(() => planRoundingCut(baseline, baseline, facets, oldFacets), /outside the reviewed/);
 });
 
+test("stage funding cut replaces only funding with suffix 863 and preserves the installed rounding getter", () => {
+	const { baseline, facets, oldFacets } = fixture("production");
+	baseline[GETTER] = oldFacets.ViewFacet.address;
+	const funding = { FundingRateFacet: { ...facets.FundingRateFacet, address: facets.FundingRateFacet.address.replace(/862$/, "863") } };
+	const result = planRoundingCut(baseline, baseline, funding, oldFacets, "stage-funding");
+	assert.equal(result.cut.length, 1);
+	assert.equal(result.cut[0].action, 1);
+	assert.equal(result.desired[GETTER], baseline[GETTER]);
+	assert.equal(Object.keys(result.desired).length, Object.keys(baseline).length);
+	assert.deepEqual(planRoundingCut(baseline, result.desired, funding, oldFacets, "stage-funding").cut, []);
+	assert.deepEqual(roundingDeployments("stage-funding"), ["Create2Factory", "FundingRateFacet"]);
+	assert.throws(() => planRoundingCut(baseline, baseline, facets, oldFacets, "stage-funding"), /Exactly FundingRateFacet/);
+	assert.throws(
+		() => planRoundingCut(baseline, baseline, { FundingRateFacet: facets.FundingRateFacet }, oldFacets, "stage-funding"),
+		/does not end in 863/,
+	);
+	const withoutGetter = { ...baseline };
+	delete withoutGetter[GETTER];
+	assert.throws(() => planRoundingCut(withoutGetter, withoutGetter, funding, oldFacets, "stage-funding"), /installed rounding getter/);
+});
+
+test("stage funding exports role grants and pause only after publication and verifies each before the next Safe action", () => {
+	const task = createArbitrumRoundingUpgradeTask(value => value, "stage-funding");
+	assert.equal(task.id, "maintenance.arbitrum-vibe-stage-funding-upgrade-863");
+	assert.deepEqual(
+		task.plan().map(s => s.id),
+		[
+			"compile",
+			"inspect",
+			"authorize",
+			"deploy",
+			"publish",
+			"core-roles",
+			"verify-roles",
+			"core-pause",
+			"verify-pause",
+			"core-cut",
+			"verify",
+			"core-unpause",
+			"verify-unpause",
+		],
+	);
+	assert.match(task.plan().find(s => s.id === "deploy").title, /FundingRateFacet ending in 863/);
+	assert.equal(task.inputs.find(i => i.id === "governanceSigner").required, true);
+});
+
 test("production replaces the funding facet alongside rounding and refuses missing or incomplete funding scope", () => {
 	const { baseline, facets, oldFacets } = fixture("production");
 	const fundingSelector = facets.FundingRateFacet.selectors[0];
