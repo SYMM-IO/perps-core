@@ -3,6 +3,7 @@ import {
 	buildRoundingInput,
 	RECIPE_PATH,
 	RELEASE_TAG,
+	PRODUCTION_RELEASE_TAG,
 	TARGET_PATH,
 	ROUNDING_PROFILES,
 	requiresRoundingPause,
@@ -50,6 +51,13 @@ function releaseFixture(t) {
 	return { root, git, write, commit, releaseCommit, sourceCommit };
 }
 
+function addFundingRelease(fixture) {
+	fixture.write("contracts/Funding.sol", "pragma solidity >=0.8.18; contract Funding {}\n");
+	const releaseCommit = fixture.commit(["contracts/Funding.sol"]);
+	fixture.git(["tag", PRODUCTION_RELEASE_TAG]);
+	return releaseCommit;
+}
+
 test("Solidity tag stays fixed while a clean descendant binds its deployment-script commit", t => {
 	const fixture = releaseFixture(t);
 	const input = buildRoundingInput(fixture.root);
@@ -78,8 +86,11 @@ test("changed Solidity or moving the tag to a tooling commit is refused", t => {
 
 test("production binds a separate recipe and target without moving the Solidity release tag", t => {
 	const fixture = releaseFixture(t);
+	const stage = buildRoundingInput(fixture.root);
+	const fundingCommit = addFundingRelease(fixture);
 	const profile = ROUNDING_PROFILES.production;
 	const target = JSON.parse(fs.readFileSync(path.join(fixture.root, TARGET_PATH)));
+	target.contractsTree = fixture.git(["rev-parse", "HEAD:contracts"]);
 	target.core = "0x2222222222222222222222222222222222222222";
 	target.owner = target.safe;
 	target.governanceMode = "ledger";
@@ -89,18 +100,28 @@ test("production binds a separate recipe and target without moving the Solidity 
 	fixture.write(profile.targetPath, JSON.stringify(target));
 	fixture.write(profile.recipePath, JSON.stringify(recipe));
 	fixture.commit([profile.targetPath, profile.recipePath]);
-	const stage = buildRoundingInput(fixture.root);
 	const production = buildRoundingInput(fixture.root, "production");
 	assert.equal(production.profile, "production");
-	assert.equal(production.apiVersion, "operations.symm.io/arbitrum-rounding-upgrade-v4");
-	assert.equal(production.releaseCommit, stage.releaseCommit);
+	assert.equal(production.apiVersion, "operations.symm.io/arbitrum-rounding-upgrade-v5");
+	assert.equal(production.release, PRODUCTION_RELEASE_TAG);
+	assert.equal(production.releaseCommit, fundingCommit);
+	assert.notEqual(production.releaseCommit, stage.releaseCommit);
+	assert.equal(fixture.git(["rev-parse", `${RELEASE_TAG}^{commit}`]), stage.releaseCommit);
+	assert.equal(production.create2.groups.facets.suffix, "862");
 	assert.notEqual(production.targetDigest, stage.targetDigest);
 	assert.notEqual(production.recipeDigest, stage.recipeDigest);
 	assert.equal(requiresRoundingPause(production), true);
 	assert.equal(requiresRoundingPause(stage), false);
 	assert.doesNotThrow(() => assertReleaseSource(fixture.root, production));
-	assert.throws(() => assertReleaseSource(fixture.root, { ...production, profile: "stage" }), /changed since preparation/);
+	assert.throws(() => assertReleaseSource(fixture.root, { ...production, profile: "stage" }), /Contracts differ/);
 	assert.throws(() => assertReleaseSource(fixture.root, { ...production, apiVersion: stage.apiVersion }), /differs from the release target/);
+	assert.throws(
+		() => assertReleaseSource(fixture.root, { ...production, apiVersion: "operations.symm.io/arbitrum-rounding-upgrade-v4" }),
+		/differs from the release target/,
+	);
+	fixture.git(["tag", "-f", PRODUCTION_RELEASE_TAG, production.sourceCommit]);
+	assert.throws(() => buildRoundingInput(fixture.root, "production"), /contract source change/);
+	fixture.git(["tag", "-f", PRODUCTION_RELEASE_TAG, fundingCommit]);
 	assert.throws(() => buildRoundingInput(fixture.root, "unknown"), /Unknown rounding upgrade profile/);
 	fixture.write(profile.recipePath, JSON.stringify({ ...recipe, governance: { admin: target.core } }));
 	fixture.commit([profile.recipePath]);
@@ -109,6 +130,7 @@ test("production binds a separate recipe and target without moving the Solidity 
 
 test("production deploys without Ledger setup, waits for the admin, and resumes without redeployment or changing input", async t => {
 	const fixture = releaseFixture(t);
+	addFundingRelease(fixture);
 	const profile = ROUNDING_PROFILES.production;
 	const recipe = JSON.parse(fs.readFileSync(new URL("../../deployment-recipes/arbitrum-vibe-production-862.json", import.meta.url)));
 	const target = {
@@ -143,7 +165,7 @@ test("production deploys without Ledger setup, waits for the admin, and resumes 
 			assert.notEqual(phase, "prepare", "Preparation must never request a Ledger address");
 			if (message === "Core owner Ledger Ledger address") return target.owner;
 			assert(message.startsWith("Type UPGRADE VIBE PRODUCTION"));
-			return "UPGRADE VIBE PRODUCTION version_0.8.6.2 ON 42161";
+			return `UPGRADE VIBE PRODUCTION ${PRODUCTION_RELEASE_TAG} ON 42161`;
 		},
 		confirm: async ({ message }) => {
 			if (message.startsWith("Configure or refresh")) return false;

@@ -1,13 +1,17 @@
 export const RELEASE_TAG: string
+export const PRODUCTION_RELEASE_TAG: string
 export const RECIPE_PATH: string
 export const TARGET_PATH: string
-export const ROUNDING_PROFILES: Readonly<Record<string, { recipePath: string; targetPath: string; recipeName: string }>>
-export function roundingProfile(profile?: string): { recipePath: string; targetPath: string; recipeName: string }
+export const ROUNDING_PROFILES: Readonly<Record<string, { recipePath: string; targetPath: string; recipeName: string; releaseTag: string }>>
+export function roundingProfile(profile?: string): { recipePath: string; targetPath: string; recipeName: string; releaseTag: string }
 export function requiresRoundingPause(input: any): boolean
 export function roundingOwner(input: any): string
 export const LIBRARIES: readonly string[]
 export const FACETS: readonly string[]
 export const DEPLOYMENTS: readonly string[]
+export const PRODUCTION_FACETS: readonly string[]
+export function roundingFacets(profile?: string): readonly string[]
+export function roundingDeployments(profile?: string): string[]
 export const GETTER: string
 export function digest(value: unknown): string
 export function fileDigest(file: string): string
@@ -20,4 +24,5 @@ export function planRoundingCut(
 	current: Record<string, string>,
 	facets: any,
 	oldFacets: any,
+	profile?: string,
 ): { desired: Record<string, string>; cut: any[]; calldata: string | null }

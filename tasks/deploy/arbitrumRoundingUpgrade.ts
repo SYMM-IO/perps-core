@@ -6,14 +6,14 @@ import fs from "node:fs"
 import {
 	assertReleaseSource,
 	assertRoundingFactoryIntent,
-	DEPLOYMENTS,
 	digest,
-	FACETS,
 	GETTER,
 	LIBRARIES,
 	planRoundingCut,
 	requiresRoundingPause,
 	roundingOwner,
+	roundingFacets,
+	roundingDeployments,
 	selectorMap,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js"
 import { FacetSpecs, LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
@@ -175,6 +175,7 @@ export async function assertRoundingFactory(hre: any, ethers: any, entry: any, d
 }
 
 export async function deployRoundingSelection(hre: any, ethers: any, input: any, report: any, checkpoint: DeploymentCheckpoint, persist: () => void) {
+	const facets = roundingFacets(input.profile)
 	assertRoundingFactoryIntent(input.create2)
 	const [deployer] = await ethers.getSigners()
 	if (!deployer) throw new Error("Temporary factory requires a deployment signer")
@@ -184,7 +185,7 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 	const vanityPlan = buildVanityPlan({
 		factory: input.create2.factory,
 		miningBudget: input.create2.miningBudget,
-		overrides: Object.fromEntries(FACETS.map(name => [`core/${name}`, input.create2.groups.facets])),
+		overrides: Object.fromEntries(facets.map(name => [`core/${name}`, input.create2.groups.facets])),
 	})
 	if (!vanityPlan) throw new Error("Rounding deployment requires a CREATE2 vanity plan")
 	report.deployments ||= {}
@@ -222,7 +223,7 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 		if (report.libraries[name]?.toLowerCase() !== entry.address.toLowerCase()) throw new Error(`Reused library address changed: ${name}`)
 	}
 	report.facets ||= {}
-	for (const name of [...LIBRARIES, ...FACETS]) {
+	for (const name of [...LIBRARIES, ...facets]) {
 		const kind = LIBRARIES.includes(name) ? "libraries" : "facets"
 		const spec = kind === "libraries" ? LibrarySpecs.core[name] : FacetSpecs.core[name]
 		const artifact = await hre.artifacts.readArtifact(spec.artifact)
@@ -248,19 +249,20 @@ export async function deployRoundingSelection(hre: any, ethers: any, input: any,
 }
 
 async function plan(hre: any, ethers: any, input: any, report: any) {
+	const facets = roundingFacets(input.profile)
 	const current = await inspect(ethers, input, report)
 	await assertRoundingFactory(hre, ethers, report.deployments?.Create2Factory, report.factoryDeployer)
-	for (const name of [...LIBRARIES, ...FACETS]) {
+	for (const name of [...LIBRARIES, ...facets]) {
 		const deployment = report.deployments?.[name]
 		if (!deployment) throw new Error(`Missing deployment ${name}`)
 		const spec = LIBRARIES.includes(name) ? LibrarySpecs.core[name] : FacetSpecs.core[name]
 		if (LIBRARIES.includes(name) && deployment.address !== report.libraries[name]) throw new Error(`Library report changed: ${name}`)
-		if (FACETS.includes(name) && deployment.address !== report.facets[name]?.address) throw new Error(`Facet report changed: ${name}`)
+		if (facets.includes(name) && deployment.address !== report.facets[name]?.address) throw new Error(`Facet report changed: ${name}`)
 		const links = linkedLibrariesFor("core", spec, report.libraries)
 		if (JSON.stringify(links) !== JSON.stringify(deployment.libraries)) throw new Error(`Linked library report changed: ${name}`)
 		await assertRoundingRuntime(ethers, await hre.artifacts.readArtifact(spec.artifact), deployment.address, links)
 	}
-	const planned = planRoundingCut(report.baseline, current, report.facets, input.target.facets)
+	const planned = planRoundingCut(report.baseline, current, report.facets, input.target.facets, input.profile)
 	report.desired = planned.desired
 	report.actions = planned.calldata
 		? [
@@ -268,7 +270,7 @@ async function plan(hre: any, ethers: any, input: any, report: any) {
 					to: input.target.core,
 					value: "0",
 					data: planned.calldata,
-					description: `Install ${input.release} rounding fix: four facets, one new getter, no initializer`,
+					description: `Install ${input.release}: ${facets.length} facets, one new getter, no initializer`,
 				},
 			]
 		: []
@@ -396,10 +398,18 @@ export async function executeRoundingOwnerAction(ethers: any, input: any, report
 	logger.info(`Ledger governance: ${method}; Core ${action.to}; owner ${roundingOwner(input)}; value 0; gas limit ${request.gasLimit}`)
 	report.governancePreviews ||= {}
 	report.governancePreviews[phase] = { to: action.to, value: "0", data: action.data, method, owner: roundingOwner(input) }
-	await send(signer.sendTransaction(request), `version_0.8.6.2 production ${method}`)
+	await send(signer.sendTransaction(request), `${input.release} production ${method}`)
 }
 
-export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgrade", "Adapter for the Arbitrum rounding-only Solidity release")
+export function assertRoundingPublication(input: any, report: any) {
+	const missing = roundingDeployments(input.profile).filter(name => !report.deployments?.[name]?.published)
+	if (missing.length) throw new Error(`Explorer publication remains incomplete: ${missing.join(", ")}`)
+}
+
+export const arbitrumRoundingUpgradeTask = task(
+	"internal:arbitrum-rounding-upgrade",
+	"Adapter for the Arbitrum rounding and production funding releases",
+)
 	.addOption({ name: "phase", type: ArgumentType.STRING, defaultValue: "inspect" })
 	.addOption({ name: "input", type: ArgumentType.STRING, defaultValue: "" })
 	.addOption({ name: "output", type: ArgumentType.STRING, defaultValue: "" })
@@ -449,8 +459,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 						report,
 						async () => {
 							await plan(hre, ethers, input, report)
-							if (DEPLOYMENTS.some(name => !report.deployments[name]?.published))
-								throw new Error("Publish all deployments before production governance")
+							assertRoundingPublication(input, report)
 							let actions = report.actions
 							if (phase === "execute-pause") actions = (await planRoundingPause(ethers, input, report)).actions
 							if (phase === "execute-cut") await guardRoundingCut(ethers, input, report)
@@ -463,13 +472,13 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 				if (["publish", "plan-pause", "verify-pause", "plan", "verify", "plan-unpause", "verify-unpause"].includes(phase))
 					await plan(hre, ethers, input, report)
 				if (phase === "plan-pause") {
-					if (DEPLOYMENTS.some(name => !report.deployments[name]?.published)) throw new Error("Publish all deployments before pausing Core")
+					assertRoundingPublication(input, report)
 					await planRoundingPause(ethers, input, report)
 				}
 				if (phase === "verify-pause") await requireRoundingPaused(ethers, input, report)
 				if (phase === "plan") await guardRoundingCut(ethers, input, report)
 				if (phase === "publish") {
-					for (const name of DEPLOYMENTS) {
+					for (const name of roundingDeployments(input.profile)) {
 						const entry = report.deployments[name]
 						if (entry.published) continue
 						try {
@@ -493,7 +502,7 @@ export const arbitrumRoundingUpgradeTask = task("internal:arbitrum-rounding-upgr
 				if (["verify", "plan-unpause", "verify-unpause"].includes(phase)) {
 					if (report.actions.length) throw new Error("Core cut has not been executed yet")
 					if (requiresRoundingPause(input) && phase === "verify") await requireRoundingPaused(ethers, input, report)
-					if (DEPLOYMENTS.some(name => !report.deployments[name]?.published)) throw new Error("Explorer publication remains incomplete")
+					assertRoundingPublication(input, report)
 					const view = await ethers.getContractAt(["function liquidationStartPositionCount(address) view returns(uint256)"], input.target.core)
 					if ((await view.liquidationStartPositionCount(ethers.ZeroAddress)) !== 0n) throw new Error("New getter failed zero-address check")
 					report.status = "upgrade_verified"

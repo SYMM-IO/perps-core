@@ -1,5 +1,5 @@
 {
-	"release": "version_0.8.6.2",
+	"release": "version_0.8.6.2-funding",
 	"chainId": 42161,
 	"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
 	"owner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
@@ -24,6 +24,12 @@
 		"ViewFacet": {
 			"address": "0x9d8FE8c29b4AC8ecC382FD7DD10A6FDd795ca861",
 			"codeHash": "0x60221201bf537fed49c0751487e8f94b7a429b32fec1f081a524faf7747aa8a6"
+		},
+		"FundingRateFacet": {
+			"address": "0xC84de9c1EB96545d99Eb7FeEF85AaA8D6A893861",
+			"codeHash": "0x3b33cf1c805cf7f4b770ecf93c81620fc103e5ba2d9299f5e3a18f57e98ec59e",
+			"reviewedBlock": 502603420,
+			"reviewedBlockHash": "0xdd6d2e07cd472f630160346c8e952bcb09cf554a1b6d567a7e4dbcc5ac2b27a1"
 		}
 	},
 	"reuseLibraries": {
@@ -36,5 +42,5 @@
 			"codeHash": "0x47e7a0deca41910727607b5c07517c2ca942a1fbc9955934edc7c9475bcb0707"
 		}
 	},
-	"contractsTree": "4fcfb35a924f13394da1e9eda17c5451cfe6d191"
+	"contractsTree": "110017b11256bfa472210c81d6e01b266e97a452"
 }
