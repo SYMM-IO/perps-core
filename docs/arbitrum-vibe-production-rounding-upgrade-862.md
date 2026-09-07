@@ -13,11 +13,11 @@ cd /home/home/Documents/Development/Symmio/perps-core/.releases/version_0.8.6.2
 ./symmio
 ```
 
-1. Select **Other maintenance scripts** → **Arbitrum Vibe production rounding fix v0.8.6.2**.
-2. Select the owner Ledger at `0x77A955776Ee1dd3E9C800c3214ed489441d74b94`. Choose the derivation scheme that corresponds to this account on your device; the script checks the address. This owner pays Arbitrum ETH for the three governance transactions.
-3. Select the contract deployment signer separately, for example **Hardhat keystore → TEAM_DEPLOYER**. This wallet pays for the nine deployments and receives `DEFAULT_ADMIN_ROLE` and `DEPLOYER_ROLE` on the new temporary factory. The recipe uses keystore references `RPC_ARBITRUM` and `ETHERSCAN_APIKEY`; enter passwords only in the operator's keystore prompt.
-4. Review the target and scope. The script compiles, checks the live owner and its `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE` and `UNPAUSER_ROLE`, checks collateral and the pinned baseline, then asks for `UPGRADE VIBE PRODUCTION version_0.8.6.2 ON 42161`.
-5. Let the deployment signer deploy the temporary factory, four libraries and four facets, and let the script publish all nine contracts on Arbiscan. Each new facet address ends in **862**. Core has not been paused by this task yet.
+1. Select **Other maintenance scripts** → **Arbitrum Vibe production / Ledger rounding fix v0.8.6.2**.
+2. Select the contract deployment signer, for example **Hardhat keystore → TEAM_DEPLOYER**. This wallet pays for the nine deployments and receives `DEFAULT_ADMIN_ROLE` and `DEPLOYER_ROLE` on the new temporary factory. The recipe uses keystore references `RPC_ARBITRUM` and `ETHERSCAN_APIKEY`; enter passwords only in the operator's keystore prompt.
+3. Review the target and scope. The script compiles, checks the live owner and its `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE` and `UNPAUSER_ROLE`, checks collateral and the pinned baseline, then asks for `UPGRADE VIBE PRODUCTION version_0.8.6.2 ON 42161`.
+4. Let the deployment signer deploy the temporary factory, four libraries and four facets, and let the script publish all nine contracts on Arbiscan. Each new facet address ends in **862**. Core has not been paused by this task yet.
+5. After publication, choose **Wait for admin** to save progress, or **Connect Ledger and continue**. Only then does the script ask for the owner Ledger at `0x77A955776Ee1dd3E9C800c3214ed489441d74b94`. Choose the derivation scheme that corresponds to this account on the admin's device; the script checks the address. This owner pays Arbitrum ETH for the three governance transactions.
 6. Review and confirm **`pauseGlobal()`** on the Ledger. The script waits for confirmation and reads Core's global pause flag before proceeding.
 7. Review and confirm **`diamondCut(...)`** on the Ledger. The cut targets the same Core, sends zero ETH, replaces four facets, adds `liquidationStartPositionCount(address)`, removes no selectors and uses no initializer. The script verifies all selectors, linked runtime bytecode, the new getter and publication records while requiring Core to remain globally paused.
 8. After verification succeeds, review and confirm **`unpauseGlobal()`** on the Ledger. Core becomes globally unpaused when this transaction executes. The task completes only after reading the cleared global flag from chain state.
@@ -44,7 +44,7 @@ The allowance remains **3 raw accounting units per position at liquidation start
 
 ## Resume and evidence
 
-If a transaction or verification fails, choose **Continue active task** in the same release checkout. Keep the signer selections, recipe and source unchanged. The deployment signer and Ledger owner have separate transaction checkpoints, so a governance receipt cannot be confused with a deployment receipt. Submitted transactions are reconciled before retrying, and confirmed deployments are reused. A failure after pausing leaves Core paused until a successful unpause transaction; cancelling a task does not undo chain effects.
+If the Ledger is unavailable at the pause boundary, choose **Wait for admin**. Cancelling Ledger selection also waits safely. The task waits with the nine deployments and publication evidence preserved; the admin can connect the Ledger later and choose **Continue active task**. After the Ledger is selected, its public address and derivation are bound to the task. If a transaction or verification fails, choose **Continue active task** in the same release checkout. Keep the deployment signer, recipe and source unchanged. The deployment signer and Ledger owner have separate transaction checkpoints, so a governance receipt cannot be confused with a deployment receipt. Submitted transactions are reconciled before retrying, and confirmed deployments are reused. A failure after pausing leaves Core paused until a successful unpause transaction; cancelling a task does not undo chain effects.
 
 If another operator unpauses Core before the cut or before its paused verification, the script refuses that step. Restore the required global pause before continuing. Do not change a bound recipe to bypass a resume error.
 
