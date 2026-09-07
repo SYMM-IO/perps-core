@@ -280,13 +280,21 @@ library FundingRateFacetImpl {
 
 	/// @notice Applies accumulated funding fees to positions
 	/// @dev Uses the accumulated funding fee system with weighted averages
+	///      The bound solver skips Muon and UPNL solvency checks while it remains bindable.
+	///      Binding remains effective through pending unbind, until completion clears partyB.
 	/// @param partyA Trader address
 	/// @param partyB Market maker address
 	/// @param quoteIds Position IDs to charge
 	/// @param upnlSig Unrealized PnL signature for solvency checks
 	function chargeAccumulatedFundingFee(address partyA, address partyB, uint256[] memory quoteIds, PairUpnlSig memory upnlSig) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
-		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.Funding);
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		// onlyPartyB allows any registered solver; only this pair's bound solver may skip verification.
+		bool requireMuonAndSolvencyChecks =
+			LibSigner.getSigner() != partyB || tradingLayout.bindState[partyA].partyB != partyB || !tradingLayout.isPartyBBindable[partyB];
+		if (requireMuonAndSolvencyChecks) {
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.Funding);
+		}
 
 		// Apply accumulated funding to each position. The signed UPNLs already include
 		// funding debt at the signature timestamp, so retain that exact amount for the
@@ -298,27 +306,31 @@ library FundingRateFacetImpl {
 			require(quote.partyA == partyA, "FundingRateFacet: Invalid quote");
 			require(quote.partyB == partyB, "FundingRateFacet: Sender isn't partyB of quote");
 			quote.requireOpenPosition();
-			require(
-				upnlSig.timestamp >= FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB].lastUpdatedTimeStamp,
-				"FundingRateFacet: Outdated funding signature"
-			);
+			if (requireMuonAndSolvencyChecks) {
+				require(
+					upnlSig.timestamp >= FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB].lastUpdatedTimeStamp,
+					"FundingRateFacet: Outdated funding signature"
+				);
+				signedFundingFee += LibQuoteFunding.getAccumulatedFundingFeeAt(quoteIds[i], upnlSig.timestamp);
+			}
 
 			// Delegate to library function that handles the actual fee calculation
-			signedFundingFee += LibQuoteFunding.getAccumulatedFundingFeeAt(quoteIds[i], upnlSig.timestamp);
 			LibQuoteFunding.chargeAccumulatedFundingFee(quoteIds[i]);
 		}
 
-		// Realization removes the signed funding debt from UPNL and transfers the
-		// execution-time fee through allocated balances.
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB - signedFundingFee, partyB, partyA);
-		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
-			upnlSig.upnlPartyA + signedFundingFee,
-			AccountStorage.layout().allocatedBalances[partyA],
-			partyA
-		);
+		if (requireMuonAndSolvencyChecks) {
+			// Realization removes the signed funding debt from UPNL and transfers the
+			// execution-time fee through allocated balances.
+			int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB - signedFundingFee, partyB, partyA);
+			int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
+				upnlSig.upnlPartyA + signedFundingFee,
+				AccountStorage.layout().allocatedBalances[partyA],
+				partyA
+			);
 
-		require(partyAAvailableBalance >= 0, "FundingRateFacet: PartyA will be insolvent");
-		require(partyBAvailableBalance >= 0, "FundingRateFacet: PartyB will be insolvent");
+			require(partyAAvailableBalance >= 0, "FundingRateFacet: PartyA will be insolvent");
+			require(partyBAvailableBalance >= 0, "FundingRateFacet: PartyB will be insolvent");
+		}
 
 		if (quoteIds.length > 0) {
 			LibAccount.increaseBothUpnlCounters(partyB, partyA);
