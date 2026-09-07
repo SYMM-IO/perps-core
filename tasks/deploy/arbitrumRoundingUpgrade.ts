@@ -393,8 +393,8 @@ export async function planRoundingPause(ethers: any, input: any, report: any) {
 }
 
 export async function guardRoundingCut(ethers: any, input: any, report: any) {
-	if (!requiresRoundingPause(input) || !report.actions?.length) return
-	await requireRoundingPaused(ethers, input, report)
+	if (!report.actions?.length) return
+	if (requiresRoundingPause(input)) await requireRoundingPaused(ethers, input, report)
 	if (
 		report.actions.length !== 1 ||
 		report.actions[0].to.toLowerCase() !== input.target.core.toLowerCase() ||
@@ -404,6 +404,7 @@ export async function guardRoundingCut(ethers: any, input: any, report: any) {
 }
 
 export async function planRoundingUnpause(ethers: any, input: any, report: any) {
+	if (input.profile === "production") throw new Error("Production upgrade performs only the cut and verification; unpause is disabled")
 	if (report.actions?.length !== 0 || !report.verifiedBlock) throw new Error("Verify the installed Core cut before planning unpause")
 	if (requiresRoundingPause(input) && !report.pause?.verifiedBlock) throw new Error("Core pause verification is missing")
 	const blockNumber = await ethers.provider.getBlockNumber()
@@ -427,15 +428,10 @@ export async function planRoundingUnpause(ethers: any, input: any, report: any) 
 }
 
 export async function executeRoundingOwnerAction(ethers: any, input: any, report: any, phase: string, actions: any[]) {
-	if (!requiresRoundingPause(input) || input.target.governanceMode !== "ledger")
+	if (input.profile !== "production" || input.target.governanceMode !== "ledger")
 		throw new Error("Production governance requires the reviewed Ledger owner")
-	const methods: Record<string, string> = {
-		"execute-pause": "pauseGlobal()",
-		"execute-cut": "diamondCut((address,uint8,bytes4[])[],address,bytes)",
-		"execute-unpause": "unpauseGlobal()",
-	}
-	const method = methods[phase]
-	if (!method) throw new Error("Unsupported production governance phase")
+	if (phase !== "execute-cut") throw new Error("Production upgrade permits only the diamond cut; pause and unpause are disabled")
+	const method = "diamondCut((address,uint8,bytes4[])[],address,bytes)"
 	const [signer] = await ethers.getSigners()
 	if (!signer || ethers.getAddress(await signer.getAddress()) !== roundingOwner(input))
 		throw new Error("Governance signer does not match the reviewed Core owner")
@@ -448,9 +444,7 @@ export async function executeRoundingOwnerAction(ethers: any, input: any, report
 		action.data.slice(0, 10) !== ethers.id(method).slice(0, 10)
 	)
 		throw new Error("Governance action differs from its reviewed phase or Core target")
-	if (phase === "execute-cut") await requireRoundingPaused(ethers, input, report)
-	if (phase === "execute-unpause" && (!report.verifiedBlock || !report.pause?.verifiedBlock || report.actions?.length !== 0))
-		throw new Error("Verify the paused production cut before unpausing")
+	await guardRoundingCut(ethers, input, report)
 	await ethers.provider.call({ from: roundingOwner(input), to: action.to, data: action.data, value: 0n })
 	const request = await completeGovernanceTransactionRequest(ethers.provider, {
 		from: roundingOwner(input),
@@ -458,7 +452,7 @@ export async function executeRoundingOwnerAction(ethers: any, input: any, report
 		data: action.data,
 		value: 0n,
 	})
-	if (phase === "execute-cut") await requireRoundingPaused(ethers, input, report)
+	await guardRoundingCut(ethers, input, report)
 	logger.info(`Ledger governance: ${method}; Core ${action.to}; owner ${roundingOwner(input)}; value 0; gas limit ${request.gasLimit}`)
 	report.governancePreviews ||= {}
 	report.governancePreviews[phase] = { to: action.to, value: "0", data: action.data, method, owner: roundingOwner(input) }
@@ -481,7 +475,13 @@ export const arbitrumRoundingUpgradeTask = task(
 		default: async ({ phase, input: inputFile, output }, hre) => {
 			if (!PHASES.includes(phase)) throw new Error("Unknown rounding upgrade phase")
 			const input = JSON.parse(fs.readFileSync(inputFile, "utf8"))
-			assertReleaseSource(process.cwd(), input)
+			const sourceMigration = process.env.SYMMIO_ROUNDING_SOURCE_MIGRATION ? JSON.parse(process.env.SYMMIO_ROUNDING_SOURCE_MIGRATION) : undefined
+			assertReleaseSource(process.cwd(), input, input.profile || "stage", sourceMigration)
+			if (
+				input.profile === "production" &&
+				["plan-pause", "verify-pause", "execute-pause", "plan-unpause", "verify-unpause", "execute-unpause"].includes(phase)
+			)
+				throw new Error("Production upgrade permits only the cut and verification; pause and unpause phases are disabled")
 			const inputDigest = digest(input)
 			if (process.env.SYMMIO_ROUNDING_UPGRADE_RUN_ID !== inputDigest) throw new Error("Start this adapter from ./symmio")
 			const connection = await getConnection(hre)
@@ -496,11 +496,12 @@ export const arbitrumRoundingUpgradeTask = task(
 				throw new Error("Live deployment requires explicit chain authorization")
 			if (
 				["execute-pause", "execute-cut", "execute-unpause", "reconcile-governance"].includes(phase) &&
-				(!requiresRoundingPause(input) || input.target.governanceMode !== "ledger" || process.env.SYMMIO_SIGNER_MODE !== "ledger")
+				(input.profile !== "production" || input.target.governanceMode !== "ledger" || process.env.SYMMIO_SIGNER_MODE !== "ledger")
 			)
 				throw new Error("Production governance must run with its selected Ledger signer")
 			const report = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { inputDigest, release: input.release }
 			if (report.inputDigest !== inputDigest) throw new Error("Upgrade report input mismatch")
+			if (sourceMigration) report.sourceMigration = sourceMigration
 			const persist = () => write(output, report)
 			try {
 				if (phase === "inspect") await inspectRoundingUpgrade(ethers, input, report)
@@ -578,6 +579,11 @@ export const arbitrumRoundingUpgradeTask = task(
 					if ((await view.liquidationStartPositionCount(ethers.ZeroAddress)) !== 0n) throw new Error("New getter failed zero-address check")
 					report.status = "upgrade_verified"
 					report.verifiedBlock = await ethers.provider.getBlockNumber()
+					if (input.profile === "production") {
+						const core = await ethers.getContractAt(FacetSpecs.core.ViewFacet.artifact, input.target.core)
+						report.finalPauseState = Array.from(await core.pauseState({ blockTag: report.verifiedBlock }))
+						report.status = "complete"
+					}
 				}
 				if (phase === "plan-unpause") await planRoundingUnpause(ethers, input, report)
 				if (phase === "verify-unpause") {

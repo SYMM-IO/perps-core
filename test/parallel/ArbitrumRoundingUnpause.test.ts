@@ -101,25 +101,22 @@ describe("Arbitrum rounding release Safe unpause", function () {
 		input.target.preserveFacets.ViewFacet.codeHash = ethers.ZeroHash
 		await expectFailure(() => inspectRoundingUpgrade(ethers, input, report), /Preserved rounding facet changed/)
 	})
-	it("requires Ledger-owner pause before a production cut and unpauses only after verification", async function () {
+	it("production executes only a Ledger-owner cut without pause roles and preserves all pause flags", async function () {
 		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
 		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))
 		await context.pauseControlFacet.connect(admin).pauseAccounting()
+		for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
 		const input = {
 			profile: "production",
 			release: "version_0.8.6.2",
 			target: { core: context.diamond, owner: admin.address, governanceMode: "ledger" },
 		}
 		const report: any = {}
-		const nonce = await ethers.provider.getTransactionCount(admin.address)
-		const pause = await planRoundingPause(ethers, input, report)
-		expect(await ethers.provider.getTransactionCount(admin.address)).to.equal(nonce)
-		expect((await context.viewFacet.pauseState())[0]).to.equal(false)
-		await expectFailure(() => requireRoundingPaused(ethers, input, report), /must be globally paused/)
-		await executeRoundingOwnerAction(ethers, input, report, "execute-pause", pause.actions)
-		await requireRoundingPaused(ethers, input, report)
-		expect((await planRoundingPause(ethers, input, report)).actions).to.deep.equal([])
+		await expectFailure(() => planRoundingPause(ethers, input, report), /requires a profile/)
+		await expectFailure(() => executeRoundingOwnerAction(ethers, input, report, "execute-pause", []), /pause and unpause are disabled/)
+		const before = Array.from(await context.viewFacet.pauseState())
+		expect(before[0]).to.equal(false)
 
 		const replacement = await (await ethers.getContractFactory("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet")).deploy()
 		await replacement.waitForDeployment()
@@ -132,39 +129,34 @@ describe("Arbitrum rounding release Safe unpause", function () {
 			"0x",
 		])
 		report.actions = [{ to: context.diamond, value: "0", data: cutData, description: "Install test replacement facet" }]
-		await context.pauseControlFacet.connect(admin).unpauseGlobal()
-		await expectFailure(() => guardRoundingCut(ethers, input, report), /must be globally paused/)
-		await context.pauseControlFacet.connect(admin).pauseGlobal()
 		await guardRoundingCut(ethers, input, report)
 		expect(report.actions).to.have.length(1)
 		expect(report.actions[0].data).to.equal(cutData)
-		await expectFailure(() => planRoundingUnpause(ethers, input, report), /Verify the installed Core cut/)
-		// A change after planning is rechecked immediately before the owner signs the cut.
-		await context.pauseControlFacet.connect(admin).unpauseGlobal()
-		await expectFailure(() => executeRoundingOwnerAction(ethers, input, report, "execute-cut", report.actions), /must be globally paused/)
-		await context.pauseControlFacet.connect(admin).pauseGlobal()
+		await expectFailure(() => planRoundingUnpause(ethers, input, report), /unpause is disabled/)
 		const other = (await ethers.getSigners())[1]
 		await expectFailure(
 			() => executeRoundingOwnerAction({ ...ethers, getSigners: async () => [other] }, input, report, "execute-cut", report.actions),
 			/signer does not match/,
 		)
+		const nonce = await ethers.provider.getTransactionCount(admin.address)
 		await executeRoundingOwnerAction(ethers, input, report, "execute-cut", report.actions)
-		expect((await context.viewFacet.pauseState())[0]).to.equal(true)
+		expect(await ethers.provider.getTransactionCount(admin.address)).to.equal(nonce + 1)
+		expect(Array.from(await context.viewFacet.pauseState())).to.deep.equal(before)
 		const loupe = await ethers.getContractAt("DiamondLoupeFacet", context.diamond)
 		expect(await loupe.facetAddress(ethers.id("getOwner()").slice(0, 10))).to.equal(await replacement.getAddress())
 		report.actions = []
 		report.verifiedBlock = await ethers.provider.getBlockNumber()
-		const unpause = await planRoundingUnpause(ethers, input, report)
-		await executeRoundingOwnerAction(ethers, input, report, "execute-unpause", unpause.actions)
+		await expectFailure(() => planRoundingUnpause(ethers, input, report), /unpause is disabled/)
+		await expectFailure(() => executeRoundingOwnerAction(ethers, input, report, "execute-unpause", []), /pause and unpause are disabled/)
 		const after = await context.viewFacet.pauseState()
 		expect(after[0]).to.equal(false)
 		expect(after[2]).to.equal(true)
 	})
 
-	it("refuses production pause if either owner role is missing and refuses unpause without pause verification", async function () {
+	it("stage still requires both pause roles and a verified pause before unpause", async function () {
 		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
-		const input = { profile: "production", target: { core: context.diamond, safe: admin.address } }
+		const input = { profile: "stage-funding", target: { core: context.diamond, safe: admin.address } }
 		await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id("UNPAUSER_ROLE"))
 		await expectFailure(() => planRoundingPause(ethers, input, {}), /UNPAUSER_ROLE/)
 		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))

@@ -27,7 +27,7 @@ export function roundingProfile(profile = "stage") {
 	if (!Object.hasOwn(ROUNDING_PROFILES, profile)) throw new Error(`Unknown rounding upgrade profile: ${profile}`);
 	return ROUNDING_PROFILES[profile];
 }
-export const requiresRoundingPause = input => ["production", "stage-funding"].includes(input?.profile);
+export const requiresRoundingPause = input => input?.profile === "stage-funding";
 export const isStageFunding = input => input?.profile === "stage-funding";
 export const roundingSuffix = (profile = "stage") => {
 	roundingProfile(profile);
@@ -69,7 +69,51 @@ export const selectorDigest = selectors =>
 export const fileDigest = file => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const gitAt = (root, args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 
-export function assertReleaseSource(root, input, profile = input?.profile || "stage") {
+const PRODUCTION_OPERATIONAL_MIGRATION_FILES = new Set([
+	"cli/task-runner.js",
+	"cli/tasks/arbitrum-rounding-upgrade.js",
+	"cli/test/arbitrum-rounding-upgrade.test.js",
+	"cli/test/rounding-release-source.test.js",
+	"deployment-tooling/arbitrum-rounding-upgrade.js",
+	"deployment-tooling/arbitrum-rounding-upgrade.d.ts",
+	"tasks/deploy/arbitrumRoundingUpgrade.ts",
+	"test/parallel/ArbitrumRoundingUnpause.test.ts",
+	"docs/arbitrum-vibe-production-rounding-upgrade-862.md",
+]);
+
+export function validateRoundingSourceMigration(root, input, migration, currentCommit = gitAt(root, ["rev-parse", "HEAD"])) {
+	if (
+		input.profile !== "production" ||
+		migration?.taskId !== "maintenance.arbitrum-vibe-production-rounding-upgrade-862" ||
+		!migration.taskRunId ||
+		migration.inputDigest !== digest(input) ||
+		migration.originalCommit !== input.sourceCommit ||
+		migration.currentCommit !== currentCommit
+	)
+		throw new Error("Production source migration does not match this run and input");
+	const records = migration.migrations;
+	if (!Array.isArray(records) || !records.length) throw new Error("Production source migration requires operator confirmation");
+	for (const [index, record] of records.entries()) {
+		if (
+			record.authorization !== "operator-confirmed" ||
+			!/^sha256:[a-f0-9]{64}$/.test(record.from) ||
+			!/^sha256:[a-f0-9]{64}$/.test(record.to) ||
+			Number.isNaN(Date.parse(record.at)) ||
+			(index && record.from !== records[index - 1].to)
+		)
+			throw new Error("Invalid production source migration journal");
+	}
+	if (records.at(-1).to !== migration.sourceHash) throw new Error("Production source migration journal does not end at the active source hash");
+	gitAt(root, ["merge-base", "--is-ancestor", input.sourceCommit, currentCommit]);
+	if (gitAt(root, ["rev-parse", `${input.sourceCommit}:contracts`]) !== gitAt(root, ["rev-parse", `${currentCommit}:contracts`]))
+		throw new Error("Production source migration cannot change Solidity");
+	const changedFiles = gitAt(root, ["diff", "--name-only", input.sourceCommit, currentCommit]).split("\n").filter(Boolean);
+	if (!changedFiles.length || changedFiles.some(file => !PRODUCTION_OPERATIONAL_MIGRATION_FILES.has(file)))
+		throw new Error("Production source migration contains unapproved operational changes");
+	return { ...migration, changedFiles };
+}
+
+export function assertReleaseSource(root, input, profile = input?.profile || "stage", migration) {
 	const { targetPath, recipePath, releaseTag } = roundingProfile(profile);
 	const git = args => gitAt(root, args);
 	if (git(["status", "--porcelain", "--untracked-files=no"])) throw new Error("Release requires a clean tracked worktree");
@@ -87,10 +131,13 @@ export function assertReleaseSource(root, input, profile = input?.profile || "st
 	} catch {
 		throw new Error(`Run ./symmio from a descendant of ${releaseTag} with the same contracts`);
 	}
+	if (input && input.sourceCommit !== commit) {
+		if (!migration) throw new Error("Release tag, tooling source, target, or recipe changed since preparation");
+		validateRoundingSourceMigration(root, input, migration, commit);
+	}
 	if (
 		input &&
-		(input.sourceCommit !== commit ||
-			input.releaseCommit !== releaseCommit ||
+		(input.releaseCommit !== releaseCommit ||
 			input.targetDigest !== fileDigest(path.join(root, targetPath)) ||
 			input.recipeDigest !== fileDigest(path.join(root, recipePath)))
 	) {

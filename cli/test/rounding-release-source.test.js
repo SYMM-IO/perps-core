@@ -7,8 +7,11 @@ import {
 	TARGET_PATH,
 	ROUNDING_PROFILES,
 	requiresRoundingPause,
+	roundingDeployments,
+	validateRoundingSourceMigration,
 } from "../../deployment-tooling/arbitrum-rounding-upgrade.js";
 import { createTaskRunner } from "../task-runner.js";
+import { PREVIOUS_PRODUCTION_ROUNDING_PLAN, PRODUCTION_ROUNDING_PLAN, migrateProductionCutPlan } from "../tasks/arbitrum-rounding-upgrade.js";
 import { TASK_DEFINITIONS } from "../tasks/registry.js";
 import { Interface, id, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
@@ -275,7 +278,7 @@ test("production binds a separate recipe and target without moving the Solidity 
 	assert.equal(production.create2.groups.facets.suffix, "862");
 	assert.notEqual(production.targetDigest, stage.targetDigest);
 	assert.notEqual(production.recipeDigest, stage.recipeDigest);
-	assert.equal(requiresRoundingPause(production), true);
+	assert.equal(requiresRoundingPause(production), false);
 	assert.equal(requiresRoundingPause(stage), false);
 	assert.doesNotThrow(() => assertReleaseSource(fixture.root, production));
 	assert.throws(() => assertReleaseSource(fixture.root, { ...production, profile: "stage" }), /Contracts differ/);
@@ -385,16 +388,152 @@ test("production deploys without Ledger setup, waits for the admin, and resumes 
 	assert.equal(complete.status, "completed", complete.lastError);
 	assert.equal(complete.inputHash, inputHash);
 	assert.equal(JSON.stringify(complete.input), inputBefore);
-	assert.deepEqual(calls, [
-		"compile",
-		"inspect",
-		"deploy",
-		"publish",
-		"execute-pause",
-		"verify-pause",
-		"execute-cut",
-		"verify",
-		"execute-unpause",
-		"verify-unpause",
-	]);
+	assert.deepEqual(calls, ["compile", "inspect", "deploy", "publish", "execute-cut", "verify"]);
+});
+
+test("production migrates the published legacy run to cut-only and preserves inputs, deployments and evidence", async t => {
+	const fixture = releaseFixture(t);
+	addFundingRelease(fixture);
+	const profile = ROUNDING_PROFILES.production;
+	const recipe = JSON.parse(fs.readFileSync(new URL(`../../${profile.recipePath}`, import.meta.url)));
+	const target = {
+		core: "0x2222222222222222222222222222222222222222",
+		owner: recipe.governance.admin,
+		governanceMode: "ledger",
+		contractsTree: fixture.git(["rev-parse", "HEAD:contracts"]),
+	};
+	fixture.write(profile.recipePath, JSON.stringify(recipe));
+	fixture.write(profile.targetPath, JSON.stringify(target));
+	fixture.write(".gitignore", ".symmio/\ntasks/data/\n");
+	fixture.commit([profile.recipePath, profile.targetPath, ".gitignore"]);
+	const base = TASK_DEFINITIONS.find(task => task.id === "maintenance.arbitrum-vibe-production-rounding-upgrade-862");
+	let adminReady = false,
+		approveMigration = false;
+	const ui = {
+		note: () => {},
+		select: async ({ message }) =>
+			message === "Contract deployment signer and temporary factory admin"
+				? "hardhat-keystore"
+				: message.startsWith("Deployment")
+					? adminReady
+						? "ledger"
+						: "later"
+					: "ledger-live",
+		text: async ({ message, placeholder }) =>
+			message.startsWith("Task source changed")
+				? approveMigration
+					? placeholder
+					: null
+				: message.endsWith("keystore key")
+					? "TEAM_DEPLOYER"
+					: target.owner,
+		confirm: async ({ message }) => !message.startsWith("Configure or refresh"),
+	};
+	const input = await base.prepare({ root: fixture.root, ui });
+	const standardBefore = fs.readFileSync(input.input, "utf8");
+	const report = {
+		inputDigest: input.inputDigest,
+		deployments: Object.fromEntries(roundingDeployments("production").map(name => [name, { address: target.core, published: true }])),
+		transactions: [],
+	};
+	const old = {
+		...base,
+		plan: () => PREVIOUS_PRODUCTION_ROUNDING_PLAN.map(step => ({ ...step })),
+		run: async ctx => {
+			assert.throws(() => ctx.migratePlan(PRODUCTION_ROUNDING_PLAN, "Unconfirmed change"), /requires confirmed source migration/);
+			for (const step of PREVIOUS_PRODUCTION_ROUNDING_PLAN.slice(0, 5))
+				await ctx.step(
+					step.id,
+					step.title,
+					async () => {
+						if (step.id === "deploy")
+							for (const name of roundingDeployments("production")) {
+								const tx = { hash: id(name), label: name, status: "submitted", from: "0x3333333333333333333333333333333333333333" };
+								ctx.emit("tx.submitted", { transaction: tx });
+								ctx.emit("tx.confirmed", { transaction: { ...tx, status: "confirmed" } });
+							}
+					},
+					{ phase: step.phase },
+				);
+			fs.writeFileSync(input.output, JSON.stringify(report));
+			ctx.wait("Wait for admin before the former pause step");
+		},
+	};
+	old.handler = old.run;
+	const oldRunner = createTaskRunner({ root: fixture.root, definitions: [old] });
+	const waiting = await oldRunner.start(old.id, { input, ui });
+	assert.equal(waiting.status, "waiting_external");
+	const inputHash = waiting.inputHash,
+		journal = JSON.stringify(waiting.transactions);
+	fixture.write("cli/tasks/arbitrum-rounding-upgrade.js", "// reviewed cut-only workflow\n");
+	fixture.commit(["cli/tasks/arbitrum-rounding-upgrade.js"]);
+	const calls = [];
+	const updated = {
+		...base,
+		run: (ctx, prepared) =>
+			base.run(
+				{
+					...ctx,
+					runProcess: async (_command, args, { env }) => {
+						const phase = args[args.indexOf("--phase") + 1];
+						calls.push(phase);
+						const migration = JSON.parse(env.SYMMIO_ROUNDING_SOURCE_MIGRATION);
+						assert.doesNotThrow(() => assertReleaseSource(fixture.root, JSON.parse(standardBefore), "production", migration));
+						assert.throws(
+							() => validateRoundingSourceMigration(fixture.root, JSON.parse(standardBefore), { ...migration, inputDigest: "changed" }),
+							/does not match/,
+						);
+						assert.throws(
+							() => validateRoundingSourceMigration(fixture.root, JSON.parse(standardBefore), { ...migration, migrations: [] }),
+							/operator confirmation/,
+						);
+						assert(["execute-cut", "verify"].includes(phase));
+						if (phase === "execute-cut") assert.equal(env.SYMMIO_SIGNER_MODE, "ledger");
+					},
+				},
+				prepared,
+			),
+	};
+	updated.handler = updated.run;
+	const runner = createTaskRunner({ root: fixture.root, definitions: [updated] });
+	await assert.rejects(() => runner.resumeActive({ ui }), /migration was not authorized/);
+	assert.equal(runner.getActive().inputHash, inputHash);
+	approveMigration = true;
+	const migrated = await runner.resumeActive({ ui });
+	assert.equal(migrated.status, "waiting_external", migrated.lastError);
+	assert.deepEqual(migrated.plan, PRODUCTION_ROUNDING_PLAN);
+	assert.equal(migrated.planMigrations.length, 1);
+	assert.deepEqual(migrated.planMigrations[0].previousPlan, PREVIOUS_PRODUCTION_ROUNDING_PLAN);
+	assert.equal(migrated.inputHash, inputHash);
+	assert.equal(JSON.stringify(migrated.transactions), journal);
+	assert.equal(fs.readFileSync(input.input, "utf8"), standardBefore);
+	assert.deepEqual(calls, []);
+	adminReady = true;
+	const complete = await runner.resumeActive({ ui });
+	assert.equal(complete.status, "completed", complete.lastError);
+	assert.deepEqual(calls, ["execute-cut", "verify"]);
+	assert.equal(complete.inputHash, inputHash);
+	assert.equal(JSON.stringify(complete.transactions), journal);
+	assert.equal(complete.completedSteps.length, 7);
+	// An existing governance action or incomplete publication cannot be migrated away.
+	const mock = { state: { ...waiting, plan: PREVIOUS_PRODUCTION_ROUNDING_PLAN }, migratePlan: () => assert.fail("must refuse"), ui };
+	fs.writeFileSync(input.output, JSON.stringify({ ...report, governanceTransactions: [{ status: "confirmed" }] }));
+	assert.throws(() => migrateProductionCutPlan(mock, input, {}), /no started governance/);
+	fs.writeFileSync(input.output, JSON.stringify({ ...report, deployments: {} }));
+	assert.throws(() => migrateProductionCutPlan(mock, input, {}), /ten published/);
+	const migration = {
+		taskId: base.id,
+		taskRunId: waiting.runId,
+		inputDigest: input.inputDigest,
+		originalCommit: input.sourceCommit,
+		currentCommit: fixture.git(["rev-parse", "HEAD"]),
+		sourceHash: migrated.sourceHash,
+		migrations: migrated.sourceMigrations,
+	};
+	fixture.write("scripts/unreviewed.js", "// outside the reviewed migration\n");
+	migration.currentCommit = fixture.commit(["scripts/unreviewed.js"]);
+	assert.throws(() => validateRoundingSourceMigration(fixture.root, JSON.parse(standardBefore), migration), /unapproved operational changes/);
+	fixture.write("contracts/Test.sol", "pragma solidity >=0.8.18; contract Changed {}\n");
+	migration.currentCommit = fixture.commit(["contracts/Test.sol"]);
+	assert.throws(() => validateRoundingSourceMigration(fixture.root, JSON.parse(standardBefore), migration), /cannot change Solidity/);
 });
