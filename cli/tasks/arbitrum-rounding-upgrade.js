@@ -69,8 +69,10 @@ async function runPhase(ctx, input, phase, { env = {} } = {}) {
 	return readReport(input);
 }
 
+const governanceSigner = (ctx, input) => ctx.getSigner?.("governance") || ctx.state?.signing?.governance || input.governanceSigner;
+
 export async function runLedgerPhase(ctx, input, phase) {
-	const selection = validateSignerSelection(input.governanceSigner, { allowSafe: false });
+	const selection = validateSignerSelection(governanceSigner(ctx, input), { allowSafe: false });
 	if (selection.mode !== SIGNER_MODES.LEDGER) throw new Error("Production governance requires Ledger signing");
 	return runPhase(ctx, input, phase, {
 		env: {
@@ -79,6 +81,38 @@ export async function runLedgerPhase(ctx, input, phase) {
 			CONFIRM_CHAIN_ID: "42161",
 		},
 	});
+}
+
+export async function bindProductionLedger(ctx, standard) {
+	const owner = roundingOwner(standard);
+	const existing = ctx.getSigner?.("governance");
+	if (existing) {
+		const selection = validateSignerSelection(existing, { allowSafe: false });
+		if (selection.mode !== SIGNER_MODES.LEDGER || selection.address.toLowerCase() !== owner.toLowerCase())
+			throw new Error("Use the reviewed Core owner Ledger");
+		return selection;
+	}
+	const next = await ctx.ui.select({
+		message: "Deployment and explorer verification are complete. Continue with the Core owner Ledger?",
+		options: [
+			{ value: "later", label: "Wait for admin", hint: "Save progress and continue this task when the Ledger is available" },
+			{ value: "ledger", label: "Connect Ledger and continue", hint: "The admin will pause Core, execute the cut and unpause" },
+		],
+		initialValue: "later",
+	});
+	const waitForAdmin = () =>
+		ctx.wait(`Ledger owner ${owner} is required to pause Core. Connect it when the admin is available, then choose Continue active task.`);
+	if (next !== "ledger") return waitForAdmin();
+	const selection = await selectSigner(ctx.ui, {
+		role: "Core owner Ledger",
+		allowedModes: [SIGNER_MODES.LEDGER],
+		initialMode: SIGNER_MODES.LEDGER,
+		network: "arbitrum",
+		chainId: 42161,
+		expectedAddress: owner,
+	});
+	if (!selection) return waitForAdmin();
+	return ctx.bindSigner("governance", selection);
 }
 
 export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
@@ -99,7 +133,12 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			{ id: "network", label: "Network", type: "network", required: true },
 			{ id: "config", label: production ? "Production recipe" : "Stage recipe", type: "recipe", required: true },
 			...["input", "output", "inputDigest", "sourceCommit"].map(id => ({ id, label: id, type: "string", required: true })),
-			{ id: "governanceSigner", label: production ? "Core owner Ledger" : "Core owner Safe", type: "selection", required: true },
+			{
+				id: "governanceSigner",
+				label: production ? "Core owner Ledger (requested after publication)" : "Core owner Safe",
+				type: "selection",
+				required: !production,
+			},
 		],
 		artifacts: [
 			"tag-bound input and report",
@@ -121,15 +160,17 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			const directory = path.join(root, "tasks", "data", "42161", "rounding-upgrades", inputDigest);
 			const input = path.join(directory, "input.json");
 			const output = path.join(directory, "report.json");
-			const governanceSigner = await selectSigner(ui, {
-				role: production ? "Core owner Ledger" : "Core owner Safe",
-				allowedModes: [production ? SIGNER_MODES.LEDGER : SIGNER_MODES.SAFE_FILE],
-				initialMode: production ? SIGNER_MODES.LEDGER : SIGNER_MODES.SAFE_FILE,
-				network: "arbitrum",
-				chainId: 42161,
-				...(production ? { expectedAddress: roundingOwner(standardInput) } : { safeAddress: roundingOwner(standardInput) }),
-			});
-			if (!governanceSigner) return null;
+			const governanceSigner = production
+				? undefined
+				: await selectSigner(ui, {
+						role: "Core owner Safe",
+						allowedModes: [SIGNER_MODES.SAFE_FILE],
+						initialMode: SIGNER_MODES.SAFE_FILE,
+						network: "arbitrum",
+						chainId: 42161,
+						safeAddress: roundingOwner(standardInput),
+					});
+			if (!production && !governanceSigner) return null;
 			atomicWrite(input, standardInput);
 			ui.note(
 				[
@@ -137,7 +178,9 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 					`Solidity release: ${standardInput.releaseCommit}`,
 					`Deployment scripts: ${standardInput.sourceCommit}`,
 					`Core: ${standardInput.target.core}`,
-					...(production ? ["Required Ledger sequence: pause, verify pause, diamondCut, verify upgrade, unpause"] : []),
+					...(production
+						? ["Ledger is requested after nine deployments and publication: pause, verify pause, diamondCut, verify upgrade, unpause"]
+						: []),
 					"Temporary CREATE2 factory: new; selected deployment wallet receives DEFAULT_ADMIN_ROLE and DEPLOYER_ROLE",
 					`Libraries: ${LIBRARIES.join(", ")}`,
 					`Facets (suffix 862): ${FACETS.join(", ")}`,
@@ -154,7 +197,7 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 				output,
 				inputDigest,
 				sourceCommit: standardInput.sourceCommit,
-				governanceSigner,
+				...(governanceSigner ? { governanceSigner } : {}),
 			};
 		},
 		plan: () => plan.map(step => ({ ...step })),
@@ -165,13 +208,11 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 			if (digest(standard) !== input.inputDigest || input.sourceCommit !== standard.sourceCommit)
 				throw new Error("Rounding task input changed");
 			assertReleaseSource(ctx.root, standard);
-			const governance = validateSignerSelection(input.governanceSigner);
-			if (
-				production
-					? governance.mode !== SIGNER_MODES.LEDGER || governance.address.toLowerCase() !== roundingOwner(standard).toLowerCase()
-					: governance.mode !== SIGNER_MODES.SAFE_FILE || governance.safeAddress.toLowerCase() !== roundingOwner(standard).toLowerCase()
-			)
-				throw new Error(production ? "Use the reviewed Core owner Ledger" : "Use the reviewed Core owner Safe export");
+			if (!production) {
+				const governance = validateSignerSelection(input.governanceSigner);
+				if (governance.mode !== SIGNER_MODES.SAFE_FILE || governance.safeAddress.toLowerCase() !== roundingOwner(standard).toLowerCase())
+					throw new Error("Use the reviewed Core owner Safe export");
+			}
 			const step = (id, fn) => {
 				const entry = plan.find(s => s.id === id);
 				return ctx.step(id, entry.title, fn, { phase: entry.phase });
@@ -190,6 +231,7 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 				await step(phase, () => runPhase(ctx, input, phase, { env: { SYMMIO_ROUNDING_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: "42161" } }));
 			if (production) {
 				await step("core-pause", async () => {
+					await bindProductionLedger(ctx, standard);
 					await runLedgerPhase(ctx, input, "execute-pause");
 				});
 				await step("verify-pause", () => runPhase(ctx, input, "verify-pause"));
@@ -237,12 +279,12 @@ export function createArbitrumRoundingUpgradeTask(common, profile = "stage") {
 		reconcile: async (ctx, input) => {
 			if (!ctx.state.transactions.some(t => ["submitted", "unresolved", "timed_out"].includes(t.status))) return { unresolved: [] };
 			let report = await runPhase(ctx, input, "reconcile", { env: { SYMMIO_RECIPE_READ_ONLY: "true" } });
+			const governance = governanceSigner(ctx, input);
 			if (
 				production &&
+				governance &&
 				ctx.state.transactions.some(
-					t =>
-						t.from?.toLowerCase() === input.governanceSigner.address.toLowerCase() &&
-						["submitted", "unresolved", "timed_out"].includes(t.status),
+					t => t.from?.toLowerCase() === governance.address.toLowerCase() && ["submitted", "unresolved", "timed_out"].includes(t.status),
 				)
 			)
 				report = await runLedgerPhase(ctx, input, "reconcile-governance");
