@@ -113,9 +113,10 @@ New behavior: remove cut(old open amount × funding)
 					<pre><code>Old LONG price PnL: (price − rounded average) × amount / 1e18
 New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					<p>
-						The new <code>getPartyAUpnlDataV2</code>, <code>getPartyBUpnlDataV2</code>, and <code>getPartyBGlobalUpnlDataV2</code> views
-						return the stored <code>aggregatedNotional</code>. The old views remain unchanged for existing readers. Muon enables the V2
-						path only for contract addresses listed in <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
+						The new <code>getPartyAExactNotionalUpnlData</code>, <code>getPartyBExactNotionalUpnlData</code>, and
+						<code>getPartyBGlobalExactNotionalUpnlData</code> views return the stored <code>aggregatedNotional</code>. The old views
+						remain unchanged for existing readers. Muon enables the exact-notional path only for contract addresses listed in
+						<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
 					</p>
 					<p>
 						Muon now calculates each funded group once. That same result is added to total UPNL and, when negative, to total unrealized
