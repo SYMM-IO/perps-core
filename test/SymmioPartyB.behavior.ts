@@ -151,6 +151,44 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 		})
 
 		describe("nonce-gated funding", function () {
+			it("charges bound accumulated funding through _call with an empty Muon signature", async function () {
+				const partyBAddress = await setupPartyBContract()
+				const partyA = await user.getAddress()
+				const quoteId = await openWithPartyBContract(partyBAddress)
+				await context.controlFacet.connect(context.signers.admin).setPartyBBindable(partyBAddress, true)
+				await context.bindingFacet.connect(context.signers.user).bindToPartyB(partyBAddress)
+				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+				await context.symmioPartyB
+					.connect(context.signers.admin)
+					._call([
+						context.fundingRateFacet.interface.encodeFunctionData("setEpochDurations", [[1], [28800]]),
+						context.fundingRateFacet.interface.encodeFunctionData("updateAccumulatedFundingFee", [[1], [decimal(1n, 14)], [0n], [decimal(1n)]]),
+					])
+				await time.increase(28800 * 5)
+
+				// A real verifier rejects the empty signature if the wrapper loses the solver identity.
+				const verifier = await ethers.deployContract("MuonSignatureVerifier", [context.signers.admin.address])
+				await verifier.connect(context.signers.admin).addPublicKey({ x: 12345n, parity: 0 })
+				await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+				const sig = {
+					reqId: "0x",
+					timestamp: 0n,
+					upnlPartyA: 0n,
+					upnlPartyB: 0n,
+					gatewaySignature: "0x",
+					sigs: { signature: 0n, owner: ethers.ZeroAddress, nonce: ethers.ZeroAddress },
+				}
+				const callData = context.fundingRateFacet.interface.encodeFunctionData("chargeAccumulatedFundingFee", [partyA, partyBAddress, [quoteId], sig])
+				const before = await user.getBalanceInfo()
+				const [funding] = await context.viewFacetQuote.getQuoteFundingDebts([quoteId])
+				expect(funding).to.be.greaterThan(0n)
+				await expect(context.symmioPartyB.connect(context.signers.admin)._call([callData]))
+					.to.emit(context.fundingRateFacet, "ChargeAccumulatedFundingFee")
+					.withArgs(partyA, partyBAddress, [quoteId], partyBAddress)
+				expect((await user.getBalanceInfo()).allocatedBalances).to.equal(before.allocatedBalances - funding)
+				expect(await context.viewFacetQuote.getQuoteFundingDebts([quoteId])).to.deep.equal([0n])
+			})
+
 			it("skips stale nonce-gated funding updates without reverting", async function () {
 				const partyBAddress = await setupPartyBContract()
 				await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
