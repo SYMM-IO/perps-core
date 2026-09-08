@@ -3623,21 +3623,6 @@
     },
     {
         "inputs": [],
-        "name": "AlreadyInitialized",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidAccountLayer",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "DebtNotActivated",
-        "type": "error"
-    },
-    {
-        "inputs": [],
         "name": "ACCELERATE_OFFER_TYPEHASH",
         "outputs": [
             {
@@ -3804,5 +3789,20 @@
         ],
         "stateMutability": "view",
         "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "DebtNotActivated",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "AlreadyInitialized",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidAccountLayer",
+        "type": "error"
     }
 ]

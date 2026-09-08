@@ -232,6 +232,12 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(hedger.openPosition(quoteId)).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
+		it("should block locking a pending quote while frozen", async function () {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+			await freezeSymbol()
+			await expect(hedger.lockQuote(quoteId)).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
 		it("should block close fill while frozen", async function () {
 			const quoteId = await openPositionForUser()
 			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().build())
@@ -394,6 +400,122 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([openedId])).to.be.revertedWith(
 					"SymbolAdjustmentFacet: Invalid quote state",
 				)
+			})
+		})
+
+		describe("pending quote ID cutoff", function () {
+			async function finalizePhysicalRestatement(): Promise<void> {
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+				await completeFundingPreparation(SYMBOL_ID)
+				const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(1n, priceValidTime)
+				await time.increase(2)
+				const [, epoch] = await context.viewFacetSymbol.getRestatementState(SYMBOL_ID)
+				const cutoffQuoteId = await context.viewFacetQuote.getNextQuoteId()
+				await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID))
+					.to.emit(context.symbolAdjustmentFacet, "PendingQuoteIdCutoffUpdated")
+					.withArgs(SYMBOL_ID, epoch, cutoffQuoteId)
+				await completeFundingRestoration(SYMBOL_ID)
+				await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
+			}
+
+			it("should leave pending quotes valid after price confirmation without physical restatement", async function () {
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+
+				expect(await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)).to.equal(0n)
+				expect(await context.viewFacetSymbol.isPendingQuoteStale(quoteId)).to.be.false
+				await hedger.lockQuote(quoteId)
+				await hedger.openPosition(quoteId)
+			})
+
+			it("should reject pre-finalization pending and locked quotes while allowing newer quotes", async function () {
+				const pendingId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				const lockedId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await hedger.lockQuote(lockedId)
+				const cutoffQuoteId = await context.viewFacetQuote.getNextQuoteId()
+
+				await finalizePhysicalRestatement()
+
+				expect(await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)).to.equal(cutoffQuoteId)
+				expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).pendingQuoteIdCutoff).to.equal(cutoffQuoteId)
+				expect(await context.viewFacetSymbol.isPendingQuoteStale(pendingId)).to.be.true
+				expect(await context.viewFacetSymbol.isPendingQuoteStale(lockedId)).to.be.true
+				await expect(hedger.lockQuote(pendingId)).to.be.revertedWithCustomError(context.symbolAdjustmentFacet, "PendingQuoteIsStale")
+				await expect(hedger.openPosition(lockedId)).to.be.revertedWithCustomError(context.symbolAdjustmentFacet, "PendingQuoteIsStale")
+
+				const currentId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				expect(currentId).to.be.gt(cutoffQuoteId)
+				expect(await context.viewFacetSymbol.isPendingQuoteStale(currentId)).to.be.false
+				await hedger.lockQuote(currentId)
+				await hedger.openPosition(currentId)
+			})
+
+			it("should let anyone lazily cancel stale pending states and release their indexes", async function () {
+				const pendingId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				const lockedId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await hedger.lockQuote(lockedId)
+				const cancelPendingId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await hedger.lockQuote(cancelPendingId)
+				await user.requestToCancelQuote(cancelPendingId)
+
+				await expect(context.symbolAdjustmentFacet.connect(context.signers.others[0]).cancelStalePendingQuotes([pendingId])).to.be.revertedWith(
+					"SymbolAdjustmentFacet: Pending quote is not stale",
+				)
+
+				await finalizePhysicalRestatement()
+				const cutoffQuoteId = await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)
+				const partyABeforeCleanup = await user.getBalanceInfo()
+				const partyBBeforeCleanup = await hedger.getBalanceInfo(await user.getAddress())
+				expect(partyABeforeCleanup.totalPendingLockedPartyA).to.be.gt(0n)
+				expect(partyBBeforeCleanup.totalPendingLockedPartyB).to.be.gt(0n)
+				await expect(
+					context.symbolAdjustmentFacet.connect(context.signers.others[0]).cancelStalePendingQuotes([pendingId, lockedId, cancelPendingId]),
+				)
+					.to.emit(context.symbolAdjustmentFacet, "StalePendingQuoteCancelled")
+					.withArgs(pendingId, SYMBOL_ID, cutoffQuoteId)
+
+				for (const quoteId of [pendingId, lockedId, cancelPendingId]) {
+					expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CANCELED)
+					expect(await context.viewFacetSymbol.isPendingQuoteStale(quoteId)).to.be.false
+				}
+				expect(await context.viewFacetQuote.getPartyAPendingQuotes(context.signers.user.address)).to.deep.equal([])
+				expect(await context.viewFacetQuote.getPartyBPendingQuotes(context.signers.hedger.address, context.signers.user.address)).to.deep.equal([])
+				expect((await user.getBalanceInfo()).totalPendingLockedPartyA).to.equal(0n)
+				expect((await hedger.getBalanceInfo(await user.getAddress())).totalPendingLockedPartyB).to.equal(0n)
+			})
+
+			it("should not advance the cutoff when a physical restatement is aborted", async function () {
+				const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
+
+				expect(await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)).to.equal(0n)
+				expect(await context.viewFacetSymbol.isPendingQuoteStale(quoteId)).to.be.false
+				await hedger.lockQuote(quoteId)
+				await hedger.openPosition(quoteId)
+			})
+
+			it("should advance the cutoff across successive physical restatements", async function () {
+				const firstQuoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await finalizePhysicalRestatement()
+				const firstCutoff = await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)
+				expect(firstCutoff).to.equal(firstQuoteId)
+
+				const secondQuoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+				await finalizePhysicalRestatement()
+				const secondCutoff = await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)
+				expect(secondCutoff).to.equal(secondQuoteId)
+				expect(secondCutoff).to.be.gt(firstCutoff)
+				expect(await context.viewFacetSymbol.isPendingQuoteStale(secondQuoteId)).to.be.true
 			})
 		})
 

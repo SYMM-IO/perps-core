@@ -6,12 +6,14 @@ pragma solidity >=0.8.18;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState } from "../storages/SymbolAdjustmentStorage.sol";
-import { Quote } from "../storages/QuoteStorage.sol";
+import { Quote, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { LibQuoteAdjustment } from "./LibQuoteAdjustment.sol";
 
 /// @title LibSymbolAdjustment
 /// @notice Freeze checks and factor helpers for the corporate-action adjustment system
 library LibSymbolAdjustment {
+	error PendingQuoteIsStale();
+
 	/// @notice A symbol is frozen iff its adjustment is SCHEDULED and past its effective time, or a restatement window is open
 	function isFrozen(uint256 symbolId) internal view returns (bool) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
@@ -39,6 +41,22 @@ library LibSymbolAdjustment {
 		return SymbolAdjustmentStorage.layout().adjustments[symbolId].basisVersion;
 	}
 
+	/// @notice Highest quote ID that belongs to an older physical basis for a symbol.
+	function pendingQuoteIdCutoff(uint256 symbolId) internal view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().adjustments[symbolId].pendingQuoteIdCutoff;
+	}
+
+	/// @notice True when a pending quote predates the symbol's latest completed physical restatement.
+	function isPendingQuoteStale(Quote storage quote) internal view returns (bool) {
+		// The three pending states are contiguous and precede CANCELED in QuoteStatus.
+		if (quote.quoteStatus > QuoteStatus.CANCEL_PENDING) return false;
+		return quote.id != 0 && quote.id <= pendingQuoteIdCutoff(quote.symbolId);
+	}
+
+	function requirePendingQuoteCurrent(Quote storage quote) internal view {
+		if (isPendingQuoteStale(quote)) revert PendingQuoteIsStale();
+	}
+
 	/// @notice True when the applicable physical-restatement factor cannot preserve every nonzero amount on an unrestated quote.
 	/// @dev An already-restated quote never qualifies: applying the window factor to it again would test the wrong stored basis.
 	function isUnrestatableDueToAmountRounding(Quote storage quote) internal view returns (bool) {
@@ -61,7 +79,7 @@ library LibSymbolAdjustment {
 	}
 
 	/// @notice Marks that a quote mutation occurred during the current restatement window.
-	/// @dev Used to prevent aborting after either a physical quote rewrite or a pending-inventory removal.
+	/// @dev Used to prevent aborting after a physical quote rewrite.
 	function recordRestatementMutation(uint256 symbolId) internal {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		if (!adjustment.restating) return;

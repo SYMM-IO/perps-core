@@ -62,6 +62,10 @@ interface IViewFacetSymbol {
 
 	function isSymbolFrozen(uint256 symbolId) external view returns (bool);
 
+	function getPendingQuoteIdCutoff(uint256 symbolId) external view returns (uint256);
+
+	function isPendingQuoteStale(uint256 quoteId) external view returns (bool);
+
 	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
 
 	function getRestatementFundingProgress(

@@ -264,7 +264,7 @@ library LibQuoteClose {
 		}
 	}
 
-	/// @notice Cancels pending inventory without a deadline gate and is exposed only through the symbol-adjustment manager path.
+	/// @notice Cancels pending inventory without a deadline gate through symbol-adjustment paths that validate frozen or stale eligibility.
 	function forceCancelPendingQuote(uint256 quoteId) public returns (QuoteStatus result) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		require(_isPendingQuoteStatus(quote.quoteStatus), "LibQuote: Invalid state");
