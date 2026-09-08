@@ -1,5 +1,6 @@
 import { expect } from "chai"
 
+import { calculateGroupFunding } from "../scripts/utils/aggregateFundingResync.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
@@ -78,6 +79,16 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		return { partyASlot, partyBSlot, globalPartyBSlot }
 	}
 
+	const fundingRepair = (owner: string, expectedPartyAFunding: bigint, expectedPartyBFunding: bigint, newFunding: bigint) => ({
+		partyA: owner,
+		partyB,
+		symbolId: 1n,
+		positionType: PositionType.LONG,
+		expectedPartyAFunding,
+		expectedPartyBFunding,
+		newFunding,
+	})
+
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
 		user = new User(context, context.signers.user)
@@ -135,6 +146,25 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		expect(afterReopen.globalPartyB).to.equal(expectedReopened)
 	})
 
+	it("returns bounded open-position pages for the off-chain repair calculation", async function () {
+		const quoteIds = [await openLong(), await openLong(), await openLong()]
+		const firstPage = await context.viewFacetQuote.getPartyBOpenPositions(partyB, partyA, 0n, 2n)
+		const secondPage = await context.viewFacetQuote.getPartyBOpenPositions(partyB, partyA, 2n, 2n)
+		const pastEnd = await context.viewFacetQuote.getPartyBOpenPositions(partyB, partyA, 3n, 1n)
+
+		expect(firstPage.map(quote => quote.id)).to.deep.equal(quoteIds.slice(0, 2))
+		expect(secondPage.map(quote => quote.id)).to.deep.equal(quoteIds.slice(2))
+		expect(pastEnd).to.have.length(0)
+	})
+
+	it("matches the script's raw-unit calculation with the Solidity aggregate", async function () {
+		const quote = await context.viewFacetQuote.getQuote(await openLong())
+		const scriptFunding = calculateGroupFunding([quote], 1n, PositionType.LONG)
+		const storedFunding = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(partyA, partyB, 1n, PositionType.LONG)
+
+		expect(scriptFunding).to.equal(storedFunding)
+	})
+
 	it("lets only migration governance rebuild old drift and invalidates old oracle signatures", async function () {
 		const quoteId = await openLong()
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
@@ -146,17 +176,25 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		await setSignedStorage(diamond, globalPartyBSlot, expected + 1n)
 
 		await expect(
-			context.migrationFacet
-				.connect(context.signers.user)
-				.resyncAggregateFunding([{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG }]),
+			context.migrationFacet.connect(context.signers.user).resyncAggregateFunding([fundingRepair(partyA, expected + 2n, expected + 1n, expected)]),
 		).to.be.revertedWith("Accessibility: Must have role")
 
 		const partyACounterBefore = await context.viewFacet.upnlCounterOfPartyA(partyA)
 		const partyBCounterBefore = await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)
 		await expect(
-			context.migrationFacet
-				.connect(context.signers.admin)
-				.resyncAggregateFunding([{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG }]),
+			context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([fundingRepair(partyA, expected + 2n, expected + 1n, expected)]),
+		).to.be.revertedWith("MigrationFacet: Protocol is not globally paused")
+
+		await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+		await expect(
+			context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([fundingRepair(partyA, expected + 3n, expected + 1n, expected)]),
+		).to.be.revertedWith("MigrationFacet: PartyA funding changed")
+		await expect(
+			context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([fundingRepair(partyA, expected + 2n, expected + 3n, expected)]),
+		).to.be.revertedWith("MigrationFacet: PartyB funding changed")
+
+		await expect(
+			context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([fundingRepair(partyA, expected + 2n, expected + 1n, expected)]),
 		)
 			.to.emit(context.migrationFacet, "AggregateFundingResynced")
 			.withArgs(partyA, partyB, 1n, PositionType.LONG, expected + 2n, expected + 1n, expected, expected + 1n, expected)
@@ -170,7 +208,7 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 
 		await context.migrationFacet
 			.connect(context.signers.admin)
-			.resyncAggregateFunding([{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG }])
+			.resyncAggregateFunding([fundingRepair(partyA, expected + 2n, expected + 1n, expected)])
 		expect(await context.viewFacet.upnlCounterOfPartyA(partyA)).to.equal(partyACounterBefore + 1n)
 		expect(await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)).to.equal(partyBCounterBefore + 1n)
 	})
@@ -200,7 +238,10 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		const countersBefore = await Promise.all(
 			owners.map(async owner => [await context.viewFacet.upnlCounterOfPartyA(owner), await context.viewFacet.upnlCounterOfPartyB(partyB, owner)]),
 		)
-		const groups = owners.map(owner => ({ partyA: owner, partyB, symbolId: 1n, positionType: PositionType.LONG }))
+		const groups = owners.map((owner, index) =>
+			fundingRepair(owner, expected[index] + BigInt(index + 1), expected[index] + BigInt(index + 1), expected[index]),
+		)
+		await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 		const tx = await context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([...groups, groups[0]])
 		const receipt = await tx.wait()
 		const events = receipt!.logs.flatMap(log => {
@@ -240,10 +281,19 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		expect(await context.viewFacet.isPartyBLiquidated(partyB, secondPartyA)).to.equal(true)
 		const partyACounter = await context.viewFacet.upnlCounterOfPartyA(partyA)
 		const partyBCounter = await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)
+		await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 		await expect(
 			context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([
-				{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG },
-				{ partyA: secondPartyA, partyB, symbolId: 1n, positionType: PositionType.SHORT },
+				fundingRepair(partyA, expected + 1n, expected + 1n, expected),
+				{
+					partyA: secondPartyA,
+					partyB,
+					symbolId: 1n,
+					positionType: PositionType.SHORT,
+					expectedPartyAFunding: 0n,
+					expectedPartyBFunding: 0n,
+					newFunding: 0n,
+				},
 			]),
 		).to.be.revertedWith("PartyBState: PartyB is in liquidation")
 		const after = await aggregateValues()

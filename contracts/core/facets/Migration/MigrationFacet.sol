@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { Accessibility } from "../../utils/Accessibility.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { IMigrationFacet } from "./IMigrationFacet.sol";
 import { MigrationFacetImpl } from "./MigrationFacetImpl.sol";
@@ -30,17 +31,23 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 		emit CrossLockedValuesMigrated(partyB, partyAsProcessed);
 	}
 
-	/// @notice Rebuilds a batch of weighted paid-funding aggregates from their active quotes.
-	/// @dev Run while protocol actions are paused. Any liquidating party reverts the whole batch.
-	///      Emits one event per input group. Repeated groups are safe; an empty batch is a no-op.
+	/// @notice Applies a batch of exact weighted paid-funding values calculated off chain from active quotes.
+	/// @dev Requires a global pause. Expected old values protect against a stale calculation. Any invalid group reverts the whole batch.
+	///      Emits one event per input group. Repeated completed repairs are safe; an empty batch is a no-op.
 	function resyncAggregateFunding(AggregateFundingGroup[] calldata groups) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		if (groups.length == 0) return;
+		require(GlobalAppStorage.layout().globalPaused, "MigrationFacet: Protocol is not globally paused");
+
 		for (uint256 i = 0; i < groups.length; i++) {
 			AggregateFundingGroup calldata group = groups[i];
 			MigrationFacetImpl.AggregateFundingResyncResult memory result = MigrationFacetImpl.resyncAggregateFunding(
 				group.partyA,
 				group.partyB,
 				group.symbolId,
-				group.positionType
+				group.positionType,
+				group.expectedPartyAFunding,
+				group.expectedPartyBFunding,
+				group.newFunding
 			);
 			emit AggregateFundingResynced(
 				group.partyA,

@@ -13,6 +13,9 @@ interface IMigrationFacet is IMigrationEvents {
 		address partyB;
 		uint256 symbolId;
 		PositionType positionType;
+		int256 expectedPartyAFunding;
+		int256 expectedPartyBFunding;
+		int256 newFunding;
 	}
 
 	/// @notice Backfill v0.8.5 quote-derived state for existing active positions
@@ -24,8 +27,8 @@ interface IMigrationFacet is IMigrationEvents {
 	/// @param partyAs All partyA addresses that have positions with this partyB
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) external;
 
-	/// @notice Rebuilds each funding group from its active quotes, atomically and in input order.
-	/// @param groups PartyA/PartyB/symbol/side groups to repair. An empty batch is a no-op.
+	/// @notice Applies precomputed funding repairs atomically and in input order.
+	/// @param groups Funding groups with their expected old pair values and exact new quote-level value. An empty batch is a no-op.
 	function resyncAggregateFunding(AggregateFundingGroup[] calldata groups) external;
 
 	/// @notice Check if a quote has been migrated
