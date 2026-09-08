@@ -6,7 +6,6 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { LibPartyALiquidationShared } from "../../libraries/liquidation/LibPartyALiquidationShared.sol";
 import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
@@ -555,11 +554,6 @@ contract ViewFacet is IViewFacet {
 	/// @param partyA The address of party A.
 	function liquidationStartPositionCount(address partyA) external view returns (uint256) {
 		return AccountStorage.layout().liquidationStartPositionCounts[partyA];
-	}
-
-	/// @notice Returns the raw-unit liquidation rounding allowance applied per position captured at liquidation start.
-	function liquidationUpnlRoundingAllowancePerPosition() external pure returns (uint256) {
-		return LibPartyALiquidationShared.LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION;
 	}
 
 	/// @notice Returns the liquidation timestamp of a party B for a given party A.

@@ -148,12 +148,6 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		await mineAt(aligned + EPOCH + 100n)
 	})
 
-	describe("fixed allowance", function () {
-		it("applies three raw units per position without configuration", async function () {
-			expect(await context.viewFacet.liquidationUpnlRoundingAllowancePerPosition()).to.equal(ALLOWANCE_PER_POSITION)
-		})
-	})
-
 	describe("position count captured at liquidation start", function () {
 		it("records the open position count when liquidation starts and clears it after settlement", async function () {
 			const quoteA = await openLong(INCIDENT_QUANTITY / 2n)
