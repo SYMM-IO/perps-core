@@ -168,8 +168,6 @@ library MAStorage {
 		/// @dev A zero receiver clears the override and falls back to `solverFeeReceivers`, then to the Party B itself.
 		///      The tag is caller-chosen; short labels can be right-padded ASCII, longer ones hashed off-chain.
 		mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag;
-		/// @dev Reserved former rounding-allowance slot. The allowance is now a constant; never reuse this slot.
-		uint256 __reservedLiquidationUpnlRoundingAllowancePerPosition;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
