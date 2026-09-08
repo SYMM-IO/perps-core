@@ -8130,24 +8130,31 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "enum PositionType",
-                "name": "positionType",
-                "type": "uint8"
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "partyA",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "partyB",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum PositionType",
+                        "name": "positionType",
+                        "type": "uint8"
+                    }
+                ],
+                "internalType": "struct IMigrationFacet.AggregateFundingGroup[]",
+                "name": "groups",
+                "type": "tuple[]"
             }
         ],
         "name": "resyncAggregateFunding",

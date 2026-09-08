@@ -8,6 +8,13 @@ import { IMigrationEvents } from "./IMigrationEvents.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
 
 interface IMigrationFacet is IMigrationEvents {
+	struct AggregateFundingGroup {
+		address partyA;
+		address partyB;
+		uint256 symbolId;
+		PositionType positionType;
+	}
+
 	/// @notice Backfill v0.8.5 quote-derived state for existing active positions
 	/// @param quoteIds Array of quote IDs to migrate (batch)
 	function migrateQuotes(uint256[] calldata quoteIds) external;
@@ -17,8 +24,9 @@ interface IMigrationFacet is IMigrationEvents {
 	/// @param partyAs All partyA addresses that have positions with this partyB
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) external;
 
-	/// @notice Rebuild one aggregate funding group from its active quotes.
-	function resyncAggregateFunding(address partyA, address partyB, uint256 symbolId, PositionType positionType) external;
+	/// @notice Rebuilds each funding group from its active quotes, atomically and in input order.
+	/// @param groups PartyA/PartyB/symbol/side groups to repair. An empty batch is a no-op.
+	function resyncAggregateFunding(AggregateFundingGroup[] calldata groups) external;
 
 	/// @notice Check if a quote has been migrated
 	/// @param quoteId The quote ID to check

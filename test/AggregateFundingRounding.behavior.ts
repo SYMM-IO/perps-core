@@ -39,8 +39,8 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 	let partyA: string
 	let partyB: string
 
-	const openLong = async (): Promise<bigint> => {
-		const quoteId = await user.sendQuote(
+	const openLong = async (owner: User = user): Promise<bigint> => {
+		const quoteId = await owner.sendQuote(
 			limitQuoteRequestBuilder().positionType(PositionType.LONG).price(OPEN_PRICE).quantity(QUANTITY).maxFundingRate(decimal(1n)).build(),
 		)
 		await hedger.lockQuote(quoteId)
@@ -53,6 +53,30 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		partyB: await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(partyB, partyA, 1n, PositionType.LONG),
 		globalPartyB: await context.viewFacetAggregate.getPartyBAggregatedFunding(partyB, 1n, PositionType.LONG),
 	})
+
+	const fundingSlots = (owner: string) => {
+		const commonKeys = [
+			{ type: "address", value: partyB },
+			{ type: "address", value: owner },
+			{ type: "uint256", value: 1n },
+			{ type: "uint256", value: PositionType.LONG },
+		]
+		const partyAKeys = [
+			{ type: "address", value: owner },
+			{ type: "address", value: partyB },
+			{ type: "uint256", value: 1n },
+			{ type: "uint256", value: PositionType.LONG },
+		]
+		const globalPartyBKeys = [
+			{ type: "address", value: partyB },
+			{ type: "uint256", value: 1n },
+			{ type: "uint256", value: PositionType.LONG },
+		]
+		const partyASlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 10n, partyAKeys)
+		const partyBSlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 11n, commonKeys)
+		const globalPartyBSlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 9n, globalPartyBKeys)
+		return { partyASlot, partyBSlot, globalPartyBSlot }
+	}
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -115,38 +139,25 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		const quoteId = await openLong()
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 		const expected = (QUANTITY * quote.accumulatedPaidFunding) / FIXED_POINT_SCALE
-		const commonKeys = [
-			{ type: "address", value: partyB },
-			{ type: "address", value: partyA },
-			{ type: "uint256", value: 1n },
-			{ type: "uint256", value: PositionType.LONG },
-		]
-		const partyAKeys = [
-			{ type: "address", value: partyA },
-			{ type: "address", value: partyB },
-			{ type: "uint256", value: 1n },
-			{ type: "uint256", value: PositionType.LONG },
-		]
-		const globalPartyBKeys = [
-			{ type: "address", value: partyB },
-			{ type: "uint256", value: 1n },
-			{ type: "uint256", value: PositionType.LONG },
-		]
-		const partyASlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 10n, partyAKeys)
-		const partyBSlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 11n, commonKeys)
-		const globalPartyBSlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 9n, globalPartyBKeys)
+		const { partyASlot, partyBSlot, globalPartyBSlot } = fundingSlots(partyA)
 		const diamond = await context.viewFacet.getAddress()
 		await setSignedStorage(diamond, partyASlot, expected + 2n)
 		await setSignedStorage(diamond, partyBSlot, expected + 1n)
 		await setSignedStorage(diamond, globalPartyBSlot, expected + 1n)
 
 		await expect(
-			context.migrationFacet.connect(context.signers.user).resyncAggregateFunding(partyA, partyB, 1n, PositionType.LONG),
+			context.migrationFacet
+				.connect(context.signers.user)
+				.resyncAggregateFunding([{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG }]),
 		).to.be.revertedWith("Accessibility: Must have role")
 
 		const partyACounterBefore = await context.viewFacet.upnlCounterOfPartyA(partyA)
 		const partyBCounterBefore = await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)
-		await expect(context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding(partyA, partyB, 1n, PositionType.LONG))
+		await expect(
+			context.migrationFacet
+				.connect(context.signers.admin)
+				.resyncAggregateFunding([{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG }]),
+		)
 			.to.emit(context.migrationFacet, "AggregateFundingResynced")
 			.withArgs(partyA, partyB, 1n, PositionType.LONG, expected + 2n, expected + 1n, expected, expected + 1n, expected)
 
@@ -157,8 +168,98 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		expect(await context.viewFacet.upnlCounterOfPartyA(partyA)).to.equal(partyACounterBefore + 1n)
 		expect(await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)).to.equal(partyBCounterBefore + 1n)
 
-		await context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding(partyA, partyB, 1n, PositionType.LONG)
+		await context.migrationFacet
+			.connect(context.signers.admin)
+			.resyncAggregateFunding([{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG }])
 		expect(await context.viewFacet.upnlCounterOfPartyA(partyA)).to.equal(partyACounterBefore + 1n)
 		expect(await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)).to.equal(partyBCounterBefore + 1n)
+	})
+
+	it("repairs multiple PartyAs sharing a global total and handles duplicate groups without double correction", async function () {
+		const secondUser = new User(context, context.signers.user2)
+		await secondUser.setup()
+		await secondUser.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
+		const secondPartyA = await secondUser.getAddress()
+		const quoteIds = [await openLong(), await openLong(secondUser)]
+		const expected = await Promise.all(
+			quoteIds.map(async quoteId => {
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				return (QUANTITY * quote.accumulatedPaidFunding) / FIXED_POINT_SCALE
+			}),
+		)
+		const total = expected[0] + expected[1]
+		const diamond = await context.viewFacet.getAddress()
+		const first = fundingSlots(partyA)
+		const second = fundingSlots(secondPartyA)
+		await setSignedStorage(diamond, first.partyASlot, expected[0] + 1n)
+		await setSignedStorage(diamond, first.partyBSlot, expected[0] + 1n)
+		await setSignedStorage(diamond, second.partyASlot, expected[1] + 2n)
+		await setSignedStorage(diamond, second.partyBSlot, expected[1] + 2n)
+		await setSignedStorage(diamond, first.globalPartyBSlot, total + 3n)
+		const owners = [partyA, secondPartyA]
+		const countersBefore = await Promise.all(
+			owners.map(async owner => [await context.viewFacet.upnlCounterOfPartyA(owner), await context.viewFacet.upnlCounterOfPartyB(partyB, owner)]),
+		)
+		const groups = owners.map(owner => ({ partyA: owner, partyB, symbolId: 1n, positionType: PositionType.LONG }))
+		const tx = await context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([...groups, groups[0]])
+		const receipt = await tx.wait()
+		const events = receipt!.logs.flatMap(log => {
+			try {
+				const event = context.migrationFacet.interface.parseLog(log)
+				return event?.name === "AggregateFundingResynced" ? [event] : []
+			} catch {
+				return []
+			}
+		})
+		expect(events).to.have.length(3)
+		expect(events.map(event => event.args.partyA)).to.deep.equal([partyA, secondPartyA, partyA])
+		expect(events.map(event => event.args.newGlobalFunding)).to.deep.equal([total + 2n, total, total])
+		for (const [index, owner] of owners.entries()) {
+			expect(await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(owner, partyB, 1n, PositionType.LONG)).to.equal(expected[index])
+			expect(await context.viewFacetAggregate.getPartyBAggregatedFundingPerPartyA(partyB, owner, 1n, PositionType.LONG)).to.equal(expected[index])
+			expect(await context.viewFacet.upnlCounterOfPartyA(owner)).to.equal(countersBefore[index][0] + 1n)
+			expect(await context.viewFacet.upnlCounterOfPartyB(partyB, owner)).to.equal(countersBefore[index][1] + 1n)
+		}
+		expect(await context.viewFacetAggregate.getPartyBAggregatedFunding(partyB, 1n, PositionType.LONG)).to.equal(total)
+	})
+
+	it("rolls back earlier repairs and counters if a later group is liquidating", async function () {
+		const quote = await context.viewFacetQuote.getQuote(await openLong())
+		const expected = (QUANTITY * quote.accumulatedPaidFunding) / FIXED_POINT_SCALE
+		const diamond = await context.viewFacet.getAddress()
+		const slots = fundingSlots(partyA)
+		for (const slot of Object.values(slots)) await setSignedStorage(diamond, slot, expected + 1n)
+		const secondPartyA = context.signers.user2.address
+		// MAStorage slot 10 is the PartyB => PartyA liquidation-status mapping.
+		const maSlot = BigInt(ethers.keccak256(ethers.toUtf8Bytes("diamond.standard.storage.masteragreement")))
+		const liquidationSlot = nestedMappingSlot(maSlot + 10n, [
+			{ type: "address", value: partyB },
+			{ type: "address", value: secondPartyA },
+		])
+		await setSignedStorage(diamond, liquidationSlot, 1n)
+		expect(await context.viewFacet.isPartyBLiquidated(partyB, secondPartyA)).to.equal(true)
+		const partyACounter = await context.viewFacet.upnlCounterOfPartyA(partyA)
+		const partyBCounter = await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)
+		await expect(
+			context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([
+				{ partyA, partyB, symbolId: 1n, positionType: PositionType.LONG },
+				{ partyA: secondPartyA, partyB, symbolId: 1n, positionType: PositionType.SHORT },
+			]),
+		).to.be.revertedWith("PartyBState: PartyB is in liquidation")
+		const after = await aggregateValues()
+		expect(after.partyA).to.equal(expected + 1n)
+		expect(after.partyB).to.equal(expected + 1n)
+		expect(after.globalPartyB).to.equal(expected + 1n)
+		expect(await context.viewFacet.upnlCounterOfPartyA(partyA)).to.equal(partyACounter)
+		expect(await context.viewFacet.upnlCounterOfPartyB(partyB, partyA)).to.equal(partyBCounter)
+	})
+
+	it("accepts an empty batch without events or counter changes", async function () {
+		const before = await context.viewFacet.upnlCounterOfPartyA(partyA)
+		await expect(context.migrationFacet.connect(context.signers.admin).resyncAggregateFunding([])).to.not.emit(
+			context.migrationFacet,
+			"AggregateFundingResynced",
+		)
+		expect(await context.viewFacet.upnlCounterOfPartyA(partyA)).to.equal(before)
 	})
 }

@@ -137,13 +137,16 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 
 					<h2 id="repair">Repairing existing groups</h2>
 					<p>
-						<code>resyncAggregateFunding</code> lets <code>MIGRATION_ROLE</code> rebuild one PartyA, PartyB, symbol, and position-side
-						group from its active quotes. It repairs the two pair totals and changes the global PartyB total only by that pair's
-						correction, so other accounts are preserved.
+						<code>resyncAggregateFunding</code> lets <code>MIGRATION_ROLE</code> rebuild a batch of PartyA, PartyB, symbol, and
+						position-side groups from their active quotes. Pass an array of
+						<code>{ partyA, partyB, symbolId, positionType }</code> tuples. It repairs the two pair totals and changes the global PartyB
+						total only by that pair's correction, so other accounts are preserved.
 					</p>
 					<p>
-						The repair is blocked while either party is in liquidation. If any value changes, PartyA and PartyB UPNL counters are raised
-						so older Muon signatures become invalid. <code>AggregateFundingResynced</code> records the old and new values.
+						Groups are processed in input order. If any group has a party in liquidation, the whole batch reverts. An empty batch does
+						nothing; repeated groups are safe. If any value changes, PartyA and PartyB UPNL counters are raised so older Muon signatures
+						become invalid. <code>AggregateFundingResynced</code> records the old and new values for each input group, including unchanged
+						groups.
 					</p>
 
 					<h2 id="rollout">Safe rollout</h2>
@@ -152,7 +155,10 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 							Pause affected actions before deploying the contract changes. The three-unit allowance applies immediately after upgrade.
 						</li>
 						<li>Scan funding groups for differences from their active quotes.</li>
-						<li>Call <code>resyncAggregateFunding</code> for each affected group and verify its event.</li>
+						<li>
+							Call <code>resyncAggregateFunding</code> with batches of affected groups and verify each group's event. Size batches to
+							fit the transaction gas limit; each group scans its pair's active quotes.
+						</li>
 						<li>
 							Activate the corresponding Muon implementation, add the deployed chain and diamond address to
 							<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.
