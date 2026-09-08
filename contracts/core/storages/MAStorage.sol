@@ -168,9 +168,8 @@ library MAStorage {
 		/// @dev A zero receiver clears the override and falls back to `solverFeeReceivers`, then to the Party B itself.
 		///      The tag is caller-chosen; short labels can be right-padded ASCII, longer ones hashed off-chain.
 		mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag;
-		/// @notice Raw accounting units allowed per position when liquidation totals differ only because of integer rounding.
-		/// @dev Defaults to zero so a deployment keeps strict equality until aggregate funding is repaired and the oracle uses exact notional.
-		uint256 liquidationUpnlRoundingAllowancePerPosition;
+		/// @dev Reserved former rounding-allowance slot. The allowance is now a constant; never reuse this slot.
+		uint256 __reservedLiquidationUpnlRoundingAllowancePerPosition;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -14,6 +14,7 @@ import { LibQuote } from "../LibQuote.sol";
 import { LibQuoteState } from "../extensions/LibQuoteState.sol";
 import { LibQuoteFunding } from "../LibQuoteFunding.sol";
 import { LibUtils } from "../LibUtils.sol";
+import { LibPartyALiquidationShared } from "./LibPartyALiquidationShared.sol";
 import { SharedEvents } from "../SharedEvents.sol";
 import { LockedValuesOps } from "../LibLockedValues.sol";
 import {
@@ -217,16 +218,17 @@ library LibPartyALiquidationProcess {
 			);
 		}
 
-		// Once all positions are closed, allow only the configured, position-count-scaled rounding difference.
-		// The setting defaults to zero and must stay disabled until stored funding aggregates match their quote sums
-		// and the oracle uses exact aggregate notional. An accepted difference is settled at the smaller amount
-		// supported by both calculations; anything beyond the configured allowance is disputed.
+		// Once all positions are closed, allow three raw rounding units per position captured at liquidation start.
+		// The bound assumes repaired funding aggregates and exact aggregate notional in the oracle.
+		// An accepted difference settles at the smaller amount supported by both calculations; larger differences dispute.
 		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
 			int256 signedUpnl = liquidationDetail.upnl;
 			int256 settledUpnl = liquidationDetail.partyAAccumulatedUpnl;
 			uint256 difference = LibUtils.absDiff(settledUpnl, signedUpnl);
 			if (difference != 0) {
-				uint256 allowance = maLayout.liquidationUpnlRoundingAllowancePerPosition * accountLayout.liquidationStartPositionCounts[partyA];
+				uint256 allowance =
+					LibPartyALiquidationShared.LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION *
+						accountLayout.liquidationStartPositionCounts[partyA];
 				if (difference > allowance) {
 					liquidationDetail.disputed = true;
 					_removeClosedPartyBConnections(accountLayout, partyA);

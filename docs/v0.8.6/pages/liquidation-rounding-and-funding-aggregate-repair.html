@@ -65,11 +65,12 @@
 					<p>
 						Muon calculates one total from position groups. Liquidation settles the same account quote by quote. Integer division can make
 						those two correct paths differ by a few raw accounting units. The contract now records how many positions existed when
-						liquidation started and can accept only a small limit per position.
+						liquidation started and accepts up to three raw accounting units per starting position.
 					</p>
 					<p>
-						That limit is controlled by <code>PROTOCOL_CONFIG_ROLE</code>, starts at <code>0</code>, and cannot be set above
-						<code>3</code>. A value of <code>0</code> keeps the old strict check. A larger mismatch still opens a dispute.
+						The allowance is fixed at <code>3</code> raw units per starting position and always applies. It has no setter. The
+						<code>liquidationUpnlRoundingAllowancePerPosition</code> getter returns this constant. A larger mismatch still opens a
+						dispute.
 					</p>
 					<p>
 						When the difference is inside the limit, settlement uses the smaller same-direction amount supported by both Muon and the
@@ -77,8 +78,8 @@
 						balance or separate accounting field.
 					</p>
 					<aside class="callout callout-note">
-						<strong>The limit is a safety switch, not free tolerance.</strong> Keep it at zero until funding aggregates are repaired and
-						Muon uses exact aggregate notional.
+						<strong>Rollout prerequisites.</strong> The bound assumes repaired funding aggregates and exact aggregate notional in Muon.
+						Complete both while affected actions are paused, before resuming with the fixed allowance.
 					</aside>
 
 					<h2 id="rounding">Why liquidation totals can differ</h2>
@@ -121,11 +122,11 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					<p>
 						The new <code>getPartyAExactNotionalUpnlData</code>, <code>getPartyBExactNotionalUpnlData</code>, and
 						<code>getPartyBGlobalExactNotionalUpnlData</code> views return the stored <code>aggregatedNotional</code>. The old views
-						remain unchanged for existing readers. Muon enables the exact-notional path only for contract addresses listed in
-						<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
+						remain unchanged for existing readers. The corresponding Muon implementation must enable the exact-notional path for contract
+						addresses listed in <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
 					</p>
 					<p>
-						Muon now calculates each funded group once. That same result is added to total UPNL and, when negative, to total unrealized
+						Muon must calculate each funded group once. That same result is added to total UPNL and, when negative, to total unrealized
 						loss. This prevents the two signed fields from disagreeing because they rounded the same group in different ways.
 					</p>
 					<aside class="callout callout-note">
@@ -147,16 +148,20 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 
 					<h2 id="rollout">Safe rollout</h2>
 					<ol>
-						<li>Deploy the contract changes. The rounding allowance remains zero.</li>
-						<li>Pause affected actions and scan funding groups for differences from their active quotes.</li>
+						<li>
+							Pause affected actions before deploying the contract changes. The three-unit allowance applies immediately after upgrade.
+						</li>
+						<li>Scan funding groups for differences from their active quotes.</li>
 						<li>Call <code>resyncAggregateFunding</code> for each affected group and verify its event.</li>
-						<li>Add the deployed chain and diamond address to <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.</li>
-						<li>Set the allowance, up to three raw units per starting position.</li>
+						<li>
+							Activate the corresponding Muon implementation, add the deployed chain and diamond address to
+							<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.
+						</li>
+						<li>Verify repaired funding totals and exact-notional Muon calculations, then resume affected actions.</li>
 					</ol>
 					<p>
-						Setting the allowance back to zero restores strict equality. When the allowance accepts a difference, both parties settle
-						using the smaller same-direction amount. The discarded difference is not a payment and is not stored, emitted, or assigned to
-						a vault or account.
+						When the fixed allowance accepts a difference, both parties settle using the smaller same-direction amount. The discarded
+						difference is not a payment and is not stored, emitted, or assigned to a vault or account.
 					</p>
 				</article>
 			</main>
