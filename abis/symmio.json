@@ -8150,6 +8150,21 @@
                         "internalType": "enum PositionType",
                         "name": "positionType",
                         "type": "uint8"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "expectedPartyAFunding",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "expectedPartyBFunding",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "newFunding",
+                        "type": "int256"
                     }
                 ],
                 "internalType": "struct IMigrationFacet.AggregateFundingGroup[]",

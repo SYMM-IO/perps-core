@@ -136,28 +136,67 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 
 					<h2 id="repair">Repairing existing groups</h2>
 					<p>
-						<code>resyncAggregateFunding</code> lets <code>MIGRATION_ROLE</code> rebuild a batch of PartyA, PartyB, symbol, and
-						position-side groups from their active quotes. Pass an array of
-						<code>{ partyA, partyB, symbolId, positionType }</code> tuples. It repairs the two pair totals and changes the global PartyB
-						total only by that pair's correction, so other accounts are preserved.
+						The one-time repair calculates the correct quote-level totals off chain. This avoids an unbounded on-chain loop when one
+						PartyA and PartyB pair has many open quotes. <code>scripts/resyncAggregateFunding.ts</code> reads the pair in real pages at
+						one fixed, globally paused block and calculates each quote independently:
+					</p>
+					<pre><code>open amount = quantity − closed amount
+quote contribution = (open amount × accumulated paid funding) / 1e18
+new group funding = sum of the rounded quote contributions</code></pre>
+					<p>
+						The script uses checked <code>BigInt</code> arithmetic with Solidity's signed division rule, including truncation toward zero.
+						It therefore preserves raw-unit differences. The paginated quote getter reads only the requested page instead of copying the
+						pair's full open-position list first. The script reads until the array ends and verifies that the number of returned quotes
+						matches <code>partyBPositionsCount</code> before producing calldata.
 					</p>
 					<p>
-						Groups are processed in input order. If any group has a party in liquidation, the whole batch reverts. An empty batch does
-						nothing; repeated groups are safe. If any value changes, PartyA and PartyB UPNL counters are raised so older Muon signatures
-						become invalid. <code>AggregateFundingResynced</code> records the old and new values for each input group, including unchanged
-						groups.
+						<code>resyncAggregateFunding</code> receives each final value together with the exact PartyA and PartyB pair values observed
+						by the script. The contract requires a global pause, rejects liquidating parties, and reverts if either observed value has
+						changed. It then sets both pair values to the calculated value and changes the global PartyB value by only that pair's
+						correction:
+					</p>
+					<pre><code>new global PartyB funding = old global funding − old pair funding + new pair funding</code></pre>
+					<p>
+						Groups are applied atomically in input order. An empty batch does nothing, and repeating a completed repair is a no-op. A real
+						change raises both UPNL counters so old Muon signatures become invalid. <code>AggregateFundingResynced</code> records the old
+						and new values for every input group. The contract trusts <code>MIGRATION_ROLE</code> to submit the script-reviewed final
+						value; it does not scan quotes during the transaction.
+					</p>
+					<p>The groups file is a JSON array. Use decimal strings for symbol IDs so JSON cannot round a large integer.</p>
+					<pre><code>[
+  {
+    "partyA": "0x...",
+    "partyB": "0x...",
+    "symbolId": "1",
+    "positionType": "LONG"
+  }
+]</code></pre>
+					<pre><code>GROUPS_FILE=./groups.json SYMMIO=0x... \
+npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;network&gt;</code></pre>
+					<p>
+						The default run is read-only and prints exact calldata for governance review. Set <code>OUTPUT_FILE</code> to save that plan.
+						To send it with the configured <code>MIGRATION_ROLE</code> signer, add <code>EXECUTE=true</code> and
+						<code>CONFIRM_CHAIN_ID=&lt;chain-id&gt;</code>. <code>PAGE_SIZE</code> controls RPC page size and
+						<code>GROUP_BATCH_SIZE</code> controls the number of constant-gas repairs in each transaction.
 					</p>
 
 					<h2 id="rollout">Safe rollout</h2>
 					<ol>
 						<li>
-							Pause affected actions before deploying the contract changes. The three-unit allowance applies immediately after upgrade.
+							Globally pause the protocol before deploying the contract changes. The three-unit allowance applies immediately after
+							upgrade.
 						</li>
-						<li>Scan funding groups for differences from their active quotes.</li>
 						<li>
-							Call <code>resyncAggregateFunding</code> with batches of affected groups and verify each group's event. Size batches to
-							fit the transaction gas limit; each group scans its pair's active quotes.
+							Deploy the updated <code>MigrationFacet</code> and the truly paginated <code>ViewFacetQuote</code> getter. Because the
+							repair tuple now carries three funding values, the diamond cut must remove the old four-field
+							<code>resyncAggregateFunding</code> selector and add the new seven-field selector.
 						</li>
+						<li>List the affected funding groups in the JSON input file.</li>
+						<li>
+							Run <code>scripts/resyncAggregateFunding.ts</code> without <code>EXECUTE</code>. Review the fixed block, every old and new
+							raw value, and the generated calldata.
+						</li>
+						<li>Execute the reviewed batches, then verify each event and the script's pair and global post-checks before unpausing.</li>
 						<li>
 							Activate the corresponding Muon implementation, add the deployed chain and diamond address to
 							<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.
