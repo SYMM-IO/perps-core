@@ -8,6 +8,8 @@ import { PositionType } from "../../storages/QuoteStorage.sol";
 import { RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
 
 interface ISymbolAdjustmentFacet {
+	error PendingQuoteIsStale();
+
 	struct QuoteAdjustmentPreview {
 		uint256 factor;
 		uint256 quantity;
@@ -81,6 +83,8 @@ interface ISymbolAdjustmentFacet {
 		uint256 newOpenedPrice
 	);
 	event PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId);
+	event PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId);
+	event StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId);
 	event RestatementFinalized(uint256 indexed symbolId, uint256 epoch);
 
 	function scheduleAdjustment(uint256 symbolId, uint256 factor, uint256 effectiveTimestamp) external;
@@ -103,6 +107,9 @@ interface ISymbolAdjustmentFacet {
 	function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external;
 
 	function cancelPendingQuotes(uint256[] calldata quoteIds) external;
+
+	/// @notice Permissionlessly cancels pending quotes invalidated by a completed physical restatement.
+	function cancelStalePendingQuotes(uint256[] calldata quoteIds) external;
 
 	function finalizeRestatement(uint256 symbolId) external;
 }

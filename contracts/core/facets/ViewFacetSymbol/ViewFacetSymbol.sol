@@ -302,6 +302,16 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return LibSymbolAdjustment.isFrozen(symbolId);
 	}
 
+	/// @notice Returns the highest quote ID invalidated for pending execution by the symbol's latest physical restatement.
+	function getPendingQuoteIdCutoff(uint256 symbolId) external view returns (uint256) {
+		return LibSymbolAdjustment.pendingQuoteIdCutoff(symbolId);
+	}
+
+	/// @notice Returns whether a PENDING, LOCKED, or CANCEL_PENDING quote belongs to an older physical basis.
+	function isPendingQuoteStale(uint256 quoteId) external view returns (bool) {
+		return LibSymbolAdjustment.isPendingQuoteStale(QuoteStorage.layout().quotes[quoteId]);
+	}
+
 	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		return (adjustment.restating, adjustment.restatementEpoch);

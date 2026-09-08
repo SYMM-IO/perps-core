@@ -436,7 +436,7 @@ funding amount = 1 * 8 = 8</code></pre>
 					<p class="adjustment-timeline-intro">
 						The adjusted-price route keeps stored quotes on the old unit basis and converts external prices to match them. The physical
 						route rewrites stored quotes to the venue's new unit basis. <code>abortRestatement</code> is not another route. It only backs
-						out while no quote has been rewritten and no quote has been removed from PartyA's pending inventory.
+						out while no open quote has been rewritten.
 					</p>
 					<div class="adjustment-timelines" aria-label="Two routes for a venue event that happened">
 						<section class="adjustment-sequence" style="--timeline-step-count: 3">
@@ -577,7 +577,7 @@ funding amount = 1 * 8 = 8</code></pre>
 									<div class="adjustment-rail" aria-hidden="true"></div>
 									<div class="adjustment-interval">
 										<div><code>QUOTE_PROCESSING</code><span class="adjustment-status">Frozen</span></div>
-										<p>Cancel pending inventory and rewrite eligible open quotes.</p>
+										<p>Optionally cancel pending inventory and rewrite eligible open quotes.</p>
 									</div>
 								</li>
 								<li class="adjustment-tick is-frozen">
@@ -757,20 +757,21 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 							immediately before submitting the batch and whenever the caller, IDs, or chain state changes.
 						</li>
 						<li>
-							<strong>Convert the book.</strong> Operations calls <code>cancelPendingQuotes</code> for pending inventory and
-							<code>applyAdjustment</code> in batches for eligible open quotes.
+							<strong>Convert the open book.</strong> Operations calls <code>applyAdjustment</code> in batches for eligible open quotes.
+							It may call <code>cancelPendingQuotes</code> to release pending balances before finalization, but pending cleanup is not a
+							finalization prerequisite.
 						</li>
 						<li>
-							<strong>Verify coverage.</strong> Operations reads the book again and confirms that every affected quote was cancelled,
-							closed, or rewritten.
+							<strong>Verify open-position coverage.</strong> Operations reads the open book again and confirms that every affected open
+							quote was closed or rewritten. Pending quotes that remain will be invalidated by the final quote-ID cutoff.
 						</li>
 						<li>
 							<strong>Finalize, then restore funding in batches.</strong> After the last possible old-basis Muon signature has expired
 							and the contract's time gate has passed, Operations calls <code>finalizeRestatement</code>. If checkpoints exist, this
 							begins <code>FINALIZATION_FUNDING_RESTORATION</code>; it does not yet unfreeze the symbol. The bot simulates and submits
 							<code>processRestatementFunding</code> with the checkpointed PartyB addresses until <code>RestatementFinalized</code> is
-							emitted. Only that terminal batch advances <code>basisVersion</code> and unfreezes the symbol. With no checkpoints,
-							<code>finalizeRestatement</code> completes those terminal changes itself.
+							emitted. Only that terminal batch advances <code>basisVersion</code>, records the pending-quote ID cutoff, and unfreezes
+							the symbol. With no checkpoints, <code>finalizeRestatement</code> completes those terminal changes itself.
 						</li>
 					</ol>
 					<aside class="callout callout-risk">
@@ -784,7 +785,8 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						<code>finalizeRestatement</code> records one funding-resumption timestamp. Every restoration batch uses that same timestamp.
 						The terminal transaction writes state <code>APPLIED</code> only when the prior state was <code>SCHEDULED</code> or
 						<code>PRICE_ADJUSTED</code>, sets <code>cumulativeFactor</code> to an explicit <code>1e18</code>, closes the window, clears
-						the temporary funding fields, and increments <code>basisVersion</code>. It retains the latest per-step <code>factor</code> and
+						the temporary funding fields, increments <code>basisVersion</code>, and stores the current global quote ID as
+						<code>SymbolAdjustment.pendingQuoteIdCutoff</code>. It retains the latest per-step <code>factor</code> and
 						<code>effectiveTimestamp</code>.
 					</p>
 					<h2 id="rewrite">What physical restatement changes</h2>
@@ -1006,18 +1008,24 @@ dust            = 30 - 28 = 2</code></pre>
 
 					<h3 id="rewrite-pending">Pending inventory</h3>
 					<p>
-						<code>cancelPendingQuotes</code> is manager-only. It does not require an open restatement window, but every quote's symbol
-						must be frozen. It accepts <code>PENDING</code>, <code>LOCKED</code>, and <code>CANCEL_PENDING</code>. The cancellation path
-						does not check quote deadlines. It still rejects the call if PartyA is liquidating or PartyB is liquidating against that
-						PartyA. Core refunds the open trading fee, releases pending locks and PartyB connections where applicable, removes pending
-						indexes, and sets the quote to <code>CANCELED</code>. It then calls cancellation hooks. A hook revert rolls back the batch. An
-						empty quote array is accepted and changes nothing.
+						Physical finalization records the current global quote ID in <code>SymbolAdjustment.pendingQuoteIdCutoff</code>. A
+						<code>PENDING</code>, <code>LOCKED</code>, or <code>CANCEL_PENDING</code> quote for that symbol is stale when its ID is at or
+						below the cutoff. Stale quotes cannot be locked or opened. A quote created after finalization receives a larger ID and is
+						valid even when both transactions share the same block timestamp. Locking or opening a stale quote reverts with
+						<code>PendingQuoteIsStale()</code>. Price-only confirmation and an aborted restatement do not advance the cutoff.
 					</p>
 					<p>
-						Removing a pending quote does not set the restatement mutation flag because pending inventory has not entered the open book
-						and its removal cannot create mixed quote bases. Operations must still monitor cancellations and reconcile the affected
-						inventory before continuing or aborting. Close-request creation, cancellation, and expiry can also change quote status or
-						price-bearing fields during the window without setting the mutation flag.
+						<code>cancelPendingQuotes</code> remains an optional manager-only cleanup while the symbol is frozen. It accepts the same
+						three pending states without checking their deadlines. After finalization, anyone may call
+						<code>cancelStalePendingQuotes</code> for quotes proven stale by the cutoff. Both paths refund the open trading fee, release
+						pending locks and PartyB connections where applicable, remove pending indexes, set the quote to <code>CANCELED</code>, and
+						call cancellation hooks. Liquidation guards still apply, a hook revert rolls back the batch, and an empty array changes
+						nothing.
+					</p>
+					<p>
+						A stale quote is economically inert but remains in pending indexes and keeps balances reserved until it is cancelled, expired,
+						or removed by liquidation. Applications should use <code>isPendingQuoteStale</code> to offer lazy cancellation. Removing
+						pending inventory does not set the restatement mutation flag because it never entered the open book.
 					</p>
 
 					<h3 id="rewrite-reads">Mixed-book reads</h3>
@@ -1154,7 +1162,8 @@ dust            = 30 - 28 = 2</code></pre>
 						Each successful rewrite subtracts the quote's old quantity from the matching PartyB LONG or SHORT inventory checkpoint.
 						Ordinary and emergency full closes use the same accounting hook, so removing an old-basis position also consumes its
 						checkpoint quantity. A quote belonging to a PartyB that was not prepared before the seal is rejected. Pending quotes are not
-						part of this open-position completeness counter; their cancellation remains a separate operational workflow.
+						part of this open-position completeness counter; physical finalization instead makes every older pending quote stale through
+						the quote-ID cutoff.
 					</p>
 
 					<h3 id="funding-restore">Restore rates before closing the window</h3>
@@ -1201,7 +1210,7 @@ dust            = 30 - 28 = 2</code></pre>
 						symbol. In v0.8.6 those checks cover:
 					</p>
 					<ul>
-						<li>quote creation, PartyB open and close execution, batch wrappers, and solver-fee wrappers;</li>
+						<li>quote creation, PartyB quote locking, open and close execution, batch wrappers, and solver-fee wrappers;</li>
 						<li>legacy and unified settlement;</li>
 						<li>
 							force actions, three-step force-close finalization, non-dust emergency PartyB actions, clearing-house closes, and
@@ -1382,7 +1391,8 @@ dust            = 30 - 28 = 2</code></pre>
 							only the latest step.
 						</li>
 						<li>
-							Build one open and pending quote manifest across all PartyB account models. For every pair, require PartyA liquidation,
+							Build the complete open quote manifest across all PartyB account models. Pending inventory may also be indexed for
+							optional pre-finalization refunds and post-finalization lazy cancellation. For every pair, require PartyA liquidation,
 							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status to be clear. Resolve any active liquidation before
 							the effective time.
 						</li>
@@ -1395,9 +1405,11 @@ dust            = 30 - 28 = 2</code></pre>
 						<li>
 							Verify the deployed ABI exposes <code>startRestatement(uint256)</code>,
 							<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>,
-							<code>getRestatementFundingProgress(uint256)</code>, and <code>getRestatementInventoryProgress(uint256,address)</code>.
-							All Symbol Adjustment read selectors are routed through <code>ViewFacetSymbol</code>;
-							<code>SymbolAdjustmentFacet</code> exposes mutation selectors only. The old three-argument start selector is not exposed.
+							<code>cancelStalePendingQuotes(uint256[])</code>, <code>getPendingQuoteIdCutoff(uint256)</code>,
+							<code>isPendingQuoteStale(uint256)</code>, <code>getRestatementFundingProgress(uint256)</code>, and
+							<code>getRestatementInventoryProgress(uint256,address)</code>. All Symbol Adjustment read selectors are routed through
+							<code>ViewFacetSymbol</code>; <code>SymbolAdjustmentFacet</code> exposes mutation selectors only. The old three-argument
+							start selector is not exposed.
 						</li>
 						<li>
 							Call <code>scheduleAdjustment</code>. Record the transaction block time, adjustment index, factor, effective time,
@@ -1470,9 +1482,10 @@ dust            = 30 - 28 = 2</code></pre>
 							<code>ABORT_FUNDING_RESTORATION</code>.
 						</li>
 						<li>
-							Cancel pending quotes as the operational workflow requires. Pending quotes are not included in the open-position inventory
-							counter. Monitor normal pending cancellation and close-request creation, cancellation, and expiry throughout the window,
-							and reconcile each resulting status and price-bearing close field before processing the quote.
+							Optionally call <code>cancelPendingQuotes</code> while frozen to release balances immediately. Pending quotes are not
+							included in the open-position inventory counter and do not block finalization. Monitor close-request creation,
+							cancellation, and expiry throughout the window, and reconcile each resulting status and price-bearing close field before
+							processing an open quote.
 						</li>
 						<li>
 							During <code>FUNDING_SETTLEMENT</code>, submit bounded <code>applyAdjustment(symbolId, quoteIds)</code> batches and track
@@ -1508,8 +1521,9 @@ dust            = 30 - 28 = 2</code></pre>
 						</li>
 						<li>
 							Verify the expected lifecycle state, explicit <code>1e18</code> cumulative factor, closed window, incremented
-							<code>basisVersion</code>, phase <code>NONE</code>, zero pending checkpoint count, deleted checkpoints, rebased rates, and
-							unfreeze.
+							<code>basisVersion</code>, phase <code>NONE</code>, zero pending checkpoint count, deleted checkpoints, rebased rates,
+							<code>SymbolAdjustment.pendingQuoteIdCutoff</code> equal to the terminal transaction's global last quote ID, and unfreeze.
+							Queue any remaining stale pending IDs for permissionless <code>cancelStalePendingQuotes</code> batches.
 						</li>
 						<li>
 							Resume Muon with raw venue prices. Reinitialize stale three-step force closes and retain the old-basis timestamp cutoff
@@ -1730,6 +1744,13 @@ dust            = 30 - 28 = 2</code></pre>
 									<td><code>quoteFundingSettledEpoch[quoteId]</code></td>
 									<td>Last epoch in which the funding-only pass settled the quote. Zero means never settled by a window.</td>
 								</tr>
+								<tr>
+									<td><code>SymbolAdjustment.pendingQuoteIdCutoff</code></td>
+									<td>
+										Highest global quote ID that existed when the latest physical restatement completed. Pending quotes at or
+										below it are stale. Zero means no completed physical restatement has established a cutoff.
+									</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -1793,7 +1814,14 @@ dust            = 30 - 28 = 2</code></pre>
 								</tr>
 								<tr>
 									<td><code>cancelPendingQuotes</code></td>
-									<td>Manager-only. Cancel eligible pending inventory whenever its symbol is frozen.</td>
+									<td>Manager-only optional cleanup. Cancel eligible pending inventory whenever its symbol is frozen.</td>
+								</tr>
+								<tr>
+									<td><code>cancelStalePendingQuotes</code></td>
+									<td>
+										Permissionless. Cancel pending quotes whose IDs are at or below their symbol's completed physical-restatement
+										cutoff.
+									</td>
 								</tr>
 								<tr>
 									<td><code>emergencyClosePosition</code></td>
@@ -1818,6 +1846,8 @@ dust            = 30 - 28 = 2</code></pre>
 						<code>SymbolAdjustmentFacet</code> contains no external read selectors. <code>getSymbolAdjustment</code> returns raw record
 						values. <code>getCumulativeFactor</code> normalizes unset zero. <code>getProspectiveCumulativeFactor</code> includes a
 						scheduled step only in <code>SCHEDULED</code>. <code>isSymbolFrozen</code> evaluates the live predicate.
+						<code>getSymbolAdjustment</code> includes <code>pendingQuoteIdCutoff</code>. <code>getPendingQuoteIdCutoff</code> returns that
+						persistent cutoff directly, and <code>isPendingQuoteStale</code> combines it with the quote's current pending status.
 						<code>getRestatementState</code> returns the window flag and epoch. <code>getRestatementFundingProgress</code> returns the
 						phase, pending checkpoint count, funding cutoff, and funding restoration timestamp.
 						<code>getRestatementInventoryProgress</code> returns the current epoch, whether one PartyB was prepared, that PartyB's
@@ -1857,6 +1887,8 @@ RestatementAborted(uint256 indexed symbolId, uint256 epoch)
 QuoteAdjusted(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor,
               uint256 oldQuantity, uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)
 PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId)
+PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId)
+StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId)
 RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 					<p>
 						Storage retains only the latest schedule, so indexers need these events for complete adjustment history. Preparation events
@@ -1867,9 +1899,11 @@ RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 						Funding-restoration events report restoration mode and remaining PartyB work. Per-pair preparation and restoration also emit
 						the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints exist, <code>RestatementAborted</code> or
 						<code>RestatementFinalized</code> is emitted by the last funding batch rather than the transaction that starts restoration.
-						During <code>FUNDING_SETTLEMENT</code>, every successfully processed quote emits <code>QuoteFundingSettled</code>, including
-						when the amount is zero. During the later <code>QUOTE_PROCESSING</code> pass, every successfully rewritten quote emits
-						<code>QuoteAdjusted</code>. Indexers need both events to attribute settlement side effects and the later unit conversion.
+						That terminal transaction also emits <code>PendingQuoteIdCutoffUpdated</code>. Each later lazy cancellation emits
+						<code>StalePendingQuoteCancelled</code>. During <code>FUNDING_SETTLEMENT</code>, every successfully processed quote emits
+						<code>QuoteFundingSettled</code>, including when the amount is zero. During the later <code>QUOTE_PROCESSING</code> pass,
+						every successfully rewritten quote emits <code>QuoteAdjusted</code>. Indexers need both events to attribute settlement side
+						effects and the later unit conversion.
 					</p>
 				</article>
 			</main>

@@ -26,7 +26,7 @@ enum RestatementPhase {
 /// @notice A symbol's corporate-action adjustment state. Only the latest adjustment is stored;
 ///         full history is reconstructed from events (AdjustmentScheduled / AdjustmentCancelled /
 ///         PriceAdjustmentConfirmed / RestatementStarted / funding progress / RestatementAborted /
-///         QuoteAdjusted / PendingQuoteCancelledByAdjustment / RestatementFinalized), matching how
+///         QuoteAdjusted / pending-quote cutoff events / RestatementFinalized), matching how
 ///         accumulated-funding history lives in events rather than storage.
 struct SymbolAdjustment {
 	/// @notice Latest scheduled adjustment's 1e18-scaled units multiplier: 4:1 split -> 4e18, 1:10 reverse split -> 0.1e18.
@@ -66,6 +66,9 @@ struct SymbolAdjustment {
 	///      signatures stay backward compatible, and the equivalent guarantee comes from the minimum restatement window enforced
 	///      in finalizeRestatement (see `restatementStartedAt`).
 	uint256 basisVersion;
+	/// @notice Highest global quote ID that existed when the symbol's latest physical restatement finalized.
+	/// @dev Pending quotes at or below this cutoff were created in an older storage basis and cannot be locked or opened.
+	uint256 pendingQuoteIdCutoff;
 	/// @notice Timestamp from which the symbol has been continuously frozen for the current restatement window.
 	/// @dev Set when the window opens. On the direct route, it is the later of the venue effective time and the on-chain scheduling
 	///      time. finalizeRestatement refuses to advance `basisVersion` until signatures minted under the current validity

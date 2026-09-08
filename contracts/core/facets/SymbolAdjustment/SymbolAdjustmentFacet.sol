@@ -329,6 +329,19 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 	}
 
+	/// @notice Cancels pending quotes that were created before their symbol's latest completed physical restatement.
+	/// @dev Permissionless lazy cleanup: stale quotes cannot be locked or opened, and cancellation releases reserved balances and fees.
+	function cancelStalePendingQuotes(uint256[] calldata quoteIds) external {
+		for (uint256 i = 0; i < quoteIds.length; i++) {
+			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			uint256 symbolId = quote.symbolId;
+			require(LibSymbolAdjustment.isPendingQuoteStale(quote), "SymbolAdjustmentFacet: Pending quote is not stale");
+			uint256 cutoffQuoteId = LibSymbolAdjustment.pendingQuoteIdCutoff(symbolId);
+			LibQuoteClose.forceCancelPendingQuote(quoteIds[i]);
+			emit StalePendingQuoteCancelled(quoteIds[i], symbolId, cutoffQuoteId);
+		}
+	}
+
 	/// @notice Starts funding restoration for finalization and completes immediately when no rates were checkpointed.
 	function finalizeRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
@@ -352,6 +365,8 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	}
 
 	function _completeFinalization(uint256 symbolId, SymbolAdjustment storage adjustment) private {
+		uint256 cutoffQuoteId = QuoteStorage.layout().lastId;
+		adjustment.pendingQuoteIdCutoff = cutoffQuoteId;
 		if (adjustment.state == AdjustmentState.PRICE_ADJUSTED || adjustment.state == AdjustmentState.SCHEDULED) {
 			adjustment.state = AdjustmentState.APPLIED;
 		}
@@ -361,6 +376,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		adjustment.restatementStartedAt = 0;
 		adjustment.basisVersion += 1;
 		_clearRestatementProgress(symbolId, adjustment);
+		emit PendingQuoteIdCutoffUpdated(symbolId, adjustment.restatementEpoch, cutoffQuoteId);
 		emit RestatementFinalized(symbolId, adjustment.restatementEpoch);
 	}
 
