@@ -9,7 +9,6 @@ import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { IMigrationFacet } from "./IMigrationFacet.sol";
 import { MigrationFacetImpl } from "./MigrationFacetImpl.sol";
-import { PositionType } from "../../storages/QuoteStorage.sol";
 
 contract MigrationFacet is Accessibility, IMigrationFacet {
 	/// @notice Backfill quote-derived state for v0.8.4 -> v0.8.5 upgrade
@@ -31,31 +30,30 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 		emit CrossLockedValuesMigrated(partyB, partyAsProcessed);
 	}
 
-	/// @notice Rebuilds one weighted paid-funding aggregate from its active quotes.
-	/// @dev Run while protocol actions are paused. Reverts if either party is in liquidation.
-	function resyncAggregateFunding(
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		PositionType positionType
-	) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
-		MigrationFacetImpl.AggregateFundingResyncResult memory result = MigrationFacetImpl.resyncAggregateFunding(
-			partyA,
-			partyB,
-			symbolId,
-			positionType
-		);
-		emit AggregateFundingResynced(
-			partyA,
-			partyB,
-			symbolId,
-			positionType,
-			result.oldPartyAFunding,
-			result.oldPartyBFunding,
-			result.newFunding,
-			result.oldGlobalFunding,
-			result.newGlobalFunding
-		);
+	/// @notice Rebuilds a batch of weighted paid-funding aggregates from their active quotes.
+	/// @dev Run while protocol actions are paused. Any liquidating party reverts the whole batch.
+	///      Emits one event per input group. Repeated groups are safe; an empty batch is a no-op.
+	function resyncAggregateFunding(AggregateFundingGroup[] calldata groups) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		for (uint256 i = 0; i < groups.length; i++) {
+			AggregateFundingGroup calldata group = groups[i];
+			MigrationFacetImpl.AggregateFundingResyncResult memory result = MigrationFacetImpl.resyncAggregateFunding(
+				group.partyA,
+				group.partyB,
+				group.symbolId,
+				group.positionType
+			);
+			emit AggregateFundingResynced(
+				group.partyA,
+				group.partyB,
+				group.symbolId,
+				group.positionType,
+				result.oldPartyAFunding,
+				result.oldPartyBFunding,
+				result.newFunding,
+				result.oldGlobalFunding,
+				result.newGlobalFunding
+			);
+		}
 	}
 
 	/// @notice Check if a quote has been migrated
