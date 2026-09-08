@@ -37,9 +37,6 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		await mineAt((now / EPOCH + epochs) * EPOCH + 100n)
 	}
 
-	const enableRoundingAllowance = async () =>
-		context.controlFacet.connect(context.signers.admin).setLiquidationUpnlRoundingAllowancePerPosition(ALLOWANCE_PER_POSITION)
-
 	const signedState = async (partyB: string, symbolId: bigint, price: bigint) => {
 		const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(symbolId, partyB)
 		const timestamp = BigInt(await time.latest()) + 1n
@@ -151,22 +148,9 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		await mineAt(aligned + EPOCH + 100n)
 	})
 
-	describe("configuration", function () {
-		it("defaults to strict equality and can be enabled only by protocol governance", async function () {
-			expect(await context.viewFacet.liquidationUpnlRoundingAllowancePerPosition()).to.equal(0n)
-			await expect(context.controlFacet.connect(context.signers.user).setLiquidationUpnlRoundingAllowancePerPosition(1n)).to.be.revertedWith(
-				"Accessibility: Must have role",
-			)
-			await expect(enableRoundingAllowance())
-				.to.emit(context.controlFacet, "SetLiquidationUpnlRoundingAllowancePerPosition")
-				.withArgs(0n, ALLOWANCE_PER_POSITION)
+	describe("fixed allowance", function () {
+		it("applies three raw units per position without configuration", async function () {
 			expect(await context.viewFacet.liquidationUpnlRoundingAllowancePerPosition()).to.equal(ALLOWANCE_PER_POSITION)
-		})
-
-		it("rejects an allowance above the proven per-position maximum", async function () {
-			await expect(
-				context.controlFacet.connect(context.signers.admin).setLiquidationUpnlRoundingAllowancePerPosition(ALLOWANCE_PER_POSITION + 1n),
-			).to.be.revertedWith("ControlFacet: Invalid liquidation rounding allowance")
 		})
 	})
 
@@ -205,14 +189,13 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			expect(signedUpnl - settledUpnl).to.equal(-1n)
 		})
 
-		it("keeps strict equality while the allowance is disabled", async function () {
+		it("accepts one-unit rounding without configuration", async function () {
 			const facet = await startLiquidation(signedUpnl, price, state)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
-			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(true)
+			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
 		})
 
 		it("uses the quote loss when it is smaller than the signed loss", async function () {
-			await enableRoundingAllowance()
 			const facet = await startLiquidation(signedUpnl, price, state)
 			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
 			const hedgerBefore = await hedger.getBalanceInfo(userAddr)
@@ -234,7 +217,6 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		})
 
 		it("caps the quote loss when it is larger than the signed loss", async function () {
-			await enableRoundingAllowance()
 			const smallerSignedLoss = settledUpnl + 1n
 			const facet = await startLiquidation(smallerSignedLoss, price, state)
 			const hedgerBefore = await hedger.getBalanceInfo(userAddr)
@@ -257,28 +239,24 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		})
 
 		it("accepts a difference exactly at the allowance", async function () {
-			await enableRoundingAllowance()
 			const facet = await startLiquidation(settledUpnl - ALLOWANCE_PER_POSITION, price, state)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
 		})
 
 		it("still disputes a difference one unit above the allowance", async function () {
-			await enableRoundingAllowance()
 			const facet = await startLiquidation(settledUpnl - ALLOWANCE_PER_POSITION - 1n, price, state)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(true)
 		})
 
 		it("still disputes a signed value that is too optimistic by more than the allowance", async function () {
-			await enableRoundingAllowance()
 			const facet = await startLiquidation(settledUpnl + ALLOWANCE_PER_POSITION + 1n, price, state)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(true)
 		})
 
 		it("still disputes a genuinely wrong price in the signature", async function () {
-			await enableRoundingAllowance()
 			const wrongState = { ...state, price: price - decimal(1n, 15) }
 			const facet = await startLiquidation(signedUpnl, price, wrongState)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
@@ -305,7 +283,6 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 
 	describe("positive uPNL rounding", function () {
 		it("caps PartyB's payment when the quote profit is larger than the signed profit", async function () {
-			await enableRoundingAllowance()
 			const quoteId = await openLong(INCIDENT_QUANTITY)
 			await advanceEpochs(4n)
 			const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
@@ -328,7 +305,6 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		})
 
 		it("restores only the quote profit when it is smaller than the signed profit", async function () {
-			await enableRoundingAllowance()
 			const quoteId = await openLong(INCIDENT_QUANTITY)
 			await advanceEpochs(4n)
 			const balanceBefore = await user.getBalanceInfo()
@@ -355,7 +331,6 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		let settledUpnl: bigint
 
 		beforeEach(async function () {
-			await enableRoundingAllowance()
 			quoteA = await openLong(INCIDENT_QUANTITY / 2n)
 			quoteB = await openLong(INCIDENT_QUANTITY / 2n)
 			await advanceEpochs(4n)

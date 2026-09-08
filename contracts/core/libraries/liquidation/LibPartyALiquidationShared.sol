@@ -12,6 +12,9 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 
 library LibPartyALiquidationShared {
+	/// @notice One raw unit for price PnL rounding and two for funding rounding per starting position.
+	uint256 internal constant LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION = 3;
+
 	function startPartyALiquidation(
 		address partyA,
 		bytes memory liquidationId,

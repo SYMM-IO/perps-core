@@ -145,7 +145,7 @@ interface IViewFacet is IDiamondAccessControlView {
 
 	function liquidationStartPositionCount(address partyA) external view returns (uint256);
 
-	function liquidationUpnlRoundingAllowancePerPosition() external view returns (uint256);
+	function liquidationUpnlRoundingAllowancePerPosition() external pure returns (uint256);
 
 	function partyBLiquidationTimestamp(address partyB, address partyA) external view returns (uint256);
 
