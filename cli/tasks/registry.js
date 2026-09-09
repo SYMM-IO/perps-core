@@ -18,6 +18,7 @@ import {
 	signerEnvironment,
 } from "../signer/index.js";
 import { ownershipAcceptanceAction, roleGrantAction } from "../signer/safe-batch.js";
+import { createAccountInstantUpgradeTask } from "./account-instant-upgrade.js";
 import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
@@ -1313,6 +1314,7 @@ const MAINTENANCE_TASKS = [
 	createArbitrumRoundingUpgradeTask(common, "stage-funding"),
 	createArbitrumRoundingUpgradeTask(common, "production"),
 	createArbitrumPerpsUpgradeTask(common),
+	createAccountInstantUpgradeTask(common),
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
 	SYMBOL_SYNC_FETCH_TASK,
 	SYMBOL_SYNC_ASSIGNMENT_TASK,
