@@ -251,6 +251,17 @@ contract MockAccountLayerHook {
 				})
 			);
 		}
+
+		// Execute callback if configured. Keeping this available on onCall lets tests exercise
+		// the same executeForAccount route from an already-funded account family.
+		if (shouldExecuteForAccount[selector] && accountLayer != address(0)) {
+			bytes memory callData = executeForAccountCallData[selector];
+			if (callData.length > 0) {
+				ICoreFacetCallback(accountLayer).executeForAccount(callData);
+				executeForAccountCallCount++;
+				lastExecuteForAccountSuccess = true;
+			}
+		}
 	}
 
 	// ==================== Testing Configuration Functions ====================

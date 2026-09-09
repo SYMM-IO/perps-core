@@ -55,6 +55,7 @@ const ACCOUNT_LAYER_FACETS = [
 	"DiamondLoupeFacet",
 	"CoreFacet",
 	"MarginFacet",
+	"TimelockFacet",
 	"SymmioHookFacet",
 	"ControlFacet",
 	"ViewFacet",

@@ -27,6 +27,8 @@ import {
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
+import { LibTimelock } from "../../libraries/LibTimelock.sol";
+import { TimelockStorage, SelectorTimelock, Schedule, TimelockApproval } from "../../storages/TimelockStorage.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
@@ -612,6 +614,72 @@ contract ViewFacet is IViewFacet {
 	/// @return Whether the system is paused
 	function paused() external view returns (bool) {
 		return AccountLayerStorage.layout().globalPaused;
+	}
+
+	// ==================== Timelock View Functions ====================
+
+	/// @notice Timelock on one selector of a root sub-account; unlocker == address(0) means not timelocked.
+	function getSelectorTimelock(address subAccount, bytes4 selector) external view returns (SelectorTimelock memory) {
+		return LibTimelock.timelockOf(subAccount, selector);
+	}
+
+	/// @notice Unlocker of a timelocked selector on a root sub-account, or address(0) when the selector is not timelocked.
+	function unlockerOf(address subAccount, bytes4 selector) external view returns (address) {
+		return LibTimelock.timelockOf(subAccount, selector).unlocker;
+	}
+
+	/// @notice True when selector is timelocked on the root sub-account.
+	function isTimelocked(address subAccount, bytes4 selector) external view returns (bool) {
+		return LibTimelock.timelockOf(subAccount, selector).unlocker != address(0);
+	}
+
+	/// @notice True when the non-empty selector set is timelocked by unlocker with a delay of at least minDelay.
+	function allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] calldata selectors) external view returns (bool) {
+		if (unlocker == address(0) || selectors.length == 0) return false;
+		for (uint256 i = 0; i < selectors.length; i++) {
+			SelectorTimelock memory st = LibTimelock.timelockOf(subAccount, selectors[i]);
+			if (st.unlocker != unlocker || st.delay < minDelay) return false;
+		}
+		return true;
+	}
+
+	/// @notice Timelock nonce of a root sub-account; advances on every policy change, and schedules stamped with an older nonce are dead.
+	function timelockNonce(address subAccount) external view returns (uint32) {
+		return TimelockStorage.layout().nonces[subAccount];
+	}
+
+	/// @notice The schedule for an op on the account's family; one stamped with an older nonce reads as empty.
+	function getSchedule(address account, bytes32 callDataHash) external view returns (Schedule memory) {
+		TimelockStorage.Layout storage t = TimelockStorage.layout();
+		address root = LibTimelock.rootOf(account);
+		Schedule memory w = t.schedules[root][callDataHash];
+		if (w.nonce != t.nonces[root]) return Schedule({ scheduledAt: 0, nonce: 0 });
+		return w;
+	}
+
+	/// @notice True once an approval digest has been consumed.
+	function isApprovalUsed(bytes32 approvalHash) external view returns (bool) {
+		return TimelockStorage.layout().usedApprovals[approvalHash];
+	}
+
+	/// @notice EIP-712 domain separator for TimelockApproval signatures (name SymmioAccountLayerTimelock, version 1).
+	function timelockDomainSeparator() external view returns (bytes32) {
+		return LibTimelock.domainSeparator();
+	}
+
+	/// @notice EIP-712 digest an unlocker signs for approval.
+	function hashTimelockApproval(TimelockApproval calldata approval) external view returns (bytes32) {
+		return LibTimelock.hashApproval(approval);
+	}
+
+	/// @notice Lower bound for a selector delay; zero means no minimum.
+	function minTimelockDelay() external view returns (uint256) {
+		return TimelockStorage.layout().minTimelockDelay;
+	}
+
+	/// @notice How long a schedule stays valid once its delay has passed: the configured value, or 10 minutes when unset.
+	function scheduleGracePeriod() external view returns (uint256) {
+		return LibTimelock.scheduleGracePeriod();
 	}
 
 	// ==================== Constants ====================

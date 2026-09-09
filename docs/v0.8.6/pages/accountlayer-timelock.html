@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Configure selector timelocks, approve or schedule individual calls, and handle batches and policy changes through the AccountLayer."
+		/>
+		<title>AccountLayer Timelocks - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Start here</a>
+				<a class="toc-link level-2" href="#the-problem">Why the timelock exists</a>
+				<a class="toc-link level-2" href="#model">Selectors and account families</a>
+				<a class="toc-link level-2" href="#execute-timelock-op">Executing with approvals</a>
+				<a class="toc-link level-2" href="#schedules">Scheduling and execution windows</a>
+				<a class="toc-link level-2" href="#the-gate">One call, one selector</a>
+				<a class="toc-link level-2" href="#changing-the-policy">Changing the policy</a>
+				<a class="toc-link level-2" href="#gated-surface">Which functions are checked</a>
+				<a class="toc-link level-2" href="#instant-open-delivery">InstantLayer delivery</a>
+				<a class="toc-link level-2" href="#solver-rules">Solver responsibilities</a>
+				<a class="toc-link level-2" href="#interface">API reference</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>AccountLayer Timelocks</h1>
+							<p class="hero-copy">
+								An account owner can put a delay on selected actions. To perform one, the owner schedules it and waits for the delay,
+								or obtains an unlocker's approval to act sooner.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Start here</h2>
+					<p>
+						The owner chooses which functions to timelock, who can approve them, and how long the owner must wait without approval. That
+						approver is called the <em>unlocker</em>, usually a solver's signing key. Nothing is timelocked until the owner configures it.
+					</p>
+					<p>
+						Once a function is timelocked, the owner has two ways to use it. The unlocker can sign an approval for the exact action,
+						allowing execution without waiting. Otherwise, the owner announces that action on-chain by scheduling it, waits for the
+						configured delay, and submits it while the schedule is still valid. Scheduling does not execute the action automatically.
+					</p>
+					<p>
+						An approval only satisfies the timelock. The person executing the action still needs the usual permission, and the action can
+						still fail for other reasons, such as insufficient funds. The unlocker does not gain ownership or the right to act on the
+						owner's behalf.
+					</p>
+
+					<h2 id="the-problem">Why the timelock exists</h2>
+					<p>
+						An instant-open solver may hedge off-chain before its on-chain batch adds margin, sends a quote, and opens the position.
+						Between its balance check and transaction inclusion, the owner could withdraw, transfer funds, move margin, or transfer
+						account ownership. Those changes can make the batch fail after the hedge is open.
+					</p>
+					<p>
+						Timelocks let the solver require advance notice or its own approval for the functions its strategy depends on. The protection
+						depends on which functions the owner has timelocked, their delays, any schedules or approvals that can still be used, and the
+						solver's checks. It does not guarantee that an instant-open batch succeeds.
+					</p>
+					<p>
+						These timelocks apply when the owner acts through the AccountLayer, including when it calls Core. Imported legacy accounts can
+						still act through a separate <code>MultiAccount</code> route that bypasses these checks. For this reason,
+						<code>setupTimelocks</code> rejects them.
+					</p>
+
+					<h2 id="model">Selectors and account families</h2>
+					<p>
+						A function selector identifies which function a call invokes. Within an account, all calls to a timelocked function share its
+						configured unlocker and delay. An individual approval or schedule applies to one exact call, including its arguments.
+					</p>
+
+					<p>
+						You can configure AccountLayer functions such as <code>addMargin</code>, as well as Core functions such as
+						<code>internalTransfer</code> that the AccountLayer executes through <code>_call</code>. Each timelocked function has one
+						unlocker, but different functions can have different unlockers and delays.
+					</p>
+					<p>
+						A root sub-account and its virtual accounts form an <em>account family</em>. The owner configures timelocks on the root, and
+						its virtual accounts share those settings. A signed approval must name that root in its <code>account</code> field. The same
+						policy still applies to a deleted virtual account whose link to the root remains.
+					</p>
+					<p>
+						The encoded function and arguments are called <em>calldata</em>. An approval or schedule identifies that calldata within an
+						account family. If a Core call's arguments do not name the target virtual account, the same authorization may apply when
+						another virtual account in the family executes it. When issuing an approval, integrations must consider its use by other
+						virtual accounts in the same family. Account routing and ownership checks still apply.
+					</p>
+
+					<h2 id="execute-timelock-op">Executing with approvals</h2>
+					<p>
+						To execute a timelocked action without waiting, obtain a signed approval from its unlocker. The approval names the root
+						account, the exact call, and a deadline. It can only be used once.
+					</p>
+					<p>
+						Submit the approval and the action together through <code>executeTimelockOp</code>. This function is called a
+						<em>wrapper</em> because it takes the action as an input, checks the approvals, and then runs the action.
+					</p>
+					<ol>
+						<li>
+							The AccountLayer checks that each approval has a valid signature from its named unlocker, has not expired, and has not
+							already been used. An approval cannot name the zero address as its unlocker.
+						</li>
+						<li>
+							It attempts the requested action. Each timelocked call must have an approval from its currently configured unlocker or a
+							valid schedule. The caller must still have permission to perform the action.
+						</li>
+						<li>
+							If the wrapper succeeds, it returns the action's result and every approval submitted with it becomes used. If the action
+							fails and the wrapper reverts, its changes are rolled back. Approvals and schedules are not spent by that failed attempt,
+							although their deadlines still apply to a retry.
+						</li>
+					</ol>
+					<p>
+						<strong>Submit only the approvals intended for this execution.</strong> Every supplied approval must be consumed by a timelock
+						check during the wrapped execution. Otherwise the call reverts with <code>UnusedTimelockApproval</code>, and all supplied
+						approvals remain unused. An unrelated call cannot burn a signature. Submitting the same signed approval twice fails with
+						<code>ApprovalUsed</code>. To authorize separate executions of identical calldata, the unlocker must sign distinct approvals
+						using different <code>salt</code> values. The salt is a value in the signed data that distinguishes otherwise identical
+						approvals.
+					</p>
+					<p>
+						Setting up or clearing selector timelocks invalidates old schedules for the account family. It does not cancel outstanding
+						signed approvals. An unused approval can still be submitted until its deadline. For it to satisfy a call's timelock, its
+						signer must still be the unlocker required by the current settings.
+					</p>
+					<p>
+						If you use schedules for all timelocked calls, you can submit the action directly without this wrapper. You can also call the
+						wrapper with an empty approval list. Calls without a timelock need neither an approval nor a schedule.
+					</p>
+					<details>
+						<summary>Integration details: approval fields and signing format</summary>
+						<p>
+							The unlocker signs EIP-712 typed data. The domain is <code>SymmioAccountLayerTimelock</code>, version <code>1</code>, with
+							the current chain ID and AccountLayer diamond as <code>verifyingContract</code>.
+						</p>
+						<pre><code>struct TimelockApproval {
+    address account;       // root sub-account
+    address unlocker;      // EOA or EIP-1271 contract
+    bytes32 callDataHash;  // hash of the specific call being authorized
+    uint256 deadline;      // valid through this timestamp, inclusive
+    bytes32 salt;          // distinct approval for another execution
+}
+
+struct SignedTimelockApproval {
+    TimelockApproval approval;
+    bytes signature;
+}
+
+function executeTimelockOp(
+    SignedTimelockApproval[] calldata approvals,
+    bytes calldata innerCallData
+) external returns (bytes memory);</code></pre>
+						<p>
+							<code>innerCallData</code> contains the encoded AccountLayer function to execute, for example
+							<code>_call(root, [op1, op2])</code>. Each approval's <code>callDataHash</code> must identify the particular call being
+							authorized. That can be <code>op1</code>, <code>op2</code>, a margin addition performed as part of the requested action,
+							or the outer AccountLayer call itself. Hash that call's calldata; do not automatically hash the entire
+							<code>innerCallData</code> value for every approval.
+						</p>
+					</details>
+
+					<h2 id="schedules">Scheduling and execution windows</h2>
+					<p>
+						Scheduling is the owner's way to proceed without the unlocker's approval. The owner submits an on-chain record identifying the
+						exact call, waits for the required delay, then submits the call itself. The schedule is usable only during a limited execution
+						window after that delay. This window is called the <em>grace period</em>.
+					</p>
+
+					<p>
+						For an individual call, the wait is the delay configured for that function. For a change to several timelocks, the owner must
+						wait for the longest delay among the affected locks whose unlockers did not approve. Adding some approvals can therefore
+						change both when that request becomes ready and when it expires. Calls in a batch have separate execution windows.
+					</p>
+					<p>
+						The grace period defaults to 10 minutes. The call can execute from the moment its delay has passed through the end of the
+						grace period, including both boundary timestamps. If the window expires, schedule the call again or obtain an approval. A
+						governance change to the grace period also affects schedules that already exist, because the AccountLayer uses the current
+						value when the call executes.
+					</p>
+					<p>
+						Scheduling the same call again for the same account family restarts its waiting period. <code>cancelTimelockOp</code> deletes
+						that schedule immediately. A successful scheduled execution deletes it too. Execution using approvals alone leaves an existing
+						schedule untouched unless the executed function separately invalidates it, as a timelock policy change does.
+					</p>
+					<p>
+						A valid schedule only satisfies the timelock. The call must still meet every other execution requirement, including sufficient
+						balances, valid deadlines, the required permissions, and any pause restrictions.
+					</p>
+
+					<details>
+						<summary>Integration details: scheduling calls and calculating readiness</summary>
+						<p>
+							The owner calls <code>scheduleTimelockOp(account, callDataHash)</code> with the hash of the exact call to authorize. The
+							hash identifies the encoded function and arguments. For an inner Core call, hash only that inner calldata. For a direct
+							AccountLayer call or policy change, hash its full function calldata.
+						</p>
+						<pre><code>struct Schedule {
+    uint64 scheduledAt; // zero means no schedule
+    uint32 nonce;       // family timelock nonce at scheduling
+}
+// schedules[root][callDataHash]</code></pre>
+						<p>
+							Scheduling records the current timestamp and the family's timelock nonce, a counter that increases on every setup or
+							clearing call. It does not store a delay or establish that the action will succeed. At execution, the AccountLayer uses
+							the current settings and checks:
+						</p>
+						<pre><code class="language-text">schedule.scheduledAt != 0
+schedule.nonce == timelockNonce(root)
+readyAt = schedule.scheduledAt + requiredDelay
+readyAt &lt;= block.timestamp &lt;= readyAt + scheduleGracePeriod()</code></pre>
+						<p>
+							In this calculation, <code>requiredDelay</code> is the function's delay. For a policy change, it is the longest delay
+							among the affected locks whose unlockers have not approved the request. A schedule with an older nonce is no longer valid.
+						</p>
+						<p>
+							<code>getSchedule</code> returns zero for both schedule fields when the stored nonce is out of date. It does not filter
+							out expired schedules or calculate readiness, so clients must calculate the execution window themselves.
+						</p>
+					</details>
+					<h2 id="the-gate">One call, one selector</h2>
+					<p>
+						When the owner submits a call, the AccountLayer looks up the timelock for its function. If no timelock is configured, the call
+						proceeds through its usual checks. If there is a timelock, the AccountLayer first looks for a valid approval from that
+						function's unlocker. Without one, it requires a valid schedule whose delay has passed and whose execution window is still
+						open. Otherwise, the call fails.
+					</p>
+
+					<p>
+						A batch groups several calls into one transaction. Each timelocked call in the batch needs its own approval or schedule.
+						Approving one call does not authorize the others.
+					</p>
+					<h3 id="batch-calls">Batches keep independent authorizations</h3>
+					<pre><code class="language-text">_call(account, [op1, op2])
+    op1: check keccak256(op1), op1's selector, and op1's delay
+    op2: check keccak256(op2), op2's selector, and op2's delay</code></pre>
+					<p>
+						Here, the two inner calls are the actions inside the batch. If both are timelocked and neither has an approval, the owner
+						schedules both separately. The owner does not need a schedule for the whole batch unless the outer <code>_call</code> function
+						is also timelocked. Authorizing the whole batch never replaces the authorization required for each inner call.
+					</p>
+					<p>
+						The owner can reuse the same inner calldata in a different batch or order within the same family. Its authorization does not
+						bind it to the surrounding calls. Executing identical calldata twice for a timelocked function requires two authorizations:
+						two distinct approvals, or an approval and a schedule. There is only one stored schedule per root and hash, so scheduling the
+						same hash twice replaces the first schedule rather than creating a second.
+					</p>
+					<p>
+						<code>_callWithMargin</code> adds margin before executing its Core calls. The AccountLayer checks that margin addition as
+						though the owner had submitted <code>addMarginToNextVA(account, isolationType, symbolId, marginAmount)</code> on its own. It
+						checks authorization for the outer function first, then the margin addition, then each inner Core call. Each needs an approval
+						or schedule only if its own selector is timelocked.
+					</p>
+					<h3 id="batch-example">Example: schedule two inner calls</h3>
+					<p>
+						Assume <code>internalTransfer</code> has a 10-minute delay, <code>allocate</code> has a 2-minute delay, and
+						<code>_call</code> is not timelocked. Both policies are configured before scheduling. In this ethers example,
+						<code>coreInterface</code> is the Core ABI interface and <code>accountLayer</code> exposes the combined AccountLayer ABI
+						connected to the owner. The account is funded and the amounts use Core's required units.
+					</p>
+					<pre><code class="language-javascript">const op1 = coreInterface.encodeFunctionData("internalTransfer", [recipient, transferAmount])
+const op2 = coreInterface.encodeFunctionData("allocate", [allocateAmount])
+
+await (await accountLayer.scheduleTimelockOp(root, ethers.keccak256(op1))).wait()
+await (await accountLayer.scheduleTimelockOp(root, ethers.keccak256(op2))).wait()
+
+// Once BOTH schedules are ready and neither has expired:
+await (await accountLayer._call(root, [op1, op2])).wait()</code></pre>
+					<p>
+						With the default 10-minute grace period, each schedule has its own execution window. If both were scheduled at the same
+						timestamp <code>T</code>:
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Inner call</th>
+									<th>Ready at</th>
+									<th>Last valid timestamp</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>internalTransfer(...)</code></td>
+									<td>T + 10 minutes</td>
+									<td>T + 20 minutes</td>
+								</tr>
+								<tr>
+									<td><code>allocate(...)</code></td>
+									<td>T + 2 minutes</td>
+									<td>T + 12 minutes</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The batch can use both schedules from T + 10 through T + 12 minutes, inclusive. Real transactions may have different
+						scheduling timestamps; calculate each window from its own <code>scheduledAt</code>. An approval can authorize either call
+						instead of using its schedule. If any call fails, the AccountLayer call reverts and restores the authorizations consumed
+						earlier in that call.
+					</p>
+
+					<h2 id="changing-the-policy">Changing the policy is a separate check</h2>
+					<p>
+						The owner cannot avoid a timelock by removing it first. Clearing a lock, shortening its delay, or replacing its unlocker
+						requires the current unlocker's approval or a schedule that satisfies the current delay.
+					</p>
+					<p>
+						For example, <code>clearTimelocks(root, [withdrawSelector, transferSelector])</code> asks to remove two locks. The approvals
+						or schedule must authorize that exact clearing request, including the root and full list of selectors. The request must
+						satisfy both locks' existing policies. It does not execute a withdrawal or transfer.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Requested change</th>
+									<th>Timelock authorization</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Add a previously untimelocked selector</td>
+									<td>None</td>
+								</tr>
+								<tr>
+									<td>Keep the same unlocker and keep or increase the delay</td>
+									<td>None</td>
+								</tr>
+								<tr>
+									<td>Reduce the delay</td>
+									<td>Current unlocker's approval, or a schedule satisfying the current delay</td>
+								</tr>
+								<tr>
+									<td>Replace the unlocker, even with a longer delay</td>
+									<td>Current unlocker's approval, or a schedule satisfying the current delay</td>
+								</tr>
+								<tr>
+									<td>Clear a timelocked selector</td>
+									<td>Current unlocker's approval, or a schedule satisfying the current delay</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						<code>setupTimelocks</code> requires authorization for settings it weakens, meaning a shorter delay or a different unlocker.
+						<code>clearTimelocks</code> requires authorization for every listed selector that currently has a timelock. Both functions
+						require the root account's owner. Setup rejects the zero address as unlocker, imported legacy accounts, and delays outside
+						<code>minTimelockDelay &lt;= delay &lt;= 30 days</code>.
+					</p>
+					<p>
+						If several affected selectors share an unlocker, one approval from that unlocker satisfies all of those locks for the
+						policy-change request. Locks controlled by other unlockers still need their own approval or a schedule. For affected locks
+						without approval, the owner must wait for the longest delay. The request uses one schedule, even when it changes several
+						locks.
+					</p>
+					<p>For example, clearing one lock held by Alice with a 2-hour delay and another held by Bob with an 8-hour delay requires:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Approvals for the exact clearing request</th>
+									<th>Required schedule delay</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Neither</td>
+									<td>8 hours</td>
+								</tr>
+								<tr>
+									<td>Alice only</td>
+									<td>8 hours</td>
+								</tr>
+								<tr>
+									<td>Bob only</td>
+									<td>2 hours</td>
+								</tr>
+								<tr>
+									<td>Both</td>
+									<td>No schedule needed</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Every successful <code>setupTimelocks</code> or <code>clearTimelocks</code> call invalidates the family's existing schedules,
+						even if no settings changed. The AccountLayer tracks this with a counter called the <em>timelock nonce</em>: each setup or
+						clearing call increases it, and schedules recorded with an older value can no longer be used. Configure all policies before
+						scheduling calls. Transferring ownership does not remove the root's timelocks.
+					</p>
+
+					<h2 id="gated-surface">Which functions are checked</h2>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>AccountLayer facet</th>
+									<th>Entry points with call checks</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>CoreFacet</td>
+									<td>
+										<code>_call</code>, <code>_callWithMargin</code>, <code>setSingleVAMode</code>, <code>deleteSubAccount</code>,
+										<code>transferSubAccountOwnership</code>, <code>createCustomVirtualAccount</code>
+									</td>
+								</tr>
+								<tr>
+									<td>MarginFacet</td>
+									<td>
+										<code>addMargin</code>, <code>addMarginToNextVA</code>, <code>removeMargin</code>,
+										<code>safeRemoveMargin</code>, <code>emergencyRecoverMargin</code>
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The batch functions also check the timelock on each inner Core call. <code>_callWithMargin</code> checks the margin addition
+						against the timelock for <code>addMarginToNextVA</code>. A Core call requested by an active affiliate hook through
+						<code>executeForAccount</code> is checked against that Core call's exact calldata and the active account family's policy.
+						Setup and clearing follow the policy-change rules described above.
+					</p>
+					<p>
+						<code>depositForAccount</code>, <code>depositAndAllocateForAccount</code>, and <code>editAccountName</code> have no timelock
+						check. Scheduling and cancellation also have no timelock check. Administrative functions remain subject to their existing role
+						permissions. Adding a function's selector to the timelock settings has no effect if that function does not enforce a timelock
+						check.
+					</p>
+					<p>
+						Solvers must choose the selector set their strategy needs and verify it on-chain. Core balance and position actions, margin
+						movements, account deletion, ownership transfer, and virtual-account routing are relevant paths to review. The protocol does
+						not enforce a default selector set or supply a complete solver policy. Locking an outer batch selector also requires
+						authorization for the exact batch, in addition to any locked inner calls.
+					</p>
+
+					<h2 id="instant-open-delivery">Delivering approvals through InstantLayer</h2>
+					<p>
+						InstantLayer lets the user sign the intended action before the unlocker's approval is available. The user signs an operation
+						targeting <code>executeTimelockOp</code> on the AccountLayer, with space reserved for the approval and its signature. Those
+						reserved parts are called <em>flex fields</em>. An authorized filler supplies them when the operation is executed. The filler
+						is allowed to supply the data; the unlocker signs the approval. Configure both roles deliberately.
+					</p>
+					<p>
+						Suppose the margin addition performed by <code>_callWithMargin</code> is the only timelocked action in an instant-open
+						request. Its approval must therefore authorize <code>addMarginToNextVA</code>. The user signs:
+					</p>
+					<pre><code class="language-text">executeTimelockOp(
+    [{ approval: zeroApproval, signature: reservedSignature }],
+    _callWithMargin(root, isolationType, symbolId, marginAmount, [quoteCallData])
+)</code></pre>
+					<p>
+						The example shows the call structure. Encode <code>_callWithMargin(...)</code> as bytes before encoding the wrapper. Use
+						<code>maxUses = 1</code> for this InstantLayer operation. The unlocker signs an approval whose <code>callDataHash</code> is
+						the hash of the standalone <code>addMarginToNextVA(...)</code> calldata. If the outer entry or any inner Core call is also
+						timelocked, provide its own approval or a schedule that is ready and has not expired. Sharing an unlocker does not let two
+						timelocked calls share one approval.
+					</p>
+					<h3 id="flex-layout">Encoding the reserved approval fields</h3>
+					<details>
+						<summary>ABI offsets, signature bytes, and delegation checks</summary>
+						<p>
+							The ABI layout below reserves space for one approval. All byte offsets are measured from the end of the four-byte wrapper
+							selector. These offsets apply only to this one-element encoding; calculate them from the actual ABI encoding when
+							reserving more entries.
+						</p>
+						<pre><code class="language-text">[0, 64)       head offsets for approvals and innerCallData      fixed
+[64, 128)     array length and element offset                   fixed
+[128, 288)    account, unlocker, callDataHash, deadline, salt    flex field 1
+[288, 320)    signature offset                                  fixed
+[320, ...)    signature length and padded reserved bytes        flex field 2
+[..., end)    innerCallData length and bytes                    fixed</code></pre>
+						<p>
+							Reserve enough space for the unlocker's signature, commonly 65 bytes for an externally owned account, or EOA. The
+							signature flex field includes the ABI word containing the signature length, followed by the reserved signature bytes
+							padded to a multiple of 32. Fill in the actual signature length and bytes, then pad the rest of the reserved space with
+							zeros. A contract wallet that validates signatures through EIP-1271 may need a different reservation size.
+						</p>
+						<p>
+							Allow the filler to change only the approval fields and the reserved signature data shown above. Keep the ABI offsets,
+							array length, and wrapped call outside the flex fields so the filler cannot change them. If someone else submits the fill
+							on the filler's behalf, include a <code>FlexFillAuth</code> signature from the filler for each filled field. That separate
+							signature is unnecessary when the authorized filler executes the operation itself. The executor still needs the required
+							InstantLayer role.
+						</p>
+						<p>
+							When a session key signs the operation, InstantLayer checks that it has delegated permission for the actual AccountLayer
+							function inside the wrapper, using the final calldata after all flex fills and template-result insertions. If
+							<code>executeTimelockOp</code> wrappers are nested, it looks through them to that function. Permission for the wrapper
+							alone does not authorize the function inside it. The delegation must still cover the relevant account family, and the
+							action must pass its timelock checks.
+						</p>
+					</details>
+
+					<h2 id="solver-rules">Solver integration responsibilities</h2>
+					<p>On-chain timelocks are one part of the solver's execution policy. Before relying on them:</p>
+					<ol>
+						<li>
+							Publish and version the list of functions your strategy requires to be timelocked, along with their required delays. Use
+							<code>allTimelockedBy(root, unlocker, minDelay, required)</code> to check that every listed selector has the expected
+							unlocker and at least the required delay. Check groups with different unlockers or minimum delays separately. An empty
+							required-selector list returns <code>false</code>, as does a zero unlocker, so an incomplete policy cannot pass preflight.
+							Choose delays long enough to cover the time between the solver's balance check and the transaction's inclusion on-chain.
+						</li>
+						<li>
+							Track schedules using <code>TimelockOpScheduled</code>, <code>TimelockOpCancelled</code>, <code>TimelockOpExecuted</code>,
+							and <code>TimelockNonceAdvanced</code>. Check relevant hashes with <code>getSchedule</code>. An execution event does not
+							prove that a schedule was used: the call may have used an approval and left its schedule available. A scheduling event
+							reports only the calldata hash, so it does not tell you which action was scheduled. If you cannot rule out a pending or
+							executable schedule affecting the hedge, do not rely on the timelock for that hedge.
+						</li>
+						<li>
+							Track outstanding signed approvals until they expire or are consumed. Sign only the exact calldata intended, with short
+							deadlines and distinct salts for separate executions. Inner-call approvals are not tied to the enclosing batch, order, or
+							a specific virtual-account target omitted from the calldata.
+						</li>
+						<li>
+							Limit how long a signed operation remains valid to the relevant scheduling delay. Before executing, recheck the account's
+							timelock settings, its nonce, its schedules, and the global minimum-delay and grace-period settings. Checking the nonce
+							alone cannot tell you whether outstanding signed approvals still exist.
+						</li>
+						<li>
+							Review the required selector set after upgrades or strategy changes. A frontend's default list or a successful policy
+							query cannot establish protection against functions left out of that list.
+						</li>
+					</ol>
+
+					<h2 id="interface">API reference</h2>
+					<p>
+						The following functions are on the AccountLayer diamond. Setup, clearing, scheduling, and cancellation require account
+						ownership and an unpaused AccountLayer:
+					</p>
+					<pre><code>setupTimelocks(address subAccount, address unlocker, uint256 delay, bytes4[] selectors)
+clearTimelocks(address subAccount, bytes4[] selectors)
+scheduleTimelockOp(address account, bytes32 callDataHash)
+cancelTimelockOp(address account, bytes32 callDataHash)</code></pre>
+					<p>The approval wrapper runs the requested AccountLayer function, which checks the caller's permissions:</p>
+					<pre><code>executeTimelockOp(SignedTimelockApproval[] approvals, bytes innerCallData) returns (bytes)</code></pre>
+					<p>ControlFacet configuration requires <code>SETTER_ROLE</code>:</p>
+					<pre><code>setMinTimelockDelay(uint256 value)     // 0..30 days; zero means no minimum
+setScheduleGracePeriod(uint256 value)  // 0..30 days; zero selects the 10-minute default</code></pre>
+					<p>ViewFacet exposes:</p>
+					<pre><code>getSelectorTimelock(address subAccount, bytes4 selector) returns (SelectorTimelock)
+unlockerOf(address subAccount, bytes4 selector) returns (address)
+isTimelocked(address subAccount, bytes4 selector) returns (bool)
+allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] selectors) returns (bool)
+timelockNonce(address subAccount) returns (uint32)
+getSchedule(address account, bytes32 callDataHash) returns (Schedule)
+isApprovalUsed(bytes32 approvalHash) returns (bool)
+timelockDomainSeparator() returns (bytes32)
+hashTimelockApproval(TimelockApproval approval) returns (bytes32)
+minTimelockDelay() returns (uint256)
+scheduleGracePeriod() returns (uint256)</code></pre>
+					<p>
+						Setup, clearing, and selector-policy views take the root sub-account address. Scheduling, cancellation, and
+						<code>getSchedule</code> also accept a virtual account and resolve it to its root.
+					</p>
+					<h3>Events</h3>
+					<pre><code>TimelocksSetup(address indexed subAccount, address indexed unlocker, uint256 delay, bytes4[] selectors)
+TimelocksCleared(address indexed subAccount, bytes4[] selectors)
+TimelockNonceAdvanced(address indexed subAccount, uint32 nonce)
+TimelockOpScheduled(address indexed subAccount, bytes32 indexed callDataHash, uint64 scheduledAt)
+TimelockOpCancelled(address indexed subAccount, bytes32 indexed callDataHash)
+TimelockOpApproved(address indexed subAccount, bytes32 indexed callDataHash, address indexed unlocker, bytes32 approvalHash)
+TimelockOpExecuted(address indexed subAccount, bytes32 indexed callDataHash)
+MinTimelockDelayUpdated(uint256 minTimelockDelay)
+ScheduleGracePeriodUpdated(uint256 scheduleGracePeriod)</code></pre>
+					<h3>Timelock errors</h3>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Error</th>
+									<th>Meaning and next step</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>TimelockOpNotApprovedOrScheduled(root, hash)</code></td>
+									<td>
+										The call has no matching approval and no schedule under the current timelock nonce. Check the root account and
+										exact calldata hash, then supply the required approval or schedule the call.
+									</td>
+								</tr>
+								<tr>
+									<td><code>ScheduleNotReady(root, hash, readyAt)</code></td>
+									<td>Wait until <code>readyAt</code> or supply the required approval.</td>
+								</tr>
+								<tr>
+									<td><code>ScheduleExpired(root, hash, expiredAt)</code></td>
+									<td>The current execution window ended. Reschedule or supply approvals.</td>
+								</tr>
+								<tr>
+									<td><code>ZeroUnlocker</code></td>
+									<td>Setup or a supplied approval names the zero address.</td>
+								</tr>
+								<tr>
+									<td><code>ApprovalExpired</code></td>
+									<td>The approval deadline is earlier than the block timestamp.</td>
+								</tr>
+								<tr>
+									<td><code>ApprovalUsed</code></td>
+									<td>
+										The same signed approval was already submitted successfully, or appears more than once in this approval list.
+										Obtain a distinct approval.
+									</td>
+								</tr>
+								<tr>
+									<td><code>UnusedTimelockApproval</code></td>
+									<td>
+										A supplied approval was not consumed. Remove surplus or mismatched approvals. The reverted call leaves them
+										usable.
+									</td>
+								</tr>
+								<tr>
+									<td><code>InvalidApprovalSignature</code></td>
+									<td>The signature is invalid for the named unlocker and EIP-712 payload.</td>
+								</tr>
+								<tr>
+									<td><code>NotRootSubAccount</code></td>
+									<td>Setup or clearing needs an existing root sub-account.</td>
+								</tr>
+								<tr>
+									<td><code>LegacyAccountCannotBeTimelocked</code></td>
+									<td>Setup rejected an account that retains legacy execution authority.</td>
+								</tr>
+								<tr>
+									<td><code>DelayBelowMinimum</code>, <code>DelayAboveMaximum</code></td>
+									<td>The requested delay or minimum-delay setting is outside its allowed bounds.</td>
+								</tr>
+								<tr>
+									<td><code>ScheduleGracePeriodAboveMaximum</code></td>
+									<td>The grace-period setting exceeds 30 days.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The call can also fail if the account does not exist, the caller lacks ownership, the AccountLayer is paused, or the requested
+						function rejects it for another reason.
+					</p>
+
+					<details>
+						<summary>Contract implementation notes</summary>
+						<p>The feature stores its settings in its own timelock storage slot.</p>
+						<pre><code>struct SelectorTimelock {
+    address unlocker; // zero means this selector is not timelocked
+    uint64 delay;     // required scheduling delay, in seconds
+}
+// selectorTimelocks[rootSubAccount][selector]</code></pre>
+						<pre><code>function _requireCallApprovedOrScheduled(address root, bytes32 callDataHash, bytes4 selector) private {
+    SelectorTimelock memory timelock = timelockOf(root, selector);
+    if (timelock.unlocker == address(0)) return;
+    if (!useApproval(root, callDataHash, timelock.unlocker)) {
+        _useSchedule(root, callDataHash, timelock.delay);
+    }
+    emit TimelockOpExecuted(root, callDataHash);
+}</code></pre>
+						<p>
+							This helper checks one call's selector. It does not inspect any calls nested inside it.
+							<code>requireCallApprovedOrScheduled</code> uses the helper for a direct AccountLayer call.
+							<code>requireCallsApprovedOrScheduled</code> uses it separately for the batch function, any margin addition, and each
+							inner call.
+						</p>
+						<p>
+							Each signed approval has a digest, a hash of the data being signed. The wrapper stores that digest as used so later
+							transactions cannot reuse the approval. During execution, it also keeps a temporary count of available approvals for each
+							combination of root account, calldata hash, and unlocker. When a timelock check uses an approval, it reduces the matching
+							count. The wrapper clears the remaining counts before returning. If the wrapper reverts, the records of used approvals and
+							any schedule consumption are rolled back.
+						</p>
+						<p>
+							The wrapper uses a delegatecall to run another function on the same diamond while preserving the caller and signer
+							identity. It has no ownership check or reentrancy guard of its own. The called function applies its own permission checks
+							and reentrancy guard where required.
+						</p>
+					</details>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

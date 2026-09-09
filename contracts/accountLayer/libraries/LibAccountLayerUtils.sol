@@ -125,7 +125,6 @@ library LibAccountLayerUtils {
 	/// @notice Resolves the owner of an account by checking sub-accounts, virtual accounts, and legacy contracts
 	function resolveAccountOwner(address account) internal view returns (address) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 
 		address owner = ahLayout.subAccounts[account].owner;
 		if (owner != address(0)) {
@@ -140,6 +139,14 @@ library LibAccountLayerUtils {
 			}
 		}
 
+		return legacyOwnerOf(account);
+	}
+
+	/// @notice Owner an account has in any registered legacy MultiAccount, or zero.
+	/// @dev Non-zero means that legacy contract can still execute for the account outside the AccountLayer,
+	///      so AccountLayer-only protections such as timelocks cannot cover it.
+	function legacyOwnerOf(address account) internal view returns (address) {
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
 		address[] memory legacyAccounts = afLayout.legacyMultiAccounts.values();
 		for (uint256 i = 0; i < legacyAccounts.length; i++) {
 			if (legacyAccounts[i].code.length == 0) continue;
@@ -149,7 +156,6 @@ library LibAccountLayerUtils {
 				}
 			} catch {}
 		}
-
 		return address(0);
 	}
 

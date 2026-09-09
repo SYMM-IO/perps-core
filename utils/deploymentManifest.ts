@@ -128,6 +128,7 @@ const CORE_FACET_ARTIFACT_OVERRIDES: Record<string, string> = {
 export const AccountLayerFacetNames = [
 	"CoreFacet",
 	"MarginFacet",
+	"TimelockFacet",
 	"SymmioHookFacet",
 	"ControlFacet",
 	"ViewFacet",
@@ -138,6 +139,7 @@ export const AccountLayerFacetNames = [
 const ACCOUNT_LAYER_FACET_ARTIFACTS: Record<(typeof AccountLayerFacetNames)[number], string> = {
 	CoreFacet: "contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
 	MarginFacet: "contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+	TimelockFacet: "contracts/accountLayer/facets/Timelock/TimelockFacet.sol:TimelockFacet",
 	SymmioHookFacet: "contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
 	ControlFacet: "contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
 	ViewFacet: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",

@@ -14,6 +14,8 @@ import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAcc
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
+import { LibTimelock } from "../../libraries/LibTimelock.sol";
+import { TimelockStorage } from "../../storages/TimelockStorage.sol";
 
 /// @notice Administrative facet for role management, pause control, and system configuration
 contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerPausable {
@@ -248,5 +250,21 @@ contract ControlFacet is IControlFacet, AccountLayerAccessibility, AccountLayerP
 		ISymmio(core).setFeeCollector(affiliate, afLayout.affiliates[affiliate].feeDetails.feeDistributor);
 
 		emit SymmioCoreAddedToAffiliate(affiliate, core);
+	}
+
+	// ==================== Timelock Configuration ====================
+
+	/// @notice Sets the lower bound for a selector delay. Zero means no minimum. Capped at 30 days.
+	function setMinTimelockDelay(uint256 value) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
+		if (value > LibTimelock.MAX_TIMELOCK_DELAY) revert DelayAboveMaximum();
+		TimelockStorage.layout().minTimelockDelay = value;
+		emit MinTimelockDelayUpdated(value);
+	}
+
+	/// @notice Sets how long a schedule stays valid once its delay has passed. Zero selects the 10-minute default. Capped at 30 days.
+	function setScheduleGracePeriod(uint256 value) external onlyRole(LibAccountLayerAccessibility.SETTER_ROLE) {
+		if (value > LibTimelock.MAX_TIMELOCK_DELAY) revert ScheduleGracePeriodAboveMaximum();
+		TimelockStorage.layout().scheduleGracePeriod = value;
+		emit ScheduleGracePeriodUpdated(value);
 	}
 }

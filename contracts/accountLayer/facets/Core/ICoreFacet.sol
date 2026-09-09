@@ -122,6 +122,7 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	// ==================== Hook Callback ====================
 
 	/// @notice Executes a whitelisted Symmio call during an active hook context
+	/// @dev If the call's Core selector is timelocked for the active account family, its exact calldata also needs an approval or mature schedule.
 	/// @param callData The encoded function call to execute
 	function executeForAccount(bytes calldata callData) external;
 

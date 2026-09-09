@@ -9,6 +9,7 @@ import { IMarginFacet } from "./IMarginFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
+import { AccountLayerTimelocked } from "../../utils/AccountLayerTimelocked.sol";
 import { AccountStorage, VirtualAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerMargin } from "../../libraries/LibAccountLayerMargin.sol";
@@ -16,13 +17,16 @@ import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Facet for transferring margin between sub-accounts and virtual accounts
-contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
+contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard, AccountLayerTimelocked {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
 	/// @notice Transfers deposited balance from a parent sub-account to a virtual account's allocated balance
 	/// @param virtualAccount The virtual account to add margin to
 	/// @param amount The amount to transfer via internalTransfer
-	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+	function addMargin(
+		address virtualAccount,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) timelocked(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
@@ -45,7 +49,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId,
 		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) timelocked(subAccount) {
 		LibAccountLayerMargin.addMarginToNextVA(subAccount, isolationType, symbolId, amount);
 	}
 
@@ -57,7 +61,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		address virtualAccount,
 		uint256 amount,
 		ISymmio.SingleUpnlSig memory upnlSig
-	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) timelocked(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
@@ -80,7 +84,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		address virtualAccount,
 		uint256 amount,
 		ISymmio.SingleUpnlWithPendingBalanceSig memory upnlSig
-	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) timelocked(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
@@ -97,7 +101,10 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	/// @dev Used when a VA address has funds but was never formally created or was orphaned
 	/// @param subAccount The parent sub-account to recover funds to
 	/// @param nonce The nonce used to derive the lost virtual account address
-	function emergencyRecoverMargin(address subAccount, uint256 nonce) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	function emergencyRecoverMargin(
+		address subAccount,
+		uint256 nonce
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) timelocked(subAccount) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 
