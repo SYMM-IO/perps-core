@@ -36,6 +36,8 @@ library LibPartyALiquidationShared {
 		int256 liquidationAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(upnl, liquidationAllocatedBalance, partyA);
 		require(liquidationAvailableBalance < 0, "LiquidationFacet: PartyA is solvent");
 
+		maLayout.liquidationStartNonce += 1;
+		emit SharedEvents.LiquidationStartNonceIncremented(maLayout.liquidationStartNonce);
 		maLayout.liquidationStatus[partyA] = true;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA] = LiquidationDetail({

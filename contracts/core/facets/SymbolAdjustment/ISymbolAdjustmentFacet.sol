@@ -9,6 +9,7 @@ import { RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
 
 interface ISymbolAdjustmentFacet {
 	error PendingQuoteIsStale();
+	error LiquidationStartNonceMismatch(uint256 expected, uint256 actual);
 
 	struct QuoteAdjustmentPreview {
 		uint256 factor;
@@ -86,6 +87,8 @@ interface ISymbolAdjustmentFacet {
 	event PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId);
 	event StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId);
 	event RestatementFinalized(uint256 indexed symbolId, uint256 epoch);
+	/// @notice Also emitted by every liquidation-start route on the shared Diamond address.
+	event LiquidationStartNonceIncremented(uint256 indexed nonce);
 
 	function scheduleAdjustment(uint256 symbolId, uint256 factor, uint256 effectiveTimestamp) external;
 
@@ -93,8 +96,8 @@ interface ISymbolAdjustmentFacet {
 
 	function confirmPriceAdjusted(uint256 symbolId) external;
 
-	/// @notice Starts a frozen restatement and initializes bounded funding preparation.
-	function startRestatement(uint256 symbolId) external;
+	/// @notice Starts a frozen restatement if no liquidation has started since Operations took its off-chain snapshot.
+	function startRestatement(uint256 symbolId, uint256 expectedLiquidationStartNonce) external;
 
 	/// @notice Processes only the operator-supplied PartyBs for funding preparation or restoration.
 	function processRestatementFunding(uint256 symbolId, address[] calldata partyBs) external;

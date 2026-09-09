@@ -55,6 +55,8 @@ library ClearingHouseFacetImpl {
 		require(maLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 
 		require(LibAccount.partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0, "ClearingHouseFacet: partyB is solvent");
+		maLayout.liquidationStartNonce += 1;
+		emit SharedEvents.LiquidationStartNonceIncremented(maLayout.liquidationStartNonce);
 		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = timestamp;
 		chLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
 			liquidationId: liquidationId,

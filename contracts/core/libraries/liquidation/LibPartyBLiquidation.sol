@@ -52,6 +52,8 @@ library LibPartyBLiquidation {
 		}
 
 		// Update liquidation status and timestamp for Party B
+		maLayout.liquidationStartNonce += 1;
+		emit SharedEvents.LiquidationStartNonceIncremented(maLayout.liquidationStartNonce);
 		maLayout.partyBLiquidationStatus[partyB][partyA] = true;
 		maLayout.partyBLiquidationTimestamp[partyB][partyA] = timestamp;
 

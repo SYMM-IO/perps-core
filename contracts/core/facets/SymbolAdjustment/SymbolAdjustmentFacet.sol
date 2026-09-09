@@ -85,7 +85,11 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	/// @notice Opens a frozen restatement window either directly from an effective SCHEDULED adjustment or from an already-active factor.
 	/// @dev Direct restatement avoids activating the scheduled factor in `cumulativeFactor`; Muon and normal trading never use that temporary basis.
 	///      The operator must supply the relevant PartyBs and complete funding preparation before quote mutation can begin.
-	function startRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function startRestatement(uint256 symbolId, uint256 expectedLiquidationStartNonce) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		uint256 currentLiquidationStartNonce = MAStorage.layout().liquidationStartNonce;
+		if (currentLiquidationStartNonce != expectedLiquidationStartNonce) {
+			revert LiquidationStartNonceMismatch(expectedLiquidationStartNonce, currentLiquidationStartNonce);
+		}
 		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
 		require(!adjustment.restating, "SymbolAdjustmentFacet: Already restating");
