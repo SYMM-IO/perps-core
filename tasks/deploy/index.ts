@@ -1,3 +1,4 @@
+import { accountInstantUpgradeTask } from "./accountInstantUpgrade.js"
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
 import { arbitrumPerpsUpgradeTask } from "./arbitrumPerpsUpgrade.js"
 import { arbitrumRoundingUpgradeTask } from "./arbitrumRoundingUpgrade.js"
@@ -26,6 +27,7 @@ import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
 	accountLayerDiamondTask,
+	accountInstantUpgradeTask,
 	arbitrumPerpsUpgradeTask,
 	arbitrumRoundingUpgradeTask,
 	checkComponentTask,
