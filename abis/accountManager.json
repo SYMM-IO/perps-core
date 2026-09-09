@@ -53,7 +53,27 @@
     },
     {
         "inputs": [],
+        "name": "ApprovalExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ApprovalUsed",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "CoreNotFound",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DelayAboveMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DelayBelowMinimum",
         "type": "error"
     },
     {
@@ -110,6 +130,11 @@
     },
     {
         "inputs": [],
+        "name": "InvalidApprovalSignature",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "InvalidCallData",
         "type": "error"
     },
@@ -146,6 +171,11 @@
     {
         "inputs": [],
         "name": "InvalidState",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "LegacyAccountCannotBeTimelocked",
         "type": "error"
     },
     {
@@ -210,6 +240,11 @@
     },
     {
         "inputs": [],
+        "name": "NotRootSubAccount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "NotSymmioCore",
         "type": "error"
     },
@@ -241,6 +276,53 @@
     {
         "inputs": [],
         "name": "ReentrancyGuardReentrantCall",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint64",
+                "name": "expiredAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "ScheduleExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ScheduleGracePeriodAboveMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint64",
+                "name": "readyAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "ScheduleNotReady",
         "type": "error"
     },
     {
@@ -280,6 +362,22 @@
         "type": "error"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "TimelockOpNotApprovedOrScheduled",
+        "type": "error"
+    },
+    {
         "inputs": [],
         "name": "Unauthorized",
         "type": "error"
@@ -291,12 +389,22 @@
     },
     {
         "inputs": [],
+        "name": "UnusedTimelockApproval",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "ZeroAddress",
         "type": "error"
     },
     {
         "inputs": [],
         "name": "ZeroAmount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ZeroUnlocker",
         "type": "error"
     },
     {

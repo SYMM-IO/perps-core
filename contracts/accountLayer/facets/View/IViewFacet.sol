@@ -8,6 +8,7 @@ import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondA
 
 import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountStorage.sol";
 import { AffiliateDetail, AffiliateSelectorConfig, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import { SelectorTimelock, Schedule, TimelockApproval } from "../../storages/TimelockStorage.sol";
 
 /// @notice Read-only interface for accounts, affiliates, roles, and system state
 interface IViewFacet is IDiamondAccessControlView {
@@ -200,6 +201,44 @@ interface IViewFacet is IDiamondAccessControlView {
 
 	/// @notice Returns the pending owner address (for two-step ownership transfer)
 	function pendingOwner() external view returns (address);
+
+	// ==================== Timelock View Functions ====================
+
+	/// @notice Timelock on one selector of a root sub-account; unlocker == address(0) means not timelocked.
+	function getSelectorTimelock(address subAccount, bytes4 selector) external view returns (SelectorTimelock memory);
+
+	/// @notice Unlocker of a timelocked selector on a root sub-account, or address(0) when the selector is not timelocked.
+	function unlockerOf(address subAccount, bytes4 selector) external view returns (address);
+
+	/// @notice True when selector is timelocked on the root sub-account.
+	function isTimelocked(address subAccount, bytes4 selector) external view returns (bool);
+
+	/// @notice True when every selector in a non-empty set is timelocked by unlocker with a delay of at least minDelay.
+	///         The solver's pre-hedge check.
+	/// @dev A zero unlocker or empty selectors array returns false.
+	function allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] calldata selectors) external view returns (bool);
+
+	/// @notice Timelock nonce of a root sub-account; advances on every policy change, and schedules stamped with an older nonce are dead.
+	function timelockNonce(address subAccount) external view returns (uint32);
+
+	/// @notice The schedule for an op on the account's family (a virtual account resolves to its parent); one stamped
+	///         with an older nonce reads as empty.
+	function getSchedule(address account, bytes32 callDataHash) external view returns (Schedule memory);
+
+	/// @notice True once an approval digest has been consumed.
+	function isApprovalUsed(bytes32 approvalHash) external view returns (bool);
+
+	/// @notice EIP-712 domain separator for TimelockApproval signatures (name SymmioAccountLayerTimelock, version 1).
+	function timelockDomainSeparator() external view returns (bytes32);
+
+	/// @notice EIP-712 digest an unlocker signs for approval.
+	function hashTimelockApproval(TimelockApproval calldata approval) external view returns (bytes32);
+
+	/// @notice Lower bound for a selector delay; zero means no minimum.
+	function minTimelockDelay() external view returns (uint256);
+
+	/// @notice How long a schedule stays valid once its delay has passed: the configured value, or 10 minutes when unset.
+	function scheduleGracePeriod() external view returns (uint256);
 
 	// ==================== Pause Control ====================
 

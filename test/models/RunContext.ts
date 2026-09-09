@@ -43,6 +43,7 @@ import type {
 	// AccountLayer facets
 	CoreFacet as ALCoreFacet,
 	MarginFacet as ALMarginFacet,
+	TimelockFacet as ALTimelockFacet,
 	SymmioHookFacet as ALSymmioHookFacet,
 	ControlFacet as ALControlFacet,
 	ViewFacet as ALViewFacet,
@@ -89,6 +90,7 @@ export class RunContext {
 	// AccountLayer Diamond facets
 	alCoreFacet!: ALCoreFacet
 	alMarginFacet!: ALMarginFacet
+	alTimelockFacet!: ALTimelockFacet
 	alSymmioHookFacet!: ALSymmioHookFacet
 	alControlFacet!: ALControlFacet
 	alViewFacet!: ALViewFacet

@@ -47,6 +47,10 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.accountLayerDiamond = accountLayerDiamondAddress
 	context.alCoreFacet = await ethers.getContractAt("contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet", accountLayerDiamondAddress)
 	context.alMarginFacet = await ethers.getContractAt("contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet", accountLayerDiamondAddress)
+	context.alTimelockFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/Timelock/TimelockFacet.sol:TimelockFacet",
+		accountLayerDiamondAddress,
+	)
 	context.alSymmioHookFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
 		accountLayerDiamondAddress,

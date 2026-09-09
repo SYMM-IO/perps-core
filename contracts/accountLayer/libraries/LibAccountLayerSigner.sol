@@ -16,7 +16,7 @@ import { AccountStorage } from "../storages/AccountStorage.sol";
 ///      PRE-CANCUN PORT
 ///      This is the AccountLayer half of the transient implementation; core's half is
 ///      LibExecutionContext, whose header carries the full porting checklist. Between
-///      them they are the only production files emitting tload/tstore.
+///      them, together with LibTimelock, they are the only production files emitting tload/tstore.
 ///      For a pre-Cancun build, reimplement _transientLoad/_transientStore at the bottom of
 ///      this file against a persistent slot-keyed mapping; configuredSigner() and every
 ///      boundary check above them then work unchanged, so no call site changes.

@@ -9,6 +9,7 @@ import { ICoreFacet } from "./ICoreFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
+import { AccountLayerTimelocked } from "../../utils/AccountLayerTimelocked.sol";
 import {
 	AccountStorage,
 	SubAccountData,
@@ -24,12 +25,14 @@ import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAcc
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { LibAccountLayerMargin } from "../../libraries/LibAccountLayerMargin.sol";
 import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
+import { LibTimelock } from "../../libraries/LibTimelock.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
+import { IMarginFacet } from "../Margin/IMarginFacet.sol";
 
 /// @notice Core facet for sub-account and virtual account management, deposits, and call execution
-contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
+contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard, AccountLayerTimelocked {
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
 
@@ -96,7 +99,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @dev Only applicable to MARKET and MARKET_DIRECTION isolation types. Requires no active VAs.
 	/// @param subAccount The sub-account address
 	/// @param enabled Whether single VA mode should be enabled
-	function setSingleVAMode(address subAccount, bool enabled) external whenNotPaused onlyAccountOwner(subAccount) {
+	function setSingleVAMode(address subAccount, bool enabled) external whenNotPaused onlyAccountOwner(subAccount) timelocked(subAccount) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[subAccount];
 		if (!s.isExists) revert AccountDoesNotExist();
@@ -115,7 +118,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	/// @notice Deletes a sub-account that has no active virtual accounts, positions, or balance
 	/// @param subAccount The sub-account address to delete
-	function deleteSubAccount(address subAccount) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	function deleteSubAccount(address subAccount) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) timelocked(subAccount) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage s = ahLayout.subAccounts[subAccount];
 
@@ -174,7 +177,10 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @notice Transfers ownership of a sub-account and all of its virtual accounts to a new owner
 	/// @param subAccount The sub-account address to transfer
 	/// @param newOwner The new owner of the sub-account
-	function transferSubAccountOwnership(address subAccount, address newOwner) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	function transferSubAccountOwnership(
+		address subAccount,
+		address newOwner
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) timelocked(subAccount) {
 		if (newOwner == address(0)) revert ZeroAddress();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
@@ -215,7 +221,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		bytes memory metadata,
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId
-	) external whenNotPaused nonReentrant onlyAccountOwner(parentAccount) returns (address) {
+	) external whenNotPaused nonReentrant onlyAccountOwner(parentAccount) timelocked(parentAccount) returns (address) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		SubAccountData storage parent = ahLayout.subAccounts[parentAccount];
 
@@ -276,7 +282,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	function _call(
 		address account,
 		bytes[] calldata callDatas
-	) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory) {
+	) external whenNotPaused nonReentrant onlyAccountOwner(account) timelockedWithInnerCalls(account, callDatas, "") returns (bytes[] memory) {
 		return _executeCalls(account, callDatas, false, VirtualAccountIsolationType.POSITION, 0);
 	}
 
@@ -298,7 +304,14 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		uint256 symbolId,
 		uint256 marginAmount,
 		bytes[] calldata callDatas
-	) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory) {
+	)
+		external
+		whenNotPaused
+		nonReentrant
+		onlyAccountOwner(account)
+		timelockedWithInnerCalls(account, callDatas, abi.encodeCall(IMarginFacet.addMarginToNextVA, (account, isolationType, symbolId, marginAmount)))
+		returns (bytes[] memory)
+	{
 		LibAccountLayerMargin.addMarginToNextVA(account, isolationType, symbolId, marginAmount);
 		return _executeCalls(account, callDatas, true, isolationType, symbolId);
 	}
@@ -386,6 +399,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		if (!afLayout.hookAllowedSelectors[ctx.affiliate][selector]) {
 			revert SelectorNotAllowed(selector);
 		}
+		LibTimelock.requireCallDataApprovedOrScheduled(ctx.account, callData);
 
 		// Execute on symmioCore on behalf of account
 		bool usesTransientSigner = LibAccountLayerUtils.beginCoreSigner(ctx.symmioCore, ctx.account);

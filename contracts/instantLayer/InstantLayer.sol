@@ -36,6 +36,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { VirtualAccountDetail } from "../accountLayer/storages/AccountStorage.sol";
 import { IViewFacet } from "../accountLayer/facets/View/IViewFacet.sol";
 import { ICoreFacet } from "../accountLayer/facets/Core/ICoreFacet.sol";
+import { ITimelockFacet } from "../accountLayer/facets/Timelock/ITimelockFacet.sol";
 import { IAccountLayerDiamond } from "../accountLayer/interfaces/IAccountLayerDiamond.sol";
 
 /* ════════════════════════════ EXTERNAL INTERFACES ════════════════════════════ */
@@ -826,7 +827,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			SignedOperation calldata signedOp = signedOps[i];
 
 			// Verify operation signature and parameters
-			bytes32 opHash = _verifyOperation(signedOp, signatures[i]);
+			bytes32 opHash = _verifySignedOperation(signedOp, signatures[i]);
 
 			// Apply flex field fills first, then inject template results
 			bytes memory finalCallData = _applyFlexFills(signedOp, fills[i], flexFillerSignatures[i], opHash);
@@ -885,7 +886,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bool success = true;
 		for (uint256 i = 0; i < signedOps.length && success; i++) {
 			// Verify each operation independently
-			bytes32 opHash = _verifyOperation(signedOps[i], signatures[i]);
+			bytes32 opHash = _verifySignedOperation(signedOps[i], signatures[i]);
 
 			// Apply flex field fills
 			bytes memory callData = _applyFlexFills(signedOps[i], fills[i], flexFillerSignatures[i], opHash);
@@ -907,20 +908,60 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 
 	/* ═════════════════════════ INTERNAL HELPERS ═════════════════════════ */
 
+	/// @dev Resolves delegation from the final calldata, after flex fills and template insertions. Nested timelock
+	///      wrappers carry approvals, so authorization follows their inner calldata rather than the wrapper selector.
+	function _delegatedSelector(address target, bytes memory callData) private view returns (bytes4 selector) {
+		uint256 start;
+		uint256 length = callData.length;
+		if (length < 4) revert InvalidDelegation();
+		assembly ("memory-safe") {
+			selector := mload(add(callData, 32))
+		}
+		while (target == accountLayer && selector == ITimelockFacet.executeTimelockOp.selector) {
+			// Offsets are relative to this wrapper's arguments, including when it is nested.
+			if (length < 68) revert InvalidDelegation();
+			uint256 innerOffset;
+			assembly ("memory-safe") {
+				innerOffset := mload(add(callData, add(start, 68)))
+			}
+			if (innerOffset > length - 36) revert InvalidDelegation();
+			uint256 dataPos = start + 36 + innerOffset;
+			uint256 innerLength;
+			assembly ("memory-safe") {
+				innerLength := mload(add(callData, dataPos))
+			}
+			if (innerLength < 4 || innerLength > length - 36 - innerOffset) revert InvalidDelegation();
+			start = dataPos;
+			length = innerLength;
+			assembly ("memory-safe") {
+				selector := mload(add(callData, add(start, 32)))
+			}
+		}
+	}
+
+	/// @dev Signed-operation verification authenticates the signer; authorization must use the bytes about to execute.
+	function _verifyFinalDelegation(SignedOperation calldata signedOp, bytes memory callData) private view {
+		if (signedOp.signerAccount.isPartyB) return;
+		if (_getAccountOwner(signedOp.signerAccount.addr) == signedOp.signer) return;
+		bytes4 selector = _delegatedSelector(signedOp.target, callData);
+		address delegator = _canonicalDelegator(signedOp.signerAccount.addr);
+		if (!isDelegationActive(delegator, signedOp.signer, selector)) revert InvalidDelegation();
+	}
+
 	/// @dev Verifies operation signatures and parameters.
 	///
 	/// Verification Steps:
 	/// 1. Check deadline hasn't expired
 	/// 2. Validate calldata minimum length
 	/// 3. Verify target is whitelisted
-	/// 4. Verify account authorization (PartyB registration or PartyA ownership/delegation)
+	/// 4. Verify PartyB registration or resolve the PartyA account owner (delegation is checked on final calldata)
 	/// 5. Verify EIP-712 signature
 	/// 6. Prevent replay attacks
 	/// 7. Update nonce if required
 	///
 	/// @param signedOp   Operation to verify
 	/// @param sigCallData Signature data for verification
-	function _verifyOperation(SignedOperation calldata signedOp, bytes calldata sigCallData) private returns (bytes32) {
+	function _verifySignedOperation(SignedOperation calldata signedOp, bytes calldata sigCallData) private returns (bytes32) {
 		// Check expiry
 		if (signedOp.replayAttackHeader.deadline != 0 && signedOp.replayAttackHeader.deadline < block.timestamp)
 			revert DeadlineExpired(signedOp.replayAttackHeader.deadline);
@@ -938,31 +979,16 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		bytes32 hash = getOperationHash(signedOp);
 		address signer = signedOp.signer;
 
-		// Validate registration and delegation
 		if (signedOp.signerAccount.isPartyB) {
-			// PartyB operation
 			if (signer != signedOp.signerAccount.addr) revert MismatchSignerAndAccount(signer, signedOp.signerAccount.addr);
 			if (!isPartyBRegistered(signer)) revert UnregisteredPartyB(signer);
 		} else {
-			// PartyA operation through AccountLayer
-			address accountOwner = _getAccountOwner(signedOp.signerAccount.addr);
-
-			// Check delegation if signer is not the owner
-			if (accountOwner != signer) {
-				bytes calldata callData = signedOp.callData;
-				bytes4 selector;
-				assembly ("memory-safe") {
-					selector := calldataload(callData.offset) // Extract first 4 bytes
-				}
-				address delegator = _canonicalDelegator(signedOp.signerAccount.addr);
-				if (!isDelegationActive(delegator, signedOp.signer, selector)) {
-					revert InvalidDelegation();
-				}
-			}
+			// Resolve the signed account now; selector authorization follows all calldata mutations.
+			_getAccountOwner(signedOp.signerAccount.addr);
 		}
 
 		// Verify signature - skip if signer is the executor (msg.sender proves identity)
-		// Authorization was already verified above (PartyB registration or PartyA owner/delegation)
+		// PartyA delegation is checked immediately before executing the final calldata.
 		if (signer != msg.sender) {
 			if (!SignatureChecker.isValidSignatureNow(signer, hash, sigCallData)) {
 				revert InvalidSignature();
@@ -1005,6 +1031,8 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 			// Delegation grant carried as a signed operation; validated in _verifyGrantOperation
 			return _executeGrantOperation(signedOp);
 		}
+
+		_verifyFinalDelegation(signedOp, callData);
 
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;

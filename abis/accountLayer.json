@@ -4298,5 +4298,750 @@
         ],
         "stateMutability": "pure",
         "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ApprovalExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ApprovalUsed",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DelayAboveMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DelayBelowMinimum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidApprovalSignature",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "LegacyAccountCannotBeTimelocked",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "NotRootSubAccount",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint64",
+                "name": "expiredAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "ScheduleExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ScheduleGracePeriodAboveMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint64",
+                "name": "readyAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "ScheduleNotReady",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "TimelockOpNotApprovedOrScheduled",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "UnusedTimelockApproval",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ZeroUnlocker",
+        "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint32",
+                "name": "nonce",
+                "type": "uint32"
+            }
+        ],
+        "name": "TimelockNonceAdvanced",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "unlocker",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes32",
+                "name": "approvalHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "TimelockOpApproved",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "TimelockOpCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "TimelockOpExecuted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint64",
+                "name": "scheduledAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "TimelockOpScheduled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "TimelocksCleared",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "unlocker",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "delay",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "TimelocksSetup",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "cancelTimelockOp",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "clearTimelocks",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "account",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "unlocker",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "bytes32",
+                                "name": "callDataHash",
+                                "type": "bytes32"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "deadline",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "bytes32",
+                                "name": "salt",
+                                "type": "bytes32"
+                            }
+                        ],
+                        "internalType": "struct TimelockApproval",
+                        "name": "approval",
+                        "type": "tuple"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "signature",
+                        "type": "bytes"
+                    }
+                ],
+                "internalType": "struct SignedTimelockApproval[]",
+                "name": "approvals",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "bytes",
+                "name": "innerCallData",
+                "type": "bytes"
+            }
+        ],
+        "name": "executeTimelockOp",
+        "outputs": [
+            {
+                "internalType": "bytes",
+                "name": "",
+                "type": "bytes"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "scheduleTimelockOp",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "unlocker",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "delay",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "setupTimelocks",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "unlocker",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "minDelay",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes4[]",
+                "name": "selectors",
+                "type": "bytes4[]"
+            }
+        ],
+        "name": "allTimelockedBy",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "getSchedule",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint64",
+                        "name": "scheduledAt",
+                        "type": "uint64"
+                    },
+                    {
+                        "internalType": "uint32",
+                        "name": "nonce",
+                        "type": "uint32"
+                    }
+                ],
+                "internalType": "struct Schedule",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "getSelectorTimelock",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "unlocker",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint64",
+                        "name": "delay",
+                        "type": "uint64"
+                    }
+                ],
+                "internalType": "struct SelectorTimelock",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "account",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "unlocker",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes32",
+                        "name": "callDataHash",
+                        "type": "bytes32"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "deadline",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bytes32",
+                        "name": "salt",
+                        "type": "bytes32"
+                    }
+                ],
+                "internalType": "struct TimelockApproval",
+                "name": "approval",
+                "type": "tuple"
+            }
+        ],
+        "name": "hashTimelockApproval",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "approvalHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "isApprovalUsed",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "isTimelocked",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "minTimelockDelay",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "scheduleGracePeriod",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "timelockDomainSeparator",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            }
+        ],
+        "name": "timelockNonce",
+        "outputs": [
+            {
+                "internalType": "uint32",
+                "name": "",
+                "type": "uint32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "unlockerOf",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "minTimelockDelay",
+                "type": "uint256"
+            }
+        ],
+        "name": "MinTimelockDelayUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "scheduleGracePeriod",
+                "type": "uint256"
+            }
+        ],
+        "name": "ScheduleGracePeriodUpdated",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "value",
+                "type": "uint256"
+            }
+        ],
+        "name": "setMinTimelockDelay",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "value",
+                "type": "uint256"
+            }
+        ],
+        "name": "setScheduleGracePeriod",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     }
 ]

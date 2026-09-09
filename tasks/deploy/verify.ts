@@ -567,6 +567,7 @@ const PARTYB_ADMIN_ROLES = ["DEFAULT_ADMIN_ROLE", "TRUSTED_ROLE", "MANAGER_ROLE"
 const ACCOUNTLAYER_FACET_NAMES = [
 	"contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
 	"contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",
+	"contracts/accountLayer/facets/Timelock/TimelockFacet.sol:TimelockFacet",
 	"contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
 	"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
 	"contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",

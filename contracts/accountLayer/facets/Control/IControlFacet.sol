@@ -39,6 +39,10 @@ interface IControlFacetEvents {
 	event CallAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 	/// @notice Emitted when a Symmio core is added to an affiliate after registration
 	event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core);
+	/// @notice Emitted when the lower bound for a selector timelock delay changes
+	event MinTimelockDelayUpdated(uint256 minTimelockDelay);
+	/// @notice Emitted when the schedule grace period changes
+	event ScheduleGracePeriodUpdated(uint256 scheduleGracePeriod);
 }
 
 /// @notice Administrative interface for role management, pause control, and system configuration
@@ -127,4 +131,14 @@ interface IControlFacet is IControlFacetEvents, IAccountLayerErrors, IDiamondAcc
 	/// @param affiliate The affiliate address
 	/// @param core The whitelisted Symmio core address to add
 	function addSymmioCoreToAffiliate(address affiliate, address core) external;
+
+	// ==================== Timelock Configuration ====================
+
+	/// @notice Sets the lower bound for a selector timelock delay. Zero means no minimum. Capped at 30 days.
+	/// @param value The minimum delay in seconds
+	function setMinTimelockDelay(uint256 value) external;
+
+	/// @notice Sets how long a schedule stays valid once its delay has passed. Zero selects the 10-minute default. Capped at 30 days.
+	/// @param value The grace period in seconds
+	function setScheduleGracePeriod(uint256 value) external;
 }

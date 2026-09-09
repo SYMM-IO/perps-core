@@ -61,4 +61,19 @@ interface IAccountLayerErrors {
 	error LegacyAccountNotOwned();
 	error LegacyContractNotRegistered();
 	error MarginKeyMismatch();
+
+	// Timelock
+	error TimelockOpNotApprovedOrScheduled(address subAccount, bytes32 callDataHash);
+	error ScheduleNotReady(address subAccount, bytes32 callDataHash, uint64 readyAt);
+	error ScheduleExpired(address subAccount, bytes32 callDataHash, uint64 expiredAt);
+	error ApprovalUsed();
+	error UnusedTimelockApproval();
+	error ApprovalExpired();
+	error InvalidApprovalSignature();
+	error ZeroUnlocker();
+	error DelayBelowMinimum();
+	error DelayAboveMaximum();
+	error NotRootSubAccount();
+	error ScheduleGracePeriodAboveMaximum();
+	error LegacyAccountCannotBeTimelocked();
 }
