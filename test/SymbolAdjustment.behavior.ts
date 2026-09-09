@@ -64,6 +64,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		expect(progress.phase).to.equal(RESTATEMENT_PHASE.NONE)
 	}
 
+	async function startRestatementWithCurrentLiquidationNonce(symbolId: number) {
+		const liquidationStartNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+		return context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(symbolId, liquidationStartNonce)
+	}
+
 	// finalizeRestatement requires the symbol to have stayed frozen for a full Muon UPNL validity period, so that
 	// signatures priced in the old basis have expired before quote storage is rewritten. The fixture sets a
 	// hundred-year validity to disable expiry, so shrink it just long enough to clear the guard, then restore it —
@@ -263,7 +268,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
 			expect((await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)).phase).to.equal(RESTATEMENT_PHASE.FUNDING_SETTLEMENT)
@@ -301,7 +306,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(1n).build())
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 
 			await expect(context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Close amount underflow",
@@ -332,7 +337,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const { quoteId, price } = await openPositionWithRawQuantity(9900n)
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(1n, 16), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 
@@ -410,7 +415,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				const now = await getBlockTimestamp()
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-				await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+				await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 				await completeFundingPreparation(SYMBOL_ID)
 				const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
 				await context.controlFacet.connect(context.signers.admin).setMuonConfig(1n, priceValidTime)
@@ -497,7 +502,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				const now = await getBlockTimestamp()
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-				await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+				await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 
 				expect(await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)).to.equal(0n)
@@ -542,11 +547,46 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 	})
 
 	describe("restatement window", function () {
+		it("reverts when a liquidation starts after the operator's nonce snapshot", async function () {
+			const user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(decimal(2_000n), decimal(1_000n), decimal(500n))
+			const hedger = new Hedger(context, context.signers.hedger)
+			await hedger.setup()
+			await hedger.setBalances(decimal(4_000n), decimal(4_000n))
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			const expectedNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+
+			await expect(
+				context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.address, context.signers.user.address, await getDummySingleUpnlSig(0n)),
+			).to.be.revertedWith("LiquidationFacet: partyB is solvent")
+			expect(await context.viewFacetSymbol.getLiquidationStartNonce()).to.equal(expectedNonce)
+
+			await expect(
+				context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.address, context.signers.user.address, await getDummySingleUpnlSig(-decimal(10_000n))),
+			)
+				.to.emit(context.symbolAdjustmentFacet, "LiquidationStartNonceIncremented")
+				.withArgs(expectedNonce + 1n)
+
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID, expectedNonce))
+				.to.be.revertedWithCustomError(context.symbolAdjustmentFacet, "LiquidationStartNonceMismatch")
+				.withArgs(expectedNonce, expectedNonce + 1n)
+		})
+
 		it("should start directly from an effective scheduled adjustment without activating the trading factor", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 
-			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID))
+			await expect(startRestatementWithCurrentLiquidationNonce(SYMBOL_ID))
 				.to.emit(context.symbolAdjustmentFacet, "RestatementStarted")
 				.withArgs(SYMBOL_ID, 1, decimal(4n))
 
@@ -575,9 +615,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		it("should not start direct restatement before the scheduled adjustment is effective", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now + 1000n)
-			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)).to.be.revertedWith(
-				"SymbolAdjustmentFacet: Not effective yet",
-			)
+			await expect(startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)).to.be.revertedWith("SymbolAdjustmentFacet: Not effective yet")
 		})
 
 		it("should fold existing active factors and the scheduled factor into one direct restatement factor", async function () {
@@ -585,7 +623,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(2n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(3n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 
 			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.restatementFactor).to.equal(decimal(6n))
@@ -596,7 +634,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		it("should abort a mutation-free direct window back to the scheduled freeze", async function () {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 
 			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
@@ -615,7 +653,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID))
+			await expect(startRestatementWithCurrentLiquidationNonce(SYMBOL_ID))
 				.to.emit(context.symbolAdjustmentFacet, "RestatementStarted")
 				.withArgs(SYMBOL_ID, 1, decimal(4n))
 			expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
@@ -628,9 +666,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		})
 
 		it("should refuse restatement without a scheduled or active factor", async function () {
-			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)).to.be.revertedWith(
-				"SymbolAdjustmentFacet: No adjustment factor",
-			)
+			await expect(startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)).to.be.revertedWith("SymbolAdjustmentFacet: No adjustment factor")
 		})
 
 		it("should allow abort before a mutation and preserve the active factor", async function () {
@@ -641,7 +677,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)).currentLongRate).to.equal(0n)
 			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
@@ -659,7 +695,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				fundingBefore.currentLongRate,
 			)
 
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await finalizeRestatementAfterWindow(SYMBOL_ID, [context.signers.hedger.address])
 		})
 
@@ -667,7 +703,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(2n), now)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement in progress",
 			)
@@ -698,7 +734,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, factor, now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 		}
 
@@ -725,7 +761,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			const preparation = context.symbolAdjustmentFacet
 				.connect(context.signers.admin)
 				.processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address, context.signers.hedger2.address, context.signers.hedger.address])
@@ -795,7 +831,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const quoteId = await openPositionForUser()
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
 
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])).to.be.revertedWith(
@@ -878,7 +914,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(1n))
 			expect((await context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, restatedId)).factor).to.equal(decimal(4n))
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [restatedId])
 
@@ -912,7 +948,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(preview.initialOpenedPrice).to.equal(before.initialOpenedPrice / 4n)
 			expect(preview.requestedOpenPrice).to.equal(before.requestedOpenPrice / 4n)
 			expect(preview.marketPrice).to.equal(before.marketPrice / 4n)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 			const after = await context.viewFacetQuote.getQuote(quoteId)
@@ -960,7 +996,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await expect(context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Close amount underflow",
 			)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Close amount underflow",
@@ -994,7 +1030,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(fundingWhileFactorActive.currentLongRate).to.equal(fundingBefore.currentLongRate)
 			expect(fundingWhileFactorActive.currentShortRate).to.equal(fundingBefore.currentShortRate)
 
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			let progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
 			expect(progress.phase).to.equal(RESTATEMENT_PHASE.FUNDING_PREPARATION)
 			expect(progress.pendingPartyBCount).to.equal(0n)
@@ -1104,7 +1140,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.controlFacet.connect(context.signers.admin).deregisterPartyB(partyB, 0)
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB, otherPartyB])
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)).currentLongRate).to.equal(0n)
 			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, otherPartyB)).currentLongRate).to.equal(0n)
@@ -1135,7 +1171,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const fundingBefore = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [partyB])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [firstQuoteId])
 
@@ -1167,7 +1203,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const firstQuoteBefore = await context.viewFacetQuote.getQuote(firstQuoteId)
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [partyB])
 
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.user).applyAdjustment(SYMBOL_ID, [firstQuoteId])).to.be.revertedWith(
@@ -1204,7 +1240,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const partyB = context.signers.hedger.address
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [partyB])
 
 			const [firstDebt, secondDebt] = await context.viewFacetQuote.getQuoteFundingDebts([firstQuoteId, secondQuoteId])
@@ -1283,7 +1319,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const partyB = context.signers.hedger.address
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [partyB])
 			expect((await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)).phase).to.equal(RESTATEMENT_PHASE.QUOTE_PROCESSING)
 			expect((await context.viewFacetSymbol.getRestatementFundingSettlementProgress(SYMBOL_ID)).fundingSettlementRequired).to.be.false
@@ -1337,7 +1373,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [partyB])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 
@@ -1396,7 +1432,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [partyB])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
@@ -1544,15 +1580,20 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		async function startRestatement(factor = decimal(4n), sealPreparation = true): Promise<void> {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, factor, now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address])
 			if (sealPreparation) await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
 		}
 
 		async function startIsolatedPartyBLiquidation(): Promise<bigint> {
-			await context.partyBLiquidationFacet
-				.connect(context.signers.liquidator)
-				.liquidatePartyB(context.signers.hedger.address, context.signers.user.address, await getDummySingleUpnlSig(-decimal(10_000n)))
+			const previousNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+			await expect(
+				context.partyBLiquidationFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyB(context.signers.hedger.address, context.signers.user.address, await getDummySingleUpnlSig(-decimal(10_000n))),
+			)
+				.to.emit(context.symbolAdjustmentFacet, "LiquidationStartNonceIncremented")
+				.withArgs(previousNonce + 1n)
 			return context.viewFacet.partyBLiquidationTimestamp(context.signers.hedger.address, context.signers.user.address)
 		}
 
@@ -1653,7 +1694,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				-decimal(1_000_000n),
 				allocatedBalance,
 			)
-			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig)
+			const previousNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig))
+				.to.emit(context.symbolAdjustmentFacet, "LiquidationStartNonceIncremented")
+				.withArgs(previousNonce + 1n)
 			await context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user.address, liquidationSig)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement already mutated",
@@ -1703,9 +1747,14 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					},
 				],
 			}
-			await context.partyALiquidationSnapshotFacet
-				.connect(context.signers.liquidator)
-				.liquidatePartyAWithSnapshot(user.address, { ...snapshotSig, states: [] })
+			const previousNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+			await expect(
+				context.partyALiquidationSnapshotFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyAWithSnapshot(user.address, { ...snapshotSig, states: [] }),
+			)
+				.to.emit(context.symbolAdjustmentFacet, "LiquidationStartNonceIncremented")
+				.withArgs(previousNonce + 1n)
 			await context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator).setSymbolsPriceWithSnapshot(user.address, snapshotSig)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement already mutated",
@@ -1749,9 +1798,14 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				.connect(context.signers.admin)
 				.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))
 			await startRestatement()
-			await context.clearingHouseFacet
-				.connect(context.signers.liquidator)
-				.liquidateCrossPartyB(context.signers.hedger.address, "0x", -decimal(1_000_000n), await getBlockTimestamp())
+			const previousNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+			await expect(
+				context.clearingHouseFacet
+					.connect(context.signers.liquidator)
+					.liquidateCrossPartyB(context.signers.hedger.address, "0x", -decimal(1_000_000n), await getBlockTimestamp()),
+			)
+				.to.emit(context.symbolAdjustmentFacet, "LiquidationStartNonceIncremented")
+				.withArgs(previousNonce + 1n)
 
 			await context.clearingHouseFacet
 				.connect(context.signers.liquidator)
@@ -1809,7 +1863,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 
 			// 4) later: restatement window
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([pendingId, pendingId2])
 			const beforeOpened = await context.viewFacetQuote.getQuote(openedId)
@@ -1855,7 +1909,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(4n))
 
 			// 4) later: restatement window
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelPendingQuotes([pendingId, pendingId2])
 			const beforeOpened = await context.viewFacetQuote.getQuote(openedId)
@@ -1921,7 +1975,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		async function restateQuote(quoteId: bigint) {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 			await finalizeRestatementAfterWindow(SYMBOL_ID)
@@ -2122,7 +2176,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 
@@ -2148,7 +2202,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const scheduleReceipt = await scheduleTx.wait()
 			const scheduleBlock = await ethers.provider.getBlock(scheduleReceipt!.blockNumber)
 
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID)
 			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 			expect(adjustment.restatementStartedAt).to.equal(BigInt(scheduleBlock!.timestamp))
@@ -2171,7 +2225,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID)
 			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
 
@@ -2196,7 +2250,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID)
 
 			await time.increase(100)
@@ -2247,7 +2301,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
-			await context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
 

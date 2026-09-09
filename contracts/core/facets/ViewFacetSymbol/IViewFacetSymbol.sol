@@ -49,6 +49,8 @@ interface IViewFacetSymbol {
 
 	function getConnectedPartyBsWithSymbolCounts(address partyA) external view returns (PartyBSymbolCount[] memory);
 
+	function getLiquidationStartNonce() external view returns (uint256);
+
 	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory);
 
 	function getCumulativeFactor(uint256 symbolId) external view returns (uint256);

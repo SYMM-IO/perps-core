@@ -52,6 +52,7 @@
 				<a class="toc-link level-2" href="#lifecycle">What happens after scheduling</a>
 				<a class="toc-link level-3" href="#active-route">Adjusted-price route without quote rewrites</a>
 				<a class="toc-link level-3" href="#physical-route">Physical route with quote restatement</a>
+				<a class="toc-link level-3" href="#liquidation-start-lock">Liquidation-start race protection</a>
 				<a class="toc-link level-2" href="#rewrite">What physical restatement changes</a>
 				<a class="toc-link level-3" href="#rewrite-eligibility">Eligibility, authorization, and batch behavior</a>
 				<a class="toc-link level-3" href="#rewrite-conversion">Conversion arithmetic and fields</a>
@@ -690,10 +691,12 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						<li><strong>Later</strong>, while a non-1x active factor exists. The window selects that active factor.</li>
 					</ul>
 					<p>
-						Either way, <code>startRestatement</code> does the same small amount of work: it increments <code>restatementEpoch</code>,
-						sets <code>restating</code>, saves <code>restatementFactor</code>, and records one funding cutoff. It is worth being explicit
-						about what it does <em>not</em> do, because this is a common wrong assumption: it never scans the PartyB registry and never
-						snapshots anything on its own.
+						Either way, <code>startRestatement</code> first checks the caller's expected global liquidation-start nonce. If it matches,
+						the function does the same small amount of work: it increments <code>restatementEpoch</code>, sets <code>restating</code>,
+						saves <code>restatementFactor</code>, and records one funding cutoff. It is worth being explicit about what it does
+						<em>not</em>
+						do, because this is a common wrong assumption: it never scans the PartyB registry and never snapshots positions or liquidation
+						flags on its own.
 					</p>
 					<p>
 						It always opens <code>FUNDING_PREPARATION</code> instead, and waits. Operations supplies every involved PartyB in bounded
@@ -718,9 +721,11 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 							Operations marks it for PartyB cleanup once the symbol is frozen.
 						</li>
 						<li>
-							<strong>Open the restatement window.</strong> Operations calls <code>startRestatement</code>. Core freezes the symbol,
-							records the factor and funding cutoff for this window, and emits <code>RestatementStarted</code>. This transaction does
-							not iterate over registered PartyBs.
+							<strong>Open the restatement window.</strong> From one consistent chain snapshot, Operations verifies that no affected
+							liquidation is active and reads <code>getLiquidationStartNonce()</code>. It passes that value to
+							<code>startRestatement(symbolId, expectedLiquidationStartNonce)</code>. Core rejects a changed nonce, otherwise freezes
+							the symbol, records the factor and funding cutoff, and emits <code>RestatementStarted</code>. This transaction does not
+							iterate over registered PartyBs.
 						</li>
 						<li>
 							<strong>Prepare every involved PartyB.</strong> Operations builds the complete PartyB set off-chain from its open book and
@@ -775,6 +780,34 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 							the symbol. With no checkpoints, <code>finalizeRestatement</code> completes those terminal changes itself.
 						</li>
 					</ol>
+
+					<h3 id="liquidation-start-lock">Liquidation-start race protection</h3>
+					<p>
+						<code>MAStorage.liquidationStartNonce</code> is a global monotonic sequence. It increments exactly once whenever a successful
+						PartyA liquidation starts through the legacy, deferred, or snapshot route; whenever an isolated PartyB liquidation starts,
+						including escalation from force close; and whenever Clearing House starts cross-PartyB liquidation. A snapshot single-step
+						PartyA liquidation also increments it even when that transaction finishes the liquidation. Failed starts do not increment it.
+						PartyA takeover does not increment it because takeover continues an already-started liquidation.
+					</p>
+					<pre><code class="language-text">snapshot block: no affected liquidation; liquidationStartNonce = 82
+
+liquidation mined before restatement  -> nonce becomes 83 -> startRestatement(symbolId, 82) reverts
+restatement mined before liquidation  -> nonce is still 82 -> restatement starts; later liquidation uses the restatement-aware path</code></pre>
+					<p>
+						The nonce is global because several liquidation-start payloads identify an account or PartyA/PartyB pair without listing every
+						symbol exposed by its open positions. A per-symbol increment would require an unbounded position scan or another on-chain
+						exposure index. The global design adds constant work to liquidation start and restatement start, at the cost of a harmless
+						stale-nonce revert when an unrelated-symbol liquidation starts. Operations then refreshes its checks and retries with the new
+						value.
+					</p>
+					<aside class="callout callout-important">
+						<strong>The nonce closes only the check-to-transaction race.</strong>
+						It proves that no liquidation started after the snapshot from which Operations read the nonce. It does not prove that the
+						off-chain snapshot found every liquidation already active at nonce 82, and a manager can always pass the latest nonce without
+						performing the required scan. Read the nonce and all relevant PartyA, isolated PartyB, and cross PartyB flags from the same
+						block. Use a suitably finalized block, then treat <code>LiquidationStartNonceMismatch(expected, actual)</code> as a mandatory
+						full refresh rather than merely replacing the argument.
+					</aside>
 					<aside class="callout callout-risk">
 						<strong>Do not finalize while an old-basis Muon signature may still be valid.</strong>
 						Core knows when the restatement window started, but it cannot verify when Muon observed the window and stopped signing. The
@@ -802,8 +835,9 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 					<aside class="callout callout-important">
 						<strong>A liquidation that begins during restatement is supported; the reverse ordering remains an Operations rule.</strong>
 						Operations should still verify that PartyA, isolated PartyB, and cross PartyB liquidation flags are clear before calling
-						<code>startRestatement</code>. The start transaction does not scan accounts, symbols, or positions and does not enforce that
-						precondition on-chain. If a liquidation begins after the window is open, pause rewrite batches that touch the same parties,
+						<code>startRestatement</code>. Passing the nonce read with those flags enforces that no successful liquidation start occurred
+						after that snapshot, but the start transaction does not scan accounts, symbols, or positions and cannot prove that the
+						snapshot was complete. If a liquidation begins after the window is open, pause rewrite batches that touch the same parties,
 						obtain fresh venue-basis liquidation prices, and finish the liquidation. Each old-basis close reduces the restatement
 						inventory, so finalization is not stranded; each already-restated close simply removes the live position. A PartyA liquidation
 						may still require dispute resolution, and the Clearing House may take over an already-active PartyA liquidation as the
@@ -1053,7 +1087,9 @@ else:
 						basis and inventory work for each supplied quote ID. Existing liquidation loops still scale with the explicit quote array;
 						PartyA price setup remains linear in its explicitly signed symbol or PartyB-symbol state array and adds one constant-time
 						mutation-flag write per entry. Clearing House counterparty de-duplication is quadratic within that one bounded array. Keep
-						batches small enough for measured chain gas limits and continue in another transaction.
+						batches small enough for measured chain gas limits and continue in another transaction. The global liquidation-start nonce
+						adds one constant-time storage increment and event per successful start; checking it at restatement start is also
+						constant-time.
 					</aside>
 
 					<h3 id="rewrite-pending">Pending inventory</h3>
@@ -1349,7 +1385,11 @@ else:
 							Any call that computes a prospective factor can revert if the quotient exceeds <code>uint256</code>. Confirm and direct
 							start also reject a call before <code>effectiveTimestamp</code> and reject a prospective factor of zero.
 						</li>
-						<li>Start rejects an existing window and normalized factor <code>1e18</code>.</li>
+						<li>
+							Start first rejects <code>expectedLiquidationStartNonce</code> when it differs from the current global nonce with
+							<code>LiquidationStartNonceMismatch(expected, actual)</code>. It also rejects an existing window and normalized factor
+							<code>1e18</code>.
+						</li>
 						<li>Abort rejects no window or any window whose mutation flag is true.</li>
 						<li>
 							Apply rejects authorization, symbol, epoch, status, and liquidation failures, plus funding, arithmetic, or aggregate
@@ -1387,8 +1427,9 @@ else:
 									<td>
 										Verify the venue event and factor direction, choose the route, control Muon timing, maintain a complete PartyB
 										manifest, choose and simulate safe address batches, restore every checkpointed address, stop before an unsafe
-										mutation, check that no liquidation is active before starting a window, coordinate any liquidation that begins
-										later, enforce expiry, and decide whether finalization is safe.
+										mutation, read all liquidation flags and the global liquidation-start nonce from one consistent block, rescan
+										everything after a nonce mismatch, coordinate any liquidation that begins later, enforce expiry, and decide
+										whether finalization is safe.
 									</td>
 								</tr>
 								<tr>
@@ -1443,7 +1484,10 @@ else:
 						counter and can freeze finalization. Do not run the one-facet updater for either facet: selector ownership moves across both
 						ABIs and must be reconciled from the complete target selector map. Before the cut, verify that no symbol has an open
 						restatement window: a window started under the older implementation has no inventory snapshots to migrate. Do not open a new
-						window until the selector and runtime code-hash checks for the full cut are complete.
+						window until the selector and runtime code-hash checks for the full cut are complete. The upgrade appends
+						<code>liquidationStartNonce</code> to <code>MAStorage.Layout</code>; verify that it follows
+						<code>solverFeeReceiversByTag</code> and that no existing field moved. Replace every liquidation-start facet in the same cut
+						so no route can bypass the increment.
 					</aside>
 					<h3>Prepare and schedule</h3>
 					<ol>
@@ -1457,7 +1501,9 @@ else:
 							Build the complete open quote manifest across all PartyB account models. Pending inventory may also be indexed for
 							optional pre-finalization refunds and post-finalization lazy cancellation. For every pair, check PartyA liquidation,
 							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status off-chain. Resolve every active liquidation before
-							calling <code>startRestatement</code>; the start call does not enforce this or scan the book.
+							calling <code>startRestatement</code>. At the same block used for those checks, read and save
+							<code>getLiquidationStartNonce()</code>. The expected nonce protects against a later liquidation start but does not scan
+							the book or prove that this initial check was complete.
 						</li>
 						<li>
 							Build the complete involved-PartyB manifest from the affected open book and Operations' funding records. Fork-rehearse
@@ -1469,13 +1515,14 @@ else:
 							contribution once, and that a rewrite adds the new contribution once.
 						</li>
 						<li>
-							Verify the deployed ABI exposes <code>startRestatement(uint256)</code>,
+							Verify the deployed ABI exposes <code>startRestatement(uint256,uint256)</code>,
 							<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>,
 							<code>cancelStalePendingQuotes(uint256[])</code>, <code>getPendingQuoteIdCutoff(uint256)</code>,
-							<code>isPendingQuoteStale(uint256)</code>, <code>getRestatementFundingProgress(uint256)</code>, and
-							<code>getRestatementInventoryProgress(uint256,address)</code>. All Symbol Adjustment read selectors are routed through
-							<code>ViewFacetSymbol</code>; <code>SymbolAdjustmentFacet</code> exposes mutation selectors only. The old three-argument
-							start selector is not exposed.
+							<code>isPendingQuoteStale(uint256)</code>, <code>getLiquidationStartNonce()</code>,
+							<code>getRestatementFundingProgress(uint256)</code>, and <code>getRestatementInventoryProgress(uint256,address)</code>.
+							All Symbol Adjustment read selectors are routed through <code>ViewFacetSymbol</code>;
+							<code>SymbolAdjustmentFacet</code> exposes mutation selectors only. Neither the historical three-argument start selector
+							nor the unprotected one-argument selector is exposed.
 						</li>
 						<li>
 							Call <code>scheduleAdjustment</code>. Record the transaction block time, adjustment index, factor, effective time,
@@ -1515,9 +1562,12 @@ else:
 					<h3>Use either physical-restatement route</h3>
 					<ol>
 						<li>
-							Keep ordinary affected signatures stopped. Call <code>startRestatement(symbolId)</code> and record epoch, factor, start
-							time, funding cutoff, phase, pending funding count, and the zeroed symbol-wide LONG and SHORT inventory totals. Do not
-							expect this call to emit checkpoint events, inspect the PartyB registry, snapshot quantities, or zero any rates.
+							Keep ordinary affected signatures stopped. After the liquidation checks, call
+							<code>startRestatement(symbolId, expectedLiquidationStartNonce)</code> with the saved nonce and record that nonce, epoch,
+							factor, start time, funding cutoff, phase, pending funding count, and the zeroed symbol-wide LONG and SHORT inventory
+							totals. If the nonce mismatches, refresh the entire liquidation snapshot and manifest before retrying; do not merely
+							substitute the new nonce. Do not expect this call to emit checkpoint events, inspect the PartyB registry, snapshot
+							quantities, or zero any rates.
 						</li>
 						<li>
 							While progress reports <code>FUNDING_PREPARATION</code>, simulate and submit
@@ -1706,6 +1756,14 @@ else:
 						</table>
 					</div>
 
+					<h3>Global liquidation-start record</h3>
+					<p>
+						<code>MAStorage.liquidationStartNonce</code> is shared across all symbols and accounts, starts at zero after upgrade,
+						increments once for every successful new multi-step or snapshot liquidation start, and is never decremented or reset. It is
+						intentionally not part of <code>SymbolAdjustment</code>: the value protects an Operations snapshot spanning every liquidation
+						mode, including starts whose calldata does not enumerate symbols. Read it through <code>getLiquidationStartNonce()</code>.
+					</p>
+
 					<h3>Per-symbol record, grouped by purpose</h3>
 					<div class="table-wrap">
 						<table>
@@ -1857,10 +1915,11 @@ else:
 									<td>Manager-only. At or after effectiveness, activate the prospective factor and unfreeze.</td>
 								</tr>
 								<tr>
-									<td><code>startRestatement</code></td>
+									<td><code>startRestatement(symbolId, expectedLiquidationStartNonce)</code></td>
 									<td>
-										Manager-only. Select the factor, open an epoch, freeze, and initialize preparation progress without scanning
-										PartyBs.
+										Manager-only. First require the expected global liquidation-start nonce, then select the factor, open an
+										epoch, freeze, and initialize preparation progress without scanning PartyBs, symbols, positions, or
+										liquidation flags.
 									</td>
 								</tr>
 								<tr>
@@ -1952,12 +2011,13 @@ else:
 						<code>SymbolAdjustmentFacet</code> contains no external read selectors. <code>getSymbolAdjustment</code> returns raw record
 						values. <code>getCumulativeFactor</code> normalizes unset zero. <code>getProspectiveCumulativeFactor</code> includes a
 						scheduled step only in <code>SCHEDULED</code>. <code>isSymbolFrozen</code> evaluates the live predicate.
-						<code>getSymbolAdjustment</code> includes <code>pendingQuoteIdCutoff</code>. <code>getPendingQuoteIdCutoff</code> returns that
-						persistent cutoff directly, and <code>isPendingQuoteStale</code> combines it with the quote's current pending status.
-						<code>getRestatementState</code> returns the window flag and epoch. <code>getRestatementFundingProgress</code> returns the
-						phase, pending checkpoint count, funding cutoff, and funding restoration timestamp.
-						<code>getRestatementInventoryProgress</code> returns the current epoch, whether one PartyB was prepared, that PartyB's
-						remaining LONG and SHORT quantities, and the exact symbol-wide remaining LONG and SHORT quantities.
+						<code>getLiquidationStartNonce</code> returns the current global optimistic-lock sequence and must be read from the same block
+						as the off-chain liquidation snapshot. <code>getSymbolAdjustment</code> includes <code>pendingQuoteIdCutoff</code>.
+						<code>getPendingQuoteIdCutoff</code> returns that persistent cutoff directly, and <code>isPendingQuoteStale</code> combines it
+						with the quote's current pending status. <code>getRestatementState</code> returns the window flag and epoch.
+						<code>getRestatementFundingProgress</code> returns the phase, pending checkpoint count, funding cutoff, and funding
+						restoration timestamp. <code>getRestatementInventoryProgress</code> returns the current epoch, whether one PartyB was
+						prepared, that PartyB's remaining LONG and SHORT quantities, and the exact symbol-wide remaining LONG and SHORT quantities.
 						<code>isRestatementFundingCheckpointed</code> reports whether one PartyB has a checkpoint for the open epoch.
 						<code>getQuoteRestatedEpoch</code> returns a quote's last physical epoch.
 						<code>getRestatementFundingSettlementProgress</code> returns the current epoch, whether the window requires the funding-only
@@ -1971,6 +2031,7 @@ else:
 					<pre><code class="language-solidity">AdjustmentScheduled(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp)
 AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex)
 PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)
+LiquidationStartNonceIncremented(uint256 indexed nonce)
 RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)
 RestatementPreparationProgress(uint256 indexed symbolId, uint256 indexed epoch, uint256 submittedPartyBCount,
                                uint256 newlyPreparedPartyBCount, uint256 fundingCheckpointedPartyBCount,
@@ -1997,23 +2058,26 @@ PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uin
 StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId)
 RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 					<p>
-						Storage retains only the latest schedule, so indexers need these events for complete adjustment history. Preparation events
-						distinguish PartyB address counts from LONG and SHORT position quantities, report each fresh inventory snapshot, summarize
-						every batch, and record the exact quantities sealed for quote processing. Each inventory-consumption event identifies the
-						quote, side, and old-basis quantity consumed. Starting from the per-PartyB snapshots, indexers subtract these side-specific
-						deltas to reconstruct the same exact PartyB and symbol remainders enforced on-chain, without a second completion log. A
-						liquidation close of an already-restated quote emits no inventory-consumption event because it has already left the old-basis
-						counter. PartyA price-setup and snapshot events expose the venue-basis payload value during an open window; close hooks,
-						average-closed-price fields, PartyA funding/PnL attribution, and Clearing House trade volume use the quote's converted stored
-						price. Indexers should normalize the closed quote before comparing those values with the venue payload. Funding-restoration
-						events report restoration mode and remaining PartyB work. Per-pair preparation and restoration also emit the existing
-						<code>AccumulatedFundingStateUpdated</code>. When checkpoints exist, <code>RestatementAborted</code> or
-						<code>RestatementFinalized</code> is emitted by the last funding batch rather than the transaction that starts restoration.
-						That terminal transaction also emits <code>PendingQuoteIdCutoffUpdated</code>. Each later lazy cancellation emits
-						<code>StalePendingQuoteCancelled</code>. During <code>FUNDING_SETTLEMENT</code>, every successfully processed quote emits
-						<code>QuoteFundingSettled</code>, including when the amount is zero. During the later <code>QUOTE_PROCESSING</code> pass,
-						every successfully rewritten quote emits <code>QuoteAdjusted</code>. Indexers need both events to attribute settlement side
-						effects and the later unit conversion.
+						Storage retains only the latest schedule, so indexers need these events for complete adjustment history.
+						<code>LiquidationStartNonceIncremented</code> is emitted from the shared Diamond address once per successful PartyA, isolated
+						PartyB, or cross-PartyB liquidation start. Pair it with the route's ordinary liquidation event to identify the liquidation;
+						the nonce event itself intentionally carries no symbol or account. Its value never decreases, and unrelated-symbol and
+						single-step starts still advance it. Preparation events distinguish PartyB address counts from LONG and SHORT position
+						quantities, report each fresh inventory snapshot, summarize every batch, and record the exact quantities sealed for quote
+						processing. Each inventory-consumption event identifies the quote, side, and old-basis quantity consumed. Starting from the
+						per-PartyB snapshots, indexers subtract these side-specific deltas to reconstruct the same exact PartyB and symbol remainders
+						enforced on-chain, without a second completion log. A liquidation close of an already-restated quote emits no
+						inventory-consumption event because it has already left the old-basis counter. PartyA price-setup and snapshot events expose
+						the venue-basis payload value during an open window; close hooks, average-closed-price fields, PartyA funding/PnL attribution,
+						and Clearing House trade volume use the quote's converted stored price. Indexers should normalize the closed quote before
+						comparing those values with the venue payload. Funding-restoration events report restoration mode and remaining PartyB work.
+						Per-pair preparation and restoration also emit the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints
+						exist, <code>RestatementAborted</code> or <code>RestatementFinalized</code> is emitted by the last funding batch rather than
+						the transaction that starts restoration. That terminal transaction also emits <code>PendingQuoteIdCutoffUpdated</code>. Each
+						later lazy cancellation emits <code>StalePendingQuoteCancelled</code>. During <code>FUNDING_SETTLEMENT</code>, every
+						successfully processed quote emits <code>QuoteFundingSettled</code>, including when the amount is zero. During the later
+						<code>QUOTE_PROCESSING</code> pass, every successfully rewritten quote emits <code>QuoteAdjusted</code>. Indexers need both
+						events to attribute settlement side effects and the later unit conversion.
 					</p>
 				</article>
 			</main>

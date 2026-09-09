@@ -10,6 +10,7 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import {
@@ -262,6 +263,11 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 
 		return result;
+	}
+
+	/// @notice Returns the global optimistic-lock sequence incremented by every successful liquidation start.
+	function getLiquidationStartNonce() external view returns (uint256) {
+		return MAStorage.layout().liquidationStartNonce;
 	}
 
 	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory) {
