@@ -52,9 +52,10 @@ struct SymbolAdjustment {
 	/// @notice Whether a restatement maintenance window is currently open.
 	/// @dev Freezes the symbol and gates quote rewrites, abort, and finalization to an explicitly opened window.
 	bool restating;
-	/// @notice Whether any quote rewrite occurred in the current restatement window.
-	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory.
-	///      This is a mutation-safety flag, not the open-position completeness check enforced by the inventory checkpoints below.
+	/// @notice Whether a basis-dependent mutation occurred in the current restatement window.
+	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory
+	///      or reinterpret venue-basis prices stored by a multi-step liquidation. This is a mutation-safety flag, not the open-position
+	///      completeness check enforced by the inventory checkpoints below.
 	bool restatementMutated;
 	/// @notice 1e18-scaled factor selected for the current restatement window; 0 when no window is open.
 	/// @dev Lets operations restate directly from SCHEDULED without activating `cumulativeFactor` for Muon or normal trading. Quote rewrites and

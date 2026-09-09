@@ -170,8 +170,9 @@
 					<p>
 						The two routes keep the invariant in opposite ways. On the adjusted-price route, Core leaves quote storage alone and only
 						stores and exposes the factor, so Muon and PartyB integrations carry the burden of converting external prices and funding
-						inputs back to the stored quote basis. On the physical route, Core freezes execution and converts eligible quote storage to
-						the venue's new basis, after which nobody converts anything.
+						inputs back to the stored quote basis. On the physical route, Core freezes ordinary execution and converts eligible quote
+						storage to the venue's new basis. Liquidation is the deliberate exception: it remains available during the window and converts
+						each venue-basis liquidation price to that quote's current stored basis before closing it.
 					</p>
 					<p>
 						The mechanism covers splits, reverse splits, and quantity rebases. It does not model cash dividends, spin-offs, mergers,
@@ -552,7 +553,7 @@ funding amount = 1 * 8 = 8</code></pre>
 										<div><code>SCHEDULED + restating</code><span class="adjustment-status">Frozen</span></div>
 										<p>
 											The opening call only records the window. Prepare and settle funding before quote rewrites; abort remains
-											available until the first rewrite.
+											available until the first basis-dependent mutation.
 										</p>
 									</div>
 								</li>
@@ -634,9 +635,9 @@ funding amount = 1 * 8 = 8</code></pre>
 						After a direct-route abort, the state is still effective <code>SCHEDULED</code>, so the symbol remains frozen. Operations must
 						restart restatement, switch to the adjusted-price route with <code>confirmPriceAdjusted</code>, or cancel if the event was
 						called off. An abort from a later window normally returns to live <code>PRICE_ADJUSTED</code>. Core rejects abort once a quote
-						rewrite sets <code>restatementMutated</code>. Funding settlement and pending-quote cancellation do not set this flag because
-						they do not create a mixed-basis open book. Operations must still reconcile the book before aborting. An aborted window's
-						epoch is not reused.
+						rewrite or a PartyA liquidation price snapshot sets <code>restatementMutated</code>. Funding settlement, atomic liquidation
+						removal, and pending-quote cancellation do not set this flag because they do not leave basis-dependent state behind.
+						Operations must still reconcile the book before aborting. An aborted window's epoch is not reused.
 					</p>
 
 					<h3 id="active-route">Adjusted-price route without quote rewrites</h3>
@@ -798,29 +799,15 @@ venue open amount       = venue quantity - venue closed amount</code></pre>
 						<code>CANCEL_CLOSE_PENDING</code>. The call reverts if PartyA is being liquidated, or if PartyB is in isolated liquidation
 						against that PartyA or in cross liquidation.
 					</p>
-					<aside class="callout callout-risk">
-						<strong>Clear every liquidation before the first restatement mutation.</strong>
-						Operations must check the PartyA liquidation flag, the PartyB-against-PartyA liquidation flag, and the PartyB
-						cross-liquidation flag before the effective time and again before the first batch.
-						<ul>
-							<li>
-								<strong>PartyA liquidation:</strong> let the normal liquidation finish. Its position-processing step can run while the
-								symbol is frozen only if the required liquidation prices or snapshots were stored before the freeze. If the
-								liquidation is disputed, an account with <code>DISPUTE_ROLE</code> must resolve the settlement amounts before
-								settlement can clear the liquidation flag. The Clearing House can take over a stuck PartyA liquidation, but its
-								position-close path rejects a frozen symbol. Do not start a takeover while an affected open position remains on the
-								frozen symbol.
-							</li>
-							<li>
-								<strong>PartyB liquidation:</strong> finish isolated and cross PartyB liquidations before the effective freeze. Their
-								position-close paths reject a frozen symbol. If the freeze is already active, use the adjusted-price route to unfreeze
-								only after Muon and PartyB are ready, finish the liquidation, and then reconsider physical restatement. If a
-								mutation-free restatement window is open, abort it first. An abort from effective <code>SCHEDULED</code> remains
-								frozen until Operations confirms the adjusted-price route.
-							</li>
-						</ul>
-						Once a quote rewrite has set <code>restatementMutated</code>, Core cannot abort or roll back the window. If a liquidation
-						blocker is found at that point, stop and escalate the incident. Do not finalize an improvised partial conversion.
+					<aside class="callout callout-important">
+						<strong>A liquidation that begins during restatement is supported; the reverse ordering remains an Operations rule.</strong>
+						Operations should still verify that PartyA, isolated PartyB, and cross PartyB liquidation flags are clear before calling
+						<code>startRestatement</code>. The start transaction does not scan accounts, symbols, or positions and does not enforce that
+						precondition on-chain. If a liquidation begins after the window is open, pause rewrite batches that touch the same parties,
+						obtain fresh venue-basis liquidation prices, and finish the liquidation. Each old-basis close reduces the restatement
+						inventory, so finalization is not stranded; each already-restated close simply removes the live position. A PartyA liquidation
+						may still require dispute resolution, and the Clearing House may take over an already-active PartyA liquidation as the
+						emergency unwind path.
 					</aside>
 					<p>
 						Each call is atomic. During <code>FUNDING_SETTLEMENT</code>, any invalid ID or failed funding charge rolls back the batch.
@@ -983,27 +970,90 @@ dust            = 30 - 28 = 2</code></pre>
 					</p>
 
 					<h3 id="rewrite-funding">Funding settlement and aggregate updates</h3>
-					<p>For each quote, the facet currently executes this order:</p>
+					<p>For each quote rewrite, the facet executes this order:</p>
 					<ol>
-						<li>Prepare the quote's PartyB funding pair if the window did not checkpoint it.</li>
-						<li>Charge the quote's accumulated funding on the old basis.</li>
+						<li>Require that Operations prepared the quote's PartyB inventory.</li>
+						<li>
+							If accumulated funding was active when preparation was sealed, require the earlier funding-only pass to have settled the
+							quote.
+						</li>
 						<li>
 							Remove old open amount and opened-price notional from PartyB global, PartyB per-PartyA, and PartyA per-PartyB position
-							aggregates. The helper also subtracts the old weighted-funding contribution.
+							aggregates. The shared helper also subtracts the old weighted-funding contribution and consumes the quote's old-basis
+							restatement inventory.
 						</li>
-						<li>Subtract the old weighted-funding contribution a second time in the facet, as described below.</li>
 						<li>Rewrite the nine unit-bearing quote fields.</li>
 						<li>Add the new position aggregates and one new weighted-funding contribution.</li>
 						<li>Stamp <code>quoteRestatedEpoch</code>, set the mutation flag, and emit <code>QuoteAdjusted</code>.</li>
 					</ol>
-					<aside class="callout callout-risk">
-						<strong>The v0.8.6 write path subtracts weighted funding twice.</strong>
-						<code>LibQuote.subFromPartiesAggregatedPositions</code> already calls
-						<code>LibAggregateFunding.subFromPartiesAggregateFunding</code>. <code>_restateQuote</code> then calls the same subtraction
-						explicitly before adding the new contribution once. For an old contribution <code>C</code> and new contribution
-						<code>C'</code>, the stored result changes by <code>-2C + C'</code>, not <code>-C + C'</code>. Do not claim weighted aggregate
-						funding preservation from the current source or existing position-aggregate tests. A physical-restatement procedure must
-						account for this implementation defect before it is used on funded quotes.
+					<p>
+						The subtraction occurs once in <code>LibQuote.subFromPartiesAggregatedPositions</code>, and the new contribution is added once
+						after mutation. The same shared subtraction is used by liquidation and every other full-close path, so a liquidation close
+						cannot leave either position aggregates, weighted aggregate funding, or restatement inventory behind.
+					</p>
+
+					<h3 id="rewrite-liquidation">Liquidation while a restatement is open</h3>
+					<p>
+						An open physical-restatement window is a narrow exception to the ordinary symbol freeze for liquidation only. Legacy and
+						snapshot PartyA price setup, isolated PartyB position liquidation, and Clearing House position liquidation may resolve the
+						affected symbol. An effective <code>SCHEDULED</code> adjustment with no open window remains frozen and these paths still
+						reject it. Existing liquidation roles, account state, pause, quote ownership, signature, timeout, settlement, and hook checks
+						are not weakened.
+					</p>
+					<p>
+						During the open window, every liquidation <em>price</em> supplied for the affected symbol is in normalized venue units. Core
+						converts it separately for each quote before PnL calculation, average-close accounting, hooks, and trade-volume events:
+					</p>
+					<pre><code class="language-text">if quote was restated in the current epoch:
+    stored liquidation price = venue liquidation price
+else:
+    adjusted total quantity  = floor(stored total quantity * restatementFactor / 1e18)
+    stored liquidation price = floor(adjusted total quantity * venue liquidation price / stored total quantity)</code></pre>
+					<p>
+						The quote-specific total-quantity ratio is the inverse of the physical price rewrite and therefore follows its integer
+						rounding. It lets one PartyA symbol price safely close a mixed batch containing both rewritten and old-basis quotes. If an
+						unrestatable dust quote's adjusted total quantity is zero, Core uses
+						<code>floor(venuePrice * restatementFactor / 1e18)</code> as the deterministic stored-price fallback; Operations should still
+						prefer the dedicated PartyB dust-close flow because no exact normalized quantity exists for that quote.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Fresh liquidation price payloads have a strict timestamp boundary.</strong>
+						For PartyA legacy/deferred symbol prices, PartyA snapshot states, and isolated PartyB quote prices, the signed timestamp must
+						be strictly greater than <code>restatementStartedAt</code>. Equality is rejected to remove same-block ordering ambiguity
+						because those payloads do not carry <code>restatementEpoch</code>. Muon must value UPNL from the normalized mixed book and
+						issue the price payload after the window opens. Snapshot cumulative funding fields are not prices: they must continue to
+						reproduce Core's cumulative funding state. Clearing House prices are trusted role inputs rather than Muon signatures, but use
+						the same venue price basis while the window is open.
+					</aside>
+					<p>
+						When an old-basis quote closes, <code>closePositionFully</code> calls the inventory hook before subtracting normal aggregates.
+						If the PartyB was already prepared, the hook subtracts the quote's exact open amount from the PartyB checkpoint and symbol
+						total and emits <code>RestatementInventoryConsumed</code>. During <code>FUNDING_SETTLEMENT</code>, it also subtracts any
+						still-unsettled funding inventory; the close that clears both funding totals emits
+						<code>RestatementFundingSettlementCompleted</code> and advances to <code>QUOTE_PROCESSING</code>. A close before that PartyB
+						is prepared needs no counter write because the later live aggregate snapshot observes the already-removed position. After
+						preparation is sealed, an omitted PartyB cannot mutate old-basis inventory: the call reverts with
+						<code>PartyB inventory not prepared</code>. This prevents liquidation from bypassing a sealed checkpoint, but it does not
+						prove that the submitted PartyB manifest was complete; finalization still trusts the manager's seal and Operations must
+						reconcile every open position off-chain.
+					</p>
+					<p>
+						An atomic isolated-PartyB or Clearing House close does not set <code>restatementMutated</code>: it removes a position instead
+						of rewriting its basis, so a window containing only those closes can still be aborted safely. PartyA liquidation is
+						multi-step. When its price-setting step stores a venue-basis price for a restating symbol, Core sets
+						<code>restatementMutated</code> immediately. This prevents an abort from returning to the old basis and then reinterpreting
+						that stored price. There is no governance function that zeros inventory or forces finalization past nonzero counters. The
+						emergency governance route is the existing <code>CLEARING_HOUSE_ROLE</code> takeover of an active PartyA liquidation, or
+						cross-PartyB liquidation, followed by explicit quote-ID batches and normal settlement. It cannot fabricate completion and it
+						does not bypass financial accounting.
+					</p>
+					<aside class="callout callout-invariant">
+						<strong>Gas is bounded by caller-supplied liquidation batches.</strong>
+						The compatibility path never scans all symbols, all PartyBs, or an account's complete position set. It performs constant-time
+						basis and inventory work for each supplied quote ID. Existing liquidation loops still scale with the explicit quote array;
+						PartyA price setup remains linear in its explicitly signed symbol or PartyB-symbol state array and adds one constant-time
+						mutation-flag write per entry. Clearing House counterparty de-duplication is quadratic within that one bounded array. Keep
+						batches small enough for measured chain gas limits and continue in another transaction.
 					</aside>
 
 					<h3 id="rewrite-pending">Pending inventory</h3>
@@ -1212,11 +1262,7 @@ dust            = 30 - 28 = 2</code></pre>
 					<ul>
 						<li>quote creation, PartyB quote locking, open and close execution, batch wrappers, and solver-fee wrappers;</li>
 						<li>legacy and unified settlement;</li>
-						<li>
-							force actions, three-step force-close finalization, non-dust emergency PartyB actions, clearing-house closes, and
-							ADL-style closes;
-						</li>
-						<li>PartyA liquidation price snapshot setup in new and legacy paths, and PartyB position liquidation;</li>
+						<li>force actions, three-step force-close finalization, non-dust emergency PartyB actions, and ADL-style closes;</li>
 						<li>funding charge, rate setting, epoch-duration changes, and accumulated-funding paths.</li>
 					</ul>
 					<p>
@@ -1233,9 +1279,10 @@ dust            = 30 - 28 = 2</code></pre>
 					</p>
 					<p>
 						Other non-price cleanup can remain callable. A function that neither receives a symbol nor resolves one from a quote cannot
-						apply the freeze check. The freeze also does not cancel an existing liquidation. Normal PartyA position processing has no
-						symbol-freeze check, but its price and snapshot setup does. PartyB liquidation closes and Clearing House liquidation closes do
-						check the freeze. This is why Operations must clear liquidation blockers before the first restatement mutation.
+						apply the freeze check. The freeze also does not cancel an existing liquidation. Liquidation price setup and position-close
+						paths use a narrower guard: an effective scheduled freeze still blocks them, but an actual open restatement window admits them
+						with the quote-local price conversion and inventory accounting described above. Pending-position liquidation does not use a
+						price and remains callable under its existing account-level guards.
 					</p>
 
 					<h3>Signature expiry and account-level payloads</h3>
@@ -1262,6 +1309,13 @@ dust            = 30 - 28 = 2</code></pre>
 						affected account-, pair-, and quote-level payload. Record the latest old-basis signature timestamp, or prove an upper bound
 						from the issuance cutoff and allowed signer clock skew. Core checks each signature's timestamp and does not reject a future
 						timestamp.
+					</p>
+					<p>
+						Liquidation price payloads issued for use inside the window are different: their prices are explicitly venue-basis values, so
+						they do not extend the old-basis cutoff. Core requires each affected PartyA price/snapshot timestamp and PartyB quote-price
+						timestamp to be strictly later than <code>restatementStartedAt</code>. This local check does not validate the basis of the
+						signed UPNL or inspect symbols absent from an account-level payload; Muon must still construct the UPNL from normalized
+						venue-unit quotes. The ordinary signature expiry and liquidation timeout checks continue to apply independently.
 					</p>
 					<p>
 						The on-chain finalization deadline is sufficient only when the proven latest old-basis timestamp is no later than
@@ -1305,6 +1359,11 @@ dust            = 30 - 28 = 2</code></pre>
 							The dust emergency-close exception requires an unrestated quote that fails an amount conversion. PartyB ownership,
 							liquidation, pause, status, signature, solvency, settlement, and hook checks still apply.
 						</li>
+						<li>
+							Liquidation rejects an effective scheduled freeze unless a restatement window is actually open. During a window, Muon
+							price payloads reject timestamps at or before <code>restatementStartedAt</code>; an old-basis close after a sealed
+							manifest also rejects an omitted PartyB.
+						</li>
 						<li>Pending cancellation rejects an unfrozen symbol, an ineligible status, liquidation guards, or a reverting hook.</li>
 						<li>
 							Finalize rejects no window, missing preparation attestation, and the exact or earlier signature-expiry boundary. A funding
@@ -1328,7 +1387,8 @@ dust            = 30 - 28 = 2</code></pre>
 									<td>
 										Verify the venue event and factor direction, choose the route, control Muon timing, maintain a complete PartyB
 										manifest, choose and simulate safe address batches, restore every checkpointed address, stop before an unsafe
-										mutation, enforce expiry, and decide whether finalization is safe.
+										mutation, check that no liquidation is active before starting a window, coordinate any liquidation that begins
+										later, enforce expiry, and decide whether finalization is safe.
 									</td>
 								</tr>
 								<tr>
@@ -1336,8 +1396,9 @@ dust            = 30 - 28 = 2</code></pre>
 									<td>
 										After the venue event becomes effective and before confirmation, use the prospective factor. After
 										confirmation, use the active factor. Publish old-unit adjusted prices while a factor is active, stop every
-										affected account-, pair-, and quote-level payload before the cutoff, and resume raw prices only after
-										reconciled finalization.
+										affected ordinary account-, pair-, and quote-level payload before the cutoff, issue restatement-liquidation
+										prices in venue units strictly after the window start, derive their UPNLs from normalized quotes, and resume
+										ordinary raw prices only after reconciled finalization.
 									</td>
 								</tr>
 								<tr>
@@ -1360,8 +1421,8 @@ dust            = 30 - 28 = 2</code></pre>
 									<td>Auditors and governance</td>
 									<td>
 										Review role grants, selector compatibility, validity changes, complete-book evidence, PartyB manifests and
-										batch-size limits, and the current duplicate weighted-funding subtraction before approving physical
-										restatement.
+										batch-size limits, liquidation price-basis integration, and inventory/funding reconciliation before approving
+										physical restatement. Do not add a counter-zeroing or forced-finalization bypass.
 									</td>
 								</tr>
 							</tbody>
@@ -1372,15 +1433,17 @@ dust            = 30 - 28 = 2</code></pre>
 					<aside class="callout callout-important">
 						<strong>Upgrade the close-accounting graph atomically.</strong> The inventory-consumption hook is compiled into
 						<code>LibQuoteClose</code>, <code>ClearingHouseFacetImpl</code>, <code>LibPartyALiquidationProcess</code>,
-						<code>PartyBLiquidationFacet</code>, and <code>SymbolAdjustmentFacet</code>. Deploy the complete linked core graph from a
-						fresh upgrade state, then replace every facet linked to those new libraries in one Diamond cut. This includes the PartyA,
-						PartyB position/quote/batch/emergency, force-action/force-close, PartyA liquidation/snapshot, PartyB liquidation,
-						ClearingHouse, Symbol Adjustment, and <code>ViewFacetSymbol</code> facets. The view facet receives every Symbol Adjustment
-						read selector in the same cut. Replacing only <code>SymbolAdjustmentFacet</code> leaves close paths that do not consume the
-						new inventory counter and can freeze finalization. Do not run the one-facet updater for either facet: selector ownership moves
-						across both ABIs and must be reconciled from the complete target selector map. Before the cut, verify that no symbol has an
-						open restatement window: a window started under the older implementation has no inventory snapshots to migrate. Do not open a
-						new window until the selector and runtime code-hash checks for the full cut are complete.
+						<code>PartyBLiquidationFacet</code>, and <code>SymbolAdjustmentFacet</code>. Restatement-aware liquidation pricing also
+						changes <code>LibSymbolAdjustment</code>, both PartyA price-setup libraries, <code>LibPartyALiquidationProcess</code>,
+						<code>PartyBLiquidationFacet</code>, and <code>ClearingHouseFacetImpl</code>. Deploy the complete linked core graph from a
+						fresh upgrade state, then replace every facet linked to those libraries in one Diamond cut. This includes the PartyA, PartyB
+						position/quote/batch/emergency, force-action/force-close, PartyA liquidation/snapshot, PartyB liquidation, ClearingHouse,
+						Symbol Adjustment, and <code>ViewFacetSymbol</code> facets. The view facet receives every Symbol Adjustment read selector in
+						the same cut. Replacing only <code>SymbolAdjustmentFacet</code> leaves close paths that do not consume the new inventory
+						counter and can freeze finalization. Do not run the one-facet updater for either facet: selector ownership moves across both
+						ABIs and must be reconciled from the complete target selector map. Before the cut, verify that no symbol has an open
+						restatement window: a window started under the older implementation has no inventory snapshots to migrate. Do not open a new
+						window until the selector and runtime code-hash checks for the full cut are complete.
 					</aside>
 					<h3>Prepare and schedule</h3>
 					<ol>
@@ -1392,16 +1455,19 @@ dust            = 30 - 28 = 2</code></pre>
 						</li>
 						<li>
 							Build the complete open quote manifest across all PartyB account models. Pending inventory may also be indexed for
-							optional pre-finalization refunds and post-finalization lazy cancellation. For every pair, require PartyA liquidation,
-							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status to be clear. Resolve any active liquidation before
-							the effective time.
+							optional pre-finalization refunds and post-finalization lazy cancellation. For every pair, check PartyA liquidation,
+							PartyB-against-PartyA liquidation, and PartyB cross-liquidation status off-chain. Resolve every active liquidation before
+							calling <code>startRestatement</code>; the start call does not enforce this or scan the book.
 						</li>
 						<li>
 							Build the complete involved-PartyB manifest from the affected open book and Operations' funding records. Fork-rehearse
 							inventory and funding preparation, quote processing, and restoration with the intended address batches. Choose a batch
 							size with comfortable gas headroom and test bot restart from the saved manifest.
 						</li>
-						<li>Resolve the duplicate weighted-funding subtraction risk before approving any physical route on funded inventory.</li>
+						<li>
+							Fork-rehearse funded inventory and verify that each rewrite or liquidation close removes the old weighted-funding
+							contribution once, and that a rewrite adds the new contribution once.
+						</li>
 						<li>
 							Verify the deployed ABI exposes <code>startRestatement(uint256)</code>,
 							<code>processRestatementFunding(uint256,address[])</code>, <code>completeRestatementFundingPreparation(uint256)</code>,
@@ -1464,6 +1530,14 @@ dust            = 30 - 28 = 2</code></pre>
 							<code>QUOTE_PROCESSING</code> only when the funding-settlement inventory reaches zero.
 						</li>
 						<li>
+							Continuously monitor liquidation flags after the window opens. If a new liquidation affects the symbol, stop overlapping
+							rewrite batches and have Muon issue liquidation prices in venue units with timestamps strictly greater than
+							<code>restatementStartedAt</code>. Use normalized mixed-book views for UPNL. Process explicit quote-ID batches through the
+							appropriate PartyA, isolated PartyB, or Clearing House path; record every <code>RestatementInventoryConsumed</code> event
+							and remove closed IDs from later funding/rewrite batches. Clearing House inputs use venue prices but have no Muon
+							timestamp.
+						</li>
+						<li>
 							Re-scan the now-frozen book before the first mutation. Recheck statuses, every liquidation mode, previews, funding
 							settlement, hooks, and all deregistered PartyBs with open quotes. For every marked or newly discovered amount-underflow
 							quote, have PartyB obtain a stored-basis Muon signature. Simulate the exact <code>emergencyClosePosition</code> call from
@@ -1472,10 +1546,11 @@ dust            = 30 - 28 = 2</code></pre>
 						<li>
 							After cleanup, record the latest possible timestamp across every old-basis payload, including the dedicated close
 							signatures. Add allowed signer clock skew and prove that Muon cannot issue a later old-basis timestamp. This is the cutoff
-							used for finalization.
+							used for finalization. Fresh restatement-liquidation price payloads are venue-basis and do not move this old-basis cutoff.
 						</li>
 						<li>
-							If any item cannot be processed, abort before a quote rewrite. Direct abort stays frozen in
+							If any item cannot be processed, abort before a quote rewrite or PartyA liquidation price snapshot. Direct abort stays
+							frozen in
 							<code>SCHEDULED</code>. Active-factor abort preserves the prior state, normally live <code>PRICE_ADJUSTED</code>, but it
 							can also return live in <code>CANCELLED</code>. After <code>abortRestatement</code>, submit the checkpointed PartyB
 							manifest through <code>processRestatementFunding</code> until <code>RestatementAborted</code> if progress reports
@@ -1493,7 +1568,8 @@ dust            = 30 - 28 = 2</code></pre>
 							<code>RestatementFundingSettlementCompleted</code> reports the move to <code>QUOTE_PROCESSING</code>. Then have the
 							Operations bot simulate each exact rewrite call through <code>eth_call</code> from the intended transaction sender. Submit
 							only a successful simulation, track <code>QuoteAdjusted</code>, and verify each quote's epoch. Remove successful IDs
-							before retrying. Re-simulate whenever the batch or relevant state changes.
+							before retrying. A liquidation close can consume unsettled funding inventory and emit the completion event itself, so read
+							the live phase before every batch. Re-simulate whenever the batch or relevant state changes.
 						</li>
 						<li>
 							Use venue-unit views for convertible records during the open window, but compare raw storage and epoch data to prove
@@ -1660,8 +1736,8 @@ dust            = 30 - 28 = 2</code></pre>
 									<td>
 										<code>restatementEpoch</code> increments on every successful start and survives abort and finalization.
 										<code>restating</code> is the open-window flag. <code>restatementMutated</code> resets to false at start,
-										becomes true on a quote rewrite, and is not cleared by finalization. <code>restatementFactor</code> and
-										<code>restatementStartedAt</code> are zero outside a window.
+										becomes true on a quote rewrite or PartyA liquidation price snapshot, and is not cleared by finalization.
+										<code>restatementFactor</code> and <code>restatementStartedAt</code> are zero outside a window.
 									</td>
 								</tr>
 								<tr>
@@ -1832,6 +1908,36 @@ dust            = 30 - 28 = 2</code></pre>
 									</td>
 								</tr>
 								<tr>
+									<td><code>setSymbolsPrice</code> / <code>setSymbolsPriceWithSnapshot</code></td>
+									<td>
+										Existing PartyA liquidator role. During restatement, accept venue-basis prices only when the Muon timestamp is
+										strictly later than the window start; store the canonical price for quote-local conversion during position
+										processing.
+									</td>
+								</tr>
+								<tr>
+									<td><code>liquidatePositionsPartyA</code> / snapshot variant</td>
+									<td>
+										Existing PartyA liquidator role. Convert the stored venue price per quote, run ordinary PnL/funding and
+										balance accounting, then consume old-basis inventory through the shared close helper.
+									</td>
+								</tr>
+								<tr>
+									<td><code>liquidatePositionsPartyB</code></td>
+									<td>
+										<code>PARTYB_LIQUIDATOR_ROLE</code>. During restatement, require a post-start quote-price timestamp, convert
+										each venue price independently, and consume inventory for each old-basis close.
+									</td>
+								</tr>
+								<tr>
+									<td><code>liquidatePositionsForClearingHouse</code></td>
+									<td>
+										<code>CLEARING_HOUSE_ROLE</code>. Close explicit quote IDs for an active cross-PartyB liquidation or PartyA
+										takeover; during restatement, prices are venue-basis trusted inputs and old-basis closes consume inventory. No
+										counter override.
+									</td>
+								</tr>
+								<tr>
 									<td><code>finalizeRestatement</code></td>
 									<td>
 										Manager-only. Require zero unresolved prepared inventory and, after strict expiry, begin rebased-rate
@@ -1895,9 +2001,13 @@ RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 						distinguish PartyB address counts from LONG and SHORT position quantities, report each fresh inventory snapshot, summarize
 						every batch, and record the exact quantities sealed for quote processing. Each inventory-consumption event identifies the
 						quote, side, and old-basis quantity consumed. Starting from the per-PartyB snapshots, indexers subtract these side-specific
-						deltas to reconstruct the same exact PartyB and symbol remainders enforced on-chain, without a second completion log.
-						Funding-restoration events report restoration mode and remaining PartyB work. Per-pair preparation and restoration also emit
-						the existing <code>AccumulatedFundingStateUpdated</code>. When checkpoints exist, <code>RestatementAborted</code> or
+						deltas to reconstruct the same exact PartyB and symbol remainders enforced on-chain, without a second completion log. A
+						liquidation close of an already-restated quote emits no inventory-consumption event because it has already left the old-basis
+						counter. PartyA price-setup and snapshot events expose the venue-basis payload value during an open window; close hooks,
+						average-closed-price fields, PartyA funding/PnL attribution, and Clearing House trade volume use the quote's converted stored
+						price. Indexers should normalize the closed quote before comparing those values with the venue payload. Funding-restoration
+						events report restoration mode and remaining PartyB work. Per-pair preparation and restoration also emit the existing
+						<code>AccumulatedFundingStateUpdated</code>. When checkpoints exist, <code>RestatementAborted</code> or
 						<code>RestatementFinalized</code> is emitted by the last funding batch rather than the transaction that starts restoration.
 						That terminal transaction also emits <code>PendingQuoteIdCutoffUpdated</code>. Each later lazy cancellation emits
 						<code>StalePendingQuoteCancelled</code>. During <code>FUNDING_SETTLEMENT</code>, every successfully processed quote emits
