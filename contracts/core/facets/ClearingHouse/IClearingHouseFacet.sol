@@ -53,6 +53,7 @@ interface IClearingHouseFacet is IClearingHouseFacetEvents {
 	function liquidatePendingPositionsForClearingHouse(address subject, address[] memory counterparties) external;
 
 	/// @notice Liquidates opened positions at Clearing House supplied prices without charging solver fees.
+	/// @dev Prices are venue-basis inputs during an open symbol restatement and are converted per quote.
 	function liquidatePositionsForClearingHouse(address subject, uint256[] memory quoteIds, uint256[] memory prices) external;
 
 	function closeAffiliatePositions(address affiliate, uint256[] memory quoteIds, uint256[] memory prices) external;

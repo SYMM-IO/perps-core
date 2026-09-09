@@ -10,5 +10,6 @@ import { SingleUpnlSig, QuotePriceSig } from "../../storages/MuonStorage.sol";
 interface IPartyBLiquidationFacet is IPartyBLiquidationEvents {
 	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) external;
 
+	/// @dev During an open restatement, quote prices use venue units and the signature must strictly postdate the window.
 	function liquidatePositionsPartyB(address partyB, address partyA, QuotePriceSig memory priceSig) external;
 }
