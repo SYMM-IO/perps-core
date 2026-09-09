@@ -623,16 +623,6 @@ contract ViewFacet is IViewFacet {
 		return LibTimelock.timelockOf(subAccount, selector);
 	}
 
-	/// @notice Unlocker of a timelocked selector on a root sub-account, or address(0) when the selector is not timelocked.
-	function unlockerOf(address subAccount, bytes4 selector) external view returns (address) {
-		return LibTimelock.timelockOf(subAccount, selector).unlocker;
-	}
-
-	/// @notice True when selector is timelocked on the root sub-account.
-	function isTimelocked(address subAccount, bytes4 selector) external view returns (bool) {
-		return LibTimelock.timelockOf(subAccount, selector).unlocker != address(0);
-	}
-
 	/// @notice True when the non-empty selector set is timelocked by unlocker with a delay of at least minDelay.
 	function allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] calldata selectors) external view returns (bool) {
 		if (unlocker == address(0) || selectors.length == 0) return false;

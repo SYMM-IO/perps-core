@@ -3,9 +3,10 @@ import { TypedDataDomain, ZeroAddress, ZeroHash, toUtf8Bytes } from "ethers"
 
 import type { InstantLayer } from "../../src/types/index.js"
 import { initializeFixture } from "../Initialize.fixture.js"
+import { createTimelockApprovalSigner, type TimelockApprovalSigner } from "../helpers/accountLayerTimelock.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { cloneTypes } from "../helpers/instantLayerEIP712Types.js"
-import { loadFixture, time } from "../helpers/network-helpers.js"
+import { loadFixture } from "../helpers/network-helpers.js"
 import { RunContext } from "../models/RunContext.js"
 import { limitQuoteRequestBuilder } from "../models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "../utils/Common.js"
@@ -23,16 +24,6 @@ const APPROVAL_OFFSET = 128
 const APPROVAL_LENGTH = 160
 const SIGNATURE_OFFSET = 320
 const ECDSA_SIGNATURE_LENGTH = 65
-
-const APPROVAL_TYPES = {
-	TimelockApproval: [
-		{ name: "account", type: "address" },
-		{ name: "unlocker", type: "address" },
-		{ name: "callDataHash", type: "bytes32" },
-		{ name: "deadline", type: "uint256" },
-		{ name: "salt", type: "bytes32" },
-	],
-}
 
 const NO_APPROVAL = { account: ZeroAddress, unlocker: ZeroAddress, callDataHash: ZeroHash, deadline: 0, salt: ZeroHash }
 
@@ -74,6 +65,7 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 	let types: ReturnType<typeof cloneTypes>
 	let quoteCallData: string
 	let deadline: bigint
+	let signApproval: TimelockApprovalSigner
 
 	function signedOp(callData: string, target: string, flexFields: any[] = [], signer: any = user): InstantLayer.SignedOperationStruct {
 		return {
@@ -85,18 +77,6 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 			maxUses: 1,
 			replayAttackHeader: { nonce: 0, deadline, salt: ethers.hexlify(ethers.randomBytes(32)) },
 		}
-	}
-
-	async function signApproval(callDataHash: string, account: string = subAccount) {
-		const approval = {
-			account,
-			unlocker: unlocker.address,
-			callDataHash,
-			deadline: BigInt(await time.latest()) + 60n,
-			salt: ethers.hexlify(ethers.randomBytes(32)),
-		}
-		const signature = await unlocker.signTypedData(approvalDomain, APPROVAL_TYPES, approval)
-		return { approval, signature }
 	}
 
 	// The owner's op: a zeroed approval, a reserved signature slot, and both regions open to the solver.
@@ -115,7 +95,7 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 
 	// Fills for the two flex regions from a fresh approval over the exact calldata of the timelocked op inside innerCallData.
 	async function solverFills(innerCallData: string, guardedCallData: string, account: string = subAccount) {
-		const signed = await signApproval(ethers.keccak256(guardedCallData), account)
+		const signed = await signApproval(ethers.keccak256(guardedCallData), { account })
 		const filledCd = context.alTimelockFacet.interface.encodeFunctionData("executeTimelockOp", [[signed], innerCallData])
 		return [
 			ethers.dataSlice(filledCd, 4 + APPROVAL_OFFSET, 4 + APPROVAL_OFFSET + APPROVAL_LENGTH),
@@ -147,6 +127,7 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 		const chainId = (await ethers.provider.getNetwork()).chainId
 		instantDomain = { name: "SymmioInstantLayer", version: "1", chainId, verifyingContract: await context.instantLayer.getAddress() }
 		approvalDomain = { name: "SymmioAccountLayerTimelock", version: "1", chainId, verifyingContract: accountLayer }
+		signApproval = createTimelockApprovalSigner(approvalDomain, unlocker, subAccount)
 		types = cloneTypes()
 		deadline = await getBlockTimestamp(300n)
 
