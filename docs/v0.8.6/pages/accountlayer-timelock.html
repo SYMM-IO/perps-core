@@ -579,8 +579,6 @@ cancelTimelockOp(address account, bytes32 callDataHash)</code></pre>
 setScheduleGracePeriod(uint256 value)  // 0..30 days; zero selects the 10-minute default</code></pre>
 					<p>ViewFacet exposes:</p>
 					<pre><code>getSelectorTimelock(address subAccount, bytes4 selector) returns (SelectorTimelock)
-unlockerOf(address subAccount, bytes4 selector) returns (address)
-isTimelocked(address subAccount, bytes4 selector) returns (bool)
 allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] selectors) returns (bool)
 timelockNonce(address subAccount) returns (uint32)
 getSchedule(address account, bytes32 callDataHash) returns (Schedule)

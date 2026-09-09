@@ -2,6 +2,12 @@ import { expect } from "chai"
 import { FunctionFragment, Interface, ParamType, TypedDataDomain, ZeroAddress, ZeroHash } from "ethers"
 
 import { initializeFixture } from "../Initialize.fixture.js"
+import {
+	createTimelockApprovalSigner,
+	randomTimelockSalt,
+	TIMELOCK_APPROVAL_TYPES,
+	type TimelockApprovalSigner,
+} from "../helpers/accountLayerTimelock.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { loadFixture, time } from "../helpers/network-helpers.js"
 import { RunContext } from "../models/RunContext.js"
@@ -13,24 +19,10 @@ const DELAY = 300n
 const MARGIN = decimal(1000n)
 const GRACE = 600n
 
-const APPROVAL_TYPES = {
-	TimelockApproval: [
-		{ name: "account", type: "address" },
-		{ name: "unlocker", type: "address" },
-		{ name: "callDataHash", type: "bytes32" },
-		{ name: "deadline", type: "uint256" },
-		{ name: "salt", type: "bytes32" },
-	],
-}
-
 const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 
 function selectorOf(iface: Interface, name: string): string {
 	return iface.getFunction(name)!.selector
-}
-
-function randomSalt(): string {
-	return ethers.hexlify(ethers.randomBytes(32))
 }
 
 describe("AccountLayer Timelock", function () {
@@ -47,25 +39,7 @@ describe("AccountLayer Timelock", function () {
 	let allocateCd: string
 	let quoteCallData: string
 	let SEL: Record<string, string>
-
-	// One unlocker's approval over an exact calldata, as executeTimelockOp takes it.
-	async function signApproval(
-		callDataHash: string,
-		deadlineOffset = 60n,
-		signer = unlocker,
-		account = subAccount,
-		unlockerAddress?: string,
-	): Promise<{ approval: any; signature: string }> {
-		const approval = {
-			account,
-			unlocker: unlockerAddress ?? signer.address,
-			callDataHash,
-			deadline: BigInt(await time.latest()) + deadlineOffset,
-			salt: randomSalt(),
-		}
-		const signature = await signer.signTypedData(domain, APPROVAL_TYPES, approval)
-		return { approval, signature }
-	}
+	let signApproval: TimelockApprovalSigner
 
 	async function grantSetter() {
 		await context.alControlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("SETTER_ROLE"))
@@ -96,6 +70,7 @@ describe("AccountLayer Timelock", function () {
 			chainId: (await ethers.provider.getNetwork()).chainId,
 			verifyingContract: accountLayer,
 		}
+		signApproval = createTimelockApprovalSigner(domain, unlocker, subAccount)
 
 		internalTransferCd = context.accountFacet.interface.encodeFunctionData("internalTransfer", [user2.address, decimal(10n)])
 		allocateCd = context.accountFacet.interface.encodeFunctionData("allocate", [decimal(10n)])
@@ -141,8 +116,7 @@ describe("AccountLayer Timelock", function () {
 			const timelock = await view.getSelectorTimelock(subAccount, SEL.internalTransfer)
 			expect(timelock.unlocker).to.equal(unlocker.address)
 			expect(timelock.delay).to.equal(DELAY)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(true)
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 			expect(await view.timelockNonce(subAccount)).to.equal(1n)
 		})
 
@@ -170,7 +144,7 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY, [SEL.internalTransfer])
 			// a fresh selector and a longer delay never weaken anything
 			await tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY + 1n, [SEL.allocate])
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(true)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(unlocker.address)
 
 			await expect(tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY - 1n, [SEL.internalTransfer])).to.be.revertedWithCustomError(
 				tl,
@@ -292,7 +266,7 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).scheduleTimelockOp(subAccount, ethers.keccak256(clearCd))
 			await time.increase(Number(DELAY))
 			await tl.connect(user).executeTimelockOp([], clearCd)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("expires after the operation window", async function () {
@@ -423,7 +397,7 @@ describe("AccountLayer Timelock", function () {
 			const b = await signApproval(clearHash)
 			await expect(tl.connect(user).executeTimelockOp([a, b], clearCd)).to.be.revertedWithCustomError(tl, "UnusedTimelockApproval")
 			for (const signed of [a, b]) expect(await view.isApprovalUsed(await view.hashTimelockApproval(signed.approval))).to.equal(false)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(true)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(unlocker.address)
 			await tl.connect(user).executeTimelockOp([a], clearCd)
 		})
 
@@ -434,7 +408,7 @@ describe("AccountLayer Timelock", function () {
 			const nested = tl.interface.encodeFunctionData("executeTimelockOp", [[inner], clearCd])
 			await expect(tl.connect(user).executeTimelockOp([outer], nested)).to.be.revertedWithCustomError(tl, "UnusedTimelockApproval")
 			for (const signed of [outer, inner]) expect(await view.isApprovalUsed(await view.hashTimelockApproval(signed.approval))).to.equal(false)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(true)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(unlocker.address)
 		})
 
 		it("consumes approvals from outer and inner wrappers for repeated exact calls", async function () {
@@ -478,7 +452,7 @@ describe("AccountLayer Timelock", function () {
 
 		it("hashes like the reference EIP-712 encoding", async function () {
 			const { approval } = await signApproval(clearHash)
-			const expected = ethers.TypedDataEncoder.hash(domain, APPROVAL_TYPES, approval)
+			const expected = ethers.TypedDataEncoder.hash(domain, TIMELOCK_APPROVAL_TYPES, approval)
 			expect(await view.hashTimelockApproval(approval)).to.equal(expected)
 			expect(await view.timelockDomainSeparator()).to.equal(ethers.TypedDataEncoder.hashDomain(domain))
 		})
@@ -490,15 +464,15 @@ describe("AccountLayer Timelock", function () {
 				unlocker: unlocker.address,
 				callDataHash: clearHash,
 				deadline: BigInt(await time.latest()) + 600n,
-				salt: randomSalt(),
+				salt: randomTimelockSalt(),
 			}
-			const signature = await unlocker.signTypedData(domain, APPROVAL_TYPES, approval)
+			const signature = await unlocker.signTypedData(domain, TIMELOCK_APPROVAL_TYPES, approval)
 			const mutations = [
 				{ ...approval, account: user2.address },
 				{ ...approval, unlocker: user2.address },
 				{ ...approval, callDataHash: ZeroHash },
 				{ ...approval, deadline: approval.deadline + 1n },
-				{ ...approval, salt: randomSalt() },
+				{ ...approval, salt: randomTimelockSalt() },
 			]
 			for (const mutated of mutations) {
 				await expect(tl.connect(user).executeTimelockOp([{ approval: mutated, signature }], clearCd)).to.be.revertedWithCustomError(
@@ -512,7 +486,7 @@ describe("AccountLayer Timelock", function () {
 				{ ...domain, chainId: chainId + 1n },
 				{ ...domain, verifyingContract: context.diamond },
 			]) {
-				const wrongSignature = await unlocker.signTypedData(wrongDomain, APPROVAL_TYPES, approval)
+				const wrongSignature = await unlocker.signTypedData(wrongDomain, TIMELOCK_APPROVAL_TYPES, approval)
 				await expect(tl.connect(user).executeTimelockOp([{ approval, signature: wrongSignature }], clearCd)).to.be.revertedWithCustomError(
 					tl,
 					"InvalidApprovalSignature",
@@ -525,8 +499,8 @@ describe("AccountLayer Timelock", function () {
 		it("accepts an approval at its exact deadline", async function () {
 			const tl = context.alTimelockFacet
 			const deadline = BigInt(await time.latest()) + 10n
-			const approval = { account: subAccount, unlocker: unlocker.address, callDataHash: clearHash, deadline, salt: randomSalt() }
-			const signature = await unlocker.signTypedData(domain, APPROVAL_TYPES, approval)
+			const approval = { account: subAccount, unlocker: unlocker.address, callDataHash: clearHash, deadline, salt: randomTimelockSalt() }
+			const signature = await unlocker.signTypedData(domain, TIMELOCK_APPROVAL_TYPES, approval)
 			await time.setNextBlockTimestamp(deadline)
 			await tl.connect(user).executeTimelockOp([{ approval, signature }], clearCd)
 			expect(await view.isApprovalUsed(await view.hashTimelockApproval(approval))).to.equal(true)
@@ -544,7 +518,7 @@ describe("AccountLayer Timelock", function () {
 				.and.to.emit(tl, "TimelocksCleared")
 				.withArgs(subAccount, [SEL.internalTransfer])
 			expect(await view.isApprovalUsed(approvalHash)).to.equal(true)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
 			expect((await view.getSchedule(subAccount, clearHash)).scheduledAt).to.equal(0n)
 
 			await expect(tl.connect(user).executeTimelockOp([signed], clearCd)).to.be.revertedWithCustomError(tl, "ApprovalUsed")
@@ -555,19 +529,19 @@ describe("AccountLayer Timelock", function () {
 			const mismatched = await signApproval(ZeroHash)
 			await expect(tl.connect(user).executeTimelockOp([mismatched], clearCd)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 
-			const expired = await signApproval(clearHash, -1n)
+			const expired = await signApproval(clearHash, { deadlineOffset: -1n })
 			await expect(tl.connect(user).executeTimelockOp([expired], clearCd)).to.be.revertedWithCustomError(tl, "ApprovalExpired")
 
-			const foreign = await signApproval(clearHash, 60n, user2)
+			const foreign = await signApproval(clearHash, { signer: user2 })
 			await expect(tl.connect(user).executeTimelockOp([foreign], clearCd)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 
-			const inactive = await signApproval(clearHash, 60n, unlocker, user2.address)
+			const inactive = await signApproval(clearHash, { account: user2.address })
 			await expect(tl.connect(user).executeTimelockOp([inactive], clearCd)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 		})
 
 		it("rejects a signature that is not the named unlocker's", async function () {
 			const tl = context.alTimelockFacet
-			const forged = await signApproval(clearHash, 60n, user2, subAccount, unlocker.address)
+			const forged = await signApproval(clearHash, { signer: user2, unlockerAddress: unlocker.address })
 			await expect(tl.connect(user).executeTimelockOp([forged], clearCd)).to.be.revertedWithCustomError(tl, "InvalidApprovalSignature")
 			const unsigned = await signApproval(clearHash)
 			await expect(tl.connect(user).executeTimelockOp([{ approval: unsigned.approval, signature: "0x" }], clearCd)).to.be.revertedWithCustomError(
@@ -579,13 +553,13 @@ describe("AccountLayer Timelock", function () {
 		it("rejects surplus approvals for other accounts and a blank unlocker", async function () {
 			const tl = context.alTimelockFacet
 			// An approval naming another account is recorded under that account and never consulted here.
-			const forOther = await signApproval(clearHash, 60n, unlocker, user2.address)
+			const forOther = await signApproval(clearHash, { account: user2.address })
 			const forThis = await signApproval(clearHash)
 			await expect(tl.connect(user).executeTimelockOp([forOther, forThis], clearCd)).to.be.revertedWithCustomError(tl, "UnusedTimelockApproval")
 			for (const signed of [forOther, forThis]) expect(await view.isApprovalUsed(await view.hashTimelockApproval(signed.approval))).to.equal(false)
 			await tl.connect(user).executeTimelockOp([forThis], clearCd)
 
-			const blank = await signApproval(clearHash, 60n, unlocker, subAccount, ZeroAddress)
+			const blank = await signApproval(clearHash, { unlockerAddress: ZeroAddress })
 			await expect(tl.connect(user).executeTimelockOp([blank], clearCd)).to.be.revertedWithCustomError(tl, "ZeroUnlocker")
 		})
 
@@ -598,17 +572,17 @@ describe("AccountLayer Timelock", function () {
 			const hash = ethers.keccak256(clearAllocate)
 
 			// the wallet's own key signs on its behalf; a stranger's signature is refused by the wallet
-			const byStranger = await signApproval(hash, 60n, user2, subAccount, walletAddress)
+			const byStranger = await signApproval(hash, { signer: user2, unlockerAddress: walletAddress })
 			await expect(tl.connect(user).executeTimelockOp([byStranger], clearAllocate)).to.be.revertedWithCustomError(tl, "InvalidApprovalSignature")
 			// and the key signing as itself is not the wallet
-			const asEoa = await signApproval(hash, 60n, unlocker)
+			const asEoa = await signApproval(hash)
 			await expect(tl.connect(user).executeTimelockOp([asEoa], clearAllocate)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 
-			const byWallet = await signApproval(hash, 60n, unlocker, subAccount, walletAddress)
+			const byWallet = await signApproval(hash, { unlockerAddress: walletAddress })
 			await expect(tl.connect(user).executeTimelockOp([byWallet], clearAllocate))
 				.to.emit(tl, "TimelockOpApproved")
 				.withArgs(subAccount, hash, walletAddress, await view.hashTimelockApproval(byWallet.approval))
-			expect(await view.unlockerOf(subAccount, SEL.allocate)).to.equal(ZeroAddress)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("a different salt is a distinct approval", async function () {
@@ -664,7 +638,7 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).scheduleTimelockOp(subAccount, clearHash)
 			const signed = await signApproval(clearHash)
 			await tl.connect(user).executeTimelockOp([signed], clearCd)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("using an approval leaves a separate pending schedule for the same operation intact", async function () {
@@ -687,7 +661,7 @@ describe("AccountLayer Timelock", function () {
 			const cd = tl.interface.encodeFunctionData("setupTimelocks", [subAccount, user2.address, DELAY, [SEL.internalTransfer]])
 			const signed = await signApproval(ethers.keccak256(cd))
 			await tl.connect(user).executeTimelockOp([signed], cd)
-			expect(await view.unlockerOf(subAccount, SEL.internalTransfer)).to.equal(user2.address)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(user2.address)
 		})
 
 		it("passes through an untimelocked call only when no approvals are supplied", async function () {
@@ -708,7 +682,7 @@ describe("AccountLayer Timelock", function () {
 			await time.increase(Number(DELAY))
 			const nested = tl.interface.encodeFunctionData("executeTimelockOp", [[], clearCd])
 			await expect(tl.connect(user).executeTimelockOp([], nested)).to.emit(tl, "TimelockOpExecuted").withArgs(subAccount, clearHash)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("a schedule for another op is untouched by an unrelated wrapped call", async function () {
@@ -868,7 +842,7 @@ describe("AccountLayer Timelock", function () {
 			expect((await view.getSchedule(subAccount, hash)).scheduledAt).to.equal(0n)
 
 			// approval names the parent, inner call targets the VA
-			const signed = await signApproval(hash, 60n, unlocker, subAccount)
+			const signed = await signApproval(hash)
 			await expect(tl.connect(user).executeTimelockOp([signed], cd))
 				.to.emit(tl, "TimelockOpExecuted")
 				.withArgs(subAccount, hash)
@@ -1020,7 +994,7 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).executeTimelockOp([signed], cd)
 
 			// the policy survives the handover, so the new owner is gated exactly as the old one was
-			expect(await view.unlockerOf(subAccount, SEL.transferSubAccountOwnership)).to.equal(unlocker.address)
+			expect((await view.getSelectorTimelock(subAccount, SEL.transferSubAccountOwnership)).unlocker).to.equal(unlocker.address)
 			await expect(core.connect(user2).transferSubAccountOwnership(subAccount, user.address)).to.be.revertedWithCustomError(
 				core,
 				"TimelockOpNotApprovedOrScheduled",
@@ -1057,7 +1031,7 @@ describe("AccountLayer Timelock", function () {
 				tl,
 				"LegacyAccountCannotBeTimelocked",
 			)
-			expect(await view.isTimelocked(legacyAccount, SEL.internalTransfer)).to.equal(false)
+			expect((await view.getSelectorTimelock(legacyAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("a policy change invalidates every scheduled window", async function () {
@@ -1084,7 +1058,7 @@ describe("AccountLayer Timelock", function () {
 			await expect(tl.connect(user).clearTimelocks(subAccount, [SEL.internalTransfer])).to.be.revertedWithCustomError(tl, "ScheduleNotReady")
 			await time.increase(Number(DELAY))
 			await tl.connect(user).clearTimelocks(subAccount, [SEL.internalTransfer])
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("adding a selector invalidates a window scheduled while that selector was ungated", async function () {
@@ -1113,8 +1087,8 @@ describe("AccountLayer Timelock", function () {
 			const transferHash = ethers.keccak256(internalTransferCd)
 
 			// Each unlocker signs only the inner call it guards.
-			const transferByUnlocker = await signApproval(transferHash, 60n, unlocker)
-			const allocateByUser2 = await signApproval(allocateHash, 60n, user2)
+			const transferByUnlocker = await signApproval(transferHash)
+			const allocateByUser2 = await signApproval(allocateHash, { signer: user2 })
 			// Nobody approved or scheduled the allocate op, so the gate names it.
 			await expect(tl.connect(user).executeTimelockOp([transferByUnlocker], batch))
 				.to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
@@ -1126,15 +1100,15 @@ describe("AccountLayer Timelock", function () {
 				.withArgs(subAccount, transferHash)
 
 			// An approval over the whole batch covers nothing inside it, and is not burned.
-			const transferAgain = await signApproval(transferHash, 60n, unlocker)
-			const batchByUser2 = await signApproval(ethers.keccak256(batch), 60n, user2)
+			const transferAgain = await signApproval(transferHash)
+			const batchByUser2 = await signApproval(ethers.keccak256(batch), { signer: user2 })
 			await expect(tl.connect(user).executeTimelockOp([transferAgain, batchByUser2], batch))
 				.to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 				.withArgs(subAccount, allocateHash)
 			expect(await view.isApprovalUsed(await view.hashTimelockApproval(batchByUser2.approval))).to.equal(false)
 
 			// An inner-call approval from the wrong unlocker covers nothing.
-			const allocateByUnlocker = await signApproval(allocateHash, 60n, unlocker)
+			const allocateByUnlocker = await signApproval(allocateHash)
 			await expect(tl.connect(user).executeTimelockOp([transferAgain, allocateByUnlocker], batch))
 				.to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 				.withArgs(subAccount, allocateHash)
@@ -1218,8 +1192,8 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY, [SEL.internalTransfer])
 			// a selector nobody guards yet can be handed to a second unlocker instantly
 			await tl.connect(user).setupTimelocks(subAccount, user2.address, DELAY, [SEL.allocate])
-			expect(await view.unlockerOf(subAccount, SEL.internalTransfer)).to.equal(unlocker.address)
-			expect(await view.unlockerOf(subAccount, SEL.allocate)).to.equal(user2.address)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(unlocker.address)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(user2.address)
 			expect(await view.allTimelockedBy(subAccount, unlocker.address, DELAY, [SEL.internalTransfer])).to.equal(true)
 			expect(await view.allTimelockedBy(subAccount, user2.address, DELAY, [SEL.allocate])).to.equal(true)
 			expect(await view.allTimelockedBy(subAccount, unlocker.address, DELAY, [SEL.internalTransfer, SEL.allocate])).to.equal(false)
@@ -1237,21 +1211,21 @@ describe("AccountLayer Timelock", function () {
 			const transferHash = ethers.keccak256(internalTransferCd)
 
 			const allocateOnly = core.interface.encodeFunctionData("_call", [subAccount, [allocateCd]])
-			const byWrongUnlocker = await signApproval(allocateHash, 60n, unlocker)
+			const byWrongUnlocker = await signApproval(allocateHash)
 			await expect(tl.connect(user).executeTimelockOp([byWrongUnlocker], allocateOnly)).to.be.revertedWithCustomError(
 				tl,
 				"TimelockOpNotApprovedOrScheduled",
 			)
-			const byRightUnlocker = await signApproval(allocateHash, 60n, user2)
+			const byRightUnlocker = await signApproval(allocateHash, { signer: user2 })
 			await tl.connect(user).executeTimelockOp([byRightUnlocker], allocateOnly)
 
 			// a batch touching both selectors needs both unlockers: each alone is refused, together they unlock it
 			const mixed = core.interface.encodeFunctionData("_call", [subAccount, [allocateCd, internalTransferCd]])
-			const a = await signApproval(transferHash, 60n, unlocker)
+			const a = await signApproval(transferHash)
 			await expect(tl.connect(user).executeTimelockOp([a], mixed))
 				.to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 				.withArgs(subAccount, allocateHash)
-			const b = await signApproval(allocateHash, 60n, user2)
+			const b = await signApproval(allocateHash, { signer: user2 })
 			await expect(tl.connect(user).executeTimelockOp([b], mixed))
 				.to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 				.withArgs(subAccount, transferHash)
@@ -1270,7 +1244,7 @@ describe("AccountLayer Timelock", function () {
 			// or mix: one unlocker's approval and a schedule for the other op
 			await tl.connect(user).scheduleTimelockOp(subAccount, allocateHash)
 			await time.increase(Number(DELAY))
-			const c = await signApproval(transferHash, 60n, unlocker)
+			const c = await signApproval(transferHash)
 			await tl.connect(user).executeTimelockOp([c], mixed)
 		})
 
@@ -1279,21 +1253,21 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY + 1n, [SEL.internalTransfer])
 
 			const lower = tl.interface.encodeFunctionData("setupTimelocks", [subAccount, unlocker.address, DELAY, [SEL.internalTransfer]])
-			const lowerByStranger = await signApproval(ethers.keccak256(lower), 60n, user2)
+			const lowerByStranger = await signApproval(ethers.keccak256(lower), { signer: user2 })
 			await expect(tl.connect(user).executeTimelockOp([lowerByStranger], lower)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
-			const lowerByUnlocker = await signApproval(ethers.keccak256(lower), 60n, unlocker)
+			const lowerByUnlocker = await signApproval(ethers.keccak256(lower))
 			await tl.connect(user).executeTimelockOp([lowerByUnlocker], lower)
 			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).delay).to.equal(DELAY)
 
 			const reassign = tl.interface.encodeFunctionData("setupTimelocks", [subAccount, user2.address, DELAY, [SEL.internalTransfer]])
-			const byNewUnlocker = await signApproval(ethers.keccak256(reassign), 60n, user2)
+			const byNewUnlocker = await signApproval(ethers.keccak256(reassign), { signer: user2 })
 			await expect(tl.connect(user).executeTimelockOp([byNewUnlocker], reassign)).to.be.revertedWithCustomError(
 				tl,
 				"TimelockOpNotApprovedOrScheduled",
 			)
-			const byCurrentUnlocker = await signApproval(ethers.keccak256(reassign), 60n, unlocker)
+			const byCurrentUnlocker = await signApproval(ethers.keccak256(reassign))
 			await tl.connect(user).executeTimelockOp([byCurrentUnlocker], reassign)
-			expect(await view.unlockerOf(subAccount, SEL.internalTransfer)).to.equal(user2.address)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(user2.address)
 		})
 
 		it("rejects a previously signed approval after the selector moves to a new unlocker", async function () {
@@ -1301,17 +1275,17 @@ describe("AccountLayer Timelock", function () {
 			const core = context.alCoreFacet
 			await tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY, [SEL.internalTransfer])
 			const transferHash = ethers.keccak256(internalTransferCd)
-			const oldApproval = await signApproval(transferHash, 600n, unlocker)
+			const oldApproval = await signApproval(transferHash, { deadlineOffset: 600n })
 
 			const reassign = tl.interface.encodeFunctionData("setupTimelocks", [subAccount, user2.address, DELAY, [SEL.internalTransfer]])
-			const reassignApproval = await signApproval(ethers.keccak256(reassign), 600n, unlocker)
+			const reassignApproval = await signApproval(ethers.keccak256(reassign), { deadlineOffset: 600n })
 			await tl.connect(user).executeTimelockOp([reassignApproval], reassign)
 
 			const wrapped = core.interface.encodeFunctionData("_call", [subAccount, [internalTransferCd]])
 			await expect(tl.connect(user).executeTimelockOp([oldApproval], wrapped)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 			expect(await view.isApprovalUsed(await view.hashTimelockApproval(oldApproval.approval))).to.equal(false)
 
-			const currentApproval = await signApproval(transferHash, 60n, user2)
+			const currentApproval = await signApproval(transferHash, { signer: user2 })
 			await tl.connect(user).executeTimelockOp([currentApproval], wrapped)
 		})
 
@@ -1321,14 +1295,14 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).setupTimelocks(subAccount, user2.address, DELAY, [SEL.allocate])
 			const clearBoth = tl.interface.encodeFunctionData("clearTimelocks", [subAccount, [SEL.internalTransfer, SEL.allocate]])
 			const hash = ethers.keccak256(clearBoth)
-			const a = await signApproval(hash, 60n, unlocker)
-			const b = await signApproval(hash, 60n, user2)
+			const a = await signApproval(hash)
+			const b = await signApproval(hash, { signer: user2 })
 			await expect(tl.connect(user).executeTimelockOp([a], clearBoth)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
 			await expect(tl.connect(user).executeTimelockOp([a, b], clearBoth))
 				.to.emit(tl, "TimelockOpExecuted")
 				.withArgs(subAccount, hash)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("one unlocker guarding two cleared selectors consents once, not twice", async function () {
@@ -1338,12 +1312,12 @@ describe("AccountLayer Timelock", function () {
 			const hash = ethers.keccak256(clearBoth)
 
 			// Exactly one signature over the op covers both of that unlocker's selectors.
-			const one = await signApproval(hash, 60n, unlocker)
+			const one = await signApproval(hash)
 			await expect(tl.connect(user).executeTimelockOp([one], clearBoth))
 				.to.emit(tl, "TimelockOpExecuted")
 				.withArgs(subAccount, hash)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("a policy change over two unlockers takes one approval and the schedule for the other", async function () {
@@ -1355,13 +1329,13 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).scheduleTimelockOp(subAccount, hash)
 			// the schedule has to wait the delay of the unlocker who did not approve, not the approving one's
 			await time.increase(Number(DELAY))
-			const early = await signApproval(hash, 60n, unlocker)
+			const early = await signApproval(hash)
 			await expect(tl.connect(user).executeTimelockOp([early], clearBoth)).to.be.revertedWithCustomError(tl, "ScheduleNotReady")
 			await time.increase(Number(DELAY))
-			const a = await signApproval(hash, 60n, unlocker)
+			const a = await signApproval(hash)
 			await tl.connect(user).executeTimelockOp([a], clearBoth)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 		})
 
 		it("clearing two locks uses one policy-change schedule after the longest affected delay", async function () {
@@ -1377,13 +1351,13 @@ describe("AccountLayer Timelock", function () {
 			await expect(tl.connect(user).clearTimelocks(subAccount, selectors))
 				.to.be.revertedWithCustomError(tl, "ScheduleNotReady")
 				.withArgs(subAccount, clearHash, readyAt)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(true)
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(true)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(unlocker.address)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(unlocker.address)
 
 			await time.increase(Number(DELAY))
 			await expect(tl.connect(user).clearTimelocks(subAccount, selectors)).to.emit(tl, "TimelockOpExecuted").withArgs(subAccount, clearHash)
-			expect(await view.isTimelocked(subAccount, SEL.internalTransfer)).to.equal(false)
-			expect(await view.isTimelocked(subAccount, SEL.allocate)).to.equal(false)
+			expect((await view.getSelectorTimelock(subAccount, SEL.internalTransfer)).unlocker).to.equal(ZeroAddress)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 			expect((await view.getSchedule(subAccount, clearHash)).scheduledAt).to.equal(0n)
 		})
 
@@ -1392,11 +1366,11 @@ describe("AccountLayer Timelock", function () {
 			await tl.connect(user).setupTimelocks(subAccount, unlocker.address, DELAY, [SEL.internalTransfer])
 			await tl.connect(user).setupTimelocks(subAccount, user2.address, DELAY, [SEL.allocate])
 			const clearAllocate = tl.interface.encodeFunctionData("clearTimelocks", [subAccount, [SEL.allocate]])
-			const wrong = await signApproval(ethers.keccak256(clearAllocate), 60n, unlocker)
+			const wrong = await signApproval(ethers.keccak256(clearAllocate))
 			await expect(tl.connect(user).executeTimelockOp([wrong], clearAllocate)).to.be.revertedWithCustomError(tl, "TimelockOpNotApprovedOrScheduled")
-			const right = await signApproval(ethers.keccak256(clearAllocate), 60n, user2)
+			const right = await signApproval(ethers.keccak256(clearAllocate), { signer: user2 })
 			await tl.connect(user).executeTimelockOp([right], clearAllocate)
-			expect(await view.unlockerOf(subAccount, SEL.allocate)).to.equal(ZeroAddress)
+			expect((await view.getSelectorTimelock(subAccount, SEL.allocate)).unlocker).to.equal(ZeroAddress)
 			// clearing an already ungated selector is a no-op that needs no window
 			await tl.connect(user).clearTimelocks(subAccount, [SEL.allocate])
 		})

@@ -207,12 +207,6 @@ interface IViewFacet is IDiamondAccessControlView {
 	/// @notice Timelock on one selector of a root sub-account; unlocker == address(0) means not timelocked.
 	function getSelectorTimelock(address subAccount, bytes4 selector) external view returns (SelectorTimelock memory);
 
-	/// @notice Unlocker of a timelocked selector on a root sub-account, or address(0) when the selector is not timelocked.
-	function unlockerOf(address subAccount, bytes4 selector) external view returns (address);
-
-	/// @notice True when selector is timelocked on the root sub-account.
-	function isTimelocked(address subAccount, bytes4 selector) external view returns (bool);
-
 	/// @notice True when every selector in a non-empty set is timelocked by unlocker with a delay of at least minDelay.
 	///         The solver's pre-hedge check.
 	/// @dev A zero unlocker or empty selectors array returns false.
