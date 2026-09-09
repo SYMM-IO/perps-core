@@ -2,6 +2,7 @@ import { getAddress, Interface, ZeroAddress } from "ethers";
 import { createHash } from "node:crypto";
 
 export const ACCOUNT_FACETS = Object.freeze(["CoreFacet", "MarginFacet", "ControlFacet", "ViewFacet", "TimelockFacet"]);
+export const UPGRADE_DEPLOYMENTS = Object.freeze(["LibQuoteParams", ...ACCOUNT_FACETS, "InstantLayer", "GaslessLayer"]);
 export const GASLESS_LIBRARIES = Object.freeze([
 	"GaslessNativeGasTopUpLib",
 	"GaslessOperationalFeeLib",

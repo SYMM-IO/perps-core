@@ -1,4 +1,5 @@
 export const ACCOUNT_FACETS: readonly string[]
+export const UPGRADE_DEPLOYMENTS: readonly string[]
 export const GASLESS_LIBRARIES: readonly string[]
 export const POLICY: Readonly<Record<string, boolean>>
 export const CONFIG_PATH: string
