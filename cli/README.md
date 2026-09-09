@@ -8,6 +8,8 @@ Run the checkout-local operator application in an interactive terminal:
 
 The fixed Arbitrum v0.8.6 production upgrade is available under **Other maintenance scripts** as **Arbitrum Perps Core v0.8.6 upgrade**. Its resumable phases and standard JSON input/report contract are documented in [the Arbitrum upgrade runbook](../docs/arbitrum-perps-upgrade.md).
 
+For the current AccountLayer/InstantLayer upgrade that preserves GaslessLayer's proxy and current on-chain values, select **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values**. See [its upgrade runbook](../docs/arbitrum-account-instant-upgrade.md) for the input JSON, eight deployments, Safe batches and separate PartyB administrator stages.
+
 `./symmio --help` only explains how to launch the application. Every other argument and
 non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
 no generated CLI bundle.
