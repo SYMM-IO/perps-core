@@ -26,6 +26,7 @@ import {
 	lower,
 	readGaslessConfiguration,
 	readInstantConfiguration,
+	readPartyBUpgradeAuthority,
 	readPreservedState,
 	roleHash,
 	selectorsAt,
@@ -391,12 +392,20 @@ export async function verifyReplacementInstant(ethers: any, snapshot: any, repor
 export async function planPartyBUpgrade(ethers: any, snapshot: any, report: any, retire = false) {
 	const actions = []
 	const instant = retire ? snapshot.gasless.instantLayer : report.deployments.InstantLayer.address
-	for (const [partyB, authority] of Object.entries(snapshot.partyBAdmins)) {
+	for (const [partyB, rawAuthority] of Object.entries(snapshot.partyBAdmins)) {
+		const authority = lower(rawAuthority as string)
 		const contract = await ethers.getContractAt("SymmioPartyB", partyB)
-		for (const role of [ethers.ZeroHash, ethers.id("SETTER_ROLE")])
-			if (!(await contract.hasRole(role, authority))) throw new Error(`PartyB authority changed on ${partyB}`)
+		const { manager } = await readPartyBUpgradeAuthority(ethers, partyB, authority)
 		const trusted = await contract.hasRole(ethers.id("TRUSTED_ROLE"), instant),
 			allowed = await contract.multicastWhitelist(instant)
+		if (allowed !== !retire && !manager)
+			actions.push({
+				authority,
+				to: partyB,
+				value: "0",
+				data: contract.interface.encodeFunctionData("grantRole", [ethers.id("MANAGER_ROLE"), authority]),
+				description: `Grant PartyB MANAGER_ROLE to ${authority} before updating the multicast whitelist`,
+			})
 		if (trusted !== !retire)
 			actions.push({
 				authority,
