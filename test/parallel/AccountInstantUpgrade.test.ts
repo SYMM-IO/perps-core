@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { assertConfigurationParity, IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
+import { assertConfigurationParity, flowDiscovery, IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
 import { deployGaslessLayerLibraries } from "../../scripts/gaslessLayer/layer-libraries.js"
 import {
 	compileGaslessCompatibility,
@@ -74,16 +74,38 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		await gasless.setSelectorFeeConfig("0x22222222", false, 999)
 		await instant.connect(admin).grantRole(ethers.id("OPERATOR_ROLE"), proxy.target)
 		const block = await ethers.provider.getBlockNumber()
-		const discovery = {
-			deploymentTransactions: {
-				[String(proxy.target)]: proxy.deploymentTransaction()!.hash,
-				[String(instant.target)]: instant.deploymentTransaction()!.hash,
+		const input = {
+			config: {
+				target: { core: core.target, accountLayer: account.target, gaslessLayer: proxy.target, safe: admin.address, relayer: relayer.address },
+				discovery: {
+					mode: "flow",
+					gaslessSelectors: ["0x11111111", "0x22222222"],
+					instantTargets: [treasury.address],
+					instantPartyBs: [partyB.address],
+				},
 			},
+		}
+		const discovery = flowDiscovery(input.config)
+		const getterOnly = {
+			...ethers,
+			provider: {
+				getLogs: () => {
+					throw new Error("History scans are forbidden for flow discovery")
+				},
+			},
+			getContractAt: async (...args: any[]) =>
+				new Proxy(await (ethers.getContractAt as any)(...args), {
+					get: (contract, key) => {
+						if (["getRoleMemberCount", "getRoleMember"].includes(String(key))) throw new Error("Complete holder enumeration is forbidden")
+						return Reflect.get(contract, key)
+					},
+				}),
 		}
 		const snapshot = {
 			gaslessImplementation: String(impl.target).toLowerCase(),
-			gasless: await readGaslessConfiguration(ethers, String(proxy.target), block, discovery),
-			instant: await readInstantConfiguration(ethers, String(instant.target), block, discovery),
+			gasless: await readGaslessConfiguration(getterOnly, String(proxy.target), block, discovery),
+			instant: await readInstantConfiguration(getterOnly, String(instant.target), block, discovery),
+			discovery,
 		}
 		const compatibility = await verifyGaslessCompatibility(hre, ethers, snapshot, baseline)
 		return {
@@ -95,7 +117,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 			instant,
 			snapshot,
 			compatibility,
-			input: { config: { target: { core: core.target, accountLayer: account.target, gaslessLayer: proxy.target, safe: admin.address } } },
+			input,
 		}
 	}
 

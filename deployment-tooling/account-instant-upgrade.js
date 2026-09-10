@@ -15,6 +15,7 @@ export const POLICY = Object.freeze({
 	migrateInstantUserState: false,
 	setGlobalTimelocks: false,
 	repairTemplates: false,
+	roleScope: "required-flow",
 });
 export const CONFIG_PATH = "tasks/config/arbitrum-account-instant-upgrade-42161.json";
 export const RECIPE_PATH = "deployment-recipes/arbitrum-vibe-production.json";
@@ -63,7 +64,7 @@ export function validateUpgradeConfig(value) {
 		throw new Error(
 			"Upgrade policy must preserve configuration and GaslessLayer proxy, excluding InstantLayer user state, template repairs and global timelock setters",
 		);
-	const fields = ["core", "collateral", "accountLayer", "instantLayer", "gaslessLayer", "safe"];
+	const fields = ["core", "collateral", "accountLayer", "instantLayer", "gaslessLayer", "safe", "relayer"];
 	keys(value.target, [...fields, "partyBAdmins"], "target");
 	for (const name of fields) {
 		try {
@@ -77,28 +78,30 @@ export function validateUpgradeConfig(value) {
 		if (getAddress(partyB) === ZeroAddress || getAddress(admin) === ZeroAddress) throw new Error("Invalid PartyB authority");
 	}
 	if (!/^[a-f0-9]{40}$/.test(value.gaslessBaselineCommit)) throw new Error("gaslessBaselineCommit must be an exact Git commit");
-	keys(
-		value.discovery,
-		["gaslessRoles", "gaslessSelectors", "instantTargets", "instantPartyBs", "instantRoles", "deploymentTransactions"],
-		"discovery",
-	);
+	keys(value.discovery, ["mode", "gaslessSelectors", "instantTargets", "instantPartyBs"], "discovery");
+	if (value.discovery.mode !== "flow")
+		throw new Error("discovery.mode must be flow; this upgrade uses direct reads for the supplied execution path");
+	for (const name of ["gaslessSelectors", "instantTargets", "instantPartyBs"])
+		if (!Array.isArray(value.discovery[name])) throw new Error(`Provide discovery.${name} as an explicit array of keys to verify`);
 	for (const [name, entries] of Object.entries(value.discovery)) {
-		if (name === "deploymentTransactions") {
-			keys(entries, Object.keys(entries || {}), "discovery.deploymentTransactions");
-			const addresses = new Set();
-			for (const [address, hash] of Object.entries(entries)) {
-				if (!/^0x[0-9a-fA-F]{40}$/.test(address) || getAddress(address) === ZeroAddress || !/^0x[0-9a-fA-F]{64}$/.test(hash))
-					throw new Error("Invalid discovery.deploymentTransactions address or transaction hash");
-				if (addresses.has(address.toLowerCase())) throw new Error("Duplicate discovery.deploymentTransactions address");
-				addresses.add(address.toLowerCase());
-			}
-			continue;
-		}
-		if (!Array.isArray(entries)) throw new Error(`discovery.${name} must be an explicitly reviewed complete array`);
-		const pattern = name === "gaslessSelectors" ? /^0x[0-9a-fA-F]{8}$/ : name.endsWith("Roles") ? /^0x[0-9a-fA-F]{64}$/ : /^0x[0-9a-fA-F]{40}$/;
+		if (name === "mode") continue;
+		const pattern = name === "gaslessSelectors" ? /^0x[0-9a-fA-F]{8}$/ : /^0x[0-9a-fA-F]{40}$/;
 		for (const entry of entries) if (!pattern.test(entry)) throw new Error(`Invalid discovery.${name} entry`);
 	}
+	for (const partyB of value.discovery.instantPartyBs)
+		if (!Object.keys(value.target.partyBAdmins).some(address => address.toLowerCase() === partyB.toLowerCase()))
+			throw new Error(`Missing target.partyBAdmins[${partyB}]`);
 	return structuredClone(value);
+}
+
+/** Candidates to check, not a claim that unrelated role holders or mapping keys do not exist. */
+export function flowDiscovery(config) {
+	const unique = values => [...new Set(values.map(address => address.toLowerCase()))].sort();
+	return {
+		...config.discovery,
+		gaslessRoleMembers: unique([config.target.safe, config.target.relayer]),
+		instantRoleMembers: unique([config.target.safe, config.target.gaslessLayer, ...config.discovery.instantPartyBs]),
+	};
 }
 
 /** A current selector may be baseline or desired (partial Safe execution); no third state is accepted. */

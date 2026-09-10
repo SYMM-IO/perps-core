@@ -13,6 +13,7 @@ import {
 	IMPLEMENTATION_SLOT,
 	planAccountCut,
 	validateUpgradeConfig,
+	flowDiscovery,
 } from "../../deployment-tooling/account-instant-upgrade.js"
 import { FacetSpecs, LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
 import { atomicWriteFile } from "../utils/fs.js"
@@ -104,8 +105,8 @@ export async function assertUpgradePreservation(ethers: any, input: any, snapsho
 	else assertConfigurationParity(snapshot.accountSelectors, accountSelectors)
 	logger.info("Checking Gasless, InstantLayer and protocol configuration values")
 	const observed = {
-		gasless: await readGaslessConfiguration(ethers, input.config.target.gaslessLayer, block, report.rehearsalDiscovery || input.config.discovery),
-		instant: await readInstantConfiguration(ethers, input.config.target.instantLayer, block, report.rehearsalDiscovery || input.config.discovery),
+		gasless: await readGaslessConfiguration(ethers, input.config.target.gaslessLayer, block, flowDiscovery(input.config)),
+		instant: await readInstantConfiguration(ethers, input.config.target.instantLayer, block, flowDiscovery(input.config)),
 		preserved: await readPreservedState(ethers, input.config.target, block),
 		coreSelectors: await selectorsAt(ethers, input.config.target.core, block),
 	}
@@ -329,9 +330,10 @@ export async function verifyReplacementInstant(ethers: any, snapshot: any, repor
 			ethers,
 			report.deployments.InstantLayer.address,
 			await ethers.provider.getBlockNumber(),
-			report.rehearsalDiscovery || {
-				deploymentTransactions: { [report.deployments.InstantLayer.address]: report.deployments.InstantLayer.deploymentTransaction },
-			},
+			snapshot.discovery ||
+				report.rehearsalDiscovery || {
+					deploymentTransactions: { [report.deployments.InstantLayer.address]: report.deployments.InstantLayer.deploymentTransaction },
+				},
 		),
 	)
 }
@@ -674,11 +676,10 @@ export async function rehearseAccountInstantUpgrade(hre: any, ethers: any, input
 	logger.info("Checking the rehearsal fork block")
 	const metadata = await ethers.provider.send("hardhat_metadata", [])
 	if (Number(metadata.forkedNetwork?.forkBlockNumber) !== snapshot.blockNumber) throw new Error("Rehearsal requires the exact pinned fork")
-	if (!snapshot.eventHistory) throw new Error("Rehearsal requires the pinned configuration event history; inspect again")
 	const local: any = {
 		compatibility,
 		transactions: [],
-		rehearsalDiscovery: { ...input.config.discovery, _forkBlock: snapshot.blockNumber, _history: snapshot.eventHistory },
+		rehearsalDiscovery: flowDiscovery(input.config),
 	}
 	const [deployer] = await ethers.getSigners()
 	await ethers.provider.send("hardhat_setBalance", [await deployer.getAddress(), "0x3635c9adc5dea00000"])

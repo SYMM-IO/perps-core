@@ -8,6 +8,7 @@
 		"instantLayer": "0x2C9e944cB71329fC659Da50A10a79a508Dd49ba5",
 		"gaslessLayer": "0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca",
 		"safe": "0x89bE952790657297ac03f1954b22B668d819D3d9",
+		"relayer": "0xe13f5af2d489597a86cf7618668c6112580b67a0",
 		"partyBAdmins": {
 			"0x9be79D4977D86D440F9e1Ea0d468A58104B9b932": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
 		}
@@ -18,12 +19,13 @@
 		"preserveGaslessProxy": true,
 		"migrateInstantUserState": false,
 		"setGlobalTimelocks": false,
-		"repairTemplates": false
+		"repairTemplates": false,
+		"roleScope": "required-flow"
 	},
 	"discovery": {
-		"deploymentTransactions": {
-			"0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca": "0x651eb1bf0ceaa3bea7e384f385a2c8e737d3cd972b63066f05d840bd1c88dd73",
-			"0x2C9e944cB71329fC659Da50A10a79a508Dd49ba5": "0xb54f09434a85f843a9c63732b22e4a28e4db218a69d88a6e8d81216271f1e37b"
-		}
+		"mode": "flow",
+		"gaslessSelectors": [],
+		"instantTargets": ["0x573310dB6d160B26026B8706EBe9831c7dEF1D09", "0x5733107211B2801Acd39933a54d482FE303c4907"],
+		"instantPartyBs": ["0x9be79D4977D86D440F9e1Ea0d468A58104B9b932"]
 	}
 }
