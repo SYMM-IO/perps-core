@@ -5,6 +5,7 @@ import {
 	planAccountCut,
 	validateUpgradeConfig,
 	assertConfigurationParity,
+	flowDiscovery,
 } from "../../deployment-tooling/account-instant-upgrade.js";
 import { Interface, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
@@ -22,11 +23,12 @@ function config() {
 			instantLayer: address(4),
 			gaslessLayer: address(5),
 			safe: address(6),
+			relayer: address(9),
 			partyBAdmins: { [address(7)]: address(8) },
 		},
 		gaslessBaselineCommit: "a".repeat(40),
 		policy: { ...POLICY },
-		discovery: {},
+		discovery: { mode: "flow", gaslessSelectors: [], instantTargets: [address(1), address(3)], instantPartyBs: [address(7)] },
 	};
 }
 test("upgrade preserves proxies and configuration and refuses user-state or timelock-setting scope", () => {
@@ -56,19 +58,22 @@ test("configuration comparison includes false, zero, relayers, template IDs and 
 	}
 	assert.equal(digest({ b: 2, a: 1 }), digest({ a: 1, b: 2 }));
 });
-test("configuration discovery accepts explicit creation transactions and rejects ambiguous or malformed inputs", () => {
+test("flow discovery binds supplied actors without requiring complete holder lists or event history", () => {
 	const value = config();
-	value.discovery.deploymentTransactions = { [value.target.gaslessLayer]: `0x${"1".repeat(64)}` };
 	assert.deepEqual(validateUpgradeConfig(value), value);
-	for (const entries of [null, [], { bad: `0x${"1".repeat(64)}` }, { [address(5)]: "0x1234" }, { [ZeroAddress]: `0x${"1".repeat(64)}` }]) {
-		value.discovery.deploymentTransactions = entries;
-		assert.throws(() => validateUpgradeConfig(value), /deploymentTransactions/);
+	assert.deepEqual(flowDiscovery(value).gaslessRoleMembers, [address(6), address(9)]);
+	assert.deepEqual(flowDiscovery(value).instantRoleMembers, [address(5), address(6), address(7)]);
+	for (const mutate of [
+		x => delete x.target.relayer,
+		x => delete x.discovery.gaslessSelectors,
+		x => (x.discovery.mode = "events"),
+		x => (x.discovery.instantPartyBs = [address(99)]),
+		x => (x.discovery.gaslessSelectors = ["0x1234"]),
+	]) {
+		const changed = config();
+		mutate(changed);
+		assert.throws(() => validateUpgradeConfig(changed));
 	}
-	value.discovery.deploymentTransactions = {
-		"0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca": `0x${"1".repeat(64)}`,
-		"0x386ef97d913acf02b3c9452da4cd4aaec82efbca": `0x${"2".repeat(64)}`,
-	};
-	assert.throws(() => validateUpgradeConfig(value), /Duplicate/);
 });
 function cutFixture() {
 	const baseline = { "0x99999999": address(99) },

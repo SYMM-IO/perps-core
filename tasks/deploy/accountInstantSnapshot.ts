@@ -3,7 +3,14 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { digest, GASLESS_UINTS, GASLESS_BOOLS, GASLESS_LIBRARIES, IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
+import {
+	digest,
+	flowDiscovery,
+	GASLESS_UINTS,
+	GASLESS_BOOLS,
+	GASLESS_LIBRARIES,
+	IMPLEMENTATION_SLOT,
+} from "../../deployment-tooling/account-instant-upgrade.js"
 import { assertRoundingRuntime } from "./arbitrumRoundingUpgrade.js"
 import { logger } from "./logger.js"
 
@@ -103,6 +110,7 @@ export async function discoverEvents(
 }
 
 async function configurationEvents(ethers: any, address: string, topics: string[], block: number, discovery: any) {
+	if (discovery.mode === "flow") return []
 	let logs: any[]
 	if (discovery._forkBlock !== undefined) {
 		// EDR historical log scans can traverse the whole remote chain. Reuse the pinned
@@ -121,9 +129,17 @@ async function configurationEvents(ethers: any, address: string, topics: string[
 	return logs
 }
 
-async function roleSnapshot(ethers: any, contract: any, events: any[], block: number, enumerable: boolean, additionalRoles: string[] = []) {
+async function roleSnapshot(
+	ethers: any,
+	contract: any,
+	events: any[],
+	block: number,
+	enumerable: boolean,
+	additionalRoles: string[] = [],
+	explicitMembers?: string[],
+) {
 	const candidates = new Map<string, Set<string>>()
-	for (const name of roleNames) candidates.set(roleHash(ethers, name), new Set())
+	for (const name of roleNames) candidates.set(roleHash(ethers, name), new Set((explicitMembers || []).map(lower)))
 	for (const role of additionalRoles) candidates.set(role, new Set())
 	for (const log of events) {
 		let event
@@ -139,7 +155,7 @@ async function roleSnapshot(ethers: any, contract: any, events: any[], block: nu
 	}
 	const result = []
 	for (const [role, members] of [...candidates].sort(([a], [b]) => a.localeCompare(b))) {
-		if (enumerable) {
+		if (enumerable && explicitMembers === undefined) {
 			const count = Number(await contract.getRoleMemberCount(role, { blockTag: block }))
 			for (let i = 0; i < count; i++) members.add(lower(await contract.getRoleMember(role, i, { blockTag: block })))
 		}
@@ -166,7 +182,7 @@ export async function readInstantConfiguration(ethers: any, address: string, blo
 		if (event?.name === "TargetWhitelistUpdated") targets.push(event.args.target)
 		if (event && ["PartyBRegistered", "PartyBUnregistered"].includes(event.name)) partyBs.push(event.args[0])
 	}
-	const roles = await roleSnapshot(ethers, contract, logs, block, true, discovery.instantRoles)
+	const roles = await roleSnapshot(ethers, contract, logs, block, true, discovery.instantRoles, discovery.instantRoleMembers)
 	partyBs.push(...roles.flatMap((entry: any) => entry.members))
 	const whitelist = [],
 		registeredPartyBs = [],
@@ -222,7 +238,12 @@ export async function readGaslessConfiguration(ethers: any, address: string, blo
 		const entry = await contract.selectorFeeConfigs(selector, { blockTag: block })
 		selectorFees.push({ selector, configured: entry.configured, amount: String(entry.amount) })
 	}
-	return { ...references, fees, selectorFees, roles: await roleSnapshot(ethers, contract, logs, block, false, discovery.gaslessRoles) }
+	return {
+		...references,
+		fees,
+		selectorFees,
+		roles: await roleSnapshot(ethers, contract, logs, block, false, discovery.gaslessRoles, discovery.gaslessRoleMembers),
+	}
 }
 
 export async function selectorsAt(ethers: any, address: string, block?: number) {
@@ -278,7 +299,7 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 		at = block.number
 	const eventHistory: Record<string, any[]> = {}
 	const discovery = {
-		...config.discovery,
+		...flowDiscovery(config),
 		_recordEvents: (address: string, logs: any[]) => {
 			eventHistory[address] = logs
 		},
@@ -359,7 +380,7 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 		gaslessImplementation: implementation,
 		partyBAdmins,
 		codeHashes,
-		eventHistory,
+		discovery: flowDiscovery(config),
 	}
 }
 
