@@ -10,7 +10,7 @@
 		"safe": "0x89bE952790657297ac03f1954b22B668d819D3d9",
 		"relayer": "0xe13f5af2d489597a86cf7618668c6112580b67a0",
 		"partyBAdmins": {
-			"0x9be79D4977D86D440F9e1Ea0d468A58104B9b932": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
+			"0x9be79D4977D86D440F9e1Ea0d468A58104B9b932": "0x89bE952790657297ac03f1954b22B668d819D3d9"
 		}
 	},
 	"gaslessBaselineCommit": "95f44c983480084eb097eddd2ad3574de3ea12e3",
@@ -21,7 +21,7 @@
 		"setGlobalTimelocks": false,
 		"repairTemplates": false,
 		"roleScope": "required-flow",
-		"partyBExecution": "manual"
+		"partyBExecution": "safe"
 	},
 	"discovery": {
 		"mode": "flow",

@@ -23,12 +23,12 @@ export const ACCOUNT_INSTANT_PLAN = Object.freeze([
 	{ id: "verify-account-cut", phase: "verification", title: "Verify the installed AccountLayer selectors" },
 	{ id: "configure-instant", phase: "execution", title: "Export current InstantLayer values and flow grants for the Safe" },
 	{ id: "verify-instant", phase: "verification", title: "Compare all replacement InstantLayer settings with the snapshot" },
-	{ id: "party-b", phase: "execution", title: "Export PartyB trust and whitelist calls for manual execution later" },
+	{ id: "party-b", phase: "execution", title: "Export PartyB manager, trust and whitelist wiring for the Safe" },
 	{ id: "wire", phase: "execution", title: "Export protocol grants and the existing Gasless proxy upgrade for the Safe" },
 	{ id: "verify-wire", phase: "verification", title: "Verify wiring and preservation of all Gasless settings" },
 	{ id: "canary", phase: "canary", title: "Verify a successful relay using the new InstantLayer" },
 	{ id: "retire", phase: "execution", title: "Export removal of old InstantLayer protocol roles for the Safe" },
-	{ id: "retire-party-b", phase: "execution", title: "Export old InstantLayer trust removal for manual execution" },
+	{ id: "retire-party-b", phase: "execution", title: "Export old InstantLayer PartyB trust removal for the Safe" },
 	{ id: "verify-final", phase: "verification", title: "Verify the complete upgrade and preserved current values" },
 ]);
 const CONFIG_PATH = "tasks/config/arbitrum-account-instant-upgrade-42161.json";
@@ -95,7 +95,9 @@ async function runPhase(ctx, input, phase, { env = {}, fork = false } = {}) {
 const executeEnvironment = { SYMMIO_ACCOUNT_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: "42161" };
 
 export async function dispatchAccountInstantSafe(ctx, input, phase, label) {
-	const report = await runPhase(ctx, input, phase);
+	const report = await runPhase(ctx, input, phase, {
+		env: { SYMMIO_RECIPE_READ_ONLY: "true", SYMMIO_SIGNER_MODE: "safe-file" },
+	});
 	if (!Array.isArray(report.actions)) throw new Error("Upgrade action plan is missing");
 	if (!report.actions.length) return;
 	const safe = read(input.input).config.target.safe.toLowerCase();
@@ -111,34 +113,6 @@ export async function dispatchAccountInstantSafe(ctx, input, phase, label) {
 		processEnv: accountInstantEnvironment(input),
 	});
 	ctx.wait(`Execute ${delivery.builderPath} through Safe ${safe}, then continue this task. Continuation checks the on-chain result.`);
-}
-
-export async function deferPartyBStage(ctx, input, retire = false) {
-	const phase = retire ? "plan-retire-party-b" : "plan-party-b";
-	const report = await runPhase(ctx, input, phase, {
-		env: { SYMMIO_RECIPE_READ_ONLY: "true", SYMMIO_SIGNER_MODE: "safe-file" },
-	});
-	if (!Array.isArray(report.actions)) throw new Error("PartyB action plan is missing");
-	const stage = retire ? "retire-party-b" : "party-b";
-	const file = path.join(path.dirname(input.output), `${stage}-manual.json`);
-	atomicWrite(file, {
-		apiVersion: "operations.symm.io/manual-transactions-v1",
-		chainId: 42161,
-		inputDigest: input.inputDigest,
-		snapshotDigest: ctx.state.configurationDigest,
-		stage,
-		status: report.actions.length ? "pending" : "verified",
-		transactions: report.actions.map(({ authority, to, value, data, description }) => ({ from: authority, to, value, data, description })),
-	});
-	if (!report.actions.length) return;
-	ctx.ui.note(
-		report.actions.map(a => `From ${a.authority}\nTo ${a.to}: ${a.description}\nvalue=${a.value}\n${a.data}`).join("\n\n"),
-		`Manual PartyB transactions: ${file}`,
-	);
-	ctx.emit("party-b.manual-exported", { file, stage, count: report.actions.length });
-	ctx.wait(
-		`Complete the PartyB actions manually using ${file} when ready, then continue this task. Continuation verifies the on-chain trust and whitelist. ${retire ? "Final verification waits for old PartyB trust removal." : "Gasless cutover waits for the new PartyB wiring."}`,
-	);
 }
 
 async function prepareUpgrade({ root, ui }) {
@@ -199,7 +173,7 @@ export async function reconcileAccountInstantUpgrade(ctx, input) {
 export function createAccountInstantUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-account-instant-upgrade",
-		version: 4,
+		version: 5,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum AccountLayer and InstantLayer upgrade — preserve current values",
@@ -218,7 +192,6 @@ export function createAccountInstantUpgradeTask(common) {
 			"eight contract deployments and publication evidence",
 			"transaction journal",
 			"Safe batches",
-			"manual PartyB transaction files",
 			"verified final report",
 		],
 		signerPolicy: {
@@ -279,7 +252,7 @@ export function createAccountInstantUpgradeTask(common) {
 					"Current on-chain values to preserve (integer values use contract units)",
 				);
 				ctx.ui.note(
-					`Snapshot: ${configurationPath(input)}\nGasless proxy/storage remain in place. InstantLayer user delegations/replay state are not migrated. No global or per-account timelock setters are called. PartyB trust/whitelist calls are exported for manual execution later; Gasless cutover waits for their on-chain verification.`,
+					`Snapshot: ${configurationPath(input)}\nGasless proxy/storage remain in place. InstantLayer user delegations/replay state are not migrated. No global or per-account timelock setters are called. PartyB wiring is exported for the Dev Safe, including MANAGER_ROLE when needed; Gasless cutover waits for its on-chain verification.`,
 					"Upgrade scope",
 				);
 				const confirmation = await ctx.ui.text({
@@ -301,7 +274,7 @@ export function createAccountInstantUpgradeTask(common) {
 				dispatchAccountInstantSafe(ctx, input, "plan-configure-instant", "InstantLayer configuration and flow grants"),
 			);
 			await step("verify-instant", () => runPhase(ctx, input, "verify-instant"));
-			await step("party-b", () => deferPartyBStage(ctx, input));
+			await step("party-b", () => dispatchAccountInstantSafe(ctx, input, "plan-party-b", "PartyB manager, trust and whitelist wiring"));
 			await step("wire", () => dispatchAccountInstantSafe(ctx, input, "plan-wire", "Protocol wiring and existing Gasless proxy upgrade"));
 			await step("verify-wire", () => runPhase(ctx, input, "verify-wire"));
 			await step("canary", async () => {
@@ -318,7 +291,7 @@ export function createAccountInstantUpgradeTask(common) {
 				await runPhase(ctx, input, "canary", { env: { SYMMIO_ACCOUNT_UPGRADE_CANARY: hash } });
 			});
 			await step("retire", () => dispatchAccountInstantSafe(ctx, input, "plan-retire", "Retire old InstantLayer protocol roles"));
-			await step("retire-party-b", () => deferPartyBStage(ctx, input, true));
+			await step("retire-party-b", () => dispatchAccountInstantSafe(ctx, input, "plan-retire-party-b", "Retire old InstantLayer PartyB trust"));
 			return step("verify-final", async () => {
 				const report = await runPhase(ctx, input, "verify-final");
 				if (report.status !== "complete") throw new Error("Final on-chain verification is incomplete");
