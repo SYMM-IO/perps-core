@@ -20,5 +20,10 @@
 		"setGlobalTimelocks": false,
 		"repairTemplates": false
 	},
-	"discovery": {}
+	"discovery": {
+		"deploymentTransactions": {
+			"0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca": "0x651eb1bf0ceaa3bea7e384f385a2c8e737d3cd972b63066f05d840bd1c88dd73",
+			"0x2C9e944cB71329fC659Da50A10a79a508Dd49ba5": "0xb54f09434a85f843a9c63732b22e4a28e4db218a69d88a6e8d81216271f1e37b"
+		}
+	}
 }

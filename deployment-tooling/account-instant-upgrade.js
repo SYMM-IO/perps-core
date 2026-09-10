@@ -77,8 +77,23 @@ export function validateUpgradeConfig(value) {
 		if (getAddress(partyB) === ZeroAddress || getAddress(admin) === ZeroAddress) throw new Error("Invalid PartyB authority");
 	}
 	if (!/^[a-f0-9]{40}$/.test(value.gaslessBaselineCommit)) throw new Error("gaslessBaselineCommit must be an exact Git commit");
-	keys(value.discovery, ["gaslessRoles", "gaslessSelectors", "instantTargets", "instantPartyBs", "instantRoles"], "discovery");
+	keys(
+		value.discovery,
+		["gaslessRoles", "gaslessSelectors", "instantTargets", "instantPartyBs", "instantRoles", "deploymentTransactions"],
+		"discovery",
+	);
 	for (const [name, entries] of Object.entries(value.discovery)) {
+		if (name === "deploymentTransactions") {
+			keys(entries, Object.keys(entries || {}), "discovery.deploymentTransactions");
+			const addresses = new Set();
+			for (const [address, hash] of Object.entries(entries)) {
+				if (!/^0x[0-9a-fA-F]{40}$/.test(address) || getAddress(address) === ZeroAddress || !/^0x[0-9a-fA-F]{64}$/.test(hash))
+					throw new Error("Invalid discovery.deploymentTransactions address or transaction hash");
+				if (addresses.has(address.toLowerCase())) throw new Error("Duplicate discovery.deploymentTransactions address");
+				addresses.add(address.toLowerCase());
+			}
+			continue;
+		}
 		if (!Array.isArray(entries)) throw new Error(`discovery.${name} must be an explicitly reviewed complete array`);
 		const pattern = name === "gaslessSelectors" ? /^0x[0-9a-fA-F]{8}$/ : name.endsWith("Roles") ? /^0x[0-9a-fA-F]{64}$/ : /^0x[0-9a-fA-F]{40}$/;
 		for (const entry of entries) if (!pattern.test(entry)) throw new Error(`Invalid discovery.${name} entry`);

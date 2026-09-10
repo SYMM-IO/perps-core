@@ -56,6 +56,20 @@ test("configuration comparison includes false, zero, relayers, template IDs and 
 	}
 	assert.equal(digest({ b: 2, a: 1 }), digest({ a: 1, b: 2 }));
 });
+test("configuration discovery accepts explicit creation transactions and rejects ambiguous or malformed inputs", () => {
+	const value = config();
+	value.discovery.deploymentTransactions = { [value.target.gaslessLayer]: `0x${"1".repeat(64)}` };
+	assert.deepEqual(validateUpgradeConfig(value), value);
+	for (const entries of [null, [], { bad: `0x${"1".repeat(64)}` }, { [address(5)]: "0x1234" }, { [ZeroAddress]: `0x${"1".repeat(64)}` }]) {
+		value.discovery.deploymentTransactions = entries;
+		assert.throws(() => validateUpgradeConfig(value), /deploymentTransactions/);
+	}
+	value.discovery.deploymentTransactions = {
+		"0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca": `0x${"1".repeat(64)}`,
+		"0x386ef97d913acf02b3c9452da4cd4aaec82efbca": `0x${"2".repeat(64)}`,
+	};
+	assert.throws(() => validateUpgradeConfig(value), /Duplicate/);
+});
 function cutFixture() {
 	const baseline = { "0x99999999": address(99) },
 		facets = {};

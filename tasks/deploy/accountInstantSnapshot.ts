@@ -20,16 +20,86 @@ export const diamondABI = [
 	"function revokeRole(address,bytes32)",
 ]
 
-/** Never turn missing historical evidence into an empty authoritative set. */
-export async function discoverEvents(provider: any, address: string, topics: string[], block: number): Promise<any[]> {
-	try {
-		logger.info(`Reading configuration events for ${address} through block ${block}`)
-		return (await provider.getLogs({ address, fromBlock: 0, toBlock: block, topics: [topics] })).sort(
-			(a: any, b: any) => a.blockNumber - b.blockNumber || a.index - b.index,
+// Classify nested ethers/provider errors without copying URLs, credentials or payloads
+// into the task journal. Only controlled categories and restricted codes are emitted.
+function historyRpcFailure(error: any) {
+	const entries = [error, error?.error, error?.info, error?.info?.error, error?.cause, error?.response]
+	const detail = entries.map(e => [e?.message, e?.shortMessage, e?.responseStatus, e?.status, e?.code].join(" ")).join(" ")
+	const codes = unique(entries.map(e => String(e?.code ?? e?.status ?? "")).filter(code => /^(-?\d{1,6}|[A-Z][A-Z_]{1,31})$/.test(code)))
+	let category = "RPC request failed",
+		split = false
+	if (/\b429\b|rate.?limit|too many requests|request quota/i.test(detail)) category = "RPC rate limited; retry after the provider limit resets"
+	else if (/\b40[13]\b|unauthori[sz]ed|forbidden|authentication|invalid api.?key/i.test(detail))
+		category = "RPC access denied; check the configured credential reference"
+	else if (/missing trie|pruned|historical.*(unavailable|not available)|metadata is not found|missing.*historical/i.test(detail))
+		category = "historical data unavailable; use an RPC retaining the required history"
+	else if (
+		codes.includes("-32005") ||
+		/block.{0,40}(range|limit)|range.{0,40}(block|limit|large|wide|exceed)|too many (results|logs)|response.{0,40}(size|large|limit)|query.{0,40}(limit|large|size)|timeout|timed out/i.test(
+			detail,
 		)
-	} catch {
-		throw new Error(`Cannot read complete event history for ${address}. Provide an archival RPC; no empty configuration or role list was assumed`)
+	) {
+		category = "RPC block-range, result-size or timeout limit"
+		split = true
 	}
+	return { split, message: `${category}${codes.length ? ` (codes: ${codes.join(", ").toUpperCase()})` : ""}` }
+}
+
+/** Never return partial history or move past a block range that could not be read. */
+export async function discoverEvents(
+	provider: any,
+	address: string,
+	topics: string[],
+	block: number,
+	deploymentTransaction?: string,
+): Promise<any[]> {
+	if (!Number.isSafeInteger(block) || block < 0) throw new Error("Invalid configuration snapshot block")
+	let fromBlock = 0
+	if (deploymentTransaction !== undefined) {
+		if (!/^0x[0-9a-fA-F]{64}$/.test(deploymentTransaction)) throw new Error(`Invalid creation receipt transaction for ${address}`)
+		let receipt, creationBlock
+		try {
+			receipt = await provider.getTransactionReceipt(deploymentTransaction)
+			if (receipt && Number.isSafeInteger(receipt.blockNumber) && receipt.blockNumber >= 0 && receipt.blockNumber <= block)
+				creationBlock = await provider.getBlock(receipt.blockNumber)
+		} catch (error) {
+			throw new Error(`Cannot verify creation receipt for ${address}: ${historyRpcFailure(error).message}`)
+		}
+		if (
+			!receipt ||
+			receipt.status !== 1 ||
+			receipt.to !== null ||
+			lower(receipt.hash || "") !== lower(deploymentTransaction) ||
+			lower(receipt.contractAddress || "") !== lower(address) ||
+			!receipt.blockHash ||
+			lower(creationBlock?.hash || "") !== lower(receipt.blockHash)
+		)
+			throw new Error(
+				`Invalid or unavailable creation receipt for ${address}; discovery.deploymentTransactions must identify its successful direct creation on this chain before the snapshot`,
+			)
+		fromBlock = receipt.blockNumber
+	}
+	logger.info(`Reading configuration events for ${address}, blocks ${fromBlock}-${block}`)
+	const logs: any[] = []
+	let chunk = 50000
+	while (fromBlock <= block) {
+		const toBlock = Math.min(block, fromBlock + chunk - 1)
+		try {
+			logs.push(...(await provider.getLogs({ address, fromBlock, toBlock, topics: [topics] })))
+		} catch (error) {
+			const failure = historyRpcFailure(error)
+			if (failure.split && toBlock > fromBlock) {
+				chunk = Math.max(1, Math.floor((toBlock - fromBlock + 1) / 2))
+				logger.info(`Reducing configuration event requests for ${address} to ${chunk} blocks`)
+				continue
+			}
+			throw new Error(
+				`Cannot read complete event history: eth_getLogs ${address}, blocks ${fromBlock}-${toBlock}: ${failure.message}. No empty or partial configuration was assumed`,
+			)
+		}
+		fromBlock = toBlock + 1
+	}
+	return logs.sort((a: any, b: any) => a.blockNumber - b.blockNumber || a.index - b.index)
 }
 
 async function configurationEvents(ethers: any, address: string, topics: string[], block: number, discovery: any) {
@@ -43,7 +113,10 @@ async function configurationEvents(ethers: any, address: string, topics: string[
 				? await ethers.provider.getLogs({ address, topics: [topics], fromBlock: discovery._forkBlock + 1, toBlock: block })
 				: []),
 		]
-	} else logs = await discoverEvents(ethers.provider, address, topics, block)
+	} else {
+		const transaction = Object.entries(discovery.deploymentTransactions || {}).find(([target]) => lower(target) === lower(address))?.[1]
+		logs = await discoverEvents(ethers.provider, address, topics, block, transaction as string | undefined)
+	}
 	discovery._recordEvents?.(lower(address), json(logs))
 	return logs
 }
