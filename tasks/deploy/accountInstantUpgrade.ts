@@ -1,4 +1,5 @@
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
+import { id, ZeroHash } from "ethers"
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import { execFileSync } from "node:child_process"
@@ -66,7 +67,7 @@ const PHASES = [
 	"publish",
 	"plan-account-cut",
 	"verify-account-cut",
-	"configure-instant",
+	"plan-configure-instant",
 	"verify-instant",
 	"plan-party-b",
 	"execute-party-b",
@@ -87,7 +88,23 @@ const hasRole = (ethers: any, roles: any[], name: string, member: string) =>
 export function expectedInstantConfiguration(snapshot: any, replacement: string) {
 	const expected = structuredClone(snapshot.instant)
 	expected.whitelist = unique(expected.whitelist.map((a: string) => (a === lower(snapshot.gasless.instantLayer) ? replacement : a)))
+	if (snapshot.flow) {
+		expected.registeredPartyBs = unique([...expected.registeredPartyBs, ...snapshot.flow.partyBs])
+		for (const [role, member] of [
+			[ZeroHash, snapshot.flow.safe],
+			[id("SETTER_ROLE"), snapshot.flow.safe],
+			...unique([snapshot.flow.gaslessLayer, ...snapshot.flow.partyBs]).map(member => [id("OPERATOR_ROLE"), member]),
+		])
+			addRoleMember(expected.roles, role, member)
+	}
 	return expected
+}
+
+function addRoleMember(roles: any[], role: string, member: string) {
+	let entry = roles.find(r => r.role === role)
+	if (!entry) roles.push((entry = { role, admin: ZeroHash, members: [] }))
+	entry.members = unique([...entry.members, member])
+	roles.sort((a, b) => a.role.localeCompare(b.role))
 }
 
 export async function assertUpgradePreservation(ethers: any, input: any, snapshot: any, report: any) {
@@ -111,10 +128,18 @@ export async function assertUpgradePreservation(ethers: any, input: any, snapsho
 		coreSelectors: await selectorsAt(ethers, input.config.target.core, block),
 	}
 	const gasless = structuredClone(snapshot.gasless)
+	// Permit only the requested missing grants; existing memberships and all settings remain pinned.
+	for (const [name, member] of [
+		["CONFIG_ADMIN_ROLE", input.config.target.safe],
+		["RELAYER_ROLE", input.config.target.relayer],
+	])
+		if (hasRole(ethers, observed.gasless.roles, name, member)) addRoleMember(gasless.roles, roleHash(ethers, name), member)
+	const preserved = structuredClone(snapshot.preserved)
+	for (const field of ["operationalFeeCharger", "accountGaslessCreator"] as const) if (!preserved[field]) preserved[field] = observed.preserved[field]
 	const newInstant = report.deployments?.InstantLayer?.address
 	if (newInstant && observed.gasless.instantLayer === lower(newInstant)) gasless.instantLayer = lower(newInstant)
 	report.lastObservedConfiguration = observed
-	assertConfigurationParity({ gasless, instant: snapshot.instant, preserved: snapshot.preserved, coreSelectors: snapshot.coreSelectors }, observed)
+	assertConfigurationParity({ gasless, instant: snapshot.instant, preserved, coreSelectors: snapshot.coreSelectors }, observed)
 	logger.info("Checking preserved contract runtime hashes")
 	for (const [address, hash] of Object.entries(snapshot.codeHashes)) {
 		if (ethers.keccak256(await ethers.provider.getCode(address)) !== hash) throw new Error(`Baseline runtime changed at ${address}`)
@@ -147,7 +172,7 @@ export async function deployAccountInstantSelection(
 		{
 			name: "InstantLayer",
 			artifact: "contracts/instantLayer/InstantLayer.sol:InstantLayer",
-			args: [input.config.target.core, deployer],
+			args: [input.config.target.core, input.config.target.safe],
 			libraries: {},
 		},
 		{ name: "GaslessLayer", artifact: "contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer", args: [], libraries: report.compatibility.libraries },
@@ -247,6 +272,8 @@ export async function assertUpgradeDeployments(hre: any, ethers: any, input: any
 	}
 	const instant = await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)
 	if (lower(await instant.symmio()) !== lower(input.config.target.core)) throw new Error("New InstantLayer Core immutable differs")
+	if (!(await instant.hasRole(ethers.ZeroHash, input.config.target.safe)))
+		throw new Error("New InstantLayer administration differs from the reviewed Safe")
 	const gasless = await ethers.getContractAt("GaslessLayer", report.deployments.GaslessLayer.address)
 	if ((await gasless.proxiableUUID()) !== IMPLEMENTATION_SLOT) throw new Error("New GaslessLayer implementation is not compatible UUPS")
 }
@@ -269,57 +296,82 @@ export async function accountUpgradeCut(ethers: any, input: any, snapshot: any, 
 		: []
 }
 
-export async function configureReplacementInstant(ethers: any, input: any, snapshot: any, report: any) {
-	const [signer] = await ethers.getSigners()
-	if (lower(await signer.getAddress()) !== report.deployer) throw new Error("Use the original deployment signer for InstantLayer configuration")
-	const contract = (await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)).connect(signer)
+export async function planInstantConfiguration(ethers: any, input: any, snapshot: any, report: any) {
+	const safe = lower(input.config.target.safe)
+	const contract = await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)
+	if (!(await contract.hasRole(ethers.ZeroHash, safe))) throw new Error("Reviewed Safe lacks replacement InstantLayer default-admin authority")
 	const expected = expectedInstantConfiguration(snapshot, report.deployments.InstantLayer.address)
-	const call = async (method: string, args: any[]) => {
-		const request = await completeGovernanceTransactionRequest(ethers.provider, {
-			from: report.deployer,
-			to: await contract.getAddress(),
+	const actions: any[] = []
+	const call = (method: string, args: any[]) =>
+		actions.push({
+			authority: safe,
+			to: String(contract.target),
+			value: "0",
 			data: contract.interface.encodeFunctionData(method, args),
-			value: 0n,
+			description: `InstantLayer ${method}`,
 		})
-		await send(signer.sendTransaction(request), `InstantLayer ${method}`)
-	}
-	if (lower(await contract.accountLayer()) !== expected.accountLayer) await call("setAccountLayer", [expected.accountLayer])
-	for (const target of expected.whitelist) if (!(await contract.whitelistedTargets(target))) await call("setTargetWhitelist", [target, true])
-	// setAccountLayer whitelists its target; remove it if the old configuration explicitly did not.
+	if (!(await contract.hasRole(ethers.id("SETTER_ROLE"), safe))) call("grantRole", [ethers.id("SETTER_ROLE"), safe])
+	const oldAccount = lower(await contract.accountLayer())
+	const changesAccount = oldAccount !== expected.accountLayer
+	if (changesAccount) call("setAccountLayer", [expected.accountLayer])
+	for (const target of expected.whitelist)
+		if (!(await contract.whitelistedTargets(target)) && !(changesAccount && target === expected.accountLayer))
+			call("setTargetWhitelist", [target, true])
 	for (const target of [expected.symmio, expected.accountLayer])
-		if (!expected.whitelist.includes(target) && (await contract.whitelistedTargets(target))) await call("setTargetWhitelist", [target, false])
-	for (const partyB of expected.registeredPartyBs) if (!(await contract.registeredPartyBs(partyB))) await call("registerPartyBs", [[partyB]])
-	if (String(await contract.revocationCooldown()) !== expected.revocationCooldown) await call("setRevocationCooldown", [expected.revocationCooldown])
+		if (!expected.whitelist.includes(target) && ((await contract.whitelistedTargets(target)) || (changesAccount && target === expected.accountLayer)))
+			call("setTargetWhitelist", [target, false])
+	const registered = new Set<string>()
+	for (const partyB of expected.registeredPartyBs)
+		if (!(await contract.registeredPartyBs(partyB))) {
+			call("registerPartyBs", [[partyB]])
+			registered.add(partyB)
+		}
+	if (String(await contract.revocationCooldown()) !== expected.revocationCooldown) call("setRevocationCooldown", [expected.revocationCooldown])
 	if ((await contract.transientContextEnabled()) !== expected.transientContextEnabled)
-		await call("setTransientContextEnabled", [expected.transientContextEnabled])
-	let count = Number(await contract.nextTemplateId())
+		call("setTransientContextEnabled", [expected.transientContextEnabled])
+	const count = Number(await contract.nextTemplateId())
 	if (count > expected.templates.length) throw new Error("Replacement InstantLayer contains unexpected templates")
 	for (const template of expected.templates) {
-		if (template.id === count) {
-			await call("addTemplate", [template.name, template.operations])
-			count++
+		let active = true,
+			instantOpenMode = false
+		if (template.id >= count) call("addTemplate", [template.name, template.operations])
+		else {
+			const actual = await contract.getTemplate(template.id)
+			const operations = actual.operations.map((o: any) => ({
+				insertionPoints: Array.from(o.insertionPoints, String),
+				sourceIndices: Array.from(o.sourceIndices, String),
+				sourceOffsets: Array.from(o.sourceOffsets, String),
+			}))
+			assertConfigurationParity({ name: template.name, operations: template.operations }, { name: actual.name, operations })
+			active = actual.active
+			instantOpenMode = await contract.templateInstantOpenMode(template.id)
 		}
-		const actual = await contract.getTemplate(template.id)
-		const operations = actual.operations.map((o: any) => ({
-			insertionPoints: Array.from(o.insertionPoints, String),
-			sourceIndices: Array.from(o.sourceIndices, String),
-			sourceOffsets: Array.from(o.sourceOffsets, String),
-		}))
-		assertConfigurationParity({ name: template.name, operations: template.operations }, { name: actual.name, operations })
-		if (actual.active !== template.active) await call("setTemplateActive", [template.id, template.active])
-		if ((await contract.templateInstantOpenMode(template.id)) !== template.instantOpenMode)
-			await call("setTemplateInstantOpenMode", [template.id, template.instantOpenMode])
+		if (active !== template.active) call("setTemplateActive", [template.id, template.active])
+		if (instantOpenMode !== template.instantOpenMode) call("setTemplateInstantOpenMode", [template.id, template.instantOpenMode])
 	}
 	for (const role of expected.roles)
-		for (const member of role.members) if (!(await contract.hasRole(role.role, member))) await call("grantRole", [role.role, member])
-	// registerPartyBs also grants OPERATOR_ROLE. Preserve the snapshot even if a historical admin revoked it.
+		for (const member of role.members)
+			if (
+				!(await contract.hasRole(role.role, member)) &&
+				!(role.role === ethers.id("OPERATOR_ROLE") && registered.has(member)) &&
+				!(role.role === ethers.id("SETTER_ROLE") && member === safe)
+			)
+				call("grantRole", [role.role, member])
 	for (const partyB of expected.registeredPartyBs)
-		if (!hasRole(ethers, expected.roles, "OPERATOR_ROLE", partyB) && (await contract.hasRole(ethers.id("OPERATOR_ROLE"), partyB)))
-			await call("revokeRole", [ethers.id("OPERATOR_ROLE"), partyB])
-	for (const name of ["OPERATOR_ROLE", "SETTER_ROLE", "REVOKER_ROLE", "DEFAULT_ADMIN_ROLE"]) {
-		const role = roleHash(ethers, name)
-		if (await contract.hasRole(role, report.deployer)) await call("renounceRole", [role, report.deployer])
-	}
+		if (
+			!hasRole(ethers, expected.roles, "OPERATOR_ROLE", partyB) &&
+			((await contract.hasRole(ethers.id("OPERATOR_ROLE"), partyB)) || registered.has(partyB))
+		)
+			call("revokeRole", [ethers.id("OPERATOR_ROLE"), partyB])
+	// The constructor grants Safe OPERATOR_ROLE; retain it only when in the reviewed scope.
+	if (!hasRole(ethers, expected.roles, "OPERATOR_ROLE", safe) && (await contract.hasRole(ethers.id("OPERATOR_ROLE"), safe)))
+		call("revokeRole", [ethers.id("OPERATOR_ROLE"), safe])
+	return actions
+}
+
+/** Local/fork execution seam; live configuration is exported through the CLI's Safe stage. */
+export async function configureReplacementInstant(ethers: any, input: any, snapshot: any, report: any) {
+	await executeUpgradeActions(ethers, await planInstantConfiguration(ethers, input, snapshot, report), input.config.target.safe)
 	await verifyReplacementInstant(ethers, snapshot, report)
 }
 
@@ -389,8 +441,58 @@ export async function planProtocolUpgrade(ethers: any, input: any, snapshot: any
 	}
 	if (!retire) {
 		const gasless = await ethers.getContractAt("GaslessLayer", t.gaslessLayer)
+		for (const [name, member] of [
+			["CONFIG_ADMIN_ROLE", t.safe],
+			["RELAYER_ROLE", t.relayer],
+		]) {
+			const role = ethers.id(name)
+			if (!(await gasless.hasRole(role, member))) {
+				const admin = await gasless.getRoleAdmin(role)
+				if (!(await gasless.hasRole(admin, t.safe)))
+					throw new Error(`Safe cannot grant GaslessLayer ${name}; provide the administrator for role ${admin}`)
+				actions.push({
+					authority: lower(t.safe),
+					to: t.gaslessLayer,
+					value: "0",
+					data: gasless.interface.encodeFunctionData("grantRole", [role, member]),
+					description: `Grant GaslessLayer ${name} to ${member}`,
+				})
+			}
+		}
+		const account = await ethers.getContractAt(diamondABI, t.accountLayer)
+		if (!(await account.hasRole(t.gaslessLayer, ethers.id("ACCOUNT_CREATOR_ROLE"))))
+			actions.push({
+				authority: lower(t.safe),
+				to: t.accountLayer,
+				value: "0",
+				data: account.interface.encodeFunctionData("grantRole", [t.gaslessLayer, ethers.id("ACCOUNT_CREATOR_ROLE")]),
+				description: `Grant AccountLayer ACCOUNT_CREATOR_ROLE to GaslessLayer ${t.gaslessLayer}`,
+			})
+		const core = await ethers.getContractAt(
+			[...diamondABI, "function isOperationalFeeCharger(address) view returns(bool)", "function registerOperationalFeeCharger(address)"],
+			t.core,
+		)
+		if (!(await core.isOperationalFeeCharger(t.gaslessLayer))) {
+			if (!(await core.hasRole(t.safe, ethers.id("FEE_ADMIN_ROLE"))))
+				actions.push({
+					authority: lower(t.safe),
+					to: t.core,
+					value: "0",
+					data: core.interface.encodeFunctionData("grantRole", [t.safe, ethers.id("FEE_ADMIN_ROLE")]),
+					description: "Grant Core FEE_ADMIN_ROLE to the Dev Safe for operational-fee charger registration",
+				})
+			actions.push({
+				authority: lower(t.safe),
+				to: t.core,
+				value: "0",
+				data: core.interface.encodeFunctionData("registerOperationalFeeCharger", [t.gaslessLayer]),
+				description: `Register GaslessLayer ${t.gaslessLayer} as a Core operational-fee charger; preserve its current receiver`,
+			})
+		}
 		const implementation = lower(`0x${(await ethers.provider.getStorage(t.gaslessLayer, IMPLEMENTATION_SLOT)).slice(-40)}`)
 		const replacement = report.deployments.GaslessLayer.address
+		if (!(await gasless.hasRole(ethers.ZeroHash, t.safe)))
+			throw new Error("Safe lacks GaslessLayer upgrade authority; provide its current administrator")
 		if (implementation !== snapshot.gaslessImplementation && implementation !== replacement) throw new Error("GaslessLayer implementation drift")
 		if (implementation !== replacement || lower(await gasless.instantLayer()) !== lower(instant))
 			actions.push({
@@ -515,7 +617,7 @@ export const accountInstantUpgradeTask = task(
 				(simulated ? phase !== "rehearse" : connection.networkName !== "arbitrum")
 			)
 				throw new Error("Incorrect network for this upgrade phase")
-			const mutates = ["deploy", "configure-instant", "execute-party-b", "execute-retire-party-b"].includes(phase)
+			const mutates = ["deploy", "execute-party-b", "execute-retire-party-b"].includes(phase)
 			if (mutates && (process.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE !== "true" || process.env.CONFIRM_CHAIN_ID !== "42161"))
 				throw new Error("Live execution needs explicit Arbitrum authorization")
 			const report: any = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { inputDigest, transactions: [] }
@@ -608,8 +710,8 @@ export const accountInstantUpgradeTask = task(
 				}
 				if (cut.length) throw new Error("AccountLayer cut must be executed and verified first")
 				if (phase === "verify-account-cut") return
-				if (phase === "configure-instant") {
-					await withJournal(ethers, input, report, false, "deployer", async () => configureReplacementInstant(ethers, input, snapshot, report))
+				if (phase === "plan-configure-instant") {
+					report.actions = await planInstantConfiguration(ethers, input, snapshot, report)
 					return
 				}
 				await verifyReplacementInstant(ethers, snapshot, report)
@@ -699,7 +801,8 @@ export async function rehearseAccountInstantUpgrade(hre: any, ethers: any, input
 		}
 	}
 	await execute(await accountUpgradeCut(ethers, input, snapshot, local))
-	await configureReplacementInstant(ethers, input, snapshot, local)
+	await execute(await planInstantConfiguration(ethers, input, snapshot, local))
+	await verifyReplacementInstant(ethers, snapshot, local)
 	await execute(await planPartyBUpgrade(ethers, snapshot, local))
 	await execute(await planProtocolUpgrade(ethers, input, snapshot, local))
 	if ((await accountUpgradeCut(ethers, input, snapshot, local)).length || (await planProtocolUpgrade(ethers, input, snapshot, local)).length)

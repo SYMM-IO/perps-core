@@ -16,7 +16,7 @@ import path from "node:path";
 
 export const ACCOUNT_INSTANT_PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile the reviewed upgrade contracts" },
-	{ id: "inspect", phase: "prepare", title: "Read and bind the complete current configuration" },
+	{ id: "inspect", phase: "prepare", title: "Read current values and the supplied flow permissions" },
 	{ id: "rehearse", phase: "rehearsal", title: "Rehearse the full upgrade on the exact snapshot fork" },
 	{ id: "authorize", phase: "authorization", title: "Review current values and authorize the upgrade" },
 	{
@@ -28,7 +28,7 @@ export const ACCOUNT_INSTANT_PLAN = Object.freeze([
 	{ id: "publish", phase: "publication", title: "Publish all eight contracts on Arbiscan" },
 	{ id: "account-cut", phase: "execution", title: "Export the AccountLayer cut for the Safe" },
 	{ id: "verify-account-cut", phase: "verification", title: "Verify the installed AccountLayer selectors" },
-	{ id: "configure-instant", phase: "execution", title: "Set the current InstantLayer values and hand over its roles" },
+	{ id: "configure-instant", phase: "execution", title: "Export current InstantLayer values and flow grants for the Safe" },
 	{ id: "verify-instant", phase: "verification", title: "Compare all replacement InstantLayer settings with the snapshot" },
 	{ id: "party-b", phase: "execution", title: "Wire the new InstantLayer through each PartyB administrator" },
 	{ id: "wire", phase: "execution", title: "Export protocol grants and the existing Gasless proxy upgrade for the Safe" },
@@ -224,7 +224,7 @@ export async function reconcileAccountInstantUpgrade(ctx, input) {
 export function createAccountInstantUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-account-instant-upgrade",
-		version: 2,
+		version: 3,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum AccountLayer and InstantLayer upgrade — preserve current values",
@@ -321,7 +321,9 @@ export function createAccountInstantUpgradeTask(common) {
 			await step("publish", () => runPhase(ctx, input, "publish"));
 			await step("account-cut", () => dispatchAccountInstantSafe(ctx, input, "plan-account-cut", "AccountLayer cut"));
 			await step("verify-account-cut", () => runPhase(ctx, input, "verify-account-cut"));
-			await step("configure-instant", () => runPhase(ctx, input, "configure-instant", { env: executeEnvironment }));
+			await step("configure-instant", () =>
+				dispatchAccountInstantSafe(ctx, input, "plan-configure-instant", "InstantLayer configuration and flow grants"),
+			);
 			await step("verify-instant", () => runPhase(ctx, input, "verify-instant"));
 			await step("party-b", () => executePartyBStage(ctx, input));
 			await step("wire", () => dispatchAccountInstantSafe(ctx, input, "plan-wire", "Protocol wiring and existing Gasless proxy upgrade"));

@@ -6,12 +6,15 @@ import {
 	compileGaslessCompatibility,
 	readGaslessConfiguration,
 	readInstantConfiguration,
+	diamondABI,
 	verifyGaslessCompatibility,
 } from "../../tasks/deploy/accountInstantSnapshot.js"
 import {
 	assertUpgradeDeployments,
 	configureReplacementInstant,
 	deployAccountInstantSelection,
+	planInstantConfiguration,
+	planProtocolUpgrade,
 	verifyReplacementInstant,
 } from "../../tasks/deploy/accountInstantUpgrade.js"
 import { createCheckpoint, setCheckpointSimulated } from "../../tasks/deploy/checkpoint.js"
@@ -106,6 +109,12 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 			gasless: await readGaslessConfiguration(getterOnly, String(proxy.target), block, discovery),
 			instant: await readInstantConfiguration(getterOnly, String(instant.target), block, discovery),
 			discovery,
+			flow: {
+				safe: admin.address.toLowerCase(),
+				relayer: relayer.address.toLowerCase(),
+				gaslessLayer: String(proxy.target).toLowerCase(),
+				partyBs: [partyB.address.toLowerCase()],
+			},
 		}
 		const compatibility = await verifyGaslessCompatibility(hre, ethers, snapshot, baseline)
 		return {
@@ -167,16 +176,25 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 			createCheckpoint("hardhat", 31337, `account-instant-state-${Date.now()}`),
 			() => {},
 		)
-		const replacement = await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)
+		const replacement = (await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)).connect(f.admin)
+		const safeEthers = { ...ethers, getSigners: async () => [f.admin] }
+		await expect(replacement.connect(f.deployer).setRevocationCooldown(999)).to.be.reverted
+		const beforePlan = await ethers.provider.getTransactionCount(f.admin.address)
+		const plan = await planInstantConfiguration(ethers, f.input, f.snapshot, report)
+		expect(plan.length).to.be.greaterThan(0)
+		expect(plan.every(action => action.authority === f.admin.address.toLowerCase() && action.value === "0")).to.equal(true)
+		expect(await ethers.provider.getTransactionCount(f.admin.address)).to.equal(beforePlan)
 		const first = f.snapshot.instant.templates[0]
 		await replacement.addTemplate(first.name, first.operations)
-		await configureReplacementInstant(ethers, f.input, f.snapshot, report)
+		await configureReplacementInstant(safeEthers, f.input, f.snapshot, report)
 		await verifyReplacementInstant(ethers, f.snapshot, report)
-		const before = await ethers.provider.getTransactionCount(f.deployer.address)
-		await configureReplacementInstant(ethers, f.input, f.snapshot, report)
-		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before)
+		const before = await ethers.provider.getTransactionCount(f.admin.address)
+		await configureReplacementInstant(safeEthers, f.input, f.snapshot, report)
+		expect(await ethers.provider.getTransactionCount(f.admin.address)).to.equal(before)
 		for (const role of [ethers.ZeroHash, ethers.id("SETTER_ROLE"), ethers.id("OPERATOR_ROLE"), ethers.id("REVOKER_ROLE")])
 			expect(await replacement.hasRole(role, f.deployer.address)).to.equal(false)
+		expect(await replacement.hasRole(ethers.id("OPERATOR_ROLE"), f.relayer.address)).to.equal(false)
+		expect(await replacement.hasRole(ethers.id("OPERATOR_ROLE"), f.input.config.discovery.instantPartyBs[0])).to.equal(true)
 		await expectFailure(() => f.gasless.setInstantLayer(replacement.target), /revert/)
 		await f.gasless.upgradeToAndCall(
 			report.deployments.GaslessLayer.address,
@@ -196,6 +214,54 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		)
 		await replacement.connect(f.admin).setTemplateActive(0, true)
 		await expectFailure(() => verifyReplacementInstant(ethers, f.snapshot, report), /Configuration drift/)
+	})
+
+	it("plans only missing flow grants for the Safe and skips them after execution", async () => {
+		const f = await fixture()
+		await f.gasless.revokeRole(ethers.id("CONFIG_ADMIN_ROLE"), f.admin.address)
+		await f.gasless.revokeRole(ethers.id("RELAYER_ROLE"), f.relayer.address)
+		const target = { ...f.input.config.target, instantLayer: String(f.instant.target) }
+		const memberships = new Set<string>()
+		const key = (address: string, role: string, member: string) => [address, role, member].map(s => s.toLowerCase()).join(":")
+		for (const address of [String(target.core), String(target.accountLayer)])
+			memberships.add(key(address, ethers.id("DEFAULT_ADMIN_ROLE"), f.admin.address))
+		let charger = false
+		const iface = new ethers.Interface([...diamondABI, "function registerOperationalFeeCharger(address)"])
+		const fakeEthers = {
+			...ethers,
+			getContractAt: async (abi: any, address: string) => {
+				if ([String(target.core), String(target.accountLayer)].includes(address))
+					return {
+						interface: iface,
+						hasRole: async (member: string, role: string) => memberships.has(key(address, role, member)),
+						isOperationalFeeCharger: async () => charger,
+					}
+				return ethers.getContractAt(abi, address)
+			},
+		}
+		const report = { deployments: { InstantLayer: { address: target.instantLayer }, GaslessLayer: { address: f.snapshot.gaslessImplementation } } }
+		const before = await ethers.provider.getTransactionCount(f.admin.address)
+		const actions = await planProtocolUpgrade(fakeEthers, { config: { target } }, f.snapshot, report)
+		expect(await ethers.provider.getTransactionCount(f.admin.address)).to.equal(before)
+		expect(actions).to.have.length(8)
+		for (const action of actions) {
+			expect(action.authority).to.equal(f.admin.address.toLowerCase())
+			expect(action.value).to.equal("0")
+			if (action.to === String(f.gasless.target)) {
+				const decoded = f.gasless.interface.parseTransaction({ data: action.data })!
+				expect(decoded.name).to.equal("grantRole")
+				expect([ethers.id("RELAYER_ROLE"), ethers.id("CONFIG_ADMIN_ROLE")]).to.include(decoded.args[0])
+				expect(decoded.args[1]).to.equal(decoded.args[0] === ethers.id("RELAYER_ROLE") ? f.relayer.address : f.admin.address)
+				await (await f.admin.sendTransaction({ to: action.to, data: action.data })).wait()
+			} else {
+				const decoded = iface.parseTransaction({ data: action.data })!
+				if (decoded.name === "grantRole") {
+					expect(decoded.args[0]).not.to.equal(f.relayer.address)
+					memberships.add(key(action.to, decoded.args[1], decoded.args[0]))
+				} else charger = true
+			}
+		}
+		expect(await planProtocolUpgrade(fakeEthers, { config: { target } }, f.snapshot, report)).to.deep.equal([])
 	})
 })
 
