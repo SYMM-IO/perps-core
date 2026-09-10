@@ -257,6 +257,20 @@ export async function selectorsAt(ethers: any, address: string, block?: number) 
 	return map
 }
 
+export async function readPartyBUpgradeAuthority(ethers: any, partyB: string, authority: string, block?: number) {
+	const contract = await ethers.getContractAt("SymmioPartyB", partyB)
+	const overrides = block === undefined ? {} : { blockTag: block }
+	if (!(await contract.hasRole(ethers.ZeroHash, authority, overrides)))
+		throw new Error(`PartyB authority ${authority} lacks DEFAULT_ADMIN_ROLE on ${partyB}`)
+	const manager = await contract.hasRole(ethers.id("MANAGER_ROLE"), authority, overrides)
+	for (const name of ["TRUSTED_ROLE", ...(!manager ? ["MANAGER_ROLE"] : [])]) {
+		const roleAdmin = await contract.getRoleAdmin(ethers.id(name), overrides)
+		if (!(await contract.hasRole(roleAdmin, authority, overrides)))
+			throw new Error(`PartyB authority ${authority} cannot administer ${name} on ${partyB}; role admin is ${roleAdmin}`)
+	}
+	return { manager }
+}
+
 export async function readPreservedState(ethers: any, target: any, block: number) {
 	const core = await ethers.getContractAt(
 		[
@@ -329,11 +343,7 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 	for (const partyB of unique([...instant.registeredPartyBs, ...config.discovery.instantPartyBs])) {
 		const admin = Object.entries(target.partyBAdmins).find(([address]) => lower(address) === partyB)?.[1] as string | undefined
 		if (!admin) throw new Error(`Missing input target.partyBAdmins[${partyB}]; supply its administrator in the JSON before deployment`)
-		if ((await ethers.provider.getCode(admin, at)) !== "0x")
-			throw new Error(`PartyB administrator ${admin} is a contract; this workflow requires an authorized EOA in target.partyBAdmins[${partyB}]`)
-		const contract = await ethers.getContractAt("SymmioPartyB", partyB)
-		for (const role of [ethers.ZeroHash, ethers.id("SETTER_ROLE")])
-			if (!(await contract.hasRole(role, admin, { blockTag: at }))) throw new Error(`Reviewed PartyB admin ${admin} lacks authority on ${partyB}`)
+		await readPartyBUpgradeAuthority(ethers, partyB, admin, at)
 		partyBAdmins[partyB] = lower(admin)
 	}
 	const codeHashes: Record<string, string> = {}
