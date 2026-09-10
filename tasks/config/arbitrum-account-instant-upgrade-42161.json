@@ -20,7 +20,8 @@
 		"migrateInstantUserState": false,
 		"setGlobalTimelocks": false,
 		"repairTemplates": false,
-		"roleScope": "required-flow"
+		"roleScope": "required-flow",
+		"partyBExecution": "manual"
 	},
 	"discovery": {
 		"mode": "flow",
