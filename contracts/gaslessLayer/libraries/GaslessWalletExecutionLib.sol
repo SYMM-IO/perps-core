@@ -33,69 +33,106 @@ library GaslessWalletExecutionLib {
 
 	// ─────────────────────────── Types ────────────────────────────
 
+	/// @notice Wallet execution output and the inner-call selectors used for subsequent fee calculation.
 	struct WalletExecutionResult {
 		bytes result;
-		address ownerWallet;
+		address owner;
 		address wallet;
 		uint256 callCount;
+		bytes4[] feeSelectors;
 	}
 
 	// ───────────────────── External Entrypoints ───────────────────
 
+	/// @notice Compute the EIP-712 digest of a GaslessWallet operation in gateway context.
+	/// @param signedOp Wallet operation to hash.
+	/// @return EIP-712 operation digest.
 	function getWalletOperationHash(IInstantLayer.SignedOperation calldata signedOp) external view returns (bytes32) {
 		return _getWalletOperationHash(signedOp);
 	}
 
+	/// @notice Check whether a wallet-operation signature is valid for its declared signer.
+	/// @dev Checks the signature only; does not validate the target, nonce, deadline, or signer authority.
+	/// @param signedOp Wallet operation whose digest is checked.
+	/// @param signature Signature to verify.
+	/// @return Whether the signature is valid for signedOp.signer.
 	function isValidWalletOperationSignature(IInstantLayer.SignedOperation calldata signedOp, bytes calldata signature) external view returns (bool) {
 		return SignatureChecker.isValidSignatureNow(signedOp.signer, _getWalletOperationHash(signedOp), signature);
 	}
 
-	function isWalletOperation(address accountLayer, IInstantLayer.SignedOperation calldata signedOp) external view returns (bool) {
-		return _isWalletOperation(ISymmioAccountLayer(accountLayer), signedOp);
+	/// @notice Check whether an operation targets the selected owner-derived GaslessWallet.
+	/// @dev A mismatched positive index reverts; a mismatched index-zero target is an InstantLayer operation.
+	/// @param accountLayer AccountLayer address used to resolve the wallet owner.
+	/// @param signedOp Operation whose target is classified.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @return Whether the target matches the selected GaslessWallet.
+	function isWalletOperation(address accountLayer, IInstantLayer.SignedOperation calldata signedOp, uint256 walletId) external view returns (bool) {
+		return _isWalletOperation(ISymmioAccountLayer(accountLayer), signedOp, walletId);
 	}
 
-	function operationalFeeSelectors(
+	/// @notice Identify the function selectors to price in a standalone operation quote.
+	/// @dev Classifies the target before decoding. Relay execution returns selectors from its already-decoded calls.
+	/// @param accountLayer AccountLayer address used to resolve the wallet owner.
+	/// @param signedOp Operation whose fee selectors are identified.
+	/// @param walletId Wallet index; zero also permits an ordinary InstantLayer target.
+	/// @return selectors Inner selectors for a wallet operation or the outer selector for an InstantLayer operation.
+	function quoteOperationalFeeSelectors(
 		address accountLayer,
-		IInstantLayer.SignedOperation calldata signedOp
+		IInstantLayer.SignedOperation calldata signedOp,
+		uint256 walletId
 	) external view returns (bytes4[] memory selectors) {
-		if (!_isWalletOperation(ISymmioAccountLayer(accountLayer), signedOp)) {
+		if (!_isWalletOperation(ISymmioAccountLayer(accountLayer), signedOp, walletId)) {
 			selectors = new bytes4[](1);
 			selectors[0] = _selectorFromCalldata(signedOp.callData);
 			return selectors;
 		}
-
-		GaslessWallet.Call[] memory calls = _decodeWalletExecuteCalls(signedOp.callData);
-		selectors = new bytes4[](calls.length);
-		for (uint256 i = 0; i < calls.length; i++) {
-			selectors[i] = _selectorFromMemory(calls[i].data);
-		}
+		return _walletCallSelectors(_decodeWalletExecuteCalls(signedOp.callData));
 	}
 
+	/// @notice Validate and execute a signed operation through the selected GaslessWallet.
+	/// @dev The signed target binds the wallet index. Validates the owner-derived target, signature, replay state,
+	///      and delegate authority before deployment or execution. Returns selectors from the decoded wallet calls.
+	/// @param walletOperationNonces Nonce mapping selected by the gateway; index zero uses the original account mapping.
+	/// @param accountLayer AccountLayer address used to resolve the wallet owner.
+	/// @param instantLayer InstantLayer address used to check delegated authority.
+	/// @param signedOp Wallet operation to execute.
+	/// @param signature Signature authorizing signedOp.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @return execution Encoded call results, wallet identity, call count, and fee selectors.
 	function executeWalletOperation(
 		mapping(address => uint256) storage walletOperationNonces,
 		address accountLayer,
 		address instantLayer,
 		IInstantLayer.SignedOperation calldata signedOp,
-		bytes calldata signature
+		bytes calldata signature,
+		uint256 walletId
 	) external returns (WalletExecutionResult memory execution) {
-		ISymmioAccountLayer accountLayerContract = ISymmioAccountLayer(accountLayer);
-		IInstantLayer instantLayerContract = IInstantLayer(instantLayer);
-		(address ownerWallet, address canonicalAccount) = _walletOwnerForOperation(accountLayerContract, signedOp);
-		address expectedWallet = GaslessWalletDeployerLib.getGaslessWalletAddress(ownerWallet);
-		if (signedOp.target != expectedWallet) revert IGaslessLayer.InvalidWalletOperationTarget(expectedWallet, signedOp.target);
-
+		(address owner, address canonicalAccount) = _walletOwnerForOperation(ISymmioAccountLayer(accountLayer), signedOp);
+		_assertWalletTarget(owner, signedOp.target, walletId);
 		_verifyAndConsumeWalletOperationReplay(walletOperationNonces, signedOp, signature);
 		GaslessWallet.Call[] memory calls = _decodeWalletExecuteCalls(signedOp.callData);
-		_assertWalletAuthority(instantLayerContract, signedOp, ownerWallet, canonicalAccount, calls);
+		_assertWalletAuthority(IInstantLayer(instantLayer), signedOp, owner, canonicalAccount, calls);
 
-		(GaslessWallet wallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(ownerWallet);
-		bytes[] memory results = wallet.execute(calls);
+		(GaslessWallet wallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		execution = WalletExecutionResult({
-			result: abi.encode(results),
-			ownerWallet: ownerWallet,
+			result: abi.encode(wallet.execute(calls)),
+			owner: owner,
 			wallet: address(wallet),
-			callCount: calls.length
+			callCount: calls.length,
+			feeSelectors: _walletCallSelectors(calls)
 		});
+	}
+
+	/// @dev Extract selectors from the decoded wallet calls without resolving ownership or calculating fees.
+	function _walletCallSelectors(GaslessWallet.Call[] memory calls) private pure returns (bytes4[] memory selectors) {
+		selectors = new bytes4[](calls.length);
+		for (uint256 i = 0; i < calls.length; i++) selectors[i] = _selectorFromMemory(calls[i].data);
+	}
+
+	/// @dev Require the target to match the CREATE2 address derived from the owner and wallet index.
+	function _assertWalletTarget(address owner, address target, uint256 walletId) private view returns (address expected) {
+		expected = GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+		if (target != expected) revert IGaslessLayer.InvalidWalletOperationTarget(expected, target);
 	}
 
 	// ─────────────────────────── EIP-712 ──────────────────────────
@@ -164,24 +201,33 @@ library GaslessWalletExecutionLib {
 	function _walletOwnerForOperation(
 		ISymmioAccountLayer accountLayer,
 		IInstantLayer.SignedOperation calldata signedOp
-	) internal view returns (address ownerWallet, address canonicalAccount) {
+	) internal view returns (address owner, address canonicalAccount) {
 		if (signedOp.signerAccount.isPartyB) revert IGaslessLayer.WalletOperationForPartyBUnsupported();
 		canonicalAccount = _resolveCanonicalAccount(accountLayer, signedOp.signerAccount.addr);
-		ownerWallet = _ownerWalletForCanonicalAccount(accountLayer, canonicalAccount);
+		owner = _ownerForCanonicalAccount(accountLayer, canonicalAccount);
 	}
 
-	function _ownerWalletForCanonicalAccount(ISymmioAccountLayer accountLayer, address canonicalAccount) internal view returns (address ownerWallet) {
-		try accountLayer.ownerOf(canonicalAccount) returns (address owner) {
-			return owner == address(0) ? canonicalAccount : owner;
+	function _ownerForCanonicalAccount(ISymmioAccountLayer accountLayer, address canonicalAccount) internal view returns (address owner) {
+		try accountLayer.ownerOf(canonicalAccount) returns (address accountOwner) {
+			return accountOwner == address(0) ? canonicalAccount : accountOwner;
 		} catch {
 			return canonicalAccount;
 		}
 	}
 
-	function _isWalletOperation(ISymmioAccountLayer accountLayer, IInstantLayer.SignedOperation calldata signedOp) internal view returns (bool) {
+	/// @dev A positive index explicitly selects a wallet. Reject mismatched targets instead of
+	///      routing them to InstantLayer. Index zero retains the existing target-based dispatch.
+	function _isWalletOperation(
+		ISymmioAccountLayer accountLayer,
+		IInstantLayer.SignedOperation calldata signedOp,
+		uint256 walletId
+	) internal view returns (bool) {
 		address canonicalAccount = _resolveCanonicalAccount(accountLayer, signedOp.signerAccount.addr);
-		address ownerWallet = _ownerWalletForCanonicalAccount(accountLayer, canonicalAccount);
-		return signedOp.target == GaslessWalletDeployerLib.getGaslessWalletAddress(ownerWallet);
+		address owner = _ownerForCanonicalAccount(accountLayer, canonicalAccount);
+		address expectedWallet = GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+		bool matches = signedOp.target == expectedWallet;
+		if (walletId != 0 && !matches) revert IGaslessLayer.InvalidWalletOperationTarget(expectedWallet, signedOp.target);
+		return matches;
 	}
 
 	// ─────────────────────── Authorization ────────────────────────
@@ -189,11 +235,11 @@ library GaslessWalletExecutionLib {
 	function _assertWalletAuthority(
 		IInstantLayer instantLayer,
 		IInstantLayer.SignedOperation calldata signedOp,
-		address ownerWallet,
+		address owner,
 		address canonicalAccount,
 		GaslessWallet.Call[] memory calls
 	) internal view {
-		if (signedOp.signer == ownerWallet) return;
+		if (signedOp.signer == owner) return;
 
 		_assertInstantDelegation(instantLayer, canonicalAccount, signedOp.signer, WALLET_EXECUTION_SENTINEL_SELECTOR);
 		for (uint256 i = 0; i < calls.length; i++) {

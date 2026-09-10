@@ -1,5 +1,5 @@
 import { expect } from "chai"
-import { keccak256 } from "ethers"
+import { Interface, keccak256 } from "ethers"
 import { readFileSync } from "node:fs"
 
 import {
@@ -29,5 +29,22 @@ describe("GaslessWallet frozen bytecode", () => {
 			gaslessWalletSalt(REFERENCE_WALLET_OWNER),
 			"The GaslessWallet salt scheme changed (version tag or abi.encode shape) — this MOVES every deposit address.",
 		).to.equal(GOLDEN_WALLET_SALT_FOR_REFERENCE_OWNER)
+	})
+})
+
+// Frozen from the pre-indexed GaslessLayer ABI. Keep old selectors, output names/types,
+// and mutability intact. Event compatibility is deliberately outside this contract.
+describe("GaslessLayer legacy API compatibility", () => {
+	it("preserves existing callable ABI fragments without introducing overloaded names", () => {
+		const artifact = JSON.parse(readFileSync("artifacts/contracts/gaslessLayer/GaslessLayer.sol/GaslessLayer.json", "utf8"))
+		const baseline: string[] = JSON.parse(readFileSync("test/fixtures/gasless-layer-legacy-api.json", "utf8"))
+		const current = new Interface(artifact.abi).format()
+		for (const fragment of baseline.filter(fragment => !fragment.startsWith("event "))) {
+			// The owner input label changed; its type, selector, outputs, and mutability must remain compatible.
+			const expected = fragment.replace("getGaslessWalletAddress(address ownerWallet)", "getGaslessWalletAddress(address owner)")
+			expect(current, fragment).to.include(expected)
+		}
+		const functions = artifact.abi.filter((fragment: any) => fragment.type === "function")
+		expect(new Set(functions.map((fragment: any) => fragment.name)).size).to.equal(functions.length)
 	})
 })

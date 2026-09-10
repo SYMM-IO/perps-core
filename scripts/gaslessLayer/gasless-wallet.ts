@@ -36,3 +36,18 @@ export function gaslessWalletSalt(owner: string): string {
 export function predictGaslessWalletAddress(deployer: string, owner: string, initCodeHash: string = GOLDEN_WALLET_INITCODE_HASH): string {
 	return getCreate2Address(deployer, gaslessWalletSalt(owner), initCodeHash)
 }
+
+/** Wallet 0 is the original owner-only wallet. Every positive index derives an additional wallet. */
+export function walletSalt(owner: string, walletId: bigint): string {
+	if (walletId === 0n) return gaslessWalletSalt(owner)
+	return keccak256(
+		AbiCoder.defaultAbiCoder().encode(
+			["string", "uint256", "address", "uint256"],
+			["GaslessQIndexedWallet", GASLESS_WALLET_VERSION, owner, walletId],
+		),
+	)
+}
+
+export function predictWalletAddress(deployer: string, owner: string, walletId: bigint): string {
+	return getCreate2Address(deployer, walletSalt(owner, walletId), GOLDEN_WALLET_INITCODE_HASH)
+}
