@@ -16,6 +16,7 @@ export const POLICY = Object.freeze({
 	setGlobalTimelocks: false,
 	repairTemplates: false,
 	roleScope: "required-flow",
+	partyBExecution: "manual",
 });
 export const CONFIG_PATH = "tasks/config/arbitrum-account-instant-upgrade-42161.json";
 export const RECIPE_PATH = "deployment-recipes/arbitrum-vibe-production.json";
@@ -62,7 +63,7 @@ export function validateUpgradeConfig(value) {
 		throw new Error("Expected the Arbitrum account/instant upgrade v1 config");
 	if (digest(value.policy) !== digest(POLICY))
 		throw new Error(
-			"Upgrade policy must preserve configuration and GaslessLayer proxy, excluding InstantLayer user state, template repairs and global timelock setters",
+			"Upgrade policy must preserve configuration and GaslessLayer proxy, use manual PartyB execution, and exclude InstantLayer user state, template repairs and global timelock setters",
 		);
 	const fields = ["core", "collateral", "accountLayer", "instantLayer", "gaslessLayer", "safe", "relayer"];
 	keys(value.target, [...fields, "partyBAdmins"], "target");

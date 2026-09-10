@@ -70,13 +70,11 @@ const PHASES = [
 	"plan-configure-instant",
 	"verify-instant",
 	"plan-party-b",
-	"execute-party-b",
 	"plan-wire",
 	"verify-wire",
 	"canary",
 	"plan-retire",
 	"plan-retire-party-b",
-	"execute-retire-party-b",
 	"verify-final",
 	"reconcile",
 ]
@@ -599,9 +597,8 @@ export const accountInstantUpgradeTask = task(
 	.addOption({ name: "phase", type: ArgumentType.STRING, defaultValue: "inspect" })
 	.addOption({ name: "input", type: ArgumentType.STRING, defaultValue: "" })
 	.addOption({ name: "output", type: ArgumentType.STRING, defaultValue: "" })
-	.addOption({ name: "authority", type: ArgumentType.STRING, defaultValue: "" })
 	.setAction(async () => ({
-		default: async ({ phase, input: inputFile, output, authority }, hre) => {
+		default: async ({ phase, input: inputFile, output }, hre) => {
 			if (!PHASES.includes(phase)) throw new Error("Unknown account/instant upgrade phase")
 			const input = JSON.parse(fs.readFileSync(inputFile, "utf8"))
 			validateUpgradeConfig(input.config)
@@ -617,7 +614,7 @@ export const accountInstantUpgradeTask = task(
 				(simulated ? phase !== "rehearse" : connection.networkName !== "arbitrum")
 			)
 				throw new Error("Incorrect network for this upgrade phase")
-			const mutates = ["deploy", "execute-party-b", "execute-retire-party-b"].includes(phase)
+			const mutates = phase === "deploy"
 			if (mutates && (process.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE !== "true" || process.env.CONFIRM_CHAIN_ID !== "42161"))
 				throw new Error("Live execution needs explicit Arbitrum authorization")
 			const report: any = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { inputDigest, transactions: [] }
@@ -716,16 +713,8 @@ export const accountInstantUpgradeTask = task(
 				}
 				await verifyReplacementInstant(ethers, snapshot, report)
 				if (phase === "verify-instant") return
-				if (["plan-party-b", "execute-party-b"].includes(phase)) {
+				if (phase === "plan-party-b") {
 					report.actions = await planPartyBUpgrade(ethers, snapshot, report)
-					if (phase === "execute-party-b")
-						await withJournal(ethers, input, report, false, `party-b-${lower(authority)}`, async () =>
-							executeUpgradeActions(
-								ethers,
-								report.actions.filter((a: any) => a.authority === lower(authority)),
-								authority,
-							),
-						)
 					return
 				}
 				const wiring = await planProtocolUpgrade(ethers, input, snapshot, report)
@@ -749,16 +738,8 @@ export const accountInstantUpgradeTask = task(
 					return
 				}
 				if ((await planProtocolUpgrade(ethers, input, snapshot, report, true)).length) throw new Error("Old InstantLayer protocol authority remains")
-				if (["plan-retire-party-b", "execute-retire-party-b"].includes(phase)) {
+				if (phase === "plan-retire-party-b") {
 					report.actions = await planPartyBUpgrade(ethers, snapshot, report, true)
-					if (phase === "execute-retire-party-b")
-						await withJournal(ethers, input, report, false, `party-b-${lower(authority)}`, async () =>
-							executeUpgradeActions(
-								ethers,
-								report.actions.filter((a: any) => a.authority === lower(authority)),
-								authority,
-							),
-						)
 					return
 				}
 				if ((await planPartyBUpgrade(ethers, snapshot, report, true)).length) throw new Error("Old PartyB trust/whitelist authority remains")

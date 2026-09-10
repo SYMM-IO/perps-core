@@ -104,7 +104,7 @@ test("adapter environment defaults to nonexecution and uses the same credential 
 	assert.equal(read(f.input.config).secrets.rpc, read(f.input.forkConfig).secrets.rpc);
 });
 
-test("runner waits for Safe execution and a real canary, resumes without redeployment, and binds the PartyB signer separately", async t => {
+test("runner defers PartyB calls to manual execution and verifies them before cutover and completion", async t => {
 	const f = fixture();
 	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
 	const flags = { configured: false, cut: false, wired: false, retired: false, partyB: false, partyBRetired: false, canary: "" };
@@ -138,7 +138,8 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 						assert.equal(options.env.SYMMIO_DEPLOYMENT_RECIPE, input.forkConfig);
 						report.rehearsal = { status: "complete", snapshotDigest: digest(f.snapshot) };
 					}
-					if (["deploy", "execute-party-b", "execute-retire-party-b"].includes(phase)) {
+					assert.equal(phase.startsWith("execute-"), false, "PartyB execution must remain external");
+					if (phase === "deploy") {
 						assert.equal(options.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE, "true");
 						assert.equal(options.env.CONFIRM_CHAIN_ID, "42161");
 					}
@@ -148,9 +149,10 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 					if (phase === "plan-retire") report.actions = flags.retired ? [] : [action(safe)];
 					if (phase === "plan-party-b") report.actions = flags.partyB ? [] : [action(admin)];
 					if (phase === "plan-retire-party-b") report.actions = flags.partyBRetired ? [] : [action(admin)];
-					if (phase === "execute-party-b" || phase === "execute-retire-party-b") {
-						assert.equal(process.env.SYMMIO_EXPECTED_SIGNER.toLowerCase(), admin);
-						flags[phase === "execute-party-b" ? "partyB" : "partyBRetired"] = true;
+					if (["plan-party-b", "plan-retire-party-b"].includes(phase)) {
+						assert.equal(options.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE, "false");
+						assert.equal(options.env.SYMMIO_RECIPE_READ_ONLY, "true");
+						assert.equal(options.env.SYMMIO_SIGNER_MODE, "safe-file");
 					}
 					if (phase === "canary") report.canary = { hash: options.env.SYMMIO_ACCOUNT_UPGRADE_CANARY };
 					if (phase === "verify-final") {
@@ -167,8 +169,11 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 	const ui = {
 		note() {},
 		confirm: async () => true,
-		select: async ({ initialValue }) => initialValue,
-		text: async ({ message }) => (message.includes("Type 42161") ? "42161" : message.includes("Ledger address") ? admin : flags.canary),
+		select: async () => assert.fail("No PartyB signer should be requested"),
+		text: async ({ message }) => {
+			assert.doesNotMatch(message, /Ledger address|PartyB administrator/);
+			return message.includes("Type 42161") ? "42161" : flags.canary;
+		},
 	};
 	const runtime = { ui, onEvent: e => events.push(e) };
 	let state = await runner.start(task.id, { ...runtime, input: f.input });
@@ -184,8 +189,36 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 	flags.configured = true;
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "waiting_external", state.lastError);
-	assert.equal(flags.partyB, true);
-	assert.equal(state.signing[`party-b-${admin}`].address.toLowerCase(), admin);
+	assert.equal(flags.partyB, false);
+	assert.equal(state.completedSteps.includes("party-b"), false);
+	assert.match(state.waitingFor, /Complete the PartyB actions manually/);
+	assert.equal(phases.includes("plan-wire"), false);
+	const manualFile = path.join(f.directory, "party-b-manual.json");
+	assert.deepEqual(read(manualFile), {
+		apiVersion: "operations.symm.io/manual-transactions-v1",
+		chainId: 42161,
+		inputDigest: f.input.inputDigest,
+		snapshotDigest: digest(f.snapshot),
+		stage: "party-b",
+		status: "pending",
+		transactions: [{ from: admin, to: action(admin).to, value: "0", data: "0x12345678", description: action(admin).description }],
+	});
+	write(manualFile, { ...read(manualFile), status: "verified", transactions: [] });
+	state = await runner.resumeActive(runtime);
+	assert.equal(state.status, "waiting_external", state.lastError);
+	assert.equal(state.completedSteps.includes("party-b"), false, "continuing is not proof of manual execution");
+	assert.equal(read(manualFile).status, "pending", "editing the manual file cannot bypass on-chain verification");
+	assert.equal(phases.includes("plan-wire"), false);
+	flags.partyB = true;
+	state = await runner.resumeActive(runtime);
+	assert.equal(state.status, "waiting_external", state.lastError);
+	assert.match(state.waitingFor, /Execute .* through Safe/);
+	assert.equal(read(manualFile).status, "verified");
+	assert.deepEqual(read(manualFile).transactions, []);
+	assert.equal(
+		Object.keys(state.signing || {}).some(key => key.startsWith("party-b-")),
+		false,
+	);
 	flags.wired = true;
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "waiting_external", state.lastError);
@@ -196,8 +229,17 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 	assert.equal(state.status, "waiting_external", state.lastError);
 	flags.retired = true;
 	state = await runner.resumeActive(runtime);
+	assert.equal(state.status, "waiting_external", state.lastError);
+	assert.equal(flags.partyBRetired, false);
+	assert.equal(phases.includes("verify-final"), false);
+	assert.match(state.waitingFor, /Complete the PartyB actions manually/);
+	const retirementFile = path.join(f.directory, "retire-party-b-manual.json");
+	assert.equal(read(retirementFile).stage, "retire-party-b");
+	assert.equal(read(retirementFile).transactions[0].from, admin);
+	flags.partyBRetired = true;
+	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "completed", state.lastError);
-	assert.equal(flags.partyBRetired, true);
+	assert.equal(read(retirementFile).status, "verified");
 	assert.equal(phases.filter(p => p === "deploy").length, 1);
 	assert.equal(events.filter(e => e.type === "safe.exported").length, 4);
 	assert.equal(state.transactions.length, 0, "fork rehearsal transactions must not enter the live journal");
