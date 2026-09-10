@@ -33,21 +33,35 @@ describe("GaslessWallet frozen bytecode", () => {
 })
 
 describe("GaslessLayer wallet API", () => {
-	it("exposes one wallet-aware method per operation without legacy aliases or overloads", () => {
+	it("keeps the original method names with explicit wallet parameters and no aliases or overloads", () => {
 		const artifact = JSON.parse(readFileSync("artifacts/contracts/gaslessLayer/GaslessLayer.sol/GaslessLayer.json", "utf8"))
 		const abi = new Interface(artifact.abi)
 		for (const name of [
-			"relayInstantBatch",
-			"getGaslessWalletAddress",
-			"settleDepositToNewAccount",
-			"settleDepositToExistingAccount",
-			"recoverNonCollateralToken",
+			"relayWalletBatch",
+			"getWalletAddress",
+			"settleWalletDepositToNewAccount",
+			"settleWalletDepositToExistingAccount",
+			"recoverWalletNonCollateralToken",
 			"getAccountOperationalFeeForWallets",
-			"walletOperationNonces",
+			"getWalletOperationNonce",
 		]) {
 			expect(abi.getFunction(name), name).to.equal(null)
 		}
-		expect(abi.getFunction("getAccountOperationalFee")!.inputs.map(input => input.name)).to.deep.equal(["account", "signedOps", "walletIds"])
+		const expectedInputs: Record<string, string[]> = {
+			relayInstantBatch: ["signedOps", "signatures", "fills", "flexFillerSignatures", "walletIds"],
+			getGaslessWalletAddress: ["owner", "walletId"],
+			settleDepositToNewAccount: ["owner", "walletIndex", "affiliate", "accountData"],
+			settleDepositToExistingAccount: ["owner", "walletIndex", "subAccount"],
+			recoverNonCollateralToken: ["owner", "walletId", "token", "recipient"],
+			getAccountOperationalFee: ["account", "signedOps", "walletIds"],
+			walletOperationNonces: ["owner", "walletId", "signerAccount"],
+		}
+		for (const [name, inputs] of Object.entries(expectedInputs)) {
+			expect(
+				abi.getFunction(name)!.inputs.map(input => input.name),
+				name,
+			).to.deep.equal(inputs)
+		}
 		const functions = artifact.abi.filter((fragment: any) => fragment.type === "function")
 		expect(new Set(functions.map((fragment: any) => fragment.name)).size).to.equal(functions.length)
 	})

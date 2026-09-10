@@ -35,7 +35,7 @@ const AccessControlABI = [
 
 const UUPSABI = ["function upgradeToAndCall(address newImplementation, bytes data) payable", "function proxiableUUID() view returns (bytes32)"]
 
-const WalletDerivationABI = ["function getWalletAddress(address owner, uint256 walletId) view returns (address)"]
+const WalletDerivationABI = ["function getGaslessWalletAddress(address owner, uint256 walletId) view returns (address)"]
 const LegacyWalletDerivationABI = ["function getGaslessWalletAddress(address owner) view returns (address)"]
 
 class HyperEVMRetryingProvider extends JsonRpcProvider {
@@ -327,7 +327,7 @@ async function assertWalletDerivationStable(provider: JsonRpcProvider, proxy: st
 	//    is the authoritative pre-upgrade check for this migration.
 	try {
 		const legacyReader = new Contract(proxy, LegacyWalletDerivationABI, provider) as any
-		const live = await reader.getWalletAddress(REFERENCE_WALLET_OWNER, 0n).catch((error: any) => {
+		const live = await reader.getGaslessWalletAddress(REFERENCE_WALLET_OWNER, 0n).catch((error: any) => {
 			if (error?.code !== "CALL_EXCEPTION") throw error
 			return legacyReader.getGaslessWalletAddress(REFERENCE_WALLET_OWNER)
 		})
@@ -346,7 +346,7 @@ async function assertWalletDerivationStable(provider: JsonRpcProvider, proxy: st
 
 	// 2. Pre-flight the NEW implementation via eth_call with a state override that repoints the proxy's
 	//    implementation slot, WITHOUT upgrading. Skipped only if the RPC rejects state overrides.
-	const calldata = reader.interface.encodeFunctionData("getWalletAddress", [REFERENCE_WALLET_OWNER, 0n])
+	const calldata = reader.interface.encodeFunctionData("getGaslessWalletAddress", [REFERENCE_WALLET_OWNER, 0n])
 	const override = { [proxy]: { stateDiff: { [IMPLEMENTATION_SLOT]: implementationSlotOverride(newImplementation) } } }
 	let raw: string | undefined
 	try {
@@ -371,7 +371,7 @@ async function assertWalletDerivationStable(provider: JsonRpcProvider, proxy: st
 async function assertPostUpgradeWalletDerivation(provider: JsonRpcProvider, proxy: string, previousImplementation: string): Promise<void> {
 	const expected = predictWalletAddress(proxy, REFERENCE_WALLET_OWNER, 0n)
 	const reader = new Contract(proxy, WalletDerivationABI, provider) as any
-	const derived = await reader.getWalletAddress(REFERENCE_WALLET_OWNER, 0n)
+	const derived = await reader.getGaslessWalletAddress(REFERENCE_WALLET_OWNER, 0n)
 	if (!sameAddress(derived, expected)) {
 		throw new Error(
 			`After upgrade the proxy derives ${derived} for the reference owner, expected ${expected}. The new implementation ` +

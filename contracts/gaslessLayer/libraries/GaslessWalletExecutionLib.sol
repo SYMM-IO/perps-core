@@ -131,7 +131,7 @@ library GaslessWalletExecutionLib {
 
 	/// @dev Require the target to match the CREATE2 address derived from the owner and wallet index.
 	function _assertWalletTarget(address owner, address target, uint256 walletId) private view returns (address expected) {
-		expected = GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+		expected = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
 		if (target != expected) revert IGaslessLayer.InvalidWalletOperationTarget(expected, target);
 	}
 
@@ -224,7 +224,7 @@ library GaslessWalletExecutionLib {
 	) internal view returns (bool) {
 		address canonicalAccount = _resolveCanonicalAccount(accountLayer, signedOp.signerAccount.addr);
 		address owner = _ownerForCanonicalAccount(accountLayer, canonicalAccount);
-		address expectedWallet = GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+		address expectedWallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
 		bool matches = signedOp.target == expectedWallet;
 		if (walletId != 0 && !matches) revert IGaslessLayer.InvalidWalletOperationTarget(expectedWallet, signedOp.target);
 		return matches;

@@ -23,7 +23,7 @@ library GaslessWalletDeployerLib {
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @return Predicted GaslessWallet address.
-	function getWalletAddress(address owner, uint256 walletId) external view returns (address) {
+	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address) {
 		return _walletAddress(owner, walletId);
 	}
 
