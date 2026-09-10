@@ -107,7 +107,7 @@ test("adapter environment defaults to nonexecution and uses the same credential 
 test("runner waits for Safe execution and a real canary, resumes without redeployment, and binds the PartyB signer separately", async t => {
 	const f = fixture();
 	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
-	const flags = { cut: false, wired: false, retired: false, partyB: false, partyBRetired: false, canary: "" };
+	const flags = { configured: false, cut: false, wired: false, retired: false, partyB: false, partyBRetired: false, canary: "" };
 	const phases = [],
 		events = [];
 	const admin = Object.values(f.standard.config.target.partyBAdmins)[0].toLowerCase();
@@ -138,10 +138,11 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 						assert.equal(options.env.SYMMIO_DEPLOYMENT_RECIPE, input.forkConfig);
 						report.rehearsal = { status: "complete", snapshotDigest: digest(f.snapshot) };
 					}
-					if (["deploy", "configure-instant", "execute-party-b", "execute-retire-party-b"].includes(phase)) {
+					if (["deploy", "execute-party-b", "execute-retire-party-b"].includes(phase)) {
 						assert.equal(options.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE, "true");
 						assert.equal(options.env.CONFIRM_CHAIN_ID, "42161");
 					}
+					if (phase === "plan-configure-instant") report.actions = flags.configured ? [] : [action(safe)];
 					if (phase === "plan-account-cut") report.actions = flags.cut ? [] : [action(safe)];
 					if (phase === "plan-wire") report.actions = flags.wired ? [] : [action(safe)];
 					if (phase === "plan-retire") report.actions = flags.retired ? [] : [action(safe)];
@@ -178,6 +179,11 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 	flags.cut = true;
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "waiting_external", state.lastError);
+	assert.equal(flags.partyB, false);
+	assert.match(state.waitingFor, /Execute .* through Safe/);
+	flags.configured = true;
+	state = await runner.resumeActive(runtime);
+	assert.equal(state.status, "waiting_external", state.lastError);
 	assert.equal(flags.partyB, true);
 	assert.equal(state.signing[`party-b-${admin}`].address.toLowerCase(), admin);
 	flags.wired = true;
@@ -193,6 +199,6 @@ test("runner waits for Safe execution and a real canary, resumes without redeplo
 	assert.equal(state.status, "completed", state.lastError);
 	assert.equal(flags.partyBRetired, true);
 	assert.equal(phases.filter(p => p === "deploy").length, 1);
-	assert.equal(events.filter(e => e.type === "safe.exported").length, 3);
+	assert.equal(events.filter(e => e.type === "safe.exported").length, 4);
 	assert.equal(state.transactions.length, 0, "fork rehearsal transactions must not enter the live journal");
 });

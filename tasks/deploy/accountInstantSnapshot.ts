@@ -297,13 +297,7 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 	if (!block?.hash) throw new Error("Cannot pin configuration to a canonical block")
 	const target = config.target,
 		at = block.number
-	const eventHistory: Record<string, any[]> = {}
-	const discovery = {
-		...flowDiscovery(config),
-		_recordEvents: (address: string, logs: any[]) => {
-			eventHistory[address] = logs
-		},
-	}
+	const discovery = flowDiscovery(config)
 	const [instant, gasless, preserved, accountSelectors, coreSelectors] = await Promise.all([
 		readInstantConfiguration(ethers, target.instantLayer, at, discovery),
 		readGaslessConfiguration(ethers, target.gaslessLayer, at, discovery),
@@ -323,25 +317,16 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 	]) {
 		if (lower(value) !== lower(expected)) throw new Error(`${label} differs from the reviewed target`)
 	}
-	if (!preserved.operationalFeeCharger || !preserved.accountGaslessCreator)
-		throw new Error("The current GaslessLayer is missing required Core/AccountLayer wiring")
 	const has = (roles: any[], name: string, member: string) => roles.some(r => r.role === roleHash(ethers, name) && r.members.includes(lower(member)))
-	for (const name of ["DEFAULT_ADMIN_ROLE", "CONFIG_ADMIN_ROLE"])
-		if (!has(gasless.roles, name, target.safe)) throw new Error(`Safe lacks GaslessLayer ${name}`)
-	if (!has(instant.roles, "OPERATOR_ROLE", target.gaslessLayer)) throw new Error("GaslessLayer lacks old InstantLayer OPERATOR_ROLE")
-	for (const [address, names] of [
-		[target.core, ["INSTANT_LAYER_ROLE"]],
-		[target.accountLayer, ["SIGNER_SETTER_ROLE", "INSTANT_LAYER_ROLE"]],
-	] as [string, string[]][]) {
+	if (!has(gasless.roles, "DEFAULT_ADMIN_ROLE", target.safe))
+		throw new Error(`Safe ${target.safe} lacks GaslessLayer DEFAULT_ADMIN_ROLE; provide an authorized administrator to grant it before upgrading`)
+	for (const address of [target.core, target.accountLayer]) {
 		const contract = await ethers.getContractAt(diamondABI, address)
 		if (!(await contract.hasRole(target.safe, ethers.id("DEFAULT_ADMIN_ROLE"), { blockTag: at })))
 			throw new Error(`Safe lacks default-admin authority on ${address}`)
-		for (const name of names)
-			if (!(await contract.hasRole(target.instantLayer, ethers.id(name), { blockTag: at })))
-				throw new Error(`Current InstantLayer lacks ${name} on ${address}`)
 	}
 	const partyBAdmins: Record<string, string> = {}
-	for (const partyB of instant.registeredPartyBs) {
+	for (const partyB of unique([...instant.registeredPartyBs, ...config.discovery.instantPartyBs])) {
 		const admin = Object.entries(target.partyBAdmins).find(([address]) => lower(address) === partyB)?.[1] as string | undefined
 		if (!admin) throw new Error(`Missing input target.partyBAdmins[${partyB}]; supply its administrator in the JSON before deployment`)
 		if ((await ethers.provider.getCode(admin, at)) !== "0x")
@@ -358,7 +343,7 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 		target.accountLayer,
 		target.instantLayer,
 		target.gaslessLayer,
-		...instant.registeredPartyBs,
+		...Object.keys(partyBAdmins),
 		implementation,
 		...Object.values(accountSelectors),
 		...Object.values(coreSelectors),
@@ -381,6 +366,12 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 		partyBAdmins,
 		codeHashes,
 		discovery: flowDiscovery(config),
+		flow: {
+			safe: lower(target.safe),
+			relayer: lower(target.relayer),
+			gaslessLayer: lower(target.gaslessLayer),
+			partyBs: unique(config.discovery.instantPartyBs),
+		},
 	}
 }
 
