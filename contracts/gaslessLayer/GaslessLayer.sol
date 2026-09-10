@@ -20,21 +20,13 @@ import { GaslessWalletDeployerLib } from "./libraries/GaslessWalletDeployerLib.s
 import { GaslessWalletExecutionLib } from "./libraries/GaslessWalletExecutionLib.sol";
 
 /// @title GaslessLayer
-/// @notice Symmio-operated hub for gasless user operations. Two flows, one fee config:
-///
-///   1. Instant-layer operations (remove margin, withdrawal requests, sub-account mgmt, …):
-///      relayers submit user-signed operations here; the layer forwards them to the
-///      InstantLayer (as a registered executor) and charges an on-chain operational fee.
-///
-///   2. Cross-chain deposit + account creation: a user bridges collateral to a deterministic
-///      CREATE2 address; the layer sweeps it, takes a flat fee, and either creates a
-///      wallet-owned sub-account and deposits, or tops up an existing wallet-owned account.
-///
-/// @dev Upgradeable (UUPS). The proxy address is the CREATE2 deployer of every GaslessWallet, so
-///      deposit/wallet addresses survive logic upgrades. The core and account-layer hooks are kept
-///      behind narrow interfaces (see ISymmioCore.chargeOperationalFee and ISymmioAccountLayer.createSubAccountFor).
-///      Linked libraries hold the largest self-contained execution paths so the implementation remains
-///      deployable under EIP-170 without moving application state into libraries or changing the external API.
+/// @notice Relay signed operations, settle bridged deposits, and fund native gas top-ups.
+/// @dev The UUPS proxy is the CREATE2 deployer of every GaslessWallet. Index zero preserves the
+///      original wallet address and nonce storage; positive indices identify additional wallets.
+///      Wallet operations execute through the gateway, while ordinary operations use InstantLayer.
+///      Operational fees are charged to SYMMIO billing accounts after batch execution. Deposits
+///      sweep the selected wallet's full collateral balance and deduct the configured flat fee.
+///      Linked libraries execute in proxy context and keep implementation size within EIP-170.
 contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable, ReentrancyGuard, UUPSUpgradeable {
 	using SafeERC20 for IERC20;
 
@@ -61,6 +53,15 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	struct DailyFreeOpsUsage {
 		uint64 day; // day index = block.timestamp / 1 days
 		uint192 count; // free operations used on that day
+	}
+
+	/// @notice Owner and index identifying the GaslessWallet used for deposit settlement.
+	/// @dev Keeping these fields in one memory value avoids duplicated settlement code with the pinned compiler.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @param index Wallet index; zero selects the original wallet.
+	struct DepositWallet {
+		address owner;
+		uint256 index;
 	}
 
 	// ───────────────────────── References ─────────────────────────
@@ -95,7 +96,11 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	uint256 public nativeGasTopUpFeeBps;
 	mapping(address => uint256) public walletOperationNonces;
 
-	uint256[33] private __gap;
+	/// @notice Last consumed nonce by GaslessWallet address and signer account for positive wallet indices.
+	/// @dev Index zero uses walletOperationNonces to preserve its existing nonce stream.
+	mapping(address => mapping(address => uint256)) public walletNonces;
+
+	uint256[32] private __gap;
 
 	// ─────────────────────── Initialization ───────────────────────
 
@@ -134,21 +139,54 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 
 	// ═════════════════ Instant-Layer Relays ═════════════════
 
-	/// @notice Forward user-signed operations to the InstantLayer and settle the operational fee.
-	/// @dev The layer must hold OPERATOR_ROLE on the InstantLayer (registered executor). The fee is
-	///      derived ON-CHAIN from each operation's function selector (callData[:4]) via the fee
-	///      schedule and summed across the batch — relayers do not submit the fee amount. The batch
-	///      executes before fee collection so an account with no remaining layer allowance can approve
-	///      the layer and pay for the complete batch in one atomic transaction.
-	/// @dev Each op is billed to its resolved billing account: virtual accounts roll up to their parent
-	///      SubAccount, and non-virtual accounts bill as-is. One call can still settle several payers
-	///      (for example, user + solver) while keeping signer attribution in events.
+	/// @notice Relay InstantLayer and index-zero GaslessWallet operations and collect their fees.
+	/// @dev Relayer-only. The signed target selects the execution route. The gateway must be an InstantLayer executor.
+	///      All operations execute before fees are collected, so fee approvals can fund the same batch.
+	///      Wallet operations are priced by their inner-call selectors; InstantLayer operations use their outer selector.
+	///      Virtual accounts share their parent's billing quota, and fee settlement can use a signer-VA fallback.
+	/// @param signedOps Signed operations in execution order.
+	/// @param signatures Signature for each operation, in the same order.
+	/// @param fills InstantLayer flexible-field values by operation; wallet operations ignore their entries.
+	/// @param flexFillerSignatures InstantLayer flexible-field signatures by operation; wallet operations ignore their entries.
+	/// @return results Encoded result of each operation, in execution order.
 	function relayInstantBatch(
 		IInstantLayer.SignedOperation[] calldata signedOps,
 		bytes[] calldata signatures,
 		bytes[][] calldata fills,
 		bytes[][] calldata flexFillerSignatures
 	) external onlyRole(RELAYER_ROLE) nonReentrant returns (bytes[] memory results) {
+		return _relayInstantBatch(signedOps, signatures, fills, flexFillerSignatures, new uint256[](0));
+	}
+
+	/// @notice Relay InstantLayer and indexed GaslessWallet operations and collect their fees.
+	/// @dev Relayer-only. Positive indices require an owner-derived wallet target; zero retains target-based dispatch.
+	///      Uses the same signature, execution, and fee rules as relayInstantBatch, including the original nonce stream at zero.
+	/// @param signedOps Signed operations in execution order.
+	/// @param signatures Signature for each operation, in the same order.
+	/// @param fills InstantLayer flexible-field values by operation; wallet operations ignore their entries.
+	/// @param flexFillerSignatures InstantLayer flexible-field signatures by operation; wallet operations ignore their entries.
+	/// @param walletIds Wallet index per operation; use zero for InstantLayer operations or the original wallet.
+	/// @return results Encoded result of each operation, in execution order.
+	function relayWalletBatch(
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		bytes[] calldata signatures,
+		bytes[][] calldata fills,
+		bytes[][] calldata flexFillerSignatures,
+		uint256[] calldata walletIds
+	) external onlyRole(RELAYER_ROLE) nonReentrant returns (bytes[] memory results) {
+		if (walletIds.length != signedOps.length) revert ArrayLengthMismatch();
+		return _relayInstantBatch(signedOps, signatures, fills, flexFillerSignatures, walletIds);
+	}
+
+	/// @dev Execute each operation through its selected route and pass the identified selectors to fee collection.
+	/// @param walletIds Wallet indices aligned with signedOps; an empty array defaults every index to zero.
+	function _relayInstantBatch(
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		bytes[] calldata signatures,
+		bytes[][] calldata fills,
+		bytes[][] calldata flexFillerSignatures,
+		uint256[] memory walletIds
+	) internal returns (bytes[] memory results) {
 		if (signedOps.length == 0) revert EmptyOperationBatch();
 		if (signedOps.length != signatures.length) revert ArrayLengthMismatch();
 
@@ -156,13 +194,17 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		// wallet+instant batches run op-by-op: wallet ops ignore fills, and instant ops read their
 		// own slot via _opValuesOrEmpty so omitted wallet slots default to empty.
 
-		if (!_hasWalletOperation(signedOps)) {
+		bytes4[][] memory feeSelectors;
+		if (!_hasWalletOperation(signedOps, walletIds)) {
 			results = instantLayer.executeBatch(signedOps, signatures, fills, flexFillerSignatures);
+			feeSelectors = _instantBatchFeeSelectors(signedOps);
 		} else {
 			results = new bytes[](signedOps.length);
+			feeSelectors = new bytes4[][](signedOps.length);
 			for (uint256 i = 0; i < signedOps.length; i++) {
-				if (_isWalletOperation(signedOps[i])) {
-					results[i] = _executeWalletOperation(signedOps[i], signatures[i]);
+				uint256 walletId = _walletIdAt(walletIds, i);
+				if (_isWalletOperation(signedOps[i], walletId)) {
+					(results[i], feeSelectors[i]) = _executeWalletOperation(signedOps[i], signatures[i], walletId);
 				} else {
 					results[i] = _executeSingleInstantOperation(
 						signedOps[i],
@@ -170,22 +212,25 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 						_opValuesOrEmpty(fills, i),
 						_opValuesOrEmpty(flexFillerSignatures, i)
 					);
+					feeSelectors[i] = _instantOperationFeeSelectors(signedOps[i]);
 				}
 			}
 		}
 
-		uint256 totalFee = _collectOperationalFees(signedOps);
+		uint256 totalFee = _collectOperationalFees(signedOps, feeSelectors);
 
 		emit InstantBatchRelayed(msg.sender, signedOps.length, totalFee);
 	}
 
-	/// @notice Forward a registered InstantLayer template (e.g. sendQuote→lockQuote→openPosition) and
-	///         settle each signer's operational fee.
-	/// @dev Same account-aware billing as relayInstantBatch. The InstantLayer chains results between ops
-	///      (the quoteId from
-	///      sendQuote flows into lock/open). templateId is opaque here; the InstantLayer validates the
-	///      op-count/shape against the registered template. Fees are collected after execution, and a fee
-	///      failure rolls back the complete template atomically.
+	/// @notice Relay an InstantLayer template and collect each account's operational fees.
+	/// @dev Relayer-only. InstantLayer validates the template and chains operation results. All operations execute
+	///      before fee collection; a fee failure reverts the complete template. Each operation uses its outer selector.
+	/// @param templateId Registered InstantLayer template identifier.
+	/// @param signedOps Signed operations in execution order.
+	/// @param signatures Signature for each operation, in the same order.
+	/// @param fills InstantLayer flexible-field values by operation.
+	/// @param flexFillerSignatures InstantLayer flexible-field signatures by operation.
+	/// @return results Encoded result of each operation, in execution order.
 	function relayInstantTemplate(
 		uint256 templateId,
 		IInstantLayer.SignedOperation[] calldata signedOps,
@@ -199,7 +244,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		// signature/fill/flex lengths and the op shape against the registered template.
 		results = instantLayer.executeTemplate(templateId, signedOps, signatures, fills, flexFillerSignatures);
 
-		uint256 totalFee = _collectOperationalFees(signedOps);
+		uint256 totalFee = _collectOperationalFees(signedOps, _instantBatchFeeSelectors(signedOps));
 
 		emit InstantTemplateRelayed(msg.sender, templateId, signedOps.length, totalFee);
 	}
@@ -258,65 +303,141 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 
 	// ═══════════════ Cross-Chain Deposit Settlement ═══════════════
 
-	/// @notice Sweep a wallet's bridged collateral, create a wallet-owned sub-account, and deposit.
-	/// @dev Relayer-only because it carries the user-chosen account settings supplied via the service.
-	///      The caller (relayer) supplies the `affiliate` for this onboarding — it is relayed, not
-	///      user-signed, and carries the same trust as the rest of the account settings.
-	///      The caller provides the full SubAccountCreationData (name, metadata, isolation type, single-VA
-	///      mode); the gateway only overrides `symmioCore` to its own configured core, since that is where
-	///      it deposits. Other account-layer validations (name length, isolation/single-VA rules) are
-	///      enforced by `createSubAccountsFor` and, being atomic, just revert the settlement if violated.
+	/// @notice Settle collateral from wallet index zero into a new owner-held sub-account.
+	/// @dev Relayer-only. Sweeps the wallet's full collateral balance, deducts the flat deposit fee, and emits WalletDepositSettled.
+	///      The relayer supplies the affiliate and account settings without a user signature. AccountLayer validates those settings.
+	/// @param wallet Owner address used to derive the index-zero GaslessWallet address.
+	/// @param affiliate Affiliate selected by the relayer for the new account.
+	/// @param accountData Account settings; symmioCore is replaced with the gateway's configured core.
+	/// @return subAccount Address of the created and funded sub-account.
 	function settleDepositToNewAccount(
 		address wallet,
 		address affiliate,
 		SubAccountCreationData calldata accountData
 	) external onlyRole(RELAYER_ROLE) nonReentrant returns (address subAccount) {
-		if (wallet == address(0)) revert ZeroAddress();
+		return _settleDepositToNewAccount(DepositWallet(wallet, 0), affiliate, accountData);
+	}
+
+	/// @notice Settle collateral from the selected wallet into a new owner-held sub-account.
+	/// @dev Uses the same relayer authorization, full-balance sweep, fee, and account-creation rules as settleDepositToNewAccount.
+	///      Emits WalletDepositSettled for every index, including zero.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @param walletIndex Wallet index; zero selects the original wallet.
+	/// @param affiliate Affiliate selected by the relayer for the new account.
+	/// @param accountData Account settings; symmioCore is replaced with the gateway's configured core.
+	/// @return subAccount Address of the created and funded sub-account.
+	function settleWalletDepositToNewAccount(
+		address owner,
+		uint256 walletIndex,
+		address affiliate,
+		SubAccountCreationData calldata accountData
+	) external onlyRole(RELAYER_ROLE) nonReentrant returns (address subAccount) {
+		return _settleDepositToNewAccount(DepositWallet(owner, walletIndex), affiliate, accountData);
+	}
+
+	/// @dev Sweep the selected wallet, create the sub-account, verify its owner, and deposit the net collateral.
+	function _settleDepositToNewAccount(
+		DepositWallet memory wallet,
+		address affiliate,
+		SubAccountCreationData calldata accountData
+	) internal returns (address subAccount) {
+		if (wallet.owner == address(0)) revert ZeroAddress();
 
 		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(wallet);
 
 		SubAccountCreationData[] memory accountsData = new SubAccountCreationData[](1);
 		accountsData[0] = accountData;
 		accountsData[0].symmioCore = address(core); // the gateway deposits to its own core — keep them consistent
-		address[] memory created = accountLayer.createSubAccountsFor(wallet, affiliate, accountsData);
+		address[] memory created = accountLayer.createSubAccountsFor(wallet.owner, affiliate, accountsData);
 		subAccount = created[0];
 
-		// Defense in depth: the created account must be owned by the wallet we are crediting.
+		// Defense in depth: the created account must be owned by the wallet owner we are crediting.
 		address actualOwner = accountLayer.ownerOf(subAccount);
-		if (actualOwner != wallet) revert AccountOwnerMismatch(subAccount, wallet, actualOwner);
+		if (actualOwner != wallet.owner) revert AccountOwnerMismatch(subAccount, wallet.owner, actualOwner);
 
 		_depositCollateralToCore(subAccount, netDeposit);
-		emit DepositSettledToNewAccount(wallet, subAccount, netDeposit, collectedDepositFee);
+		emit WalletDepositSettled(wallet.owner, wallet.index, subAccount, netDeposit, collectedDepositFee);
 	}
 
-	/// @notice Sweep a wallet's bridged collateral and deposit into an existing wallet-owned account.
-	/// @dev Relayer-only and owner-checked: funds can only land in an account owned by `wallet`.
-	///      Relayer-gating (rather than permissionless) prevents a third party from misrouting the
-	///      deposit into a different wallet-owned sub-account than the user intended.
+	/// @notice Settle collateral from wallet index zero into an existing owner-held sub-account.
+	/// @dev Relayer-only. The sub-account must belong to wallet. Sweeps the full collateral balance, deducts the flat deposit fee,
+	///      and emits WalletDepositSettled. Relayer authorization controls which of the owner's sub-accounts receives the deposit.
+	/// @param wallet Owner address used to derive the index-zero GaslessWallet address.
+	/// @param subAccount Existing sub-account that receives the net deposit.
 	function settleDepositToExistingAccount(address wallet, address subAccount) external onlyRole(RELAYER_ROLE) nonReentrant {
-		if (wallet == address(0) || subAccount == address(0)) revert ZeroAddress();
+		_settleDepositToExistingAccount(DepositWallet(wallet, 0), subAccount);
+	}
+
+	/// @notice Settle collateral from the selected wallet into an existing owner-held sub-account.
+	/// @dev Uses the same relayer authorization, destination-owner check, full-balance sweep, and fee rules as settleDepositToExistingAccount.
+	///      Emits WalletDepositSettled for every index, including zero.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @param walletIndex Wallet index; zero selects the original wallet.
+	/// @param subAccount Existing sub-account that receives the net deposit.
+	function settleWalletDepositToExistingAccount(
+		address owner,
+		uint256 walletIndex,
+		address subAccount
+	) external onlyRole(RELAYER_ROLE) nonReentrant {
+		_settleDepositToExistingAccount(DepositWallet(owner, walletIndex), subAccount);
+	}
+
+	/// @dev Verify the destination owner, sweep the selected wallet, and deposit the net collateral.
+	function _settleDepositToExistingAccount(DepositWallet memory wallet, address subAccount) internal {
+		if (wallet.owner == address(0) || subAccount == address(0)) revert ZeroAddress();
 
 		address owner = accountLayer.ownerOf(subAccount);
-		if (owner != wallet) revert AccountOwnerMismatch(subAccount, wallet, owner);
+		if (owner != wallet.owner) revert AccountOwnerMismatch(subAccount, wallet.owner, owner);
 
 		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(wallet);
 		_depositCollateralToCore(subAccount, netDeposit);
-		emit DepositSettledToExistingAccount(wallet, subAccount, netDeposit, collectedDepositFee);
+		emit WalletDepositSettled(wallet.owner, wallet.index, subAccount, netDeposit, collectedDepositFee);
 	}
 
 	// ═══════════════════════ Wallet Views ════════════════════════
 
-	/// @notice The deterministic address of `ownerWallet`'s GaslessWallet. Pure view — the frontend
-	///         reads this with no transaction and no gas. It doubles as the bridged-deposit address:
-	///         collateral is routed here, then swept by the gateway on settlement.
-	function getGaslessWalletAddress(address ownerWallet) public view returns (address) {
-		return GaslessWalletDeployerLib.getGaslessWalletAddress(ownerWallet);
+	/// @notice Predict the owner's index-zero GaslessWallet address without deploying it.
+	/// @dev Preserves the original CREATE2 address. Collateral can arrive at this address before deployment.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @return Predicted index-zero GaslessWallet address.
+	function getGaslessWalletAddress(address owner) public view returns (address) {
+		return GaslessWalletDeployerLib.getGaslessWalletAddress(owner);
 	}
 
+	/// @notice Predict the owner's selected GaslessWallet address without deploying it.
+	/// @dev Index zero returns the same address as getGaslessWalletAddress.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @return Predicted GaslessWallet address.
+	function getWalletAddress(address owner, uint256 walletId) external view returns (address) {
+		return GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+	}
+
+	/// @notice Read the last consumed wallet-operation nonce for the selected wallet and signer account.
+	/// @dev Index zero reads the original signer-account nonce mapping; positive indices use wallet-specific mappings.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @param signerAccount Account specified in the signed operation.
+	/// @return Last consumed nonce; the next operation must use this value plus one.
+	function getWalletOperationNonce(address owner, uint256 walletId, address signerAccount) external view returns (uint256) {
+		if (walletId == 0) return walletOperationNonces[signerAccount];
+		address wallet = GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+		return walletNonces[wallet][signerAccount];
+	}
+
+	/// @notice Compute the EIP-712 digest of a GaslessWallet operation.
+	/// @dev Uses the existing GaslessGateway domain and signed target; the wallet index is not a separate signed field.
+	/// @param signedOp Wallet operation to hash.
+	/// @return EIP-712 operation digest.
 	function getWalletOperationHash(IInstantLayer.SignedOperation calldata signedOp) public view returns (bytes32) {
 		return GaslessWalletExecutionLib.getWalletOperationHash(signedOp);
 	}
 
+	/// @notice Check whether a wallet-operation signature is valid for its declared signer.
+	/// @dev Checks the EIP-712 signature only; does not validate the target, nonce, deadline, or signer authority.
+	/// @param signedOp Wallet operation whose digest is checked.
+	/// @param signature Signature to verify.
+	/// @return Whether the signature is valid for signedOp.signer.
 	function isValidWalletOperationSignature(IInstantLayer.SignedOperation calldata signedOp, bytes calldata signature) external view returns (bool) {
 		return GaslessWalletExecutionLib.isValidWalletOperationSignature(signedOp, signature);
 	}
@@ -401,20 +522,53 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		return _baseSelectorFee(selector);
 	}
 
-	/// @notice What would be charged right now for `account`'s ops in `signedOps`, after quota. Virtual
-	///         accounts are quoted through their parent SubAccount; when the parent cannot cover an op,
-	///         the quote prices it against its signer-VA fallback payer (see settleOperationalFees).
-	/// @dev Approval-only batches are always priced with the parent's post-approval multiplier, since the
-	///      approval is expected to fund the parent's charge. If execution nevertheless falls back to the
-	///      signer VA (empty parent), the charge uses the VA's own multiplier and can differ from this quote.
-	/// @return amountDue Total that would be charged across the billing account and any fallback VA payers
-	///         (0 if fully free-covered, or if it would revert).
-	/// @return freeOpsApplied How many billing-account ops are waived by its remaining daily quota.
-	/// @return wouldBlockOnQuota True if the call would revert with DailyFreeOpsLimitExceeded (block mode).
+	/// @notice Quote account fees for InstantLayer and index-zero GaslessWallet operations.
+	/// @dev Target identification and call decoding run before quota pricing, including for free-covered operations.
+	///      Billing uses the parent's quota and plans signer-VA fallback fees when the parent cannot pay.
+	///      An approval-only quote uses the parent's post-approval multiplier; a later VA fallback can change the actual charge.
+	/// @param account Account whose operations are quoted; virtual accounts resolve to their billing parent.
+	/// @param signedOps Operations to identify and price; only the requested billing account's operations contribute to the quote.
+	/// @return amountDue Total quoted collateral charge; zero when fully waived or blocked by the quota policy.
+	/// @return freeOpsApplied Number of the billing account's operations covered by its remaining daily quota.
+	/// @return wouldBlockOnQuota Whether execution would exceed the daily quota in block mode.
 	function getAccountOperationalFee(
 		address account,
 		IInstantLayer.SignedOperation[] calldata signedOps
 	) external view returns (uint256 amountDue, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
+		return _getAccountOperationalFee(account, signedOps, _quoteBatchFeeSelectors(signedOps, new uint256[](0)));
+	}
+
+	/// @notice Quote account fees for InstantLayer and indexed GaslessWallet operations.
+	/// @dev Target identification and call decoding run before quota pricing, including for free-covered operations.
+	///      Billing uses the parent's quota and plans signer-VA fallback fees when the parent cannot pay.
+	///      An approval-only quote uses the parent's post-approval multiplier; a later VA fallback can change the actual charge.
+	/// @param account Account whose operations are quoted; virtual accounts resolve to their billing parent.
+	/// @param signedOps Operations to identify and price; only the requested billing account's operations contribute to the quote.
+	/// @param walletIds Wallet index per operation; use zero for InstantLayer operations or the original wallet.
+	/// @return amountDue Total quoted collateral charge; zero when fully waived or blocked by the quota policy.
+	/// @return freeOpsApplied Number of the billing account's operations covered by its remaining daily quota.
+	/// @return wouldBlockOnQuota Whether execution would exceed the daily quota in block mode.
+	function getAccountOperationalFeeForWallets(
+		address account,
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		uint256[] calldata walletIds
+	) external view returns (uint256 amountDue, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
+		if (walletIds.length != signedOps.length) revert ArrayLengthMismatch();
+		return _getAccountOperationalFee(account, signedOps, _quoteBatchFeeSelectors(signedOps, walletIds));
+	}
+
+	/// @dev Apply account quotas and payer rules to selectors already identified by the quote entry point.
+	/// @param account Account whose operations are quoted.
+	/// @param signedOps Operations supplying signer identities and any fee-approval data.
+	/// @param feeSelectors Identified call selectors aligned with signedOps; no wallet identification occurs here.
+	/// @return amountDue Total quoted collateral charge; zero when fully waived or blocked by the quota policy.
+	/// @return freeOpsApplied Number of the billing account's operations covered by its remaining daily quota.
+	/// @return wouldBlockOnQuota Whether execution would exceed the daily quota in block mode.
+	function _getAccountOperationalFee(
+		address account,
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		bytes4[][] memory feeSelectors
+	) internal view returns (uint256 amountDue, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
 		address billingAccount = _resolveBillingAccount(account);
 		bool approvalOnlyQuote = signedOps.length == 1 && _isOperationalFeeApproval(signedOps[0]);
 		uint256 limit = dailyFreeOpsLimit;
@@ -442,7 +596,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			ops[chargeableCount++] = GaslessOperationalFeeLib.OpBilling({
 				signer: signedOps[i].signerAccount.addr,
 				billingParent: billingAccount,
-				baseFee: _baseOperationalFee(signedOps[i])
+				baseFee: _baseOperationalFee(feeSelectors[i])
 			});
 		}
 		if (chargeableCount > 0) {
@@ -474,9 +628,13 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		emit InstantLayerUpdated(instantLayer_);
 	}
 
-	/// @notice Admin recovery for tokens that are not the gateway's collateral.
-	/// @dev The gateway's collateral is permanently non-recoverable. Only non-collateral tokens
-	///      accidentally sent to a deposit address can be swept to `to`.
+	/// @notice Recover non-collateral tokens from the owner's index-zero GaslessWallet.
+	/// @dev Config-admin-only. Rejects the collateral token and a zero recipient. Deploys the wallet if needed
+	///      and emits WalletNonCollateralTokenRecovered with the source GaslessWallet address.
+	/// @param wallet Owner address used to derive the GaslessWallet address.
+	/// @param token Non-collateral token to recover.
+	/// @param recipient Address receiving the wallet's full balance of token.
+	/// @return amount Token amount recovered.
 	function recoverNonCollateralToken(
 		address wallet,
 		address token,
@@ -484,21 +642,43 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	) external onlyRole(CONFIG_ADMIN_ROLE) returns (uint256 amount) {
 		if (token == collateralToken) revert CollateralRecoveryDisabled();
 		if (recipient == address(0)) revert ZeroAddress();
-		GaslessWallet qWallet = _getOrDeployGaslessWallet(wallet);
+		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(wallet, 0);
 		amount = qWallet.sweepTokenBalance(token, recipient);
-		emit NonCollateralTokenRecovered(wallet, token, recipient, amount);
+		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
+	}
+
+	/// @notice Recover non-collateral tokens from the selected GaslessWallet.
+	/// @dev Config-admin-only. Rejects the collateral token and a zero recipient. Deploys the wallet if needed
+	///      and emits WalletNonCollateralTokenRecovered with the source GaslessWallet address.
+	/// @param wallet Owner address used to derive the GaslessWallet address.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @param token Non-collateral token to recover.
+	/// @param recipient Address receiving the wallet's full balance of token.
+	/// @return amount Token amount recovered.
+	function recoverWalletNonCollateralToken(
+		address wallet,
+		uint256 walletId,
+		address token,
+		address recipient
+	) external onlyRole(CONFIG_ADMIN_ROLE) returns (uint256 amount) {
+		if (token == collateralToken) revert CollateralRecoveryDisabled();
+		if (recipient == address(0)) revert ZeroAddress();
+		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(wallet, walletId);
+		amount = qWallet.sweepTokenBalance(token, recipient);
+		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
 	}
 
 	// ═══════════════════════ Internal: Deposits ═══════════════════════
 
-	function _sweepDepositAndCollectFee(address wallet) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
-		GaslessWallet qWallet = _getOrDeployGaslessWallet(wallet);
+	/// @dev Deploy the selected wallet if needed, sweep all collateral, enforce the minimum deposit, and deduct the flat fee.
+	function _sweepDepositAndCollectFee(DepositWallet memory wallet) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
+		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(wallet.owner, wallet.index);
 		uint256 grossDeposit = qWallet.sweepTokenBalance(collateralToken, address(this));
 		if (grossDeposit < minimumDeposit) revert DepositAmountBelowMinimum(grossDeposit, minimumDeposit);
 		collectedDepositFee = depositFee;
 		if (collectedDepositFee > 0) {
 			IERC20(collateralToken).safeTransfer(treasury, collectedDepositFee);
-			emit DepositFeeCollected(wallet, treasury, collectedDepositFee);
+			emit DepositFeeCollected(wallet.owner, treasury, collectedDepositFee);
 		}
 		netDeposit = grossDeposit - collectedDepositFee;
 	}
@@ -506,12 +686,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	function _depositCollateralToCore(address account, uint256 amount) internal {
 		IERC20(collateralToken).forceApprove(address(core), amount);
 		core.depositFor(account, amount);
-	}
-
-	function _getOrDeployGaslessWallet(address ownerWallet) internal returns (GaslessWallet wallet) {
-		bool deployed;
-		(wallet, deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(ownerWallet);
-		if (deployed) emit GaslessWalletDeployed(ownerWallet, address(wallet));
 	}
 
 	// ═════════════════════ Internal: Account Resolution ═════════════════════
@@ -523,15 +697,36 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 
 	// ═════════════════════ Internal: Wallet Dispatch ═════════════════════
 
-	function _isWalletOperation(IInstantLayer.SignedOperation calldata signedOp) internal view returns (bool) {
-		return GaslessWalletExecutionLib.isWalletOperation(address(accountLayer), signedOp);
+	/// @dev Match the target to the selected owner-derived wallet; reject mismatches for positive indices.
+	function _isWalletOperation(IInstantLayer.SignedOperation calldata signedOp, uint256 walletId) internal view returns (bool) {
+		return GaslessWalletExecutionLib.isWalletOperation(address(accountLayer), signedOp, walletId);
 	}
 
-	function _hasWalletOperation(IInstantLayer.SignedOperation[] calldata signedOps) internal view returns (bool) {
+	/// @dev Check whether the batch requires wallet dispatch using the supplied indices.
+	function _hasWalletOperation(IInstantLayer.SignedOperation[] calldata signedOps, uint256[] memory walletIds) internal view returns (bool) {
 		for (uint256 i = 0; i < signedOps.length; i++) {
-			if (_isWalletOperation(signedOps[i])) return true;
+			if (_isWalletOperation(signedOps[i], _walletIdAt(walletIds, i))) return true;
 		}
 		return false;
+	}
+
+	/// @dev Identify targets and decode selectors before quota and fee calculation; validates every supplied operation.
+	/// @param signedOps Operations whose fee selectors are identified.
+	/// @param walletIds Wallet indices aligned with signedOps; an empty array defaults every index to zero.
+	/// @return selectors Inner selectors for wallet operations or the outer selector for InstantLayer operations.
+	function _quoteBatchFeeSelectors(
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		uint256[] memory walletIds
+	) internal view returns (bytes4[][] memory selectors) {
+		selectors = new bytes4[][](signedOps.length);
+		for (uint256 i = 0; i < signedOps.length; i++) {
+			selectors[i] = GaslessWalletExecutionLib.quoteOperationalFeeSelectors(address(accountLayer), signedOps[i], _walletIdAt(walletIds, i));
+		}
+	}
+
+	/// @dev Read an operation's wallet index, defaulting to zero when the index array is empty.
+	function _walletIdAt(uint256[] memory walletIds, uint256 index) internal pure returns (uint256) {
+		return walletIds.length == 0 ? 0 : walletIds[index];
 	}
 
 	/// @dev Recognizes the only post-state mutation that the read-only fee quote can price exactly.
@@ -542,19 +737,27 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		return selector == ISymmioCore.approveOperationalFee.selector || selector == ISymmioCore.approveOperationalFeeWithMultiplier.selector;
 	}
 
+	/// @dev Use the selected wallet's nonce storage and return its execution result with the decoded inner-call selectors.
+	/// @return result Encoded results of the wallet's calls.
+	/// @return feeSelectors Inner-call selectors used for subsequent fee calculation.
 	function _executeWalletOperation(
 		IInstantLayer.SignedOperation calldata signedOp,
-		bytes calldata signature
-	) internal returns (bytes memory result) {
+		bytes calldata signature,
+		uint256 walletId
+	) internal returns (bytes memory result, bytes4[] memory feeSelectors) {
+		// Index zero retains the original nonce storage, including signatures made before upgrading.
+		mapping(address => uint256) storage nonces = walletOperationNonces;
+		if (walletId != 0) nonces = walletNonces[signedOp.target];
 		GaslessWalletExecutionLib.WalletExecutionResult memory execution = GaslessWalletExecutionLib.executeWalletOperation(
-			walletOperationNonces,
+			nonces,
 			address(accountLayer),
 			address(instantLayer),
 			signedOp,
-			signature
+			signature,
+			walletId
 		);
-		emit WalletOperationRelayed(msg.sender, execution.ownerWallet, execution.wallet, execution.callCount);
-		return execution.result;
+		emit WalletOperationRelayed(msg.sender, execution.owner, execution.wallet, execution.callCount);
+		return (execution.result, execution.feeSelectors);
 	}
 
 	function _executeSingleInstantOperation(
@@ -600,11 +803,22 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 
 	/// @dev Summed base selector fees for one op, before any core multiplier (the settlement library
 	///      prices the fee with the actual payer's multiplier).
-	function _baseOperationalFee(IInstantLayer.SignedOperation calldata signedOp) internal view returns (uint256 fee) {
-		bytes4[] memory selectors = GaslessWalletExecutionLib.operationalFeeSelectors(address(accountLayer), signedOp);
+	function _baseOperationalFee(bytes4[] memory selectors) internal view returns (uint256 fee) {
 		for (uint256 i = 0; i < selectors.length; i++) {
 			fee += _baseSelectorFee(selectors[i]);
 		}
+	}
+
+	/// @dev InstantLayer operations are priced by their outer selector, even if another contract
+	///      exposes the same execute signature as GaslessWallet. Classification belongs to dispatch.
+	function _instantOperationFeeSelectors(IInstantLayer.SignedOperation calldata signedOp) internal pure returns (bytes4[] memory selectors) {
+		selectors = new bytes4[](1);
+		selectors[0] = signedOp.callData.length < 4 ? bytes4(0) : bytes4(signedOp.callData[:4]);
+	}
+
+	function _instantBatchFeeSelectors(IInstantLayer.SignedOperation[] calldata signedOps) internal pure returns (bytes4[][] memory selectors) {
+		selectors = new bytes4[][](signedOps.length);
+		for (uint256 i = 0; i < signedOps.length; i++) selectors[i] = _instantOperationFeeSelectors(signedOps[i]);
 	}
 
 	/// @dev Quote an approval-only batch against the multiplier that the approval will establish before
@@ -629,7 +843,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		emit OperationalFeeRouted(signerAccount, payer, fee);
 	}
 
-	/// @dev Bill the batch per op, resolved entirely AFTER execution: VA signers roll up to their parent
+	/// @dev Price the selectors captured by dispatch and resolve billing AFTER execution: VA signers roll up to their parent
 	///      SubAccount (a VA deleted inside the batch still resolves — parentAccount survives on the
 	///      pooled record, and that parent holds the VA's returned funds), and an op whose parent cannot
 	///      cover its fee falls back to its own signer VA (see
@@ -637,7 +851,10 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	///      successful execution, and one OperationalFeeRouted event is emitted PER OP so off-chain
 	///      accounting can reconcile every operation against the consolidated charges. The call is
 	///      atomic, so any later failure rolls every charge back.
-	function _collectOperationalFees(IInstantLayer.SignedOperation[] calldata signedOps) internal returns (uint256 totalFee) {
+	function _collectOperationalFees(
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		bytes4[][] memory feeSelectors
+	) internal returns (uint256 totalFee) {
 		uint256 n = signedOps.length;
 		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](n);
 		for (uint256 i = 0; i < n; i++) {
@@ -648,7 +865,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			ops[i] = GaslessOperationalFeeLib.OpBilling({
 				signer: signer,
 				billingParent: billingParent,
-				baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseOperationalFee(signedOps[i])
+				baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseOperationalFee(feeSelectors[i])
 			});
 		}
 

@@ -35,7 +35,7 @@ const AccessControlABI = [
 
 const UUPSABI = ["function upgradeToAndCall(address newImplementation, bytes data) payable", "function proxiableUUID() view returns (bytes32)"]
 
-const WalletDerivationABI = ["function getGaslessWalletAddress(address ownerWallet) view returns (address)"]
+const WalletDerivationABI = ["function getGaslessWalletAddress(address owner) view returns (address)"]
 
 class HyperEVMRetryingProvider extends JsonRpcProvider {
 	async _send(payload: any): Promise<any> {

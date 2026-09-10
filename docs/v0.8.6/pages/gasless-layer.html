@@ -46,6 +46,7 @@
 				<a class="toc-link level-3" href="#instant-operations">InstantLayer batches and templates</a>
 				<a class="toc-link level-3" href="#delegation-relay">Delegation relay</a>
 				<a class="toc-link level-3" href="#wallet-operations">GaslessWallet operations</a>
+				<a class="toc-link level-3" href="#indexed-wallets">Independent transfer wallets</a>
 				<a class="toc-link level-2" href="#native-top-ups">Native gas top-ups</a>
 				<a class="toc-link level-2" href="#cross-chain-deposits">Cross-chain deposit settlement</a>
 				<a class="toc-link level-2" href="#fees">Operational fees and billing</a>
@@ -186,9 +187,9 @@
 
 					<h3 id="wallet-operations">GaslessWallet operations</h3>
 					<p>
-						Each owner has a deterministic <code>GaslessWallet</code> address derived with CREATE2 from the Gasless Layer proxy. The
-						wallet may receive bridged collateral before deployment. When first needed, the layer deploys the wallet at the precomputed
-						address. Only the Gasless Layer proxy can make it transfer assets or execute calls.
+						Each owner has a legacy <code>GaslessWallet</code> address and can use additional indexed wallets, all derived with CREATE2
+						from the Gasless Layer proxy. The wallet may receive bridged collateral before deployment. When first needed, the layer
+						deploys the wallet at the precomputed address. Only the Gasless Layer proxy can make it transfer assets or execute calls.
 					</p>
 					<p>
 						A wallet operation reuses the <code>SignedOperation</code> envelope, but its target must equal the signer's expected
@@ -208,6 +209,84 @@
 						<li>PartyB wallet operations are rejected.</li>
 						<li>Any failed inner call reverts the whole wallet operation and the surrounding relay transaction.</li>
 					</ul>
+
+					<h3 id="indexed-wallets">Independent transfer wallets</h3>
+					<p>
+						Each owner has wallets numbered 0, 1, 2, and so on. Wallet 0 is the existing owner-only GaslessWallet, with the same address,
+						balance, signature format, and nonce stream. Every positive uint256 index derives another wallet controlled by the same owner.
+						There is no wallet kind, purpose registration, or on-chain wallet-count limit. Wallets deploy on first use and may receive
+						tokens beforehand.
+					</p>
+					<pre><code>// Existing clients keep using the original API.
+const oldWallet = await gateway.getGaslessWalletAddress(owner)
+// The new API includes that exact wallet at index 0.
+const wallet0 = await gateway.getWalletAddress(owner, 0n)
+const wallet1 = await gateway.getWalletAddress(owner, 1n)
+const wallet2 = await gateway.getWalletAddress(owner, 2n)
+// oldWallet === wallet0
+
+// The service can assign wallet 1 to a deposit and wallet 2 to a withdrawal.
+await gateway.settleWalletDepositToExistingAccount(owner, 1n, subAccount)
+// Or create an account from the same selected wallet:
+await gateway.settleWalletDepositToNewAccount(owner, 1n, affiliate, accountData)
+
+// Choose wallet2 as the Core withdrawal receiver before funds move.
+// The getter returns the last consumed nonce, including the legacy stream for index 0.
+const nonce = (await gateway.getWalletOperationNonce(owner, 2n, signerAccount)) + 1n
+// Sign the usual wallet SignedOperation with target = wallet2 and that nonce.
+const walletIds = [2n]
+await gateway.getAccountOperationalFeeForWallets(signerAccount, [signedOp], walletIds)
+await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code></pre>
+					<p>
+						The indexed relay accepts one wallet index per operation. Use 0 for InstantLayer operations and legacy wallet operations in a
+						mixed batch, including an operational-fee allowance approval. The existing target identifies which of those routes to use. A
+						positive index requires a wallet operation whose signed target equals the address derived from the account owner and that
+						index. The relayer cannot redirect a valid signature to another wallet by changing the index.
+					</p>
+					<p>
+						Relay execution passes the identified call selectors to billing: inner calls for GaslessWallet operations and the outer
+						selector for InstantLayer operations. Billing applies the fee schedule, quota and payer rules without using a wallet index.
+						Standalone quote entry points use the supplied index to identify wallet targets, including wallets that have not been
+						deployed. They validate targets and decode calls before passing selectors to the shared account fee calculator, which then
+						applies quota and payer rules.
+					</p>
+					<p>
+						The existing callable interface remains available. All wallet indices, including 0, emit
+						<code>GaslessWalletDeployed</code>, <code>WalletDepositSettled</code> and <code>WalletNonCollateralTokenRecovered</code> for
+						deployment, deposit settlement and token recovery respectively. Event consumers must adopt these events; recovery identifies
+						the source GaslessWallet address.
+					</p>
+					<p>
+						Index 0 uses <code>walletOperationNonces(signerAccount)</code>, including when called through the new relay API. Positive
+						indices use <code>walletNonces(walletAddress, signerAccount)</code>. The unified getter
+						<code>getWalletOperationNonce(owner, walletId, signerAccount)</code> selects the correct stream. Each stream is sequential,
+						but operations for different wallets can execute in either order. The signing domain remains
+						<code>GaslessGateway</code> version 1. Fees and free-operation quotas still belong to the existing billing account. Owner and
+						delegate permissions apply across its wallets.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Reserve the selected wallet in the service</strong> Any wallet can be used for deposits or withdrawals. Settlement
+						sweeps that wallet's entire collateral balance; the contract does not know which transfer those funds belong to. Assign
+						distinct indices to overlapping transfers and persist owner, index, destination SubAccount, and status before submitting a
+						bridge request. Coordinate this across subaccounts, tabs and devices. Reusing an index while a withdrawal is pending can mix
+						its funds with a deposit again. A zero balance alone does not mean a transfer is complete, since funds may still be in flight.
+						Wallet isolation also does not prevent duplicate bridge submissions.
+					</aside>
+					<p>
+						A signature deadline does not expire a wallet balance. Recovery uses a fresh signature with the current nonce and, for
+						bridging, a fresh valid quote. Relay availability, authorization and fee requirements still apply. Signed calls and previously
+						granted token allowances can move funds. Admin recovery through
+						<code>recoverWalletNonCollateralToken(owner, walletId, token, recipient)</code>
+						excludes the configured collateral token, including at index 0. No automatic expiry or cleanup sweep is introduced.
+					</p>
+					<p>
+						Upgrade the GaslessLayer implementation and its linked libraries on the existing compatible proxy without reinitializing it,
+						then enable the indexed APIs in the service and frontend. Existing clients, addresses and signatures continue working;
+						existing transfers can also use index 0 without moving their funds. Update event consumers for every index, including zero, to
+						read
+						<code>GaslessWalletDeployed</code>, <code>WalletDepositSettled</code>, and <code>WalletNonCollateralTokenRecovered</code>. All
+						wallet execution continues to emit <code>WalletOperationRelayed</code> with the actual wallet address.
+					</p>
 
 					<h2 id="native-top-ups">Native gas top-ups</h2>
 					<p>
@@ -229,8 +308,8 @@
 
 					<h2 id="cross-chain-deposits">Cross-chain deposit settlement</h2>
 					<p>
-						A frontend first reads <code>getGaslessWalletAddress(ownerWallet)</code> and routes bridged collateral to that address. The
-						relayer later settles the wallet's entire collateral balance through one of two paths:
+						For the legacy flow, a frontend first reads <code>getGaslessWalletAddress(owner)</code> and routes bridged collateral to that
+						address. The relayer later settles the wallet's entire collateral balance through one of two paths:
 					</p>
 					<ul>
 						<li>
