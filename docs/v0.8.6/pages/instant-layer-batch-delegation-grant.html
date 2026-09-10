@@ -196,23 +196,25 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
     [[], [], []],
 )</code></pre>
 					<p>
-						The GaslessLayer needs no dedicated surface for this: <code>relayInstantBatch</code> forwards a grant operation like any other
-						instant operation, and billing prices it by its selector (<code>grantDelegation</code> or <code>grantDelegations</code>)
-						through the normal fee schedule (<code>setSelectorFeeConfig</code>), including the daily free-operation quota and Virtual
-						Account &rarr; parent payer resolution.
+						The GaslessLayer needs no dedicated surface for this: <code>relayWalletBatch</code> forwards a grant operation like any other
+						instant operation. Pass 0 for its entry in the required wallet ID array. Billing prices it by its selector (<code
+							>grantDelegation</code
+						>
+						or <code>grantDelegations</code>) through the normal fee schedule (<code>setSelectorFeeConfig</code>), including the daily
+						free-operation quota and Virtual Account &rarr; parent payer resolution.
 					</p>
 
 					<h2 id="onboarding-scenario">Scenario: one-signature onboarding</h2>
 					<p>The motivating flow is gasless user onboarding, end to end:</p>
 					<ol>
 						<li>
-							<strong>Show the deposit address.</strong> The service reads <code>getGaslessWalletAddress(user)</code> &mdash; a
+							<strong>Show the deposit address.</strong> The service reads <code>getWalletAddress(user, walletId)</code> &mdash; a
 							deterministic CREATE2 address &mdash; and shows it to the user. No transaction, no gas.
 						</li>
 						<li><strong>The user deposits.</strong> Collateral is bridged to that address from anywhere.</li>
 						<li>
-							<strong>The relayer settles.</strong> <code>settleDepositToNewAccount</code> sweeps the wallet, takes the flat deposit
-							fee, creates a SubAccount owned by the user through the AccountLayer, and deposits the remainder into core.
+							<strong>The relayer settles.</strong> <code>settleWalletDepositToNewAccount</code> sweeps the wallet, takes the flat
+							deposit fee, creates a SubAccount owned by the user through the AccountLayer, and deposits the remainder into core.
 						</li>
 						<li>
 							<strong>One relayed batch finishes setup.</strong> The batch carries the user's single signature and the session key's

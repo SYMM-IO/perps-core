@@ -102,7 +102,7 @@ describe("GaslessLayer onboarding scenario", function () {
 	// Steps 1-3: deposit address, bridged collateral, relayer-settled account creation.
 	async function settleFundedAccount(): Promise<string> {
 		// ── 1. Show the user their deposit address ─────────────────────────────
-		const depositAddress = await gateway.getGaslessWalletAddress(user.address)
+		const depositAddress = await gateway.getWalletAddress(user.address, 0n)
 
 		// ── 2. User bridges collateral to it ───────────────────────────────────
 		await context.collateral.mint(depositAddress, BRIDGED_AMOUNT)
@@ -116,8 +116,8 @@ describe("GaslessLayer onboarding scenario", function () {
 			isolationType: 3, // CUSTOM
 			singleVAMode: false,
 		}
-		const subAccount = await gateway.connect(relayer).settleDepositToNewAccount.staticCall(user.address, affiliate, accountData)
-		await gateway.connect(relayer).settleDepositToNewAccount(user.address, affiliate, accountData)
+		const subAccount = await gateway.connect(relayer).settleWalletDepositToNewAccount.staticCall(user.address, 0n, affiliate, accountData)
+		await gateway.connect(relayer).settleWalletDepositToNewAccount(user.address, 0n, affiliate, accountData)
 		return subAccount
 	}
 
@@ -138,7 +138,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const bindSig = await sessionKey.signTypedData(domain, types, bindOp)
 
 		// Sanity: without the grant, the session key has no authority over the account
-		await expect(gateway.connect(relayer).relayInstantBatch([bindOp], [bindSig], [[]], [[]])).to.be.revertedWithCustomError(
+		await expect(gateway.connect(relayer).relayWalletBatch([bindOp], [bindSig], [[]], [[]], [0n])).to.be.revertedWithCustomError(
 			context.instantLayer,
 			"InvalidDelegation",
 		)
@@ -159,7 +159,7 @@ describe("GaslessLayer onboarding scenario", function () {
 
 		const tx = await gateway
 			.connect(relayer)
-			.relayInstantBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []])
+			.relayWalletBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []], [0n, 0n, 0n])
 
 		// Delegation is live for the session key
 		expect(await context.instantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.true
@@ -178,7 +178,9 @@ describe("GaslessLayer onboarding scenario", function () {
 
 		// Replay of the batch is refused (single-use operations)
 		await expect(
-			gateway.connect(relayer).relayInstantBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []]),
+			gateway
+				.connect(relayer)
+				.relayWalletBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []], [0n, 0n, 0n]),
 		).to.be.revertedWithCustomError(context.instantLayer, "MaxUsesExceeded")
 	})
 
@@ -229,7 +231,7 @@ describe("GaslessLayer onboarding scenario", function () {
 
 		const tx = await gateway
 			.connect(relayer)
-			.relayInstantBatch([grantOp, approveOp, bindOp], [grantSig, approveSig, bindSig], [[], [], []], [[], [], []])
+			.relayWalletBatch([grantOp, approveOp, bindOp], [grantSig, approveSig, bindSig], [[], [], []], [[], [], []], [0n, 0n, 0n])
 
 		expect(walletSignatures).to.equal(1)
 

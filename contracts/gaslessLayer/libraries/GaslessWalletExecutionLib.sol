@@ -13,15 +13,15 @@ import { GaslessWalletDeployerLib } from "./GaslessWalletDeployerLib.sol";
 
 /// @title GaslessWalletExecutionLib
 /// @notice Linked wallet-operation validation and execution for GaslessLayer.
-/// @dev Public entrypoints accept raw contract addresses instead of interface-typed arguments so ABI
-///      tooling sees normal address parameters. The library still executes in gateway/proxy context via
-///      delegatecall, so EIP-712 domains, CREATE2 wallet deployment, and nonce storage stay unchanged.
+/// @dev Entry points use address parameters for ABI tooling compatibility.
+///      Delegatecall runs this library in the gateway proxy's context, preserving the EIP-712 domain,
+///      CREATE2 deployer, and nonce storage.
 library GaslessWalletExecutionLib {
 	// ───────────────────────── Constants ──────────────────────────
 
 	bytes32 public constant WALLET_ACCOUNT_TYPEHASH = keccak256("Account(address addr,bool isPartyB)");
 	bytes32 public constant WALLET_REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
-	// Preserve the original delegation selector across the naming-only migration.
+	// Keep the original selector so existing delegation grants remain valid.
 	bytes4 public constant WALLET_EXECUTION_SENTINEL_SELECTOR = bytes4(keccak256("GASLESSQ_WALLET_EXECUTION"));
 	bytes32 internal constant WALLET_SIGNED_OPERATION_TYPEHASH = keccak256(
 		abi.encodePacked(
@@ -254,8 +254,8 @@ library GaslessWalletExecutionLib {
 		}
 	}
 
-	/// @dev Authorization identity, not billing identity: only a live VA rolls up to its parent, so a
-	///      deleted VA address cannot widen wallet ownership or delegation scope to the parent.
+	/// @dev Only a live VA resolves to its parent for authorization. A deleted VA cannot inherit
+	///      the parent's wallet ownership or delegation authority.
 	function _resolveCanonicalAccount(ISymmioAccountLayer accountLayer, address account) internal view returns (address) {
 		return GaslessBillingIdentity.resolveCanonicalAccount(accountLayer, account);
 	}
