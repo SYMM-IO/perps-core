@@ -193,9 +193,14 @@ export async function deployAccountInstantSelection(
 				})
 			).address
 		await assertRoundingRuntime(ethers, artifact, address, spec.libraries)
+		const creation = (checkpoint.transactions || []).find(
+			tx => tx.deployment?.component === component && ["confirmed", "replaced"].includes(tx.status),
+		)
+		if (!creation || creation.deployment?.kind !== "create") throw new Error(`${spec.name} has no confirmed direct creation in the receipt journal`)
 		report.deployments[spec.name] = {
 			...saved,
 			address: lower(address),
+			deploymentTransaction: creation.replacementHash || creation.hash,
 			artifact: spec.artifact,
 			constructorArguments: spec.args,
 			libraries: spec.libraries,
@@ -324,7 +329,9 @@ export async function verifyReplacementInstant(ethers: any, snapshot: any, repor
 			ethers,
 			report.deployments.InstantLayer.address,
 			await ethers.provider.getBlockNumber(),
-			report.rehearsalDiscovery,
+			report.rehearsalDiscovery || {
+				deploymentTransactions: { [report.deployments.InstantLayer.address]: report.deployments.InstantLayer.deploymentTransaction },
+			},
 		),
 	)
 }

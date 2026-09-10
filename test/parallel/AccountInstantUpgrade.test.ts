@@ -74,10 +74,16 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		await gasless.setSelectorFeeConfig("0x22222222", false, 999)
 		await instant.connect(admin).grantRole(ethers.id("OPERATOR_ROLE"), proxy.target)
 		const block = await ethers.provider.getBlockNumber()
+		const discovery = {
+			deploymentTransactions: {
+				[String(proxy.target)]: proxy.deploymentTransaction()!.hash,
+				[String(instant.target)]: instant.deploymentTransaction()!.hash,
+			},
+		}
 		const snapshot = {
 			gaslessImplementation: String(impl.target).toLowerCase(),
-			gasless: await readGaslessConfiguration(ethers, String(proxy.target), block),
-			instant: await readInstantConfiguration(ethers, String(instant.target), block),
+			gasless: await readGaslessConfiguration(ethers, String(proxy.target), block, discovery),
+			instant: await readInstantConfiguration(ethers, String(instant.target), block, discovery),
 		}
 		const compatibility = await verifyGaslessCompatibility(hre, ethers, snapshot, baseline)
 		return {
@@ -114,6 +120,10 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
 		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 8)
 		await assertUpgradeDeployments(hre, ethers, f.input, report)
+		for (const entry of Object.values(report.deployments) as any[]) {
+			const receipt = await ethers.provider.getTransactionReceipt(entry.deploymentTransaction)
+			expect(receipt?.contractAddress?.toLowerCase()).to.equal(entry.address)
+		}
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
 		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 8)
 		const wrong = structuredClone(report)

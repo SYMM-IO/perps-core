@@ -30,6 +30,8 @@ The task does not migrate InstantLayer user delegations, revocation/replay state
 
 Discovery uses complete configuration-event history plus current getters. Optional `discovery` arrays add known roles, selectors, whitelist targets or PartyBs. Missing PartyB administrators produce an error naming `target.partyBAdmins[<address>]`; provide an authorized administrator in the input JSON. An unreadable value or unavailable event history stops the task before deployment; it never substitutes an empty role list or a default value. Use an RPC with the required history. Do not edit a snapshot to bypass a failed read or drift check.
 
+`discovery.deploymentTransactions` maps contract addresses to their direct creation transaction hashes. The supplied Arbitrum input includes verified Gasless proxy and InstantLayer creations at blocks **501463782** and **501457705**. The reader verifies each successful receipt's contract address and canonical block, then scans from that block inclusively through the snapshot in ranges of at most 50,000 blocks. Provider range/result limits shrink the request, down to one block if necessary. Without a creation transaction, scanning starts at genesis. Replacement InstantLayer discovery uses its journaled deployment transaction automatically. No unverified starting block or failed range is skipped.
+
 ## Execution order and authorities
 
 1. Compile, inspect current state, compare the old Gasless runtime and linked libraries, and compare old/new storage layouts. Rehearse the complete cut, configuration, wiring and retirement on the exact snapshot fork.
@@ -45,5 +47,7 @@ Discovery uses complete configuration-event history plus current getters. Option
 ## Pause and recovery
 
 Safe JSON export is a `waiting_external` stage, not proof of execution. Use **Continue active task** after executing each batch. Confirmed contract deployments and completed configuration actions are recovered from their journals and current state. A changed input, source, configuration, implementation or unrelated selector stops continuation. Unknown transaction outcomes are reconciled before another broadcast or cancellation.
+
+For a run stopped during initial discovery with only compilation complete and no journaled transactions, a source/configuration fix requires **Cancel active task**, then starting this maintenance task again. Reopen `./symmio` first to load updated code. The fresh run copies the updated input and pins the new source; do not edit the paused run's hashes to bypass drift checks. RPC discovery errors identify the failed method/range and a redacted category (range/timeout limit, rate limit, access failure or unavailable history); they do not assume every failure requires an archival RPC.
 
 The fork rehearsal contains only local transactions. Explorer publication, Safe execution, a production canary and final live verification remain separate evidence. A successful rehearsal does not authorize or prove any of them.
