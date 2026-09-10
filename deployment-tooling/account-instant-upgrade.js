@@ -16,7 +16,7 @@ export const POLICY = Object.freeze({
 	setGlobalTimelocks: false,
 	repairTemplates: false,
 	roleScope: "required-flow",
-	partyBExecution: "manual",
+	partyBExecution: "safe",
 });
 export const CONFIG_PATH = "tasks/config/arbitrum-account-instant-upgrade-42161.json";
 export const RECIPE_PATH = "deployment-recipes/arbitrum-vibe-production.json";
@@ -63,7 +63,7 @@ export function validateUpgradeConfig(value) {
 		throw new Error("Expected the Arbitrum account/instant upgrade v1 config");
 	if (digest(value.policy) !== digest(POLICY))
 		throw new Error(
-			"Upgrade policy must preserve configuration and GaslessLayer proxy, use manual PartyB execution, and exclude InstantLayer user state, template repairs and global timelock setters",
+			"Upgrade policy must preserve configuration and GaslessLayer proxy, use Safe PartyB execution, and exclude InstantLayer user state, template repairs and global timelock setters",
 		);
 	const fields = ["core", "collateral", "accountLayer", "instantLayer", "gaslessLayer", "safe", "relayer"];
 	keys(value.target, [...fields, "partyBAdmins"], "target");
@@ -77,6 +77,7 @@ export function validateUpgradeConfig(value) {
 	keys(value.target.partyBAdmins, Object.keys(value.target.partyBAdmins || {}), "partyBAdmins");
 	for (const [partyB, admin] of Object.entries(value.target.partyBAdmins)) {
 		if (getAddress(partyB) === ZeroAddress || getAddress(admin) === ZeroAddress) throw new Error("Invalid PartyB authority");
+		if (getAddress(admin) !== getAddress(value.target.safe)) throw new Error(`target.partyBAdmins[${partyB}] must select target.safe`);
 	}
 	if (!/^[a-f0-9]{40}$/.test(value.gaslessBaselineCommit)) throw new Error("gaslessBaselineCommit must be an exact Git commit");
 	keys(value.discovery, ["mode", "gaslessSelectors", "instantTargets", "instantPartyBs"], "discovery");

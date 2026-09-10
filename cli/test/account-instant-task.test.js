@@ -104,7 +104,7 @@ test("adapter environment defaults to nonexecution and uses the same credential 
 	assert.equal(read(f.input.config).secrets.rpc, read(f.input.forkConfig).secrets.rpc);
 });
 
-test("runner defers PartyB calls to manual execution and verifies them before cutover and completion", async t => {
+test("runner exports PartyB wiring and retirement for the Safe and verifies them before cutover and completion", async t => {
 	const f = fixture();
 	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
 	const flags = { configured: false, cut: false, wired: false, retired: false, partyB: false, partyBRetired: false, canary: "" };
@@ -112,9 +112,11 @@ test("runner defers PartyB calls to manual execution and verifies them before cu
 		events = [];
 	const admin = Object.values(f.standard.config.target.partyBAdmins)[0].toLowerCase();
 	const safe = f.standard.config.target.safe.toLowerCase();
-	const action = authority => ({
+	assert.equal(admin, safe);
+	const partyB = f.standard.config.discovery.instantPartyBs[0];
+	const action = (authority, to = f.standard.config.target.accountLayer) => ({
 		authority,
-		to: f.standard.config.target.accountLayer,
+		to,
 		value: "0",
 		data: "0x12345678",
 		description: "Reviewed upgrade action",
@@ -147,8 +149,8 @@ test("runner defers PartyB calls to manual execution and verifies them before cu
 					if (phase === "plan-account-cut") report.actions = flags.cut ? [] : [action(safe)];
 					if (phase === "plan-wire") report.actions = flags.wired ? [] : [action(safe)];
 					if (phase === "plan-retire") report.actions = flags.retired ? [] : [action(safe)];
-					if (phase === "plan-party-b") report.actions = flags.partyB ? [] : [action(admin)];
-					if (phase === "plan-retire-party-b") report.actions = flags.partyBRetired ? [] : [action(admin)];
+					if (phase === "plan-party-b") report.actions = flags.partyB ? [] : [action(safe, partyB)];
+					if (phase === "plan-retire-party-b") report.actions = flags.partyBRetired ? [] : [action(safe, partyB)];
 					if (["plan-party-b", "plan-retire-party-b"].includes(phase)) {
 						assert.equal(options.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE, "false");
 						assert.equal(options.env.SYMMIO_RECIPE_READ_ONLY, "true");
@@ -191,30 +193,26 @@ test("runner defers PartyB calls to manual execution and verifies them before cu
 	assert.equal(state.status, "waiting_external", state.lastError);
 	assert.equal(flags.partyB, false);
 	assert.equal(state.completedSteps.includes("party-b"), false);
-	assert.match(state.waitingFor, /Complete the PartyB actions manually/);
+	assert.match(state.waitingFor, /Execute .* through Safe/);
 	assert.equal(phases.includes("plan-wire"), false);
-	const manualFile = path.join(f.directory, "party-b-manual.json");
-	assert.deepEqual(read(manualFile), {
-		apiVersion: "operations.symm.io/manual-transactions-v1",
-		chainId: 42161,
-		inputDigest: f.input.inputDigest,
-		snapshotDigest: digest(f.snapshot),
-		stage: "party-b",
-		status: "pending",
-		transactions: [{ from: admin, to: action(admin).to, value: "0", data: "0x12345678", description: action(admin).description }],
-	});
-	write(manualFile, { ...read(manualFile), status: "verified", transactions: [] });
+	const dispatch = state.safeDispatches["plan-party-b"];
+	const builder = read(dispatch.builderPath);
+	assert.equal(dispatch.safeAddress, safe);
+	assert.equal(builder.chainId, "42161");
+	assert.equal(builder.meta.createdFromSafeAddress.toLowerCase(), safe);
+	assert.equal(builder.transactions[0].to.toLowerCase(), partyB.toLowerCase());
+	assert.equal(builder.transactions[0].data, action(safe).data);
+	assert.equal(builder.transactions[0].value, "0");
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "waiting_external", state.lastError);
-	assert.equal(state.completedSteps.includes("party-b"), false, "continuing is not proof of manual execution");
-	assert.equal(read(manualFile).status, "pending", "editing the manual file cannot bypass on-chain verification");
+	assert.equal(state.completedSteps.includes("party-b"), false, "continuing is not proof of Safe execution");
+	assert.equal(state.safeDispatches["plan-party-b"].digest, dispatch.digest);
 	assert.equal(phases.includes("plan-wire"), false);
 	flags.partyB = true;
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "waiting_external", state.lastError);
 	assert.match(state.waitingFor, /Execute .* through Safe/);
-	assert.equal(read(manualFile).status, "verified");
-	assert.deepEqual(read(manualFile).transactions, []);
+	assert.equal(state.completedSteps.includes("party-b"), true);
 	assert.equal(
 		Object.keys(state.signing || {}).some(key => key.startsWith("party-b-")),
 		false,
@@ -232,15 +230,14 @@ test("runner defers PartyB calls to manual execution and verifies them before cu
 	assert.equal(state.status, "waiting_external", state.lastError);
 	assert.equal(flags.partyBRetired, false);
 	assert.equal(phases.includes("verify-final"), false);
-	assert.match(state.waitingFor, /Complete the PartyB actions manually/);
-	const retirementFile = path.join(f.directory, "retire-party-b-manual.json");
-	assert.equal(read(retirementFile).stage, "retire-party-b");
-	assert.equal(read(retirementFile).transactions[0].from, admin);
+	assert.match(state.waitingFor, /Execute .* through Safe/);
+	assert.equal(state.safeDispatches["plan-retire-party-b"].safeAddress, safe);
+	assert.notEqual(state.safeDispatches["plan-retire-party-b"].digest, dispatch.digest);
 	flags.partyBRetired = true;
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "completed", state.lastError);
-	assert.equal(read(retirementFile).status, "verified");
+	assert.equal(state.completedSteps.includes("retire-party-b"), true);
 	assert.equal(phases.filter(p => p === "deploy").length, 1);
-	assert.equal(events.filter(e => e.type === "safe.exported").length, 4);
+	assert.equal(new Set(events.filter(e => e.type === "safe.exported").map(e => e.safe.stateKey)).size, 6);
 	assert.equal(state.transactions.length, 0, "fork rehearsal transactions must not enter the live journal");
 });

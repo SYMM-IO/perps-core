@@ -24,7 +24,7 @@ function config() {
 			gaslessLayer: address(5),
 			safe: address(6),
 			relayer: address(9),
-			partyBAdmins: { [address(7)]: address(8) },
+			partyBAdmins: { [address(7)]: address(6) },
 		},
 		gaslessBaselineCommit: "a".repeat(40),
 		policy: { ...POLICY },
@@ -69,6 +69,7 @@ test("flow discovery binds supplied actors without requiring complete holder lis
 		x => (x.discovery.mode = "events"),
 		x => (x.discovery.instantPartyBs = [address(99)]),
 		x => (x.discovery.gaslessSelectors = ["0x1234"]),
+		x => (x.target.partyBAdmins[address(7)] = address(8)),
 	]) {
 		const changed = config();
 		mutate(changed);
