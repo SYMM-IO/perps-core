@@ -46,14 +46,14 @@ library LibSymbolAdjustment {
 	/// @notice Converts a venue-basis liquidation price into the quote's current stored price basis.
 	/// @dev Liquidation price payloads use venue units during an open restatement. Quotes already rewritten in the
 	///      current epoch also use venue units and need no conversion. For an old-basis quote, the conversion uses the
-	///      same rounded total-quantity ratio as physical restatement so current-price notional follows the normalized
-	///      quote. If that total quantity rounds to zero, the direct factor is the deterministic dust fallback.
+	///      same conservation-preserving open-plus-closed quantity as physical restatement so current-price notional
+	///      follows the normalized quote. If that total quantity rounds to zero, the direct factor is the deterministic dust fallback.
 	function liquidationPriceInStoredUnits(Quote storage quote, uint256 venuePrice) internal view returns (uint256) {
 		SymbolAdjustmentStorage.Layout storage layout = SymbolAdjustmentStorage.layout();
 		SymbolAdjustment storage adjustment = layout.adjustments[quote.symbolId];
 		if (!adjustment.restating || layout.quoteRestatedEpoch[quote.id] >= adjustment.restatementEpoch) return venuePrice;
 
-		uint256 adjustedQuantity = Math.mulDiv(quote.quantity, adjustment.restatementFactor, 1e18);
+		(, , uint256 adjustedQuantity) = LibQuoteAdjustment.scalePositionAmounts(quote.quantity, quote.closedAmount, adjustment.restatementFactor);
 		if (adjustedQuantity == 0) return Math.mulDiv(venuePrice, adjustment.restatementFactor, 1e18);
 		return Math.mulDiv(adjustedQuantity, venuePrice, quote.quantity);
 	}

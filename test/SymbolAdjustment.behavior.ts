@@ -732,6 +732,15 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			return quoteId
 		}
 
+		async function openAndPartiallyClose(quantity: bigint, closedAmount: bigint): Promise<bigint> {
+			const quoteId = await user.sendQuote(limitQuoteRequestBuilder().quantity(quantity).build())
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId, limitOpenRequestBuilder().filledAmount(quantity).build())
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(closedAmount).build())
+			await hedger.fillCloseRequest(quoteId, limitFillCloseRequestBuilder().filledAmount(closedAmount).build())
+			return quoteId
+		}
+
 		async function activateFactorAndStartRestatement(factor = decimal(4n)) {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, factor, now)
@@ -975,6 +984,90 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const newNotional = after.quantity * after.openedPrice
 			expect(oldNotional - newNotional).to.be.gte(0n)
 			expect(oldNotional - newNotional).to.be.lt(after.quantity) // < 1 wei of price per unit
+		})
+
+		it("does not manufacture open size from independent total and closed rounding", async function () {
+			const one = decimal(1n)
+			const factor = decimal(11n, 17) // 1.1e18
+			const oldClosedAmount = 33n * one + 9n
+			const oldOpenAmount = 67n * one + 9n
+			const oldQuantity = oldClosedAmount + oldOpenAmount
+			const quoteId = await openAndPartiallyClose(oldQuantity, oldClosedAmount)
+
+			// The previous algorithm floored total quantity and closed amount independently. Their fractional
+			// remainders carried into one extra wei when the contract later derived open = quantity - closedAmount.
+			const oldAlgorithmQuantity = (oldQuantity * factor) / one
+			const adjustedClosedAmount = (oldClosedAmount * factor) / one
+			const adjustedOpenAmount = (oldOpenAmount * factor) / one
+			expect(oldAlgorithmQuantity - adjustedClosedAmount).to.equal(adjustedOpenAmount + 1n)
+
+			// A full pending close makes the consequence concrete: the old rewrite would have left the
+			// manufactured wei open after filling the converted request.
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(oldOpenAmount).build())
+			await activateFactorAndStartRestatement(factor)
+			const preview = await context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)
+			expect(preview.closedAmount).to.equal(adjustedClosedAmount)
+			expect(preview.quantity - preview.closedAmount).to.equal(adjustedOpenAmount)
+			expect(preview.quantity).to.equal(adjustedOpenAmount + adjustedClosedAmount)
+			expect(preview.quantity).to.equal(oldAlgorithmQuantity - 1n)
+			expect(preview.quantityToClose).to.equal(adjustedOpenAmount)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+			const adjusted = await context.viewFacetQuote.getQuote(quoteId)
+			expect(adjusted.quantity - adjusted.closedAmount).to.equal(adjustedOpenAmount)
+			expect(adjusted.quantityToClose).to.equal(adjustedOpenAmount)
+
+			await finalizeRestatementAfterWindow(SYMBOL_ID)
+			await hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(adjusted.quantityToClose).closedPrice(adjusted.requestedClosePrice).build(),
+			)
+			const closed = await context.viewFacetQuote.getQuote(quoteId)
+			expect(closed.quoteStatus).to.equal(QuoteStatus.CLOSED)
+			expect(closed.quantity - closed.closedAmount).to.equal(0n)
+		})
+
+		it("rejects an open amount that really rounds to zero instead of creating one wei", async function () {
+			const one = decimal(1n)
+			const factor = decimal(5n, 17) // 0.5e18
+			const oldClosedAmount = one + 1n
+			const oldOpenAmount = 1n
+			const oldQuantity = oldClosedAmount + oldOpenAmount
+
+			const oldAlgorithmOpenAmount = (oldQuantity * factor) / one - (oldClosedAmount * factor) / one
+			const actualAdjustedOpenAmount = (oldOpenAmount * factor) / one
+			expect(oldAlgorithmOpenAmount).to.equal(1n)
+			expect(actualAdjustedOpenAmount).to.equal(0n)
+
+			const harness = await (await ethers.getContractFactory("QuoteAdjustmentHarness")).deploy()
+			const scaled = await harness.scalePositionAmounts(oldQuantity, oldClosedAmount, factor)
+			expect(scaled.openAmount).to.equal(0n)
+			expect(scaled.adjustedClosedAmount).to.equal((oldClosedAmount * factor) / one)
+			expect(scaled.adjustedQuantity).to.equal(scaled.openAmount + scaled.adjustedClosedAmount)
+			await expect(harness.previewPositionAmounts(oldQuantity, oldClosedAmount, factor)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Open amount underflow",
+			)
+		})
+
+		it("preserves open-plus-closed conservation across real 18-decimal factor boundaries", async function () {
+			const one = decimal(1n)
+			const oldClosedAmount = 33n * one + 9n
+			const oldOpenAmount = 67n * one + 9n
+			const quoteId = await openAndPartiallyClose(oldClosedAmount + oldOpenAmount, oldClosedAmount)
+			const factors = [decimal(1n, 16), decimal(3n, 17), decimal(7n, 17), decimal(11n, 17), decimal(4n), decimal(100n)]
+
+			for (const factor of factors) {
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, factor, now)
+				const preview = await context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)
+				const expectedOpenAmount = (oldOpenAmount * factor) / one
+				const expectedClosedAmount = (oldClosedAmount * factor) / one
+
+				expect(preview.closedAmount).to.equal(expectedClosedAmount)
+				expect(preview.quantity - preview.closedAmount).to.equal(expectedOpenAmount)
+				expect(preview.quantity).to.equal(expectedOpenAmount + expectedClosedAmount)
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
+			}
 		})
 
 		it("should scale CLOSE_PENDING fields", async function () {

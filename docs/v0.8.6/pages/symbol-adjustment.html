@@ -870,11 +870,18 @@ restatement mined before liquidation  -> nonce is still 82 -> restatement starts
 						settlement will succeed.
 					</p>
 					<p>
-						Core converts each amount-and-price pair in two steps. It first scales the amount, then derives the new price from the old
-						notional. This keeps <code>amount * price</code> as close as integer rounding permits. For example, a 4x factor converts 5
-						units at a price of 20 into 20 units at a price of 5. The notional remains 100.
+						Core first separates the economically live and historical pieces of a position. It scales the actual open amount (<code
+							>quantity - closedAmount</code
+						>) and <code>closedAmount</code> independently, then reconstructs <code>quantity</code> as their exact sum. It derives each
+						new price from the corresponding old notional. This keeps position size conserved across the open/closed boundary while
+						keeping <code>amount * price</code> as close as integer rounding permits.
 					</p>
-					<pre><code class="language-text">adjustedAmount = floor(originalAmount * factor / 1e18)
+					<pre><code class="language-text">oldOpenAmount      = quantity - closedAmount
+adjustedOpenAmount   = floor(oldOpenAmount * factor / 1e18)
+adjustedClosedAmount = floor(closedAmount * factor / 1e18)
+adjustedQuantity     = adjustedOpenAmount + adjustedClosedAmount
+
+adjustedAmount = floor(originalAmount * factor / 1e18)
 
 if originalPrice == 0:
     adjustedPrice = 0
@@ -895,9 +902,10 @@ else:
 								<tr>
 									<td>Entire position</td>
 									<td>
-										Scales <code>quantity</code>. Recalculates <code>openedPrice</code>, <code>initialOpenedPrice</code>,
-										<code>requestedOpenPrice</code>, and <code>marketPrice</code> against the new quantity so each recorded
-										amount-and-price value stays as close as possible to its previous notional.
+										Reconstructs <code>quantity</code> from the separately scaled open and closed components. Recalculates
+										<code>openedPrice</code>, <code>initialOpenedPrice</code>, <code>requestedOpenPrice</code>, and
+										<code>marketPrice</code> against the new quantity so each recorded amount-and-price value stays as close as
+										possible to its previous notional.
 									</td>
 								</tr>
 								<tr>
@@ -917,6 +925,14 @@ else:
 							</tbody>
 						</table>
 					</div>
+					<aside class="callout callout-important">
+						<strong>Why total quantity is reconstructed instead of scaled directly.</strong>
+						With factor <code>1.1e18</code>, take <code>closedAmount = 1e18 + 9</code> and actual open amount <code>2e18 + 9</code>. The
+						old independent calculation produced total quantity <code>3.3e18 + 19</code> and closed amount <code>1.1e18 + 9</code>;
+						subtracting them manufactured an open amount of <code>2.2e18 + 10</code>. Directly scaling the real open amount gives
+						<code>2.2e18 + 9</code>. The current rule stores quantity <code>3.3e18 + 18</code>, exactly the scaled open amount plus scaled
+						closed amount, so fractional carries can never move a wei between historical and live position size.
+					</aside>
 					<p>
 						The conversion assigns exactly those nine fields. It does not assign IDs, parties, symbol, position or order type, whitelists,
 						statuses, deadlines, parent links, locked values, fee fields, affiliate, funding limit, close fee, or data. When accumulated
@@ -952,10 +968,10 @@ else:
 								<tr>
 									<td>The remaining open quantity</td>
 									<td>
-										<code>quantity = 101</code> and <code>closedAmount = 100</code>, one amount wei still open, both convert to
-										<code>1</code>
+										<code>quantity = 1e18 + 2</code> and <code>closedAmount = 1e18 + 1</code>, one amount wei still open; at
+										<code>0.5x</code>, that actual open amount converts to <code>0</code>
 									</td>
-									<td>The converted quantity must stay strictly greater than the converted closed amount.</td>
+									<td>The directly converted actual open amount must stay greater than zero.</td>
 								</tr>
 								<tr>
 									<td>A pending close request</td>
@@ -1053,12 +1069,14 @@ dust            = 30 - 28 = 2</code></pre>
 					<pre><code class="language-text">if quote was restated in the current epoch:
     stored liquidation price = venue liquidation price
 else:
-    adjusted total quantity  = floor(stored total quantity * restatementFactor / 1e18)
+    adjusted open amount     = floor((stored total quantity - stored closed amount) * restatementFactor / 1e18)
+    adjusted closed amount   = floor(stored closed amount * restatementFactor / 1e18)
+    adjusted total quantity  = adjusted open amount + adjusted closed amount
     stored liquidation price = floor(adjusted total quantity * venue liquidation price / stored total quantity)</code></pre>
 					<p>
-						The quote-specific total-quantity ratio is the inverse of the physical price rewrite and therefore follows its integer
-						rounding. It lets one PartyA symbol price safely close a mixed batch containing both rewritten and old-basis quotes. If an
-						unrestatable dust quote's adjusted total quantity is zero, Core uses
+						The quote-specific reconstructed-quantity ratio is the inverse of the physical price rewrite and therefore follows the same
+						conservation-preserving integer rounding. It lets one PartyA symbol price safely close a mixed batch containing both rewritten
+						and old-basis quotes. If an unrestatable dust quote's adjusted total quantity is zero, Core uses
 						<code>floor(venuePrice * restatementFactor / 1e18)</code> as the deterministic stored-price fallback; Operations should still
 						prefer the dedicated PartyB dust-close flow because no exact normalized quantity exists for that quote.
 					</p>
@@ -1549,7 +1567,11 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 						<code>LibPartyALiquidationProcess</code>. Replace <code>ViewFacetAggregate</code> as well because its aggregate funding reads
 						compile in the effective-cutoff logic. <code>FundingRateCheckpoint</code> appends <code>restatedLongRate</code> and
 						<code>restatedShortRate</code> after <code>restatementEpoch</code>; verify that field order and do not upgrade with an open
-						restatement, because an old checkpoint cannot supply the new restart rates.
+						restatement, because an old checkpoint cannot supply the new restart rates. Conservation-preserving amount conversion also
+						changes <code>LibQuoteAdjustment</code>. Replace <code>SymbolAdjustmentFacet</code>, <code>ViewFacetSymbol</code>, and
+						<code>ViewFacetQuote</code> so writes, previews, and normalized quote views all reconstruct quantity from the same scaled open
+						and closed components. The liquidation runtimes already listed must use the matching <code>LibSymbolAdjustment</code> build so
+						their temporary price conversion uses that identical reconstructed quantity.
 					</aside>
 					<h3>Prepare and schedule</h3>
 					<ol>
@@ -1578,6 +1600,13 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 							and SHORT positions, a long maintenance pause, zero-current-rate records with prior history, abort, liquidation, and
 							consecutive restatements. Prove the pause contributes exactly zero and no restoration batch changes the effective
 							cumulative value.
+						</li>
+						<li>
+							For partially closed quotes, test raw 18-decimal values on both sides of a multiplication remainder. Independently compute
+							<code>floor((quantity - closedAmount) * factor / 1e18)</code> and <code>floor(closedAmount * factor / 1e18)</code>;
+							require every preview, venue-unit view, stored rewrite, and liquidation price conversion to use their sum as quantity.
+							Include the boundary where the real open amount rounds to zero and require rejection, not a one-wei position created by
+							independently scaling total quantity.
 						</li>
 						<li>
 							Verify the deployed ABI exposes <code>startRestatement(uint256,uint256)</code>,
