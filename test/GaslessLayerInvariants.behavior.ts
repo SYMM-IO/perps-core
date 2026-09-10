@@ -6,7 +6,7 @@ import {
 	GOLDEN_WALLET_INITCODE_HASH,
 	GOLDEN_WALLET_SALT_FOR_REFERENCE_OWNER,
 	REFERENCE_WALLET_OWNER,
-	gaslessWalletSalt,
+	walletSalt,
 } from "../scripts/gaslessLayer/gasless-wallet.js"
 
 describe("GaslessWallet frozen bytecode", () => {
@@ -26,24 +26,28 @@ describe("GaslessWallet frozen bytecode", () => {
 
 	it("pins the CREATE2 salt scheme to its golden value", () => {
 		expect(
-			gaslessWalletSalt(REFERENCE_WALLET_OWNER),
+			walletSalt(REFERENCE_WALLET_OWNER, 0n),
 			"The GaslessWallet salt scheme changed (version tag or abi.encode shape) — this MOVES every deposit address.",
 		).to.equal(GOLDEN_WALLET_SALT_FOR_REFERENCE_OWNER)
 	})
 })
 
-// Frozen from the pre-indexed GaslessLayer ABI. Keep old selectors, output names/types,
-// and mutability intact. Event compatibility is deliberately outside this contract.
-describe("GaslessLayer legacy API compatibility", () => {
-	it("preserves existing callable ABI fragments without introducing overloaded names", () => {
+describe("GaslessLayer wallet API", () => {
+	it("exposes one wallet-aware method per operation without legacy aliases or overloads", () => {
 		const artifact = JSON.parse(readFileSync("artifacts/contracts/gaslessLayer/GaslessLayer.sol/GaslessLayer.json", "utf8"))
-		const baseline: string[] = JSON.parse(readFileSync("test/fixtures/gasless-layer-legacy-api.json", "utf8"))
-		const current = new Interface(artifact.abi).format()
-		for (const fragment of baseline.filter(fragment => !fragment.startsWith("event "))) {
-			// The owner input label changed; its type, selector, outputs, and mutability must remain compatible.
-			const expected = fragment.replace("getGaslessWalletAddress(address ownerWallet)", "getGaslessWalletAddress(address owner)")
-			expect(current, fragment).to.include(expected)
+		const abi = new Interface(artifact.abi)
+		for (const name of [
+			"relayInstantBatch",
+			"getGaslessWalletAddress",
+			"settleDepositToNewAccount",
+			"settleDepositToExistingAccount",
+			"recoverNonCollateralToken",
+			"getAccountOperationalFeeForWallets",
+			"walletOperationNonces",
+		]) {
+			expect(abi.getFunction(name), name).to.equal(null)
 		}
+		expect(abi.getFunction("getAccountOperationalFee")!.inputs.map(input => input.name)).to.deep.equal(["account", "signedOps", "walletIds"])
 		const functions = artifact.abi.filter((fragment: any) => fragment.type === "function")
 		expect(new Set(functions.map((fragment: any) => fragment.name)).size).to.equal(functions.length)
 	})

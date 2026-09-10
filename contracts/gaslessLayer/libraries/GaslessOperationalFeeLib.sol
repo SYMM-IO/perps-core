@@ -6,24 +6,22 @@ import { ISymmioCore } from "../interfaces/ISymmioCore.sol";
 import { ISymmioAccountLayer } from "../interfaces/ISymmioAccountLayer.sol";
 
 /// @title GaslessOperationalFeeLib
-/// @notice Operational-fee settlement with signer-VA fallback, plus quoting helpers for core-owned
-///         operational-fee allowance state.
-/// @dev External functions are DELEGATECALLed from the GaslessLayer proxy, so `address(this)` inside
-///      them is the layer itself (the registered charger on core).
+/// @notice Settle operational fees with signer-VA fallback and quote fees using core's allowance state.
+/// @dev GaslessLayer calls external functions through delegatecall. `address(this)` is the proxy registered as a charger on core.
 library GaslessOperationalFeeLib {
 	uint256 internal constant FEE_MULTIPLIER_BASE = 10000;
 
 	/// @notice One relayed operation's billing input, resolved by the layer after batch execution.
 	/// @param signer The op's signer account (may be a virtual account).
 	/// @param billingParent The signer's billing account (VA → parent SubAccount).
-	/// @param baseFee Summed base selector fees before any core multiplier; 0 when the op is free-covered.
+	/// @param baseFee Sum of selector fees before any core multiplier; 0 when the free quota covers the operation.
 	struct OpBilling {
 		address signer;
 		address billingParent;
 		uint256 baseFee;
 	}
 
-	/// @dev Per-payer working state for the greedy payer assignment. Caps are loaded lazily once per payer.
+	/// @dev Track each payer's total due and limits while assigning fees in operation order. Load limits once per payer.
 	struct PayerState {
 		address payer;
 		uint256 due;
@@ -34,16 +32,14 @@ library GaslessOperationalFeeLib {
 
 	// ─────────────────── Settlement (state-changing) ───────────────────
 
-	/// @notice Assign each op's fee to a payer (billing parent first, signer-VA fallback), then charge
-	///         every distinct payer once through core.
-	/// @dev Greedy in op order: the billing parent pays while its remaining effective allowance AND
-	///      free+allocated balance cover the running total. Once either cannot cover an op's fee, that op
-	///      falls back to its own signer VA — only if the VA still exists on the account layer and its own
-	///      allowance and balance cover the fee (priced with the VA's multiplier). When neither can pay,
-	///      the fee stays on the parent so the core-side revert behavior is unchanged.
-	/// @return totalFee Grand total charged across all payers.
-	/// @return opPayers Per-op chosen payer, for the layer's per-op OperationalFeeRouted events.
-	/// @return opFees Per-op charged amount (0 for free-covered ops).
+	/// @notice Assign fees to the billing parent or signer VA, then charge each payer once through core.
+	/// @dev Process operations in order. The parent pays while its effective allowance and free plus allocated
+	///      balance cover its running total. Otherwise, try the signer VA if it still exists on the account layer
+	///      and its allowance and balance cover the fee at its own multiplier. If neither can pay, leave the fee
+	///      on the parent so core reverts as usual.
+	/// @return totalFee Total charged across all payers.
+	/// @return opPayers Payer for each operation, used in the layer's OperationalFeeRouted events.
+	/// @return opFees Fee for each operation (0 when covered by the free quota).
 	function settleOperationalFees(
 		address core,
 		address accountLayer,
@@ -61,8 +57,8 @@ library GaslessOperationalFeeLib {
 		}
 	}
 
-	/// @notice Read-only twin of settleOperationalFees: the per-op payer and fee the greedy assignment
-	///         would choose right now. Fund-moving ops inside a batch can shift the split at execution.
+	/// @notice Quote the payer and fee for each operation using the same rules as settleOperationalFees.
+	/// @dev Uses current state. Operations that move funds within the batch can change which account pays at execution.
 	function planOperationalFees(
 		address core,
 		address accountLayer,
@@ -100,9 +96,8 @@ library GaslessOperationalFeeLib {
 
 	// ─────────────────── Internal: settlement plan ───────────────────
 
-	/// @dev The settlement plan shared by settleOperationalFees (which executes it) and
-	///      planOperationalFees (which exposes it): a greedy per-op payer choice returning the payer
-	///      working set (with accumulated dues) plus the per-op assignment.
+	/// @dev Assign payers in operation order and accumulate their fees. Used by settleOperationalFees and planOperationalFees.
+	///      Return each payer's total due and each operation's payer and fee.
 	function _planOperationalFees(
 		address core,
 		address accountLayer,
@@ -115,7 +110,7 @@ library GaslessOperationalFeeLib {
 
 		for (uint256 i = 0; i < n; i++) {
 			if (ops[i].baseFee == 0) {
-				opPayers[i] = ops[i].billingParent; // free-covered or zero-fee: routed to the parent, nothing to price
+				opPayers[i] = ops[i].billingParent; // Record the parent for operations covered by the quota or priced at zero.
 				continue;
 			}
 
@@ -130,8 +125,7 @@ library GaslessOperationalFeeLib {
 				continue;
 			}
 
-			// Parent cannot cover this op: fall back to the op's own signer VA when it still exists and
-			// its own allowance and balance can fund the fee at its own multiplier.
+			// Try the signer VA if it still exists and its allowance and balance cover the fee at its own multiplier.
 			if (ops[i].signer != ops[i].billingParent && ISymmioAccountLayer(accountLayer).getVirtualAccount(ops[i].signer).isExists) {
 				uint256 vaSlot;
 				(vaSlot, stateCount) = _payerSlot(states, stateCount, core, ops[i].signer);
@@ -144,7 +138,7 @@ library GaslessOperationalFeeLib {
 				}
 			}
 
-			// Neither can pay: keep the fee on the parent so the core-side failure mode is unchanged.
+			// Neither account can pay. Leave the fee on the parent so core reverts as usual.
 			states[parentSlot].due += parentFee;
 			opPayers[i] = ops[i].billingParent;
 			opFees[i] = parentFee;
@@ -155,7 +149,7 @@ library GaslessOperationalFeeLib {
 		return state.due + fee <= state.allowance && state.due + fee <= state.balanceCapacity;
 	}
 
-	/// @dev Find or create the working slot for `payer`, loading its caps from core on first touch.
+	/// @dev Find or create the state entry for `payer`; load its limits from core when creating the entry.
 	function _payerSlot(
 		PayerState[] memory states,
 		uint256 stateCount,
@@ -165,8 +159,7 @@ library GaslessOperationalFeeLib {
 		for (slot = 0; slot < stateCount; slot++) {
 			if (states[slot].payer == payer) return (slot, stateCount);
 		}
-		// The core view folds ready timelocked reductions into `allowance`, keeping this prediction
-		// aligned with what chargeOperationalFee would accept.
+		// The core view applies ready timelocked reductions to `allowance`, as chargeOperationalFee does.
 		(uint256 allowance, , , uint256 feeMultiplier) = ISymmioCore(core).getOperationalFeeAllowance(payer, address(this));
 		states[slot] = PayerState({
 			payer: payer,

@@ -222,7 +222,7 @@ describe("InstantLayer migration rehearsal", function () {
 			replayAttackHeader: { nonce: 0n, deadline: await getBlockTimestamp(300n), salt: ethers.hexlify(ethers.randomBytes(32)) },
 		}
 		const grantSig = await user.signTypedData(domain, cloneTypes(), grantOp)
-		await gateway.connect(relayer).relayInstantBatch([grantOp], [grantSig], [[]], [[]])
+		await gateway.connect(relayer).relayWalletBatch([grantOp], [grantSig], [[]], [[]], [0n])
 		expect(await newInstantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.true
 		expect(await context.instantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.false
 

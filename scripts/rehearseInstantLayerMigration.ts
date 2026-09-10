@@ -248,13 +248,13 @@ async function main(): Promise<void> {
 	const relayerSigner = await impersonated(relayer)
 	console.log(`    defaultSelectorFee on the gateway: ${await gateway.defaultSelectorFee()}`)
 	try {
-		const relayTx = await gateway.connect(relayerSigner).relayInstantBatch([grantOp], [grantSig], [[]], [[]])
+		const relayTx = await gateway.connect(relayerSigner).relayWalletBatch([grantOp], [grantSig], [[]], [[]], [0n])
 		const receipt = await relayTx.wait()
-		check(receipt?.status === 1, "relayInstantBatch with one owner signature succeeded on the new layer")
+		check(receipt?.status === 1, "relayWalletBatch with one owner signature succeeded on the new layer")
 	} catch (error: any) {
 		check(
 			false,
-			"relayInstantBatch with one owner signature succeeded on the new layer",
+			"relayWalletBatch with one owner signature succeeded on the new layer",
 			(error?.shortMessage || error?.message || String(error)).slice(0, 200),
 		)
 	}

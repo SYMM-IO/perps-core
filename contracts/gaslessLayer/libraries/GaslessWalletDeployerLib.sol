@@ -5,10 +5,9 @@ import { GaslessWallet } from "../GaslessWallet.sol";
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
 
 /// @title GaslessWalletDeployerLib
-/// @notice Linked CREATE2 address derivation and lazy deployment for GaslessLayer wallets.
-/// @dev Called through the gateway's linked-library delegatecall path. `address(this)` intentionally
-///      resolves to the gateway proxy during normal execution, preserving the existing CREATE2 deployer
-///      address across implementation upgrades.
+/// @notice Derive GaslessWallet addresses with CREATE2 and deploy wallets on first use.
+/// @dev The gateway calls this linked library through delegatecall, so `address(this)` is the gateway proxy.
+///      The CREATE2 deployer address stays the same across implementation upgrades.
 library GaslessWalletDeployerLib {
 	uint256 internal constant GASLESS_WALLET_VERSION = 1;
 
@@ -18,14 +17,6 @@ library GaslessWalletDeployerLib {
 	bytes32 internal constant GASLESS_WALLET_INIT_CODE_HASH = 0x3f601fa99034209285834aabec34f49354849bbf4fdfdbb92b51f5f9b5064f31;
 
 	// ───────────────────── External Entrypoints ───────────────────
-
-	/// @notice Predict the owner's index-zero GaslessWallet address without deploying it.
-	/// @dev Called through the gateway so address(this) is the CREATE2 deployer.
-	/// @param owner Owner address used to derive the GaslessWallet address.
-	/// @return Predicted GaslessWallet address.
-	function getGaslessWalletAddress(address owner) external view returns (address) {
-		return _getGaslessWalletAddress(address(this), owner);
-	}
 
 	/// @notice Predict the owner's selected GaslessWallet address without deploying it.
 	/// @dev Called through the gateway so address(this) is the CREATE2 deployer.
@@ -63,19 +54,8 @@ library GaslessWalletDeployerLib {
 	}
 
 	function _walletSalt(address owner, uint256 walletId) private pure returns (bytes32) {
-		if (walletId == 0) return _gaslessWalletSalt(owner);
+		// Preserve the deployed index-zero salt and every existing wallet address.
+		if (walletId == 0) return keccak256(abi.encode("GaslessQWallet", GASLESS_WALLET_VERSION, owner));
 		return keccak256(abi.encode("GaslessQIndexedWallet", GASLESS_WALLET_VERSION, owner, walletId));
-	}
-
-	// ─────────────────────────── Helpers ──────────────────────────
-
-	function _getGaslessWalletAddress(address deployer, address owner) internal pure returns (address) {
-		bytes32 salt = _gaslessWalletSalt(owner);
-		return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), deployer, salt, GASLESS_WALLET_INIT_CODE_HASH)))));
-	}
-
-	function _gaslessWalletSalt(address owner) internal pure returns (bytes32) {
-		// Keep the original salt tag so renaming the contract does not move existing deposit addresses.
-		return keccak256(abi.encode("GaslessQWallet", GASLESS_WALLET_VERSION, owner));
 	}
 }

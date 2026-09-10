@@ -2,7 +2,7 @@
 pragma solidity 0.8.36;
 
 /// @title ISymmioCore
-/// @notice Minimal surface of the Symmio core diamond used by the gateway.
+/// @notice Symmio core diamond methods used by the gateway.
 interface ISymmioCore {
 	/// @notice Deposit `amount` of collateral, crediting `account`'s core balance.
 	/// @dev Pulls collateral from `msg.sender` (the gateway), so the gateway must approve first.

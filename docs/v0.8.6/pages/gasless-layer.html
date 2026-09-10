@@ -117,7 +117,7 @@
 							<tbody>
 								<tr>
 									<td>Independent signed operations</td>
-									<td><code>relayInstantBatch</code></td>
+									<td><code>relayWalletBatch</code></td>
 									<td>InstantLayer, or Gasless Layer for wallet-targeted operations</td>
 								</tr>
 								<tr>
@@ -137,7 +137,7 @@
 								</tr>
 								<tr>
 									<td>Bridged collateral settlement</td>
-									<td><code>settleDepositToNewAccount</code> or <code>settleDepositToExistingAccount</code></td>
+									<td><code>settleWalletDepositToNewAccount</code> or <code>settleWalletDepositToExistingAccount</code></td>
 									<td>Gasless Layer plus AccountLayer ownership checks</td>
 								</tr>
 							</tbody>
@@ -163,7 +163,7 @@
 					<h2 id="signed-operations">Signed operation relays</h2>
 					<h3 id="instant-operations">InstantLayer batches and templates</h3>
 					<p>
-						<code>relayInstantBatch</code> forwards independent <code>SignedOperation</code> payloads. A batch may contain ordinary
+						<code>relayWalletBatch</code> forwards independent <code>SignedOperation</code> payloads. A batch may contain ordinary
 						InstantLayer operations, GaslessWallet operations, or both. Pure InstantLayer batches use one <code>executeBatch</code> call.
 						Mixed batches preserve order and execute one operation at a time so wallet calls and InstantLayer calls remain in the same
 						atomic transaction.
@@ -187,14 +187,14 @@
 
 					<h3 id="wallet-operations">GaslessWallet operations</h3>
 					<p>
-						Each owner has a legacy <code>GaslessWallet</code> address and can use additional indexed wallets, all derived with CREATE2
-						from the Gasless Layer proxy. The wallet may receive bridged collateral before deployment. When first needed, the layer
-						deploys the wallet at the precomputed address. Only the Gasless Layer proxy can make it transfer assets or execute calls.
+						Each owner can use multiple <code>GaslessWallet</code> addresses, derived with CREATE2 from the Gasless Layer proxy. The
+						wallet may receive bridged collateral before deployment. When first needed, the layer deploys the wallet at the precomputed
+						address. Only the Gasless Layer proxy can make it transfer assets or execute calls.
 					</p>
 					<p>
-						A wallet operation reuses the <code>SignedOperation</code> envelope, but its target must equal the signer's expected
+						A wallet operation reuses the <code>SignedOperation</code> envelope, but its target must equal the owner's selected
 						GaslessWallet and its calldata must encode <code>GaslessWallet.execute(Call[])</code>. Gasless Layer verifies the
-						gateway-domain signature, deadline, and sequential account nonce before executing the calls.
+						gateway-domain signature, deadline, and sequential nonce for that wallet and signer account before executing the calls.
 					</p>
 					<ul>
 						<li>The account owner may sign directly.</li>
@@ -217,13 +217,10 @@
 						There is no wallet kind, purpose registration, or on-chain wallet-count limit. Wallets deploy on first use and may receive
 						tokens beforehand.
 					</p>
-					<pre><code>// Existing clients keep using the original API.
-const oldWallet = await gateway.getGaslessWalletAddress(owner)
-// The new API includes that exact wallet at index 0.
+					<pre><code>// Select a wallet explicitly. Index 0 keeps the original wallet address.
 const wallet0 = await gateway.getWalletAddress(owner, 0n)
 const wallet1 = await gateway.getWalletAddress(owner, 1n)
 const wallet2 = await gateway.getWalletAddress(owner, 2n)
-// oldWallet === wallet0
 
 // The service can assign wallet 1 to a deposit and wallet 2 to a withdrawal.
 await gateway.settleWalletDepositToExistingAccount(owner, 1n, subAccount)
@@ -235,30 +232,30 @@ await gateway.settleWalletDepositToNewAccount(owner, 1n, affiliate, accountData)
 const nonce = (await gateway.getWalletOperationNonce(owner, 2n, signerAccount)) + 1n
 // Sign the usual wallet SignedOperation with target = wallet2 and that nonce.
 const walletIds = [2n]
-await gateway.getAccountOperationalFeeForWallets(signerAccount, [signedOp], walletIds)
+await gateway.getAccountOperationalFee(signerAccount, [signedOp], walletIds)
 await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code></pre>
 					<p>
-						The indexed relay accepts one wallet index per operation. Use 0 for InstantLayer operations and legacy wallet operations in a
-						mixed batch, including an operational-fee allowance approval. The existing target identifies which of those routes to use. A
-						positive index requires a wallet operation whose signed target equals the address derived from the account owner and that
-						index. The relayer cannot redirect a valid signature to another wallet by changing the index.
+						The relay requires one wallet index per operation, including batches containing only InstantLayer operations. Use 0 for
+						InstantLayer and index-zero wallet operations in a mixed batch, including an operational-fee allowance approval. The existing
+						target identifies which of those routes to use. A positive index requires a wallet operation whose signed target equals the
+						address derived from the account owner and that index. The relayer cannot redirect a valid signature to another wallet by
+						changing the index.
 					</p>
 					<p>
 						Relay execution passes the identified call selectors to billing: inner calls for GaslessWallet operations and the outer
 						selector for InstantLayer operations. Billing applies the fee schedule, quota and payer rules without using a wallet index.
 						Standalone quote entry points use the supplied index to identify wallet targets, including wallets that have not been
-						deployed. They validate targets and decode calls before passing selectors to the shared account fee calculator, which then
-						applies quota and payer rules.
+						deployed. The quote validates targets and decodes calls before applying quota and payer rules.
 					</p>
 					<p>
-						The existing callable interface remains available. All wallet indices, including 0, emit
+						All wallet indices, including 0, emit
 						<code>GaslessWalletDeployed</code>, <code>WalletDepositSettled</code> and <code>WalletNonCollateralTokenRecovered</code> for
 						deployment, deposit settlement and token recovery respectively. Event consumers must adopt these events; recovery identifies
 						the source GaslessWallet address.
 					</p>
 					<p>
-						Index 0 uses <code>walletOperationNonces(signerAccount)</code>, including when called through the new relay API. Positive
-						indices use <code>walletNonces(walletAddress, signerAccount)</code>. The unified getter
+						Index 0 retains the original nonce mapping in proxy storage. Its old public getter has been removed. Positive indices use
+						<code>walletNonces(walletAddress, signerAccount)</code>. The unified getter
 						<code>getWalletOperationNonce(owner, walletId, signerAccount)</code> selects the correct stream. Each stream is sequential,
 						but operations for different wallets can execute in either order. The signing domain remains
 						<code>GaslessGateway</code> version 1. Fees and free-operation quotas still belong to the existing billing account. Owner and
@@ -281,12 +278,22 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 					</p>
 					<p>
 						Upgrade the GaslessLayer implementation and its linked libraries on the existing compatible proxy without reinitializing it,
-						then enable the indexed APIs in the service and frontend. Existing clients, addresses and signatures continue working;
-						existing transfers can also use index 0 without moving their funds. Update event consumers for every index, including zero, to
-						read
+						then update the service and frontend to the wallet-aware API. This is a breaking API change; wallet addresses, stored state,
+						and signatures remain valid. Existing transfers can use index 0 without moving their funds. Pass one wallet ID per operation
+						to both relayWalletBatch and getAccountOperationalFee, including an all-zero list for InstantLayer-only batches. Update event
+						consumers for every index, including zero, to read
 						<code>GaslessWalletDeployed</code>, <code>WalletDepositSettled</code>, and <code>WalletNonCollateralTokenRecovered</code>. All
 						wallet execution continues to emit <code>WalletOperationRelayed</code> with the actual wallet address.
 					</p>
+
+					<aside class="callout callout-important">
+						<strong>Update clients when upgrading</strong> The old <code>relayInstantBatch</code>, <code>getGaslessWalletAddress</code>,
+						<code>settleDepositToNewAccount</code>, <code>settleDepositToExistingAccount</code>, and
+						<code>recoverNonCollateralToken</code> entry points are removed. Use the wallet-aware methods shown above.
+						<code>getAccountOperationalFee</code> now requires the wallet ID array as its third argument and replaces
+						<code>getAccountOperationalFeeForWallets</code>. Use <code>getWalletOperationNonce(owner, walletId, signerAccount)</code> for
+						every wallet index.
+					</aside>
 
 					<h2 id="native-top-ups">Native gas top-ups</h2>
 					<p>
@@ -308,16 +315,16 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 
 					<h2 id="cross-chain-deposits">Cross-chain deposit settlement</h2>
 					<p>
-						For the legacy flow, a frontend first reads <code>getGaslessWalletAddress(owner)</code> and routes bridged collateral to that
-						address. The relayer later settles the wallet's entire collateral balance through one of two paths:
+						A frontend reads <code>getWalletAddress(owner, walletId)</code> and routes bridged collateral to that address. The relayer
+						later settles the wallet's entire collateral balance through one of two paths:
 					</p>
 					<ul>
 						<li>
-							<code>settleDepositToNewAccount</code> creates a wallet-owned SubAccount under the supplied affiliate, then deposits the
-							net collateral. The relayer supplies the account name, metadata, isolation type, and single-VA setting.
+							<code>settleWalletDepositToNewAccount</code> creates an owner-held SubAccount under the supplied affiliate, then deposits
+							the net collateral. The relayer supplies the account name, metadata, isolation type, and single-VA setting.
 						</li>
 						<li>
-							<code>settleDepositToExistingAccount</code> deposits only when AccountLayer reports that the wallet owns the target
+							<code>settleWalletDepositToExistingAccount</code> deposits only when AccountLayer reports that the owner owns the target
 							SubAccount.
 						</li>
 					</ul>
@@ -328,7 +335,7 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 					</p>
 					<aside class="callout callout-risk">
 						<strong>New-account settings are not user-signed</strong> The relayer supplies the affiliate and account settings for
-						<code>settleDepositToNewAccount</code>. The transaction still creates an account owned by the requested wallet, but the
+						<code>settleWalletDepositToNewAccount</code>. The transaction still creates an account owned by the requested owner, but the
 						service must preserve the user's off-chain choice correctly.
 					</aside>
 
@@ -407,7 +414,7 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 								<tr>
 									<td>AccountLayer</td>
 									<td>Grant the Gasless Layer proxy <code>ACCOUNT_CREATOR_ROLE</code></td>
-									<td><code>settleDepositToNewAccount</code></td>
+									<td><code>settleWalletDepositToNewAccount</code></td>
 								</tr>
 							</tbody>
 						</table>
@@ -421,7 +428,10 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 					<h2 id="integration-checklist">Integration checklist</h2>
 					<ol>
 						<li>Read the proxy address and chain ID into every EIP-712 domain. Do not sign against an implementation address.</li>
-						<li>Use <code>getGaslessWalletAddress</code> from the deployed proxy before displaying a deposit or withdrawal address.</li>
+						<li>
+							Use <code>getWalletAddress(owner, walletId)</code> from the deployed proxy before displaying a deposit or withdrawal
+							address.
+						</li>
 						<li>
 							Quote the fee with <code>getAccountOperationalFee</code>, but simulate the complete relay because earlier operations can
 							change the payer's final balance or allowance.
@@ -458,8 +468,8 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 									<td>Native amount sent, collateral charge, and sponsored usage</td>
 								</tr>
 								<tr>
-									<td><code>DepositSettledToNewAccount</code>, <code>DepositSettledToExistingAccount</code></td>
-									<td>Destination SubAccount, net deposit, and flat deposit fee</td>
+									<td><code>WalletDepositSettled</code></td>
+									<td>Owner, wallet ID, destination SubAccount, net deposit, and flat deposit fee</td>
 								</tr>
 							</tbody>
 						</table>
@@ -474,8 +484,8 @@ await gateway.relayWalletBatch([signedOp], [signature], [], [], walletIds)</code
 							sponsorship policy, and the deposit-fee treasury. Core's fee admin separately controls the operational-fee receiver.
 						</li>
 						<li>
-							The current collateral token cannot be recovered through <code>recoverNonCollateralToken</code>. Settlement expects a
-							standard non-rebasing, no-transfer-fee ERC20.
+							The current collateral token cannot be recovered through <code>recoverWalletNonCollateralToken</code>. Settlement expects
+							a standard non-rebasing, no-transfer-fee ERC20.
 						</li>
 						<li>
 							GaslessWallet creation bytecode determines every derived wallet address. Changing that bytecode changes the computed
