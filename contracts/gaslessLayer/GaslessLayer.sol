@@ -71,7 +71,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	mapping(bytes4 => SelectorFeeConfig) public selectorFeeConfigs;
 
 	// Per-account daily free quota. Each op is priced at its selector fee; the first
-	// `dailyFreeOpsLimit` ops per account per UTC day waive that fee. See relayWalletBatch.
+	// `dailyFreeOpsLimit` ops per account per UTC day waive that fee. See relayInstantBatch.
 	uint256 public dailyFreeOpsLimit; // 0 = no free quota
 	bool public revertWhenFreeQuotaExhausted; // true = revert past the quota instead of charging the base fee
 	mapping(address => DailyFreeOpsUsage) public dailyFreeOpsUsage;
@@ -140,7 +140,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @param flexFillerSignatures InstantLayer flexible-field signatures by operation; wallet operations ignore their entries.
 	/// @param walletIds Wallet index per operation; use zero for InstantLayer operations or the original wallet.
 	/// @return results Encoded result of each operation, in execution order.
-	function relayWalletBatch(
+	function relayInstantBatch(
 		IInstantLayer.SignedOperation[] calldata signedOps,
 		bytes[] calldata signatures,
 		bytes[][] calldata fills,
@@ -211,7 +211,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	}
 
 	/// @notice Relay a user-signed InstantLayer delegation and charge one fee or consume one free operation.
-	/// @dev Calls InstantLayer's standalone grantBatchDelegationBySig. Owner-signed grants can also use relayWalletBatch.
+	/// @dev Calls InstantLayer's standalone grantBatchDelegationBySig. Owner-signed grants can also use relayInstantBatch.
 	///      The delegation account pays, with virtual accounts billed through their parent as for other InstantLayer operations.
 	///      Each relay uses one free operation when available, regardless of the number of selectors granted.
 	function relayGrantBatchDelegationBySig(
@@ -270,7 +270,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @param affiliate Affiliate selected by the relayer for the new account.
 	/// @param accountData Account settings; symmioCore is replaced with the gateway's configured core.
 	/// @return subAccount Address of the created and funded sub-account.
-	function settleWalletDepositToNewAccount(
+	function settleDepositToNewAccount(
 		address owner,
 		uint256 walletIndex,
 		address affiliate,
@@ -300,11 +300,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletIndex Wallet index; zero selects the original wallet.
 	/// @param subAccount Existing sub-account that receives the net deposit.
-	function settleWalletDepositToExistingAccount(
-		address owner,
-		uint256 walletIndex,
-		address subAccount
-	) external onlyRole(RELAYER_ROLE) nonReentrant {
+	function settleDepositToExistingAccount(address owner, uint256 walletIndex, address subAccount) external onlyRole(RELAYER_ROLE) nonReentrant {
 		if (owner == address(0) || subAccount == address(0)) revert ZeroAddress();
 
 		address actualOwner = accountLayer.ownerOf(subAccount);
@@ -322,8 +318,8 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @return Predicted GaslessWallet address.
-	function getWalletAddress(address owner, uint256 walletId) external view returns (address) {
-		return GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address) {
+		return GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
 	}
 
 	/// @notice Read the last consumed wallet-operation nonce for the selected wallet and signer account.
@@ -332,9 +328,9 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @param signerAccount Account specified in the signed operation.
 	/// @return Last consumed nonce; the next operation must use this value plus one.
-	function getWalletOperationNonce(address owner, uint256 walletId, address signerAccount) external view returns (uint256) {
+	function walletOperationNonces(address owner, uint256 walletId, address signerAccount) external view returns (uint256) {
 		if (walletId == 0) return _legacyWalletOperationNonces[signerAccount];
-		address wallet = GaslessWalletDeployerLib.getWalletAddress(owner, walletId);
+		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
 		return walletNonces[wallet][signerAccount];
 	}
 
@@ -519,7 +515,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @param token Non-collateral token to recover.
 	/// @param recipient Address receiving the wallet's full balance of token.
 	/// @return amount Token amount recovered.
-	function recoverWalletNonCollateralToken(
+	function recoverNonCollateralToken(
 		address owner,
 		uint256 walletId,
 		address token,

@@ -102,7 +102,7 @@ describe("GaslessLayer onboarding scenario", function () {
 	// Steps 1-3: deposit address, bridged collateral, relayer-settled account creation.
 	async function settleFundedAccount(): Promise<string> {
 		// ── 1. Show the user their deposit address ─────────────────────────────
-		const depositAddress = await gateway.getWalletAddress(user.address, 0n)
+		const depositAddress = await gateway.getGaslessWalletAddress(user.address, 0n)
 
 		// ── 2. User bridges collateral to it ───────────────────────────────────
 		await context.collateral.mint(depositAddress, BRIDGED_AMOUNT)
@@ -116,8 +116,8 @@ describe("GaslessLayer onboarding scenario", function () {
 			isolationType: 3, // CUSTOM
 			singleVAMode: false,
 		}
-		const subAccount = await gateway.connect(relayer).settleWalletDepositToNewAccount.staticCall(user.address, 0n, affiliate, accountData)
-		await gateway.connect(relayer).settleWalletDepositToNewAccount(user.address, 0n, affiliate, accountData)
+		const subAccount = await gateway.connect(relayer).settleDepositToNewAccount.staticCall(user.address, 0n, affiliate, accountData)
+		await gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate, accountData)
 		return subAccount
 	}
 
@@ -138,7 +138,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const bindSig = await sessionKey.signTypedData(domain, types, bindOp)
 
 		// Sanity: without the grant, the session key has no authority over the account
-		await expect(gateway.connect(relayer).relayWalletBatch([bindOp], [bindSig], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+		await expect(gateway.connect(relayer).relayInstantBatch([bindOp], [bindSig], [[]], [[]], [0n])).to.be.revertedWithCustomError(
 			context.instantLayer,
 			"InvalidDelegation",
 		)
@@ -159,7 +159,7 @@ describe("GaslessLayer onboarding scenario", function () {
 
 		const tx = await gateway
 			.connect(relayer)
-			.relayWalletBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []], [0n, 0n, 0n])
+			.relayInstantBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []], [0n, 0n, 0n])
 
 		// Delegation is live for the session key
 		expect(await context.instantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.true
@@ -180,7 +180,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		await expect(
 			gateway
 				.connect(relayer)
-				.relayWalletBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []], [0n, 0n, 0n]),
+				.relayInstantBatch([grantOp, bindOp, approveOp], [grantSig, bindSig, approveSig], [[], [], []], [[], [], []], [0n, 0n, 0n]),
 		).to.be.revertedWithCustomError(context.instantLayer, "MaxUsesExceeded")
 	})
 
@@ -231,7 +231,7 @@ describe("GaslessLayer onboarding scenario", function () {
 
 		const tx = await gateway
 			.connect(relayer)
-			.relayWalletBatch([grantOp, approveOp, bindOp], [grantSig, approveSig, bindSig], [[], [], []], [[], [], []], [0n, 0n, 0n])
+			.relayInstantBatch([grantOp, approveOp, bindOp], [grantSig, approveSig, bindSig], [[], [], []], [[], [], []], [0n, 0n, 0n])
 
 		expect(walletSignatures).to.equal(1)
 
@@ -252,13 +252,13 @@ describe("GaslessLayer onboarding scenario", function () {
 		await context.controlFacet.connect(context.signers.admin).setMaxWithdrawParts(1)
 		const depositId = 11n
 		const withdrawalId = 22n
-		const depositWallet = await gateway.getWalletAddress(user.address, depositId)
-		const withdrawalWallet = await gateway.getWalletAddress(user.address, withdrawalId)
+		const depositWallet = await gateway.getGaslessWalletAddress(user.address, depositId)
+		const withdrawalWallet = await gateway.getGaslessWalletAddress(user.address, withdrawalId)
 		await context.collateral.mint(depositWallet, BRIDGED_AMOUNT)
 		const affiliate = await context.accountManager.getAddress()
 		const accountData = { name: "indexed-account", metadata: "0x", symmioCore: ethers.ZeroAddress, isolationType: 3, singleVAMode: false }
-		const subAccount = await gateway.connect(relayer).settleWalletDepositToNewAccount.staticCall(user.address, depositId, affiliate, accountData)
-		await gateway.connect(relayer).settleWalletDepositToNewAccount(user.address, depositId, affiliate, accountData)
+		const subAccount = await gateway.connect(relayer).settleDepositToNewAccount.staticCall(user.address, depositId, affiliate, accountData)
+		await gateway.connect(relayer).settleDepositToNewAccount(user.address, depositId, affiliate, accountData)
 		const withdrawalAmount = decimal(20n)
 		const approveOp = createSignedOperation(
 			user.address,
@@ -287,7 +287,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		)
 		await gateway
 			.connect(relayer)
-			.relayWalletBatch(
+			.relayInstantBatch(
 				[approveOp, withdrawOp],
 				[await user.signTypedData(domain, types, approveOp), await user.signTypedData(domain, types, withdrawOp)],
 				[[], []],
@@ -299,8 +299,8 @@ describe("GaslessLayer onboarding scenario", function () {
 		// No wallet deployment or bridge signature is required to receive the withdrawal.
 		expect(await ethers.provider.getCode(withdrawalWallet)).to.equal("0x")
 		const nextDepositId = 12n
-		await context.collateral.mint(await gateway.getWalletAddress(user.address, nextDepositId), BRIDGED_AMOUNT)
-		await gateway.connect(relayer).settleWalletDepositToExistingAccount(user.address, nextDepositId, subAccount)
+		await context.collateral.mint(await gateway.getGaslessWalletAddress(user.address, nextDepositId), BRIDGED_AMOUNT)
+		await gateway.connect(relayer).settleDepositToExistingAccount(user.address, nextDepositId, subAccount)
 		expect(await context.collateral.balanceOf(withdrawalWallet)).to.equal(withdrawalAmount)
 
 		// The actual cross-chain bridge is external; this target consumes an exact ERC20 approval.
@@ -340,7 +340,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		}
 		const signature = await user.signTypedData({ ...domain, name: "GaslessGateway", verifyingContract: gatewayAddr }, walletTypes, bridgeOp)
 		const receiverBefore = await context.collateral.balanceOf(sessionKey.address)
-		await gateway.connect(relayer).relayWalletBatch([bridgeOp], [signature], [], [], [withdrawalId])
+		await gateway.connect(relayer).relayInstantBatch([bridgeOp], [signature], [], [], [withdrawalId])
 		expect(await context.collateral.balanceOf(sessionKey.address)).to.equal(receiverBefore + withdrawalAmount)
 		expect(await context.collateral.balanceOf(withdrawalWallet)).to.equal(0)
 		expect(await gateway.walletNonces(withdrawalWallet, subAccount)).to.equal(1)

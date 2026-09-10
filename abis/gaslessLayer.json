@@ -1458,6 +1458,30 @@
     {
         "inputs": [
             {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getGaslessWalletAddress",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "uint256",
                 "name": "collateralAmount",
                 "type": "uint256"
@@ -1493,30 +1517,6 @@
                 "internalType": "bytes32",
                 "name": "",
                 "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "walletId",
-                "type": "uint256"
-            }
-        ],
-        "name": "getWalletAddress",
-        "outputs": [
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
             }
         ],
         "stateMutability": "view",
@@ -1619,35 +1619,6 @@
                 "internalType": "bytes32",
                 "name": "",
                 "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "walletId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "address",
-                "name": "signerAccount",
-                "type": "address"
-            }
-        ],
-        "name": "getWalletOperationNonce",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -1933,7 +1904,7 @@
                 "type": "address"
             }
         ],
-        "name": "recoverWalletNonCollateralToken",
+        "name": "recoverNonCollateralToken",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -2022,6 +1993,128 @@
         ],
         "name": "relayGrantBatchDelegationBySig",
         "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "signer",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "target",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "callData",
+                        "type": "bytes"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "addr",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "bool",
+                                "name": "isPartyB",
+                                "type": "bool"
+                            }
+                        ],
+                        "internalType": "struct IInstantLayer.Account",
+                        "name": "signerAccount",
+                        "type": "tuple"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "offset",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "length",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "authorizedFlexFiller",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct IInstantLayer.FlexField[]",
+                        "name": "flexFields",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "maxUses",
+                        "type": "uint256"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "nonce",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "deadline",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "bytes32",
+                                "name": "salt",
+                                "type": "bytes32"
+                            }
+                        ],
+                        "internalType": "struct IInstantLayer.ReplayAttackHeader",
+                        "name": "replayAttackHeader",
+                        "type": "tuple"
+                    }
+                ],
+                "internalType": "struct IInstantLayer.SignedOperation[]",
+                "name": "signedOps",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "bytes[]",
+                "name": "signatures",
+                "type": "bytes[]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "fills",
+                "type": "bytes[][]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "flexFillerSignatures",
+                "type": "bytes[][]"
+            },
+            {
+                "internalType": "uint256[]",
+                "name": "walletIds",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "relayInstantBatch",
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "results",
+                "type": "bytes[]"
+            }
+        ],
         "stateMutability": "nonpayable",
         "type": "function"
     },
@@ -2195,128 +2288,6 @@
         "name": "relayNativeGasTopUp",
         "outputs": [],
         "stateMutability": "payable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "signer",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "target",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "callData",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "address",
-                                "name": "addr",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "bool",
-                                "name": "isPartyB",
-                                "type": "bool"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.Account",
-                        "name": "signerAccount",
-                        "type": "tuple"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "offset",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "length",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "authorizedFlexFiller",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.FlexField[]",
-                        "name": "flexFields",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "maxUses",
-                        "type": "uint256"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "nonce",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "deadline",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "bytes32",
-                                "name": "salt",
-                                "type": "bytes32"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.ReplayAttackHeader",
-                        "name": "replayAttackHeader",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct IInstantLayer.SignedOperation[]",
-                "name": "signedOps",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "bytes[]",
-                "name": "signatures",
-                "type": "bytes[]"
-            },
-            {
-                "internalType": "bytes[][]",
-                "name": "fills",
-                "type": "bytes[][]"
-            },
-            {
-                "internalType": "bytes[][]",
-                "name": "flexFillerSignatures",
-                "type": "bytes[][]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "walletIds",
-                "type": "uint256[]"
-            }
-        ],
-        "name": "relayWalletBatch",
-        "outputs": [
-            {
-                "internalType": "bytes[]",
-                "name": "results",
-                "type": "bytes[]"
-            }
-        ],
-        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
@@ -2573,7 +2544,7 @@
                 "type": "address"
             }
         ],
-        "name": "settleWalletDepositToExistingAccount",
+        "name": "settleDepositToExistingAccount",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -2628,7 +2599,7 @@
                 "type": "tuple"
             }
         ],
-        "name": "settleWalletDepositToNewAccount",
+        "name": "settleDepositToNewAccount",
         "outputs": [
             {
                 "internalType": "address",
@@ -2722,6 +2693,35 @@
             }
         ],
         "name": "walletNonces",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "signerAccount",
+                "type": "address"
+            }
+        ],
+        "name": "walletOperationNonces",
         "outputs": [
             {
                 "internalType": "uint256",
