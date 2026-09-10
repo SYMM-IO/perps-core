@@ -80,12 +80,12 @@ struct SymbolAdjustment {
 	///      Abort and finalization stay frozen until saved rates are restored.
 	RestatementPhase restatementPhase;
 	/// @notice Shared funding cutoff selected when the restatement window opens.
-	/// @dev Every operator-supplied PartyB batch rolls its rates to this timestamp, regardless of the batch transaction time.
+	/// @dev Economic reads stop here immediately; every operator-supplied PartyB batch later crystallizes its exact cumulative fee at this timestamp.
 	uint256 fundingCutoffTimestamp;
 	/// @notice Number of PartyB funding checkpoints that still need restoration for this window.
-	/// @dev Incremented only for nonzero pairs explicitly supplied by Operations or encountered through quote processing.
+	/// @dev Incremented for each nonzero-epoch-duration pair explicitly supplied by Operations or encountered through quote processing.
 	uint256 pendingFundingPartyBCount;
-	/// @notice Shared rate-resumption timestamp selected when finalization begins.
+	/// @notice Shared fresh-epoch timestamp selected when abort or finalization begins.
 	/// @dev Batched restoration uses this timestamp so every PartyB resumes funding at one economic boundary.
 	uint256 fundingRestorationTimestamp;
 	/// @notice Whether the open window settles old-basis funding before quote rewrites.
@@ -94,13 +94,17 @@ struct SymbolAdjustment {
 	bool fundingSettlementRequired;
 }
 
-/// @notice Funding rates saved while a symbol is physically restated.
-/// @dev Rates are shared by all quotes for one symbol/PartyB pair. Core pauses them once per
-///      restatement window, then restores them on abort or rebases them on finalization.
+/// @notice Original and restated-basis funding rates saved while a symbol is physically restated.
+/// @dev Rates are shared by all quotes for one symbol/PartyB pair. Core crystallizes and pauses them once per
+///      restatement window, then starts a fresh original-rate epoch on abort or restated-rate epoch on finalization.
 struct FundingRateCheckpoint {
 	int256 currentLongRate;
 	int256 currentShortRate;
 	uint256 restatementEpoch;
+	/// @notice Long rate converted to the restated quantity basis and ready for a fresh epoch on finalization.
+	int256 restatedLongRate;
+	/// @notice Short rate converted to the restated quantity basis and ready for a fresh epoch on finalization.
+	int256 restatedShortRate;
 }
 
 /// @notice Old-basis open quantity that still has to be restated or removed for one symbol/PartyB pair.

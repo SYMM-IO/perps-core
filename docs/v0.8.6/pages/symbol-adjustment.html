@@ -286,8 +286,8 @@ then, depending on what Operations does next:
 					</p>
 					<p>
 						One more term before the routes. <em>Physical restatement</em> is the name of the maintenance window itself: eligible stored
-						quotes are rewritten to the raw venue basis, current funding rates are paused and later rebased, and <code>basisVersion</code>
-						advances when the window finalizes.
+						quotes are rewritten to the raw venue basis, funding is crystallized at one cutoff and restarted in a fresh epoch on exit, and
+						<code>basisVersion</code> advances when the window finalizes.
 					</p>
 
 					<h2 id="example">One split, two route outcomes</h2>
@@ -348,7 +348,10 @@ funding amount = 1 * 8 = 8</code></pre>
 								<tr>
 									<td>Funding rates</td>
 									<td>Untouched, still per old unit.</td>
-									<td>Paused per PartyB during the window, then divided by <code>restatementFactor</code> at finalization.</td>
+									<td>
+										Crystallized exactly at the start cutoff, paused without adding zero-rate history, then restarted in a fresh
+										epoch at finalization with the current rates divided by <code>restatementFactor</code>.
+									</td>
 								</tr>
 								<tr>
 									<td>Trading</td>
@@ -482,7 +485,7 @@ funding amount = 1 * 8 = 8</code></pre>
 										<div class="adjustment-rail" aria-hidden="true"></div>
 										<div class="adjustment-interval">
 											<div><code>PRICE_ADJUSTED + restating</code><span class="adjustment-status">Frozen</span></div>
-											<p>Abort remains available through funding settlement and pending-quote cancellation.</p>
+											<p>Seal the PartyB manifest first; abort then remains available until a basis-dependent mutation.</p>
 										</div>
 									</li>
 									<li class="adjustment-tick is-frozen">
@@ -553,8 +556,8 @@ funding amount = 1 * 8 = 8</code></pre>
 									<div class="adjustment-interval">
 										<div><code>SCHEDULED + restating</code><span class="adjustment-status">Frozen</span></div>
 										<p>
-											The opening call only records the window. Prepare and settle funding before quote rewrites; abort remains
-											available until the first basis-dependent mutation.
+											The opening call records the window and cutoff. Prepare and seal the PartyB manifest before abort or quote
+											processing; after sealing, abort remains available until the first basis-dependent mutation.
 										</p>
 									</div>
 								</li>
@@ -622,9 +625,10 @@ funding amount = 1 * 8 = 8</code></pre>
 								</tr>
 								<tr>
 									<td><code>abortRestatement</code></td>
-									<td>A restatement window is open, but no quote has been rewritten.</td>
+									<td>The PartyB manifest is sealed and no basis-dependent mutation has occurred.</td>
 									<td>
-										Starts funding restoration. If checkpoints exist, Operations supplies their PartyB addresses to
+										Starts a fresh original-rate epoch at the abort timestamp. If checkpoints exist, Operations supplies their
+										PartyB addresses to
 										<code>processRestatementFunding</code>; the last batch closes the window and emits
 										<code>RestatementAborted</code>.
 									</td>
@@ -640,6 +644,12 @@ funding amount = 1 * 8 = 8</code></pre>
 						removal, and pending-quote cancellation do not set this flag because they do not leave basis-dependent state behind.
 						Operations must still reconcile the book before aborting. An aborted window's epoch is not reused.
 					</p>
+					<aside class="callout callout-important">
+						<strong>Abort requires completed funding preparation.</strong>
+						Core rejects abort in <code>FUNDING_PREPARATION</code>. Operations must submit and seal the complete PartyB manifest first, so
+						every live accumulated-funding record has a checkpoint that can restart without charging the pause. This adds no global scan;
+						it reuses the same bounded preparation batches and manager completeness attestation required for finalization.
+					</aside>
 
 					<h3 id="active-route">Adjusted-price route without quote rewrites</h3>
 					<p>
@@ -816,7 +826,9 @@ restatement mined before liquidation  -> nonce is still 82 -> restatement starts
 						<code>restatementStartedAt</code>, Operations must wait longer than the contract's minimum timer.
 					</aside>
 					<p>
-						<code>finalizeRestatement</code> records one funding-resumption timestamp. Every restoration batch uses that same timestamp.
+						<code>finalizeRestatement</code> records one funding-resumption timestamp. That timestamp starts the new-basis funding epoch
+						for every checkpoint, even though Operations materializes the stored records in later batches. The pre-window cumulative fee
+						remains in each snapshot; the maintenance interval is never averaged into it. Every restoration batch uses the same timestamp.
 						The terminal transaction writes state <code>APPLIED</code> only when the prior state was <code>SCHEDULED</code> or
 						<code>PRICE_ADJUSTED</code>, sets <code>cumulativeFactor</code> to an explicit <code>1e18</code>, closes the window, clears
 						the temporary funding fields, increments <code>basisVersion</code>, and stores the current global quote ID as
@@ -1060,6 +1072,16 @@ else:
 						the same venue price basis while the window is open.
 					</aside>
 					<p>
+						Liquidation funding follows the same cutoff as ordinary quote debt. Before an exit begins, internal quote and aggregate
+						calculations use the crystallized cutoff value even if Operations has not yet materialized that PartyB's checkpoint; the later
+						preparation batch writes exactly that value. A liquidation close may realize the unpaid pre-cutoff amount and consume the
+						old-basis funding inventory, but the elapsed maintenance time contributes nothing. Once abort or finalization starts
+						restoration, internal calculations use the fresh epoch from the shared restoration timestamp, including before that PartyB's
+						restoration batch lands. The snapshot PartyA route carries Muon-signed cumulative fees instead of recomputing them at close
+						time, so Muon must publish the frozen cutoff cumulative value during maintenance and the fresh-epoch cumulative value after an
+						exit begins. No signature field or payload schema changes; only the cumulative-value calculation follows this lifecycle.
+					</p>
+					<p>
 						When an old-basis quote closes, <code>closePositionFully</code> calls the inventory hook before subtracting normal aggregates.
 						If the PartyB was already prepared, the hook subtracts the quote's exact open amount from the PartyB checkpoint and symbol
 						total and emits <code>RestatementInventoryConsumed</code>. During <code>FUNDING_SETTLEMENT</code>, it also subtracts any
@@ -1180,23 +1202,38 @@ else:
 					<h2 id="funding">Funding across the window</h2>
 					<p>
 						A physical restatement changes quote quantities, and current funding rates are per-unit values. The same rate therefore cannot
-						be used with old-unit and new-unit quantities, which is why funding gets its own multi-step dance around the rewrite.
+						be used with old-unit and new-unit quantities. Core therefore treats the window as a hard boundary between two funding epochs:
+						it crystallizes the old epoch at the start cutoff, accrues nothing during maintenance, and starts a new epoch on exit.
 					</p>
 					<p>
 						Operations first supplies every involved PartyB. For each one, Core snapshots that PartyB's total LONG and SHORT open
-						quantities and, when accumulated funding is active, saves and pauses its current rates. Preparation is then sealed, so quote
-						processing cannot introduce a PartyB that was left out. Before the window closes, Core requires every snapshotted old-basis
-						quantity to have been consumed, and it restores every saved rate. Rates are rebased only when the restatement finalizes
-						&mdash; an abort puts them back exactly as they were.
+						quantities and, when an accumulated-funding record exists, materializes the exact cumulative fee at the shared cutoff. It
+						saves both the original current rates and their restated-basis values, then resets the live epoch counters to a zero-rate
+						paused state. Preparation is sealed before quote processing. On finalization, the restated rates start a fresh epoch; on
+						abort, the original rates start a fresh epoch. Neither exit charges the maintenance pause.
 					</p>
-					<pre><code class="language-text">open window → snapshot PartyB inventory and funding → seal manifest → resolve old-basis quantities → restore funding → close window</code></pre>
+					<pre><code class="language-text">open window → fix cutoff → crystallize old funding → zero-rate pause → settle/restate → fresh funding epoch → close window</code></pre>
+					<aside class="callout callout-important">
+						<strong>Crystallization preserves Core's represented value exactly.</strong>
+						For each direction, Core stores the existing snapshot plus the weighted historical contribution plus the current-rate
+						contribution through the cutoff. It does not divide that sum back into an average. Tiny signed rates therefore survive a long
+						maintenance pause without new truncation. Existing integer rounding from earlier funding-rate updates is already part of the
+						input state; the restatement transition neither repairs nor compounds it.
+					</aside>
 
 					<h3 id="funding-open">When the window opens</h3>
 					<p>
 						<code>startRestatement</code> records one <code>fundingCutoffTimestamp</code>. It does not read or loop over
-						<code>MAStorage.partyBList</code>, and it does not change any PartyB's rates. Core always enters
+						<code>MAStorage.partyBList</code>, and it does not synchronously write every PartyB's record. From that transaction onward,
+						quote funding debt and aggregate funding views cap all affected pairs at the cutoff, including pairs that have not yet
+						appeared in an Operations batch. This makes the economic stop immediate and independent of batch order. Core always enters
 						<code>FUNDING_PREPARATION</code> so Operations can submit the complete involved-PartyB manifest. When accumulated funding is
 						inactive, funding checkpoint creation is skipped, but the open-position inventory snapshots are still required.
+					</p>
+					<p>
+						The raw <code>getFundingFeesOfPartyB</code> record may still show its old current rate before that PartyB is prepared. This is
+						a storage-materialization detail, not live accrual: quote-debt, settlement, liquidation, and aggregate-debt paths use the
+						restatement-aware cutoff. Indexers and Operations must distinguish that raw record from the effective economic state.
 					</p>
 
 					<h3 id="funding-prepare">Prepare PartyB funding pairs</h3>
@@ -1210,16 +1247,23 @@ else:
 					<ul>
 						<li>skips a checkpoint already created for the current restatement epoch;</li>
 						<li>skips a symbol pair whose <code>epochDuration</code> is zero;</li>
-						<li>skips a pair whose current long and short rates are both zero; or</li>
 						<li>
-							rolls accumulated funding to <code>fundingCutoffTimestamp</code>, saves both current rates, increments
-							<code>pendingFundingPartyBCount</code>, and sets both current rates to zero.
+							computes the exact LONG and SHORT cumulative per-unit fees at <code>fundingCutoffTimestamp</code>, writes them into the
+							snapshots, saves the original and precomputed restated current rates, increments <code>pendingFundingPartyBCount</code>,
+							and resets both accumulated and current rates to zero at the cutoff epoch.
 						</li>
 					</ul>
+					<pre><code class="language-text">snapshot' = snapshot
+          + accumulatedRate * (lastUpdatedEpoch - startEpoch)
+          + currentRate * (cutoffEpoch - lastUpdatedEpoch)
+
+paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startEpoch = lastUpdatedEpoch = cutoffEpoch</code></pre>
 					<p>
-						A pair with one zero rate and one nonzero rate is checkpointed. Repeated addresses are harmless. Current registry membership
-						is not checked, so Operations may submit registered or deregistered PartyBs. Registering or deregistering a PartyB during the
-						window does not change funding progress.
+						Every record with a nonzero epoch duration is checkpointed, even when both current rates are zero. That rule matters when the
+						record contains earlier accumulated history: otherwise a later rate update could average the long zero-rate maintenance
+						interval into that history. Repeated addresses are harmless. Current registry membership is not checked, so Operations may
+						submit registered or deregistered PartyBs. Registering or deregistering a PartyB during the window does not change funding
+						progress.
 					</p>
 					<aside class="callout callout-important">
 						<strong>Keep and seal the PartyB address list.</strong> Core saves inventory and funding checkpoints under each submitted
@@ -1241,52 +1285,62 @@ else:
 
 					<h3 id="funding-quotes">While quotes are being rewritten</h3>
 					<p>
-						A checkpointed pair keeps its current long and short rates at zero. Funding accumulated before the window remains recorded at
-						the fixed cutoff. Later batches use that same cutoff even if they run in later blocks.
+						A checkpointed pair has zero current rates, zero accumulated rates, and the exact pre-window cumulative value in its
+						snapshots. Funding debt therefore stays constant for an arbitrarily long pause. Before physical checkpointing, the effective
+						read path produces the same result by capping time at the cutoff. Later batches always use that same cutoff even if they run
+						in much later blocks.
 					</p>
 					<p>
-						Each successful rewrite subtracts the quote's old quantity from the matching PartyB LONG or SHORT inventory checkpoint.
-						Ordinary and emergency full closes use the same accounting hook, so removing an old-basis position also consumes its
-						checkpoint quantity. A quote belonging to a PartyB that was not prepared before the seal is rejected. Pending quotes are not
-						part of this open-position completeness counter; physical finalization instead makes every older pending quote stale through
-						the quote-ID cutoff.
+						During <code>FUNDING_SETTLEMENT</code>, each open quote realizes only its unpaid funding through the cutoff. The quote's
+						<code>lastFundingPaymentTimestamp</code>, cumulative paid funding, PartyA and PartyB balances, and all weighted
+						aggregate-funding ledgers move together once. The later quote rewrite changes basis and aggregate quantities but does not
+						settle funding again. Each successful rewrite subtracts the quote's old quantity from the matching PartyB LONG or SHORT
+						inventory checkpoint. Ordinary and emergency full closes use the same accounting hook, so removing an old-basis position also
+						consumes its checkpoint quantity. A quote belonging to a PartyB that was not prepared before the seal is rejected. Pending
+						quotes are not part of this open-position completeness counter; physical finalization instead makes every older pending quote
+						stale through the quote-ID cutoff.
 					</p>
 
 					<h3 id="funding-restore">Restore rates before closing the window</h3>
 					<p>
 						<code>abortRestatement</code> and <code>finalizeRestatement</code> stop quote processing and start a restoration phase. They
-						report the pending checkpoint count. If the count is zero, the initiating transaction closes the window immediately.
-						Otherwise, Operations submits the saved PartyB manifest through <code>processRestatementFunding</code> in gas-bounded batches.
+						record one shared <code>fundingRestorationTimestamp</code> and report the pending checkpoint count. Economically, that
+						timestamp ends the pause and starts every pair's fresh epoch. If the count is zero, the initiating transaction closes the
+						window immediately. Otherwise, Operations submits the saved PartyB manifest through <code>processRestatementFunding</code> in
+						gas-bounded batches.
 					</p>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
 									<th>How the window ends</th>
-									<th>Zero-rate interval</th>
-									<th>Current rate after restoration</th>
+									<th>Historical snapshot and pause</th>
+									<th>Fresh-epoch rate</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
 									<td>Abort</td>
-									<td>Not rolled into accumulated funding. Accounting resumes as if the saved rates had remained active.</td>
-									<td>The saved long and short rates are restored unchanged.</td>
+									<td>The crystallized snapshot is unchanged; the entire pause remains excluded.</td>
+									<td>The saved original LONG and SHORT rates restart unchanged at the abort timestamp.</td>
 								</tr>
 								<tr>
 									<td>Finalization</td>
-									<td>Rolled to one shared <code>fundingRestorationTimestamp</code> with current rates still at zero.</td>
-									<td>Each saved rate is divided by <code>restatementFactor</code>.</td>
+									<td>The crystallized snapshot is unchanged; no zero-rate epochs are appended or averaged.</td>
+									<td>Each saved rate divided by <code>restatementFactor</code> starts at the finalization timestamp.</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<pre><code class="language-text">newRate = sign(oldRate) * floor(abs(oldRate) * 1e18 / restatementFactor)</code></pre>
 					<p>
-						Flooring may reduce the restored magnitude. Core rejects a magnitude that cannot fit in <code>int256</code>. Each restoration
-						batch ignores unknown or repeated addresses, deletes every matching current-epoch checkpoint, and decrements
-						<code>pendingFundingPartyBCount</code>. The transaction that reduces the count to zero closes the window and emits
-						<code>RestatementAborted</code> or <code>RestatementFinalized</code>.
+						Only the new current-rate conversion can floor; crystallized history is never divided. Core rejects a converted magnitude that
+						cannot fit in <code>int256</code>. During batched restoration, quote and aggregate funding paths project every still-unwritten
+						checkpoint from the shared restoration timestamp. A liquidation between the initiating exit transaction and that PartyB's
+						restoration batch therefore sees the same cumulative funding as it would after the batch, with no pause charge or batch-order
+						discontinuity. Each restoration batch ignores unknown or repeated addresses, deletes every matching current-epoch checkpoint,
+						and decrements <code>pendingFundingPartyBCount</code>. The transaction that reduces the count to zero closes the window and
+						emits <code>RestatementAborted</code> or <code>RestatementFinalized</code>.
 					</p>
 
 					<h2 id="boundaries">Enforced and operational boundaries</h2>
@@ -1487,7 +1541,15 @@ else:
 						window until the selector and runtime code-hash checks for the full cut are complete. The upgrade appends
 						<code>liquidationStartNonce</code> to <code>MAStorage.Layout</code>; verify that it follows
 						<code>solverFeeReceiversByTag</code> and that no existing field moved. Replace every liquidation-start facet in the same cut
-						so no route can bypass the increment.
+						so no route can bypass the increment. The crystallize-and-restart funding model also changes <code>LibFundingRate</code>,
+						<code>LibSymbolAdjustmentFunding</code>, <code>LibQuoteFunding</code>, and <code>LibAggregateFunding</code>. Deploy the new
+						<code>LibQuoteFunding</code> and relink every dependent runtime, including <code>FundingRateFacet</code>,
+						<code>PartyBBatchActionsFacet</code>, <code>PartyBPositionActionsFacetImpl</code>, <code>ClearingHouseFacetImpl</code>,
+						<code>SymbolAdjustmentFacet</code>, <code>ViewFacetQuote</code>, <code>LibQuoteClose</code>, and
+						<code>LibPartyALiquidationProcess</code>. Replace <code>ViewFacetAggregate</code> as well because its aggregate funding reads
+						compile in the effective-cutoff logic. <code>FundingRateCheckpoint</code> appends <code>restatedLongRate</code> and
+						<code>restatedShortRate</code> after <code>restatementEpoch</code>; verify that field order and do not upgrade with an open
+						restatement, because an old checkpoint cannot supply the new restart rates.
 					</aside>
 					<h3>Prepare and schedule</h3>
 					<ol>
@@ -1512,7 +1574,10 @@ else:
 						</li>
 						<li>
 							Fork-rehearse funded inventory and verify that each rewrite or liquidation close removes the old weighted-funding
-							contribution once, and that a rewrite adds the new contribution once.
+							contribution once, and that a rewrite adds the new contribution once. Include tiny positive and negative rates, large LONG
+							and SHORT positions, a long maintenance pause, zero-current-rate records with prior history, abort, liquidation, and
+							consecutive restatements. Prove the pause contributes exactly zero and no restoration batch changes the effective
+							cumulative value.
 						</li>
 						<li>
 							Verify the deployed ABI exposes <code>startRestatement(uint256,uint256)</code>,
@@ -1573,11 +1638,15 @@ else:
 							While progress reports <code>FUNDING_PREPARATION</code>, simulate and submit
 							<code>processRestatementFunding(symbolId, partyBs)</code> from the manager address for each bounded manifest batch. Verify
 							inventory snapshots with events and <code>getRestatementInventoryProgress</code>; when funding is active, also verify
-							funding checkpoint creation with events, the pending count, or <code>isRestatementFundingCheckpointed</code>. After the
-							complete involved-PartyB set has been supplied and reconciled, call <code>completeRestatementFundingPreparation</code>.
-							The manifest is sealed at that transition. If progress reports <code>FUNDING_SETTLEMENT</code>, use
-							<code>applyAdjustment</code> batches to settle every prepared open quote before submitting any rewrite. Core advances to
-							<code>QUOTE_PROCESSING</code> only when the funding-settlement inventory reaches zero.
+							funding checkpoint creation with events, the pending count, or <code>isRestatementFundingCheckpointed</code>. For every
+							checkpoint, independently calculate the cumulative LONG and SHORT fee at <code>fundingCutoffTimestamp</code> and match the
+							stored snapshots; verify current and accumulated rates are zero and the epoch counters restart at the cutoff. Include
+							records whose two current rates are zero. Before and after each batch, confirm quote and aggregate funding debts remain
+							fixed at the cutoff. After the complete involved-PartyB set has been supplied and reconciled, call
+							<code>completeRestatementFundingPreparation</code>. The manifest is sealed at that transition. If progress reports
+							<code>FUNDING_SETTLEMENT</code>, use <code>applyAdjustment</code> batches to settle every prepared open quote before
+							submitting any rewrite. Core advances to <code>QUOTE_PROCESSING</code> only when the funding-settlement inventory reaches
+							zero.
 						</li>
 						<li>
 							Continuously monitor liquidation flags after the window opens. If a new liquidation affects the symbol, stop overlapping
@@ -1604,7 +1673,8 @@ else:
 							<code>SCHEDULED</code>. Active-factor abort preserves the prior state, normally live <code>PRICE_ADJUSTED</code>, but it
 							can also return live in <code>CANCELLED</code>. After <code>abortRestatement</code>, submit the checkpointed PartyB
 							manifest through <code>processRestatementFunding</code> until <code>RestatementAborted</code> if progress reports
-							<code>ABORT_FUNDING_RESTORATION</code>.
+							<code>ABORT_FUNDING_RESTORATION</code>. Verify that the original rates accrue only from the shared abort restoration
+							timestamp; the start-to-abort interval must remain absent from cumulative funding.
 						</li>
 						<li>
 							Optionally call <code>cancelPendingQuotes</code> while frozen to release balances immediately. Pending quotes are not
@@ -1643,13 +1713,15 @@ else:
 							submit the checkpointed PartyB manifest in bounded <code>processRestatementFunding</code> batches until
 							<code>RestatementFinalized</code>. A nonzero inventory pending count makes the initial finalization call revert. Do not
 							treat the initial transaction's success as lifecycle completion, signature-expiry proof, or proof that no PartyB was
-							omitted.
+							omitted. Record its <code>fundingRestorationTimestamp</code>; from that instant, all pairs must expose the fresh restated
+							rate and unchanged crystallized snapshot whether or not their storage-restoration batch has landed.
 						</li>
 						<li>
 							Verify the expected lifecycle state, explicit <code>1e18</code> cumulative factor, closed window, incremented
-							<code>basisVersion</code>, phase <code>NONE</code>, zero pending checkpoint count, deleted checkpoints, rebased rates,
-							<code>SymbolAdjustment.pendingQuoteIdCutoff</code> equal to the terminal transaction's global last quote ID, and unfreeze.
-							Queue any remaining stale pending IDs for permissionless <code>cancelStalePendingQuotes</code> batches.
+							<code>basisVersion</code>, phase <code>NONE</code>, zero pending checkpoint count, deleted checkpoints, unchanged
+							crystallized snapshots, zero accumulated-rate history, rebased current rates, fresh epoch timestamps equal to the shared
+							restoration time, <code>SymbolAdjustment.pendingQuoteIdCutoff</code> equal to the terminal transaction's global last quote
+							ID, and unfreeze. Queue any remaining stale pending IDs for permissionless <code>cancelStalePendingQuotes</code> batches.
 						</li>
 						<li>
 							Resume Muon with raw venue prices. Reinitialize stale three-step force closes and retain the old-basis timestamp cutoff
@@ -1718,8 +1790,8 @@ else:
 									<td><code>FUNDING_PREPARATION = 1</code></td>
 									<td>
 										Supply the complete involved-PartyB manifest with <code>processRestatementFunding</code> to snapshot open
-										inventory and, when active, funding. Then call <code>completeRestatementFundingPreparation</code>. Quote
-										rewrites and finalization are disabled.
+										inventory and, when active, funding. Then call <code>completeRestatementFundingPreparation</code>. Abort,
+										quote rewrites, and finalization are disabled until that completeness attestation seals the manifest.
 									</td>
 								</tr>
 								<tr>
@@ -1803,12 +1875,13 @@ else:
 									<td>
 										<code>restatementPhase</code>, <code>fundingCutoffTimestamp</code>, <code>pendingFundingPartyBCount</code>,
 										and <code>fundingRestorationTimestamp</code> coordinate operator-supplied preparation and funding restoration
-										batches. <code>fundingSettlementRequired</code> is snapshotted from the global accumulated-funding switch when
-										the manifest is sealed; rewrites check this snapshot, never the live switch, so flipping the switch mid-window
-										cannot strand a partially rewritten book. <code>restatementInventoryTotals[symbolId]</code> separately records
-										the exact prepared old-basis LONG and SHORT quantities still unresolved, and
-										<code>restatementFundingSettlementTotals[symbolId]</code> records the subset whose funding is still unsettled.
-										The terminal abort or finalization clears the live progress fields.
+										batches. Effective funding reads stop at the cutoff until abort or finalization records the shared fresh-epoch
+										timestamp. <code>fundingSettlementRequired</code> is snapshotted from the global accumulated-funding switch
+										when the manifest is sealed; rewrites check this snapshot, never the live switch, so flipping the switch
+										mid-window cannot strand a partially rewritten book.
+										<code>restatementInventoryTotals[symbolId]</code> separately records the exact prepared old-basis LONG and
+										SHORT quantities still unresolved, and <code>restatementFundingSettlementTotals[symbolId]</code> records the
+										subset whose funding is still unsettled. The terminal abort or finalization clears the live progress fields.
 									</td>
 								</tr>
 								<tr>
@@ -1831,7 +1904,7 @@ else:
 							<tbody>
 								<tr>
 									<td><code>adjustments[symbolId]</code></td>
-									<td>The latest 16-field <code>SymbolAdjustment</code> record, not history.</td>
+									<td>The latest 17-field <code>SymbolAdjustment</code> record, not history.</td>
 								</tr>
 								<tr>
 									<td><code>quoteRestatedEpoch[quoteId]</code></td>
@@ -1848,9 +1921,12 @@ else:
 								<tr>
 									<td><code>fundingRateCheckpoints[symbolId][partyB]</code></td>
 									<td>
-										<code>currentLongRate</code>, <code>currentShortRate</code>, and <code>restatementEpoch</code>. No checkpoint
-										is created for zero epoch duration or two zero current rates. Epoch matching rejects stale data. Each entry is
-										deleted by the restoration batch that processes that PartyB.
+										<code>currentLongRate</code> and <code>currentShortRate</code> preserve the original rates;
+										<code>restatedLongRate</code> and <code>restatedShortRate</code> preserve their precomputed new-basis values;
+										and <code>restatementEpoch</code> binds the record to one window. The two restated-rate fields are appended
+										after the legacy three fields. No checkpoint is created only when epoch duration is zero; a record with two
+										zero current rates is still checkpointed so its prior history cannot absorb the pause. Epoch matching rejects
+										stale data. Each entry is deleted by the restoration batch that processes that PartyB.
 									</td>
 								</tr>
 								<tr>
@@ -1936,8 +2012,8 @@ else:
 								<tr>
 									<td><code>abortRestatement</code></td>
 									<td>
-										Manager-only. Begin original-rate restoration for a mutation-free window; complete immediately only when no
-										checkpoint exists.
+										Manager-only. After preparation is sealed, begin a fresh original-rate epoch for a mutation-free window;
+										complete immediately only when no checkpoint exists. Reverts during <code>FUNDING_PREPARATION</code>.
 									</td>
 								</tr>
 								<tr>
@@ -1999,8 +2075,9 @@ else:
 								<tr>
 									<td><code>finalizeRestatement</code></td>
 									<td>
-										Manager-only. Require zero unresolved prepared inventory and, after strict expiry, begin rebased-rate
-										restoration; complete immediately only when no funding checkpoint exists.
+										Manager-only. Require zero unresolved prepared inventory and, after strict expiry, start a fresh restated-rate
+										epoch at one shared timestamp; materialize checkpoint storage in batches, or complete immediately when no
+										checkpoint exists.
 									</td>
 								</tr>
 							</tbody>
