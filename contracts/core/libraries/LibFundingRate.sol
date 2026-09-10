@@ -66,6 +66,41 @@ library LibFundingRate {
 		return currentEpoch - lastUpdatedEpoch;
 	}
 
+	/// @notice Returns the exact cumulative per-unit funding represented by a funding record at a timestamp.
+	/// @dev This deliberately returns the weighted sum rather than dividing it back into an average, so callers can
+	///      crystallize history without introducing another rounding step.
+	function cumulativeRatesAt(FundingFee memory fundingFee, uint256 timestamp) internal pure returns (int256 longFee, int256 shortFee) {
+		uint256 epochsSinceLastUpdate = getEpochsSinceLastUpdateAt(fundingFee, timestamp);
+		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
+		longFee =
+			fundingFee.snapshotLongFee +
+			(fundingFee.accumulatedLongRate * int256(epochsBeforeLastUpdate)) +
+			(fundingFee.currentLongRate * int256(epochsSinceLastUpdate));
+		shortFee =
+			fundingFee.snapshotShortFee +
+			(fundingFee.accumulatedShortRate * int256(epochsBeforeLastUpdate)) +
+			(fundingFee.currentShortRate * int256(epochsSinceLastUpdate));
+	}
+
+	/// @notice Crystallizes all completed funding at a cutoff and starts a zero-rate paused epoch there.
+	function crystallizeAndPauseAt(FundingFee storage fundingFee, uint256 timestamp) internal {
+		(fundingFee.snapshotLongFee, fundingFee.snapshotShortFee) = cumulativeRatesAt(fundingFee, timestamp);
+		restartAt(fundingFee, 0, 0, timestamp);
+	}
+
+	/// @notice Starts a fresh funding epoch without changing the already-crystallized cumulative snapshots.
+	function restartAt(FundingFee storage fundingFee, int256 longRate, int256 shortRate, uint256 timestamp) internal {
+		uint256 epoch = getEpochOfTimestamp(timestamp, fundingFee.epochDuration);
+		fundingFee.currentLongRate = longRate;
+		fundingFee.currentShortRate = shortRate;
+		fundingFee.accumulatedLongRate = 0;
+		fundingFee.accumulatedShortRate = 0;
+		fundingFee.lastUpdatedEpoch = epoch;
+		fundingFee.lastUpdatedTimeStamp = timestamp;
+		fundingFee.startEpochTimeStamp = timestamp;
+		fundingFee.startEpoch = epoch;
+	}
+
 	/// @notice Updates the weighted average accumulated funding rates based on elapsed epochs.
 	function updateAccumulatedRates(
 		FundingFee storage fundingFee

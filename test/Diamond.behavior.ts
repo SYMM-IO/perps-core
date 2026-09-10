@@ -152,6 +152,20 @@ export function shouldBehaveLikeDiamond(): void {
 		expect(inventoryTotals).to.be.greaterThan(inventoryCheckpoints)
 	})
 
+	it("appends crystallize-and-restart rates after the existing funding checkpoint fields", function () {
+		const source = readFileSync("contracts/core/storages/SymbolAdjustmentStorage.sol", "utf8")
+		const checkpointStart = source.indexOf("struct FundingRateCheckpoint")
+		const existingFinalField = source.indexOf("uint256 restatementEpoch", checkpointStart)
+		const restatedLongRate = source.indexOf("int256 restatedLongRate", checkpointStart)
+		const restatedShortRate = source.indexOf("int256 restatedShortRate", checkpointStart)
+		const checkpointEnd = source.indexOf("struct RestatementInventoryCheckpoint", checkpointStart)
+
+		expect(checkpointStart).to.be.greaterThan(-1)
+		expect(restatedLongRate).to.be.greaterThan(existingFinalField)
+		expect(restatedShortRate).to.be.greaterThan(restatedLongRate)
+		expect(checkpointEnd).to.be.greaterThan(restatedShortRate)
+	})
+
 	it("appends the liquidation start nonce after the existing MA layout", function () {
 		const source = readFileSync("contracts/core/storages/MAStorage.sol", "utf8")
 		const existingFinalField = source.indexOf("mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag")

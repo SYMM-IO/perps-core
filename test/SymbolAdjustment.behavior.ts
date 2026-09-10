@@ -503,6 +503,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 				await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+				await completeFundingPreparation(SYMBOL_ID)
 				await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 
 				expect(await context.viewFacetSymbol.getPendingQuoteIdCutoff(SYMBOL_ID)).to.equal(0n)
@@ -635,6 +636,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 
 			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
@@ -1191,6 +1193,193 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(fundingAfter.currentLongRate).to.equal(fundingBefore.currentLongRate / 4n)
 		})
 
+		it("crystallizes tiny rates exactly for large LONG and SHORT positions and excludes a long pause", async function () {
+			await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(25_000_000n))
+			await user.setBalances(decimal(20_000_000n), decimal(10_000_000n), decimal(5_000_000n))
+			await hedger.setBalances(decimal(20_000_000n), decimal(20_000_000n))
+			const quantity = decimal(1_000_000n)
+			const largeQuoteRequest = () =>
+				limitQuoteRequestBuilder()
+					.quantity(quantity)
+					.cva((quantity * 22n) / 100n)
+					.partyAmm((quantity * 75n) / 100n)
+					.partyBmm((quantity * 40n) / 100n)
+					.lf((quantity * 3n) / 100n)
+			const longQuoteId = await user.sendQuote(largeQuoteRequest().build())
+			await hedger.lockQuote(longQuoteId)
+			await hedger.openPosition(longQuoteId, limitOpenRequestBuilder().filledAmount(quantity).build())
+			const shortQuoteId = await user.sendQuote(largeQuoteRequest().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(shortQuoteId)
+			await hedger.openPosition(shortQuoteId, limitOpenRequestBuilder().filledAmount(quantity).build())
+
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			// One wei of price-adjusted funding per unit and epoch is deliberately small enough for the old
+			// zero-interval weighted-average path to erase after a long pause.
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [1n], [-1n], [decimal(1n)])
+			await time.increase(3)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			const [longAtCutoff, shortAtCutoff] = await context.viewFacetQuote.getQuoteFundingDebts([longQuoteId, shortQuoteId])
+			expect(longAtCutoff).to.be.gt(0n)
+			expect(shortAtCutoff).to.equal(-longAtCutoff)
+
+			// The start-time cap is effective before the operator materializes this PartyB's checkpoint.
+			await time.increase(1_000_000)
+			expect(await context.viewFacetQuote.getQuoteFundingDebts([longQuoteId, shortQuoteId])).to.deep.equal([longAtCutoff, shortAtCutoff])
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address])
+			const pausedFunding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)
+			const longQuote = await context.viewFacetQuote.getQuote(longQuoteId)
+			const shortQuote = await context.viewFacetQuote.getQuote(shortQuoteId)
+			expect(pausedFunding.currentLongRate).to.equal(0n)
+			expect(pausedFunding.currentShortRate).to.equal(0n)
+			expect(pausedFunding.accumulatedLongRate).to.equal(0n)
+			expect(pausedFunding.accumulatedShortRate).to.equal(0n)
+			expect(pausedFunding.lastUpdatedEpoch).to.equal(pausedFunding.startEpoch)
+			expect(pausedFunding.snapshotLongFee).to.equal(longQuote.accumulatedPaidFunding + (longAtCutoff * decimal(1n)) / quantity)
+			expect(pausedFunding.snapshotShortFee).to.equal(shortQuote.accumulatedPaidFunding + (shortAtCutoff * decimal(1n)) / quantity)
+			expect(await context.viewFacetQuote.getQuoteFundingDebts([longQuoteId, shortQuoteId])).to.deep.equal([longAtCutoff, shortAtCutoff])
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [longQuoteId, shortQuoteId])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [longQuoteId, shortQuoteId])
+			await finalizeRestatementAfterWindow(SYMBOL_ID, [context.signers.hedger.address])
+
+			const restartedFunding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)
+			expect(restartedFunding.snapshotLongFee).to.equal(pausedFunding.snapshotLongFee)
+			expect(restartedFunding.snapshotShortFee).to.equal(pausedFunding.snapshotShortFee)
+			expect(restartedFunding.accumulatedLongRate).to.equal(0n)
+			expect(restartedFunding.accumulatedShortRate).to.equal(0n)
+			expect(await context.viewFacetQuote.getQuoteFundingDebts([longQuoteId, shortQuoteId])).to.deep.equal([0n, 0n])
+		})
+
+		it("checkpoints zero-current-rate records so a long pause cannot dilute prior history", async function () {
+			const quoteId = await openPositionForUser()
+			const partyB = context.signers.hedger.address
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [1n], [-1n], [decimal(1n)])
+			await time.increase(4)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [0n], [0n], [decimal(1n)])
+			const historyBefore = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			const debtBefore = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await time.increase(1_000_000)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB])
+
+			const crystallized = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			expect(await context.viewFacetSymbol.isRestatementFundingCheckpointed(SYMBOL_ID, partyB)).to.be.true
+			expect(crystallized.snapshotLongFee).to.equal(
+				historyBefore.snapshotLongFee + historyBefore.accumulatedLongRate * (historyBefore.lastUpdatedEpoch - historyBefore.startEpoch),
+			)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(debtBefore)
+			expect(crystallized.currentLongRate).to.equal(0n)
+			expect(crystallized.accumulatedLongRate).to.equal(0n)
+		})
+
+		it("aborts by restarting the original funding rates without charging the restatement pause", async function () {
+			const quoteId = await openPositionForUser()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const openAmount = quote.quantity - quote.closedAmount
+			const partyB = context.signers.hedger.address
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [7n], [-5n], [decimal(1n)])
+			await time.increase(4)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)).to.be.revertedWith(
+				"SymbolAdjustmentFacet: Funding preparation incomplete",
+			)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
+			const debtAtCutoff = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			const crystallized = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			await time.increase(50_000)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(debtAtCutoff)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
+			const abortState = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(debtAtCutoff)
+			await time.increase(5)
+			const debtBeforeMaterialization = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			const timestampBeforeMaterialization = await getBlockTimestamp()
+			expect(debtBeforeMaterialization).to.be.gt(debtAtCutoff)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [partyB])
+			const restarted = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			const timestampAfterMaterialization = await getBlockTimestamp()
+			expect(restarted.currentLongRate).to.equal(7n)
+			expect(restarted.currentShortRate).to.equal(-5n)
+			expect(restarted.snapshotLongFee).to.equal(crystallized.snapshotLongFee)
+			expect(restarted.snapshotShortFee).to.equal(crystallized.snapshotShortFee)
+			expect(restarted.startEpochTimeStamp).to.equal(abortState.fundingRestorationTimestamp)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(
+				debtBeforeMaterialization + (openAmount * 7n * (timestampAfterMaterialization - timestampBeforeMaterialization)) / decimal(1n),
+			)
+		})
+
+		it("preserves crystallized history across consecutive physical restatements", async function () {
+			const quoteId = await openPositionForUser()
+			const partyB = context.signers.hedger.address
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [decimal(4n, 16)], [0], [decimal(1n)])
+			await time.increase(3)
+
+			let now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(2n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [partyB])
+			const firstDebt = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [quoteId])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [quoteId])
+			await finalizeRestatementAfterWindow(SYMBOL_ID, [partyB])
+			const afterFirst = await context.viewFacetQuote.getQuote(quoteId)
+			const firstFunding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			expect(afterFirst.accumulatedPaidFunding).to.equal(firstFunding.snapshotLongFee)
+			expect(firstDebt).to.be.gt(0n)
+
+			await time.increase(3)
+			const secondPeriodDebt = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			expect(secondPeriodDebt).to.be.gt(0n)
+			now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(2n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			const secondCutoffDebt = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			await completeFundingPreparation(SYMBOL_ID, [partyB])
+			const secondCrystallized = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			expect(secondCrystallized.snapshotLongFee - afterFirst.accumulatedPaidFunding).to.equal(
+				(secondCutoffDebt * decimal(1n)) / (afterFirst.quantity - afterFirst.closedAmount),
+			)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [quoteId])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [quoteId])
+			await finalizeRestatementAfterWindow(SYMBOL_ID, [partyB])
+
+			const afterSecond = await context.viewFacetQuote.getQuote(quoteId)
+			const secondFunding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, partyB)
+			expect(afterSecond.quantity).to.equal(decimal(400n))
+			expect(afterSecond.accumulatedPaidFunding).to.equal(secondFunding.snapshotLongFee)
+			expect(secondFunding.snapshotLongFee).to.be.gt(firstFunding.snapshotLongFee)
+			const finalTimestamp = BigInt(await time.latest())
+			const currentEpoch = finalTimestamp / secondFunding.epochDuration
+			const cumulativeLongFee =
+				secondFunding.snapshotLongFee +
+				secondFunding.accumulatedLongRate * (secondFunding.lastUpdatedEpoch - secondFunding.startEpoch) +
+				secondFunding.currentLongRate * (currentEpoch - secondFunding.lastUpdatedEpoch)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(
+				((afterSecond.quantity - afterSecond.closedAmount) * (cumulativeLongFee - afterSecond.accumulatedPaidFunding)) / decimal(1n),
+			)
+		})
+
 		it("should keep abort available while old-basis funding is only partially settled", async function () {
 			const firstQuoteId = await openPositionForUser()
 			const secondQuoteId = await openPositionForUser()
@@ -1674,6 +1863,86 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(fundingProgress.remainingLong).to.equal(0n)
 			expect(fundingProgress.remainingShort).to.equal(0n)
 			expect((await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)).phase).to.equal(RESTATEMENT_PHASE.QUOTE_PROCESSING)
+		})
+
+		it("liquidates with exactly the start-cutoff funding before its PartyB checkpoint is materialized", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [11n], [0], [decimal(1n)])
+			const quoteId = await openPosition()
+			await time.increase(4)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			const debtAtCutoff = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+			expect(debtAtCutoff).to.be.gt(0n)
+			await time.increase(100_000)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.equal(debtAtCutoff)
+
+			const liquidationTimestamp = await startIsolatedPartyBLiquidation()
+			const priceSig = await getDummyPriceSig([quoteId], [decimal(25n, 16)])
+			priceSig.timestamp = liquidationTimestamp
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyB(context.signers.hedger.address, context.signers.user.address, priceSig)
+
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address])
+			const crystallized = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			expect(crystallized.snapshotLongFee).to.equal(quote.accumulatedPaidFunding + (debtAtCutoff * decimal(1n)) / quote.quantity)
+			expect(await context.viewFacetAggregate.getPartyAAggregateFundingDebt(quote.partyA, quote.partyB, SYMBOL_ID, quote.positionType)).to.equal(0n)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).completeRestatementFundingPreparation(SYMBOL_ID)
+			expect((await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)).phase).to.equal(RESTATEMENT_PHASE.QUOTE_PROCESSING)
+			await finalizeRestatementAfterWindow(SYMBOL_ID, [context.signers.hedger.address])
+		})
+
+		it("uses the fresh restated funding epoch when liquidation precedes the restoration batch", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([SYMBOL_ID], [1])
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([SYMBOL_ID], [8n], [0], [decimal(1n)])
+			const quoteId = await openPosition()
+			await time.increase(3)
+			await startRestatement()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [quoteId])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).applyAdjustment(SYMBOL_ID, [quoteId])
+
+			const pausedFunding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)
+			const [, priceValidTime] = await context.viewFacet.getMuonConfig()
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1n, priceValidTime)
+			await time.increase(2)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)
+			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
+			expect(adjustment.restatementPhase).to.equal(RESTATEMENT_PHASE.FINALIZATION_FUNDING_RESTORATION)
+			expect((await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)).currentLongRate).to.equal(0n)
+
+			await time.increase(4)
+			expect((await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]).to.be.gt(0n)
+			const liquidationTimestamp = await startIsolatedPartyBLiquidation()
+			const priceSig = await getDummyPriceSig([quoteId], [decimal(25n, 16)])
+			priceSig.timestamp = liquidationTimestamp
+			await context.partyBLiquidationFacet
+				.connect(context.signers.liquidator)
+				.liquidatePositionsPartyB(context.signers.hedger.address, context.signers.user.address, priceSig)
+			expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+
+			expect(
+				await context.viewFacetAggregate.getPartyAAggregateFundingDebt(
+					context.signers.user.address,
+					context.signers.hedger.address,
+					SYMBOL_ID,
+					PositionType.LONG,
+				),
+			).to.equal(0n)
+			await expect(
+				context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address]),
+			)
+				.to.emit(context.symbolAdjustmentFacet, "RestatementFinalized")
+				.withArgs(SYMBOL_ID, 1)
+			const restartedFunding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, context.signers.hedger.address)
+			expect(restartedFunding.snapshotLongFee).to.equal(pausedFunding.snapshotLongFee)
+			expect(restartedFunding.currentLongRate).to.equal(2n)
+			expect(restartedFunding.startEpochTimeStamp).to.equal(adjustment.fundingRestorationTimestamp)
 		})
 
 		it("prices mixed old- and new-basis quotes consistently in legacy PartyA liquidation", async function () {
@@ -2302,6 +2571,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const now = await getBlockTimestamp()
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
 			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
 

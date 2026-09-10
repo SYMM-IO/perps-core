@@ -163,7 +163,6 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		(uint256 processedPartyBs, uint256 remainingPartyBs) = LibSymbolAdjustmentFunding.restoreFundingRates(
 			symbolId,
 			adjustment.restatementEpoch,
-			finalizing ? adjustment.restatementFactor : 1e18,
 			finalizing,
 			adjustment.fundingRestorationTimestamp,
 			partyBs
@@ -199,18 +198,17 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		);
 	}
 
-	/// @notice Starts an abort for a mutation-free window and completes immediately when no rates were checkpointed.
+	/// @notice Starts an abort for a prepared, mutation-free window and completes immediately when no rates were checkpointed.
 	function abortRestatement(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		require(adjustment.restating, "SymbolAdjustmentFacet: No restatement in progress");
 		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
 		require(
-			adjustment.restatementPhase == RestatementPhase.FUNDING_PREPARATION ||
-				adjustment.restatementPhase == RestatementPhase.FUNDING_SETTLEMENT ||
-				adjustment.restatementPhase == RestatementPhase.QUOTE_PROCESSING,
-			"SymbolAdjustmentFacet: Invalid funding phase"
+			adjustment.restatementPhase == RestatementPhase.FUNDING_SETTLEMENT || adjustment.restatementPhase == RestatementPhase.QUOTE_PROCESSING,
+			"SymbolAdjustmentFacet: Funding preparation incomplete"
 		);
 		adjustment.restatementPhase = RestatementPhase.ABORT_FUNDING_RESTORATION;
+		adjustment.fundingRestorationTimestamp = block.timestamp;
 		uint256 pendingPartyBs = LibSymbolAdjustmentFunding.pendingFundingPartyBs(symbolId);
 		emit RestatementFundingRestorationStarted(symbolId, adjustment.restatementEpoch, false, pendingPartyBs);
 		if (pendingPartyBs == 0) _completeAbort(symbolId, adjustment);

@@ -105,6 +105,7 @@ interface ISymbolAdjustmentFacet {
 	/// @notice Attests that Operations supplied every PartyB and starts the funding-only pass when accumulated funding is active.
 	function completeRestatementFundingPreparation(uint256 symbolId) external;
 
+	/// @notice Starts original-rate restoration after Operations has sealed a complete PartyB manifest and before a basis mutation.
 	function abortRestatement(uint256 symbolId) external;
 
 	function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external;
