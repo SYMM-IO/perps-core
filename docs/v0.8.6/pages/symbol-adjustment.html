@@ -1406,10 +1406,10 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 						when finalization runs.
 					</p>
 					<p>
-						For direct restatement, <code>restatementStartedAt</code> is the later of <code>effectiveTimestamp</code> and
-						<code>adjustmentScheduledAt</code>. This prevents a past-effective emergency schedule from backdating the wait before its
-						scheduling transaction, but it does not prove that off-chain issuance stopped then. For a later restatement opened while the
-						symbol is live, <code>restatementStartedAt</code> is the block time of <code>startRestatement</code>.
+						For every route, <code>restatementStartedAt</code> is the block time of <code>startRestatement</code>. Old-basis signatures
+						may still be issued after a scheduled freeze and before the window opens, so neither <code>effectiveTimestamp</code> nor
+						<code>adjustmentScheduledAt</code> starts the signature-expiry wait. Liquidation price signatures must also strictly postdate
+						this actual opening time. The timestamp alone does not prove that off-chain issuance stopped then.
 					</p>
 					<p>
 						Account-level UPNL payloads do not list every symbol in the account. Core cannot infer that such a payload includes exposure
@@ -1434,8 +1434,8 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 					<p>
 						Governance and Operations must also prevent a later validity increase from reviving an old-basis signature. Before applying a
 						new global or per-function validity, require the current block time to be strictly greater than the latest timestamp bound for
-						the affected old-basis signatures plus the proposed applicable validity. The recorded freeze start is a safe substitute only
-						when the cutoff proof shows that no old-basis timestamp can be later than that start.
+						the affected old-basis signatures plus the proposed applicable validity. The recorded restatement opening time is a safe
+						substitute only when the cutoff proof shows that no old-basis timestamp can be later than that opening.
 					</p>
 
 					<h3><code>basisVersion</code> and deferred force close</h3>

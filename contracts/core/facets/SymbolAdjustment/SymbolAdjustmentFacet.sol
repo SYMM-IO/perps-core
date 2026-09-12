@@ -102,14 +102,9 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		}
 		require(factor != 0, "SymbolAdjustmentFacet: Cumulative factor underflow");
 		require(factor != 1e18, "SymbolAdjustmentFacet: No adjustment factor");
-		// Record when the symbol became continuously frozen. A future schedule freezes at its effective time,
-		// while a past-effective emergency schedule cannot freeze the symbol before it exists on-chain.
-		if (LibSymbolAdjustment.isFrozen(symbolId)) {
-			uint256 scheduledAt = adjustmentLayout.adjustmentScheduledAt[symbolId];
-			adjustment.restatementStartedAt = adjustment.effectiveTimestamp > scheduledAt ? adjustment.effectiveTimestamp : scheduledAt;
-		} else {
-			adjustment.restatementStartedAt = block.timestamp;
-		}
+		// Liquidation prices switch to venue units only when this window opens. Old-basis signatures
+		// may still be issued after the scheduled freeze, so both signature gates must start here.
+		adjustment.restatementStartedAt = block.timestamp;
 		adjustment.restating = true;
 		adjustment.restatementMutated = false;
 		adjustment.restatementFactor = factor;
