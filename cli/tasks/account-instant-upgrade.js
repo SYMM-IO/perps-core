@@ -15,10 +15,10 @@ export const ACCOUNT_INSTANT_PLAN = Object.freeze([
 	{
 		id: "deploy",
 		phase: "deployment",
-		title: "Deploy the AccountLayer library and five facets, InstantLayer, two Gasless libraries and implementation",
+		title: "Deploy the AccountLayer library and five facets, InstantLayer, five Gasless libraries and implementation",
 		items: UPGRADE_DEPLOYMENTS.map(name => name.toLowerCase()),
 	},
-	{ id: "publish", phase: "publication", title: "Publish all ten contracts on Arbiscan" },
+	{ id: "publish", phase: "publication", title: "Publish all thirteen contracts on Arbiscan" },
 	{ id: "account-cut", phase: "execution", title: "Export the AccountLayer cut for the Safe" },
 	{ id: "verify-account-cut", phase: "verification", title: "Verify the installed AccountLayer selectors" },
 	{ id: "configure-instant", phase: "execution", title: "Export current InstantLayer values and flow grants for the Safe" },
@@ -184,7 +184,7 @@ export async function reconcileAccountInstantUpgrade(ctx, input) {
 export function createAccountInstantUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-account-instant-upgrade",
-		version: 6,
+		version: 7,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum AccountLayer and InstantLayer upgrade — preserve current values",
@@ -200,7 +200,7 @@ export function createAccountInstantUpgradeTask(common) {
 		artifacts: [
 			"pinned configuration-input.json",
 			"fork rehearsal evidence",
-			"ten contract deployments and publication evidence",
+			"thirteen contract deployments and publication evidence",
 			"transaction journal",
 			"Safe batches",
 			"client-upgrade.json with deployed addresses and indexed-wallet ABIs",
@@ -270,7 +270,7 @@ export function createAccountInstantUpgradeTask(common) {
 					"Upgrade scope",
 				);
 				const confirmation = await ctx.ui.text({
-					message: "Type 42161 to authorize the ten deployments and subsequent upgrade stages",
+					message: "Type 42161 to authorize the thirteen deployments and subsequent upgrade stages",
 					validate: value => (value === "42161" ? undefined : "Type exactly 42161"),
 				});
 				if (confirmation === null) {
@@ -299,7 +299,8 @@ export function createAccountInstantUpgradeTask(common) {
 					"Relayer and event consumer cutover",
 				);
 				const ready = await ctx.ui.confirm({
-					message: "Are relayer/client ABI, signing-domain and event-consumer changes staged for activation with the Gasless Safe upgrade?",
+					message:
+						"Are relayer/client ABI, signing-domain, fee-quote/limit and event-consumer changes staged for activation with the Gasless Safe upgrade?",
 					initialValue: false,
 				});
 				if (!ready)

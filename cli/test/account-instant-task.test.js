@@ -66,7 +66,7 @@ test("account/instant task has the exact ordered deployment scope and strict rec
 		definition.plan().find(step => step.id === "deploy").items,
 		UPGRADE_DEPLOYMENTS.map(name => name.toLowerCase()),
 	);
-	assert.equal(UPGRADE_DEPLOYMENTS.length, 10);
+	assert.equal(UPGRADE_DEPLOYMENTS.length, 13);
 	assert.deepEqual(
 		definition.plan().map(step => step.id),
 		ACCOUNT_INSTANT_PLAN.map(step => step.id),

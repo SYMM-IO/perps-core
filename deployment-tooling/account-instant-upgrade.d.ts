@@ -1,5 +1,8 @@
 export const ACCOUNT_FACETS: readonly string[]
 export const UPGRADE_DEPLOYMENTS: readonly string[]
+export const BASELINE_GASLESS_LIBRARIES: readonly string[]
+export const WALLET_CREATION_FEE_SLOT: number
+export const FEE_QUOTE_STORAGE_NAMESPACE: string
 export const GASLESS_LIBRARIES: readonly string[]
 export const NEW_GASLESS_LIBRARIES: readonly string[]
 export function verifyGaslessStorageLayout(baseline: any, current: any): { layoutDigest: string; baselineLayoutDigest: string }

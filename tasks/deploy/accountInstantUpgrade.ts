@@ -118,6 +118,10 @@ export async function assertUpgradePreservation(ethers: any, input: any, snapsho
 	const implementation = lower(`0x${(await ethers.provider.getStorage(input.config.target.gaslessLayer, IMPLEMENTATION_SLOT, block)).slice(-40)}`)
 	if (![snapshot.gaslessImplementation, report.deployments?.GaslessLayer?.address].includes(implementation))
 		throw new Error("GaslessLayer implementation drift")
+	if (implementation === report.deployments?.GaslessLayer?.address) {
+		const upgraded = await ethers.getContractAt("GaslessLayer", input.config.target.gaslessLayer)
+		if ((await upgraded.walletCreationFee({ blockTag: block })) !== 0n) throw new Error("Upgraded Gasless walletCreationFee must remain disabled")
+	}
 	const accountSelectors = await selectorsAt(ethers, input.config.target.accountLayer, block)
 	if (ACCOUNT_FACETS.every(name => report.deployments?.[name]))
 		planAccountCut(snapshot.accountSelectors, accountSelectors, Object.fromEntries(ACCOUNT_FACETS.map(name => [name, report.deployments[name]])))
@@ -151,21 +155,14 @@ export async function assertUpgradePreservation(ethers: any, input: any, snapsho
 
 const gaslessLibraryArtifact = (name: string) => `contracts/gaslessLayer/libraries/${name}.sol:${name}`
 
-function upgradeLibraries(report: any, name: string) {
-	const key = (library: string) => {
-		const matches = Object.keys(report.compatibility.libraries).filter(k => k.endsWith(`:${library}`))
-		if (matches.length !== 1) throw new Error(`Missing baseline library binding for ${library}`)
-		return matches[0]
-	}
-	const deployer = () => ({ [key("GaslessWalletDeployerLib")]: report.deployments.GaslessWalletDeployerLib.address })
-	if (name === "GaslessWalletExecutionLib") return deployer()
-	if (name !== "GaslessLayer") return {}
-	const reused = report.compatibility.reusedLibraries
-	const expectedReused = GASLESS_LIBRARIES.filter(n => !NEW_GASLESS_LIBRARIES.includes(n))
-		.map(key)
-		.sort()
-	if (digest(Object.keys(reused || {}).sort()) !== digest(expectedReused)) throw new Error("Incomplete verified Gasless library reuse plan")
-	return { ...reused, ...deployer(), [key("GaslessWalletExecutionLib")]: report.deployments.GaslessWalletExecutionLib.address }
+function upgradeLibraries(report: any, artifact: any) {
+	const bindings: Record<string, string> = {}
+	for (const [source, names] of Object.entries(artifact.linkReferences))
+		for (const name of Object.keys(names as any)) {
+			if (!GASLESS_LIBRARIES.includes(name) || !report.deployments[name]?.address) throw new Error(`Missing replacement library ${name}`)
+			bindings[`${source}:${name}`] = report.deployments[name].address
+		}
+	return bindings
 }
 
 export async function deployAccountInstantSelection(
@@ -205,12 +202,12 @@ export async function deployAccountInstantSelection(
 		{ name: "GaslessLayer", artifact: "contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer", args: [], libraries: {} },
 	]
 	for (const spec of specs) {
-		spec.libraries = upgradeLibraries(report, spec.name)
+		const artifact = await hre.artifacts.readArtifact(spec.artifact)
+		if (spec.name.startsWith("Gasless")) spec.libraries = upgradeLibraries(report, artifact)
 		if (spec.name === "CoreFacet")
 			spec.libraries = linkedLibrariesFor("accountLayer", FacetSpecs.accountLayer.CoreFacet, {
 				LibQuoteParams: report.deployments.LibQuoteParams.address,
 			})
-		const artifact = await hre.artifacts.readArtifact(spec.artifact)
 		const factory = await ethers.getContractFactoryFromArtifact(spec.name === "LibQuoteParams" ? deploymentOnlyArtifact(artifact) : artifact, {
 			libraries: spec.libraries,
 			signer,
@@ -290,7 +287,7 @@ export async function assertUpgradeDeployments(hre: any, ethers: any, input: any
 			.sort()
 		const libraries =
 			name === "GaslessLayer" || NEW_GASLESS_LIBRARIES.includes(name)
-				? upgradeLibraries(report, name)
+				? upgradeLibraries(report, artifact)
 				: name === "CoreFacet"
 					? linkedLibrariesFor("accountLayer", FacetSpecs.accountLayer.CoreFacet, { LibQuoteParams: report.deployments.LibQuoteParams.address })
 					: {}
@@ -634,13 +631,14 @@ export async function buildUpgradeClientHandoff(hre: any, input: any, report: an
 	const gasless = await hre.artifacts.readArtifact("GaslessLayer")
 	const instant = await hre.artifacts.readArtifact("InstantLayer")
 	return {
-		apiVersion: "operations.symm.io/indexed-wallet-client-upgrade-v1",
+		apiVersion: "operations.symm.io/gasless-client-upgrade-v2",
 		chainId: 42161,
 		inputDigest: digest(input),
 		snapshotDigest: report.snapshotDigest,
 		gaslessLayer: input.config.target.gaslessLayer,
 		gaslessImplementation: report.deployments.GaslessLayer.address,
 		instantLayer: report.deployments.InstantLayer.address,
+		walletCreationFeePolicy: { requiredValue: "0", unit: "collateral token decimals", setDuringUpgrade: false },
 		gaslessABI: gasless.abi,
 		instantABI: instant.abi,
 		instantSigningDomain: { name: "SymmioInstantLayer", version: "1", chainId: 42161, verifyingContract: report.deployments.InstantLayer.address },
@@ -649,7 +647,12 @@ export async function buildUpgradeClientHandoff(hre: any, input: any, report: an
 			"relayInstantBatch requires walletIds with one entry per signed operation. Use 0 for InstantLayer operations and the original wallet.",
 			"Wallet address, deposit settlement, recovery and fee/nonce reads now take wallet IDs. walletOperationNonces(owner, walletId, signerAccount) returns the last consumed nonce; use that value plus one.",
 			"Wallet ID 0 keeps the original address and legacy nonce stream. Positive IDs use separate wallet addresses and nonces.",
-			"Update event consumers for GaslessWalletDeployed, WalletDepositSettled and WalletNonCollateralTokenRecovered using the attached ABI.",
+			"Update event consumers for GaslessWalletDeployed, WalletDepositSettled, WalletNonCollateralTokenRecovered, WalletCreationFeeUpdated and WalletCreationFeeCollected using the attached ABI.",
+			"Wallet creation fees remain disabled: the upgrade verifies slot 20 is zero and does not call setWalletCreationFee. The standalone deployment recipe's fee does not apply to this upgrade.",
+			"previewFeeQuote is an estimate. Use quoteGaslessFee from scripts/gaslessLayer/fee-quote.ts in exact mode with the submitting relayer/admin as from and the intended native value; simulation returns FeeQuoteResult through a revert and must use eth_call.",
+			"FeeQuote monetary fields and executeWithFeeLimit maxTotalDebit use 18 decimals. WalletCreationFeeUpdated/Collected and walletCreationFee use collateral token decimals. totalDebit includes collateral exchanged for native gas; totalFee excludes that exchanged principal.",
+			"Fee quotes cover Gasless charges, excluding Core trading fees, bridge fees and transaction gas. Execute the same encoded action directly or through executeWithFeeLimit; the wrapper retains the underlying roles.",
+			"Optional signed caps: set gaslessFeeLimitSalt before signing operation/delegation typed data; use signCappedNativeGasTopUp for capped top-ups. Existing untagged salts and legacy top-up signatures remain supported.",
 			"Use the new InstantLayer address/domain and grant fresh user delegations; old InstantLayer delegations and replay state are not migrated.",
 			"GaslessGateway wallet signatures continue to use the existing Gasless proxy domain and signed wallet target.",
 		],

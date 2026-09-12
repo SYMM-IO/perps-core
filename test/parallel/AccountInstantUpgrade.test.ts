@@ -4,12 +4,16 @@ import {
 	assertConfigurationParity,
 	flowDiscovery,
 	IMPLEMENTATION_SLOT,
-	GASLESS_LIBRARIES,
+	BASELINE_GASLESS_LIBRARIES,
+	WALLET_CREATION_FEE_SLOT,
+	FEE_QUOTE_STORAGE_NAMESPACE,
 	verifyGaslessStorageLayout,
 } from "../../deployment-tooling/account-instant-upgrade.js"
+import { quoteGaslessFee } from "../../scripts/gaslessLayer/fee-quote.js"
 import {
 	compileGaslessCompatibility,
 	readGaslessConfiguration,
+	readGaslessUpgradeStorage,
 	readInstantConfiguration,
 	diamondABI,
 	verifyGaslessCompatibility,
@@ -35,7 +39,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		baseline = await compileGaslessCompatibility(hre, "95f44c983480084eb097eddd2ad3574de3ea12e3")
 	})
 
-	it("permits only the approved nonce rename and one-slot gap use, rejecting other layout changes", () => {
+	it("permits only the approved nonce rename and two-slot gap use, rejecting other layout changes", () => {
 		const { baseline: old, current } = baseline.layouts
 		expect(verifyGaslessStorageLayout(old, current).layoutDigest).to.equal(baseline.layoutDigest)
 		for (const mutate of [
@@ -43,16 +47,16 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 				layout.storage[0].slot = "1"
 			},
 			(layout: any) => {
-				layout.storage.at(-3).label = "anotherMapping"
+				layout.storage.at(-4).label = "anotherMapping"
 			},
 			(layout: any) => {
-				layout.storage.at(-2).slot = "20"
+				layout.storage.at(-3).slot = "20"
 			},
 			(layout: any) => {
-				layout.storage.at(-1).slot = "21"
+				layout.storage.at(-1).slot = "20"
 			},
 			(layout: any) => {
-				layout.types[layout.storage.at(-2).type].value = layout.types[layout.storage.at(-2).type].key
+				layout.types[layout.storage.at(-3).type].value = layout.types[layout.storage.at(-3).type].key
 			},
 			(layout: any) => {
 				layout.types[layout.storage.at(-1).type].numberOfBytes = "1056"
@@ -148,7 +152,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		await instant.connect(admin).addTemplate("instant open", [{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }])
 		await instant.connect(admin).setTemplateInstantOpenMode(1, true)
 		const libraries: Record<string, string> = {}
-		for (const name of GASLESS_LIBRARIES) {
+		for (const name of BASELINE_GASLESS_LIBRARIES) {
 			const artifact = baseline.libraryArtifacts[name]
 			const linked = name === "GaslessWalletExecutionLib" ? { GaslessWalletDeployerLib: libraries.GaslessWalletDeployerLib } : {}
 			const lib = await (await ethers.getContractFactoryFromArtifact(artifact, { libraries: linked })).deploy()
@@ -206,6 +210,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		const getterOnly = {
 			...ethers,
 			provider: {
+				getStorage: ethers.provider.getStorage.bind(ethers.provider),
 				getLogs: () => {
 					throw new Error("History scans are forbidden for flow discovery")
 				},
@@ -232,6 +237,8 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		}
 		const compatibility = await verifyGaslessCompatibility(hre, ethers, snapshot, baseline)
 		return {
+			token,
+			account,
 			legacyWallet,
 			deployer,
 			admin,
@@ -245,7 +252,29 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		}
 	}
 
-	it("proves the old runtime/layout, deploys exactly ten contracts and recovers missing report entries without another broadcast", async () => {
+	it("refuses nonzero new fee/quote slots and unreadable storage instead of assuming a disabled fee", async () => {
+		const f = await fixture()
+		const slots = [BigInt(WALLET_CREATION_FEE_SLOT), ...[0n, 1n, 2n, 3n].map(i => BigInt(ethers.id(FEE_QUOTE_STORAGE_NAMESPACE)) + i)]
+		for (const slot of slots) {
+			await ethers.provider.send("hardhat_setStorageAt", [String(f.gasless.target), ethers.toQuantity(slot), ethers.toBeHex(123, 32)])
+			await expectFailure(
+				async () => readGaslessUpgradeStorage(ethers, String(f.gasless.target), await ethers.provider.getBlockNumber()),
+				/slot 20 must be zero|namespace is not empty/,
+			)
+			await ethers.provider.send("hardhat_setStorageAt", [String(f.gasless.target), ethers.toQuantity(slot), ethers.ZeroHash])
+		}
+		const unavailable = {
+			...ethers,
+			provider: {
+				getStorage: async () => {
+					throw new Error("storage RPC unavailable")
+				},
+			},
+		}
+		await expectFailure(() => readGaslessUpgradeStorage(unavailable, String(f.gasless.target), 1), /storage RPC unavailable/)
+	})
+
+	it("proves the old runtime/layout, deploys exactly thirteen contracts and recovers missing report entries without another broadcast", async () => {
 		const f = await fixture()
 		resetDeploymentTransactionJournal()
 		setCheckpointSimulated(true)
@@ -264,19 +293,24 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 3)
 		delete report.deployments.MarginFacet
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
-		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 10)
+		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 13)
 		await assertUpgradeDeployments(hre, ethers, f.input, report)
 		for (const entry of Object.values(report.deployments) as any[]) {
 			const receipt = await ethers.provider.getTransactionReceipt(entry.deploymentTransaction)
 			expect(receipt?.contractAddress?.toLowerCase()).to.equal(entry.address)
 		}
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
-		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 10)
+		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 13)
 		const handoff = await buildUpgradeClientHandoff(hre, f.input, report)
 		const clientInterface = new ethers.Interface(handoff.gaslessABI)
 		expect(clientInterface.getFunction("relayInstantBatch")!.inputs.at(-1)!.type).to.equal("uint256[]")
 		expect(clientInterface.getFunction("getGaslessWalletAddress")!.inputs.map(i => i.type)).to.deep.equal(["address", "uint256"])
 		expect(clientInterface.getFunction("walletOperationNonces")!.inputs.map(i => i.type)).to.deep.equal(["address", "uint256", "address"])
+		expect(handoff.walletCreationFeePolicy).to.deep.equal({ requiredValue: "0", unit: "collateral token decimals", setDuringUpgrade: false })
+		for (const name of ["previewFeeQuote", "simulateFeeQuote", "executeWithFeeLimit", "walletCreationFee", "getWalletCreationFee"])
+			expect(clientInterface.getFunction(name)).not.to.equal(null)
+		expect(clientInterface.getError("FeeQuoteResult")).not.to.equal(null)
+		expect(clientInterface.getEvent("WalletCreationFeeCollected")).not.to.equal(null)
 		expect(clientInterface.getEvent("WalletDepositSettled")).not.to.equal(null)
 		expect(clientInterface.getEvent("WalletNonCollateralTokenRecovered")).not.to.equal(null)
 		expect(clientInterface.getEvent("DepositSettledToNewAccount")).to.equal(null)
@@ -285,6 +319,9 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		const domain = await (await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)).eip712Domain()
 		expect(handoff.instantSigningDomain.name).to.equal(domain.name)
 		expect(handoff.instantSigningDomain.version).to.equal(domain.version)
+		expect(report.compatibility.reusedLibraries).to.deep.equal({})
+		for (const entry of Object.values(report.deployments) as any[])
+			for (const address of Object.values(entry.libraries)) expect(Object.values(f.compatibility.libraries)).not.to.include(address)
 		const wrongLinks = structuredClone(report)
 		wrongLinks.deployments.GaslessLayer.libraries = f.compatibility.libraries
 		await expectFailure(() => assertUpgradeDeployments(hre, ethers, f.input, wrongLinks), /Configuration drift/)
@@ -334,6 +371,8 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		expect((await ethers.provider.getStorage(String(f.gasless.target), IMPLEMENTATION_SLOT)).slice(-40)).to.equal(
 			report.deployments.GaslessLayer.address.slice(2),
 		)
+		expect(await f.gasless.walletCreationFee()).to.equal(0)
+		expect(await f.gasless.getWalletCreationFee(f.admin.address, 0)).to.equal(0)
 		expect(await f.gasless.getGaslessWalletAddress(f.admin.address, 0)).to.equal(f.legacyWallet)
 		const indexedWallet = await f.gasless.getGaslessWalletAddress(f.admin.address, 1)
 		expect(indexedWallet).not.to.equal(f.legacyWallet)
@@ -356,6 +395,27 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		expect(after.roles.find((r: any) => r.role === ethers.id("RELAYER_ROLE"))?.members).to.deep.equal(
 			[f.admin.address.toLowerCase(), f.relayer.address.toLowerCase()].sort(),
 		)
+		// Exercise the newly linked quote and accounting paths through a real baseline -> new proxy upgrade.
+		await f.account.setAccountOwner(f.relayer.address, f.admin.address)
+		await f.token.mint(f.legacyWallet, 100000)
+		const callData = f.gasless.interface.encodeFunctionData("settleDepositToExistingAccount", [f.admin.address, 0, f.relayer.address])
+		const preview = await f.gasless.previewFeeQuote(callData, 0)
+		expect(preview.exact).to.equal(false)
+		expect(preview.totalFee).to.equal(30000n * 10n ** 12n)
+		expect(preview.payments[0].walletCreationFee).to.equal(0)
+		const exact = await quoteGaslessFee({ gateway: f.gasless as any, callData, mode: "exact", from: f.admin.address })
+		expect(exact.status).to.equal("quoted")
+		if (exact.status !== "quoted") throw new Error("Expected exact quote")
+		expect(exact.quote.totalDebit).to.equal(preview.totalDebit)
+		expect(exact.quote.exact).to.equal(true)
+		expect(await f.token.balanceOf(f.legacyWallet)).to.equal(100000)
+		expect(await ethers.provider.getCode(f.legacyWallet)).to.equal("0x")
+		await expect(f.gasless.executeWithFeeLimit(callData, preview.totalDebit - 1n)).to.be.revertedWithCustomError(f.gasless, "FeeLimitExceeded")
+		expect(await f.token.balanceOf(f.legacyWallet)).to.equal(100000)
+		await f.gasless.executeWithFeeLimit(callData, preview.totalDebit)
+		expect(await f.token.balanceOf(f.legacyWallet)).to.equal(0)
+		expect(await f.gasless.walletCreationFee()).to.equal(0)
+		assertConfigurationParity(after, await readGaslessConfiguration(ethers, String(f.gasless.target), await ethers.provider.getBlockNumber()))
 		await replacement.connect(f.admin).setTemplateActive(0, true)
 		await expectFailure(() => verifyReplacementInstant(ethers, f.snapshot, report), /Configuration drift/)
 	})
