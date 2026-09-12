@@ -9,7 +9,9 @@ import {
 	GASLESS_UINTS,
 	GASLESS_BOOLS,
 	GASLESS_LIBRARIES,
-	NEW_GASLESS_LIBRARIES,
+	BASELINE_GASLESS_LIBRARIES,
+	WALLET_CREATION_FEE_SLOT,
+	FEE_QUOTE_STORAGE_NAMESPACE,
 	verifyGaslessStorageLayout,
 	IMPLEMENTATION_SLOT,
 } from "../../deployment-tooling/account-instant-upgrade.js"
@@ -219,13 +221,28 @@ export async function readInstantConfiguration(ethers: any, address: string, blo
 	}
 }
 
+/** Slot 20 was reserved in the verified baseline; never activate a new fee through stale gap data.
+ * Fee accounting uses a new four-slot namespace, empty outside an atomic quote/limited execution. */
+export async function readGaslessUpgradeStorage(ethers: any, address: string, block: number) {
+	const walletCreationFee = BigInt(await ethers.provider.getStorage(address, WALLET_CREATION_FEE_SLOT, block))
+	if (walletCreationFee !== 0n)
+		throw new Error(
+			"Gasless walletCreationFee slot 20 must be zero to preserve existing charges; review the on-chain value before changing the upgrade input",
+		)
+	const namespace = BigInt(ethers.id(FEE_QUOTE_STORAGE_NAMESPACE))
+	const feeQuoteContextSlots = await Promise.all([0n, 1n, 2n, 3n].map(offset => ethers.provider.getStorage(address, namespace + offset, block)))
+	if (feeQuoteContextSlots.some(value => BigInt(value) !== 0n)) throw new Error("Gasless fee-quote storage namespace is not empty")
+	return { walletCreationFee: String(walletCreationFee), feeQuoteContextSlots }
+}
+
 export async function readGaslessConfiguration(ethers: any, address: string, block: number, discovery: any = {}) {
 	const contract = await ethers.getContractAt("GaslessLayer", address)
 	const topics = ["RoleGranted", "RoleRevoked", "RoleAdminChanged", "SelectorFeeConfigUpdated"].map(
 		name => contract.interface.getEvent(name).topicHash,
 	)
 	const logs = await configurationEvents(ethers, address, topics, block, discovery)
-	const fees: any = {},
+	const { walletCreationFee, feeQuoteContextSlots } = await readGaslessUpgradeStorage(ethers, address, block)
+	const fees: any = { walletCreationFee },
 		references: any = {}
 	for (const name of [...GASLESS_UINTS, ...GASLESS_BOOLS]) fees[name] = json(await contract[name]({ blockTag: block }))
 	for (const name of ["core", "accountLayer", "instantLayer", "collateralToken", "treasury"])
@@ -244,6 +261,7 @@ export async function readGaslessConfiguration(ethers: any, address: string, blo
 		...references,
 		fees,
 		selectorFees,
+		feeQuoteContextSlots,
 		roles: await roleSnapshot(ethers, contract, logs, block, false, discovery.gaslessRoles, discovery.gaslessRoleMembers),
 	}
 }
@@ -397,30 +415,39 @@ export async function compileGaslessCompatibility(hre: any, baselineCommit: stri
 		await Promise.all(["GaslessLayer", ...GASLESS_LIBRARIES].map(async name => [name, await hre.artifacts.readArtifact(name)])),
 	)
 	const historical = structuredClone(build.input)
-	for (const source of Object.keys(historical.sources)) {
-		if (!source.startsWith("project/")) continue
-		historical.sources[source].content = execFileSync("git", ["show", `${baselineCommit}:${source.slice("project/".length)}`], {
+	// New fee-quote sources did not exist in the baseline. Restore its actual import closure,
+	// including historical project dependencies no longer imported by the current implementation.
+	for (const source of Object.keys(historical.sources)) if (source.startsWith("project/")) delete historical.sources[source]
+	const restore = (source: string) => {
+		if (historical.sources[source]) return
+		if (!source.startsWith("project/contracts/") || !source.endsWith(".sol")) throw new Error(`Unexpected baseline import ${source}`)
+		const content = execFileSync("git", ["show", `${baselineCommit}:${source.slice("project/".length)}`], {
 			encoding: "utf8",
 			maxBuffer: 4 * 1024 * 1024,
 		})
+		historical.sources[source] = { content }
+		for (const match of content.matchAll(/\bimport\s+(?:[^;]*?\bfrom\s*)?["']([^"']+)["']\s*;/g)) {
+			if (match[1].startsWith(".")) restore(path.posix.normalize(path.posix.join(path.posix.dirname(source), match[1])))
+		}
 	}
+	for (const name of ["GaslessLayer", ...BASELINE_GASLESS_LIBRARIES]) restore(artifacts[name].inputSourceName)
 	const modulePath = path.join(process.cwd(), "node_modules/hardhat/dist/src/internal/builtin-plugins/solidity/build-system/compiler/index.js")
 	const { getCompiler } = await import(pathToFileURL(modulePath).href)
 	const compiler = await getCompiler(build.solcVersion, { preferWasm: false })
-	const compile = async (original: any) => {
+	const compile = async (original: any, names: readonly string[]) => {
 		const input = structuredClone(original)
 		input.settings.outputSelection = Object.fromEntries(
-			Object.entries(artifacts).map(([name, a]: any) => [
-				a.inputSourceName,
-				{ [name]: ["abi", "storageLayout", "evm.deployedBytecode", "evm.bytecode"] },
-			]),
+			names.map(name => [artifacts[name].inputSourceName, { [name]: ["abi", "storageLayout", "evm.deployedBytecode", "evm.bytecode"] }]),
 		)
 		const output = await compiler.compile(input)
 		const errors = output.errors?.filter((e: any) => e.severity === "error") || []
 		if (errors.length) throw new Error(errors.map((e: any) => e.formattedMessage).join("\n"))
-		return Object.fromEntries(Object.entries(artifacts).map(([name, a]: any) => [name, output.contracts[a.inputSourceName][name]]))
+		return Object.fromEntries(names.map(name => [name, output.contracts[artifacts[name].inputSourceName][name]]))
 	}
-	const [old, current] = await Promise.all([compile(historical), compile(build.input)])
+	const [old, current] = await Promise.all([
+		compile(historical, ["GaslessLayer", ...BASELINE_GASLESS_LIBRARIES]),
+		compile(build.input, ["GaslessLayer", ...GASLESS_LIBRARIES]),
+	])
 	const asArtifact = (name: string) => ({
 		...artifacts[name],
 		abi: old[name].abi,
@@ -436,7 +463,7 @@ export async function compileGaslessCompatibility(hre: any, baselineCommit: stri
 		...verifyGaslessStorageLayout(old.GaslessLayer.storageLayout, current.GaslessLayer.storageLayout),
 		layouts: { baseline: old.GaslessLayer.storageLayout, current: current.GaslessLayer.storageLayout },
 		artifact: asArtifact("GaslessLayer"),
-		libraryArtifacts: Object.fromEntries(GASLESS_LIBRARIES.map(name => [name, asArtifact(name)])),
+		libraryArtifacts: Object.fromEntries(BASELINE_GASLESS_LIBRARIES.map(name => [name, asArtifact(name)])),
 	}
 }
 
@@ -446,16 +473,13 @@ export async function verifyGaslessCompatibility(hre: any, ethers: any, snapshot
 	for (const [source, names] of Object.entries(compiled.artifact.deployedLinkReferences) as any)
 		for (const [name, refs] of Object.entries(names) as any) {
 			const addresses = unique(refs.map((r: any) => `0x${code.slice(r.start * 2, (r.start + r.length) * 2)}`))
-			if (addresses.length !== 1 || !GASLESS_LIBRARIES.includes(name)) throw new Error(`Invalid baseline library ${name}`)
+			if (addresses.length !== 1 || !BASELINE_GASLESS_LIBRARIES.includes(name)) throw new Error(`Invalid baseline library ${name}`)
 			libraries[`${source}:${name}`] = addresses[0]
 		}
-	if (Object.keys(libraries).length !== GASLESS_LIBRARIES.length) throw new Error("Incomplete baseline GaslessLayer library graph")
+	if (Object.keys(libraries).length !== BASELINE_GASLESS_LIBRARIES.length) throw new Error("Incomplete baseline GaslessLayer library graph")
 	for (const [qualifiedName, address] of Object.entries(libraries))
 		await assertRoundingRuntime(ethers, compiled.libraryArtifacts[qualifiedName.split(":").at(-1)!], address, libraries)
 	await assertRoundingRuntime(ethers, compiled.artifact, snapshot.gaslessImplementation, libraries)
-	const reusedLibraries = Object.fromEntries(Object.entries(libraries).filter(([name]) => !NEW_GASLESS_LIBRARIES.includes(name.split(":").at(-1)!)))
-	for (const [qualifiedName, address] of Object.entries(reusedLibraries))
-		await assertRoundingRuntime(ethers, await hre.artifacts.readArtifact(qualifiedName.split(":").at(-1)!), address, reusedLibraries)
 	return {
 		baselineCommit: compiled.baselineCommit,
 		baselineSourcesDigest: compiled.baselineSourcesDigest,
@@ -463,6 +487,6 @@ export async function verifyGaslessCompatibility(hre: any, ethers: any, snapshot
 		baselineLayoutDigest: compiled.baselineLayoutDigest,
 		implementation: snapshot.gaslessImplementation,
 		libraries,
-		reusedLibraries,
+		reusedLibraries: {},
 	}
 }

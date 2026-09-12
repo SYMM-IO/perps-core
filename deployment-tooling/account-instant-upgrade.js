@@ -2,14 +2,18 @@ import { getAddress, Interface, ZeroAddress } from "ethers";
 import { createHash } from "node:crypto";
 
 export const ACCOUNT_FACETS = Object.freeze(["CoreFacet", "MarginFacet", "ControlFacet", "ViewFacet", "TimelockFacet"]);
-export const NEW_GASLESS_LIBRARIES = Object.freeze(["GaslessWalletDeployerLib", "GaslessWalletExecutionLib"]);
-export const UPGRADE_DEPLOYMENTS = Object.freeze(["LibQuoteParams", ...ACCOUNT_FACETS, "InstantLayer", ...NEW_GASLESS_LIBRARIES, "GaslessLayer"]);
-export const GASLESS_LIBRARIES = Object.freeze([
+// The live baseline uses four libraries; the replacement deploys the complete five-library graph.
+export const BASELINE_GASLESS_LIBRARIES = Object.freeze([
 	"GaslessNativeGasTopUpLib",
 	"GaslessOperationalFeeLib",
 	"GaslessWalletDeployerLib",
 	"GaslessWalletExecutionLib",
 ]);
+export const GASLESS_LIBRARIES = Object.freeze([...BASELINE_GASLESS_LIBRARIES, "GaslessFeeQuoteLib"]);
+export const NEW_GASLESS_LIBRARIES = GASLESS_LIBRARIES;
+export const UPGRADE_DEPLOYMENTS = Object.freeze(["LibQuoteParams", ...ACCOUNT_FACETS, "InstantLayer", ...NEW_GASLESS_LIBRARIES, "GaslessLayer"]);
+export const WALLET_CREATION_FEE_SLOT = 20;
+export const FEE_QUOTE_STORAGE_NAMESPACE = "symmio.gaslessLayer.feeQuote.v1";
 export const POLICY = Object.freeze({
 	preserveConfiguration: true,
 	preserveGaslessProxy: true,
@@ -89,12 +93,13 @@ export function verifyGaslessStorageLayout(baseline, current) {
 	const newTail = [
 		{ ...oldTail[0], label: "_legacyWalletOperationNonces" },
 		{ label: "walletNonces", slot: "19", offset: 0, type: nonceMap },
-		gap("20", 32),
+		{ label: "walletCreationFee", slot: String(WALLET_CREATION_FEE_SLOT), offset: 0, type: uint },
+		gap("21", 31),
 	];
 	if (
 		digest(oldFields.slice(-2)) !== digest(oldTail) ||
-		digest(newFields.slice(-3)) !== digest(newTail) ||
-		digest(oldFields.slice(0, -2)) !== digest(newFields.slice(0, -3))
+		digest(newFields.slice(-4)) !== digest(newTail) ||
+		digest(oldFields.slice(0, -2)) !== digest(newFields.slice(0, -4))
 	)
 		throw new Error("GaslessLayer storage layout differs from the reviewed indexed-wallet migration");
 	return { layoutDigest: digest(newFields), baselineLayoutDigest: digest(oldFields) };
