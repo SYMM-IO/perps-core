@@ -2,7 +2,8 @@ import { getAddress, Interface, ZeroAddress } from "ethers";
 import { createHash } from "node:crypto";
 
 export const ACCOUNT_FACETS = Object.freeze(["CoreFacet", "MarginFacet", "ControlFacet", "ViewFacet", "TimelockFacet"]);
-export const UPGRADE_DEPLOYMENTS = Object.freeze(["LibQuoteParams", ...ACCOUNT_FACETS, "InstantLayer", "GaslessLayer"]);
+export const NEW_GASLESS_LIBRARIES = Object.freeze(["GaslessWalletDeployerLib", "GaslessWalletExecutionLib"]);
+export const UPGRADE_DEPLOYMENTS = Object.freeze(["LibQuoteParams", ...ACCOUNT_FACETS, "InstantLayer", ...NEW_GASLESS_LIBRARIES, "GaslessLayer"]);
 export const GASLESS_LIBRARIES = Object.freeze([
 	"GaslessNativeGasTopUpLib",
 	"GaslessOperationalFeeLib",
@@ -52,6 +53,51 @@ export function assertConfigurationParity(expected, actual) {
 		throw new Error(
 			"Configuration drift: on-chain settings differ from configuration-input.json; inspect the recorded expected and observed values before continuing",
 		);
+}
+
+/** Accept only the reviewed indexed-wallet migration, not arbitrary gap consumption. */
+export function verifyGaslessStorageLayout(baseline, current) {
+	const type = (layout, id) => {
+		const t = layout.types[id];
+		return {
+			encoding: t.encoding,
+			label: t.label,
+			numberOfBytes: t.numberOfBytes,
+			...Object.fromEntries(["key", "value", "base"].filter(key => t[key]).map(key => [key, type(layout, t[key])])),
+			...(t.members ? { members: t.members.map(m => field(layout, m)) } : {}),
+		};
+	};
+	const field = (layout, s) => ({ label: s.label, slot: s.slot, offset: s.offset, type: type(layout, s.type) });
+	const oldFields = baseline.storage.map(s => field(baseline, s));
+	const newFields = current.storage.map(s => field(current, s));
+	const uint = { encoding: "inplace", label: "uint256", numberOfBytes: "32" };
+	const address = { encoding: "inplace", label: "address", numberOfBytes: "20" };
+	const nonceMap = {
+		encoding: "mapping",
+		label: "mapping(address => mapping(address => uint256))",
+		numberOfBytes: "32",
+		key: address,
+		value: { encoding: "mapping", label: "mapping(address => uint256)", numberOfBytes: "32", key: address, value: uint },
+	};
+	const gap = (slot, length) => ({
+		label: "__gap",
+		slot,
+		offset: 0,
+		type: { encoding: "inplace", label: `uint256[${length}]`, numberOfBytes: String(length * 32), base: uint },
+	});
+	const oldTail = [{ label: "walletOperationNonces", slot: "18", offset: 0, type: nonceMap.value }, gap("19", 33)];
+	const newTail = [
+		{ ...oldTail[0], label: "_legacyWalletOperationNonces" },
+		{ label: "walletNonces", slot: "19", offset: 0, type: nonceMap },
+		gap("20", 32),
+	];
+	if (
+		digest(oldFields.slice(-2)) !== digest(oldTail) ||
+		digest(newFields.slice(-3)) !== digest(newTail) ||
+		digest(oldFields.slice(0, -2)) !== digest(newFields.slice(0, -3))
+	)
+		throw new Error("GaslessLayer storage layout differs from the reviewed indexed-wallet migration");
+	return { layoutDigest: digest(newFields), baselineLayoutDigest: digest(oldFields) };
 }
 function keys(value, allowed, label) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid ${label}`);

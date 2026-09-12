@@ -1,7 +1,12 @@
 import { expect } from "chai"
 
-import { assertConfigurationParity, flowDiscovery, IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
-import { deployGaslessLayerLibraries } from "../../scripts/gaslessLayer/layer-libraries.js"
+import {
+	assertConfigurationParity,
+	flowDiscovery,
+	IMPLEMENTATION_SLOT,
+	GASLESS_LIBRARIES,
+	verifyGaslessStorageLayout,
+} from "../../deployment-tooling/account-instant-upgrade.js"
 import {
 	compileGaslessCompatibility,
 	readGaslessConfiguration,
@@ -27,6 +32,35 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 	let baseline: any
 	before(async () => {
 		baseline = await compileGaslessCompatibility(hre, "95f44c983480084eb097eddd2ad3574de3ea12e3")
+	})
+
+	it("permits only the approved nonce rename and one-slot gap use, rejecting other layout changes", () => {
+		const { baseline: old, current } = baseline.layouts
+		expect(verifyGaslessStorageLayout(old, current).layoutDigest).to.equal(baseline.layoutDigest)
+		for (const mutate of [
+			(layout: any) => {
+				layout.storage[0].slot = "1"
+			},
+			(layout: any) => {
+				layout.storage.at(-3).label = "anotherMapping"
+			},
+			(layout: any) => {
+				layout.storage.at(-2).slot = "20"
+			},
+			(layout: any) => {
+				layout.storage.at(-1).slot = "21"
+			},
+			(layout: any) => {
+				layout.types[layout.storage.at(-2).type].value = layout.types[layout.storage.at(-2).type].key
+			},
+			(layout: any) => {
+				layout.types[layout.storage.at(-1).type].numberOfBytes = "1056"
+			},
+		]) {
+			const wrong = structuredClone(current)
+			mutate(wrong)
+			expect(() => verifyGaslessStorageLayout(old, wrong)).to.throw(/storage layout differs/)
+		}
 	})
 
 	it("plans only needed PartyB grants for a contract admin without SETTER_ROLE and resumes wiring and retirement", async () => {
@@ -112,7 +146,13 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		await instant.connect(admin).setTemplateActive(0, false)
 		await instant.connect(admin).addTemplate("instant open", [{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }])
 		await instant.connect(admin).setTemplateInstantOpenMode(1, true)
-		const libraries = await deployGaslessLayerLibraries(ethers)
+		const libraries: Record<string, string> = {}
+		for (const name of GASLESS_LIBRARIES) {
+			const artifact = baseline.libraryArtifacts[name]
+			const linked = name === "GaslessWalletExecutionLib" ? { GaslessWalletDeployerLib: libraries.GaslessWalletDeployerLib } : {}
+			const lib = await (await ethers.getContractFactoryFromArtifact(artifact, { libraries: linked })).deploy()
+			libraries[name] = String(lib.target)
+		}
 		const factory = await ethers.getContractFactoryFromArtifact(baseline.artifact, { libraries })
 		const impl = await factory.deploy()
 		const proxy = await (
@@ -129,6 +169,12 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 				50000,
 			]),
 		)
+		const legacy = new ethers.Contract(proxy.target, baseline.artifact.abi, admin)
+		const legacyWallet = await legacy.getGaslessWalletAddress(admin.address)
+		const abi = ethers.AbiCoder.defaultAbiCoder()
+		const nonceSlot = ethers.keccak256(abi.encode(["address", "uint256"], [relayer.address, 18]))
+		await ethers.provider.send("hardhat_setStorageAt", [String(proxy.target), nonceSlot, ethers.toBeHex(37, 32)])
+		expect(await legacy.walletOperationNonces(relayer.address)).to.equal(37)
 		const gasless = (await ethers.getContractAt("GaslessLayer", proxy.target)).connect(admin)
 		await gasless.grantRole(ethers.id("RELAYER_ROLE"), relayer.address)
 		await gasless.grantRole(ethers.id("RELAYER_ROLE"), removedRelayer.address)
@@ -185,6 +231,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		}
 		const compatibility = await verifyGaslessCompatibility(hre, ethers, snapshot, baseline)
 		return {
+			legacyWallet,
 			deployer,
 			admin,
 			relayer,
@@ -197,7 +244,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		}
 	}
 
-	it("proves the old runtime/layout, deploys exactly eight contracts and recovers missing report entries without another broadcast", async () => {
+	it("proves the old runtime/layout, deploys exactly ten contracts and recovers missing report entries without another broadcast", async () => {
 		const f = await fixture()
 		resetDeploymentTransactionJournal()
 		setCheckpointSimulated(true)
@@ -216,14 +263,17 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 3)
 		delete report.deployments.MarginFacet
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
-		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 8)
+		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 10)
 		await assertUpgradeDeployments(hre, ethers, f.input, report)
 		for (const entry of Object.values(report.deployments) as any[]) {
 			const receipt = await ethers.provider.getTransactionReceipt(entry.deploymentTransaction)
 			expect(receipt?.contractAddress?.toLowerCase()).to.equal(entry.address)
 		}
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
-		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 8)
+		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 10)
+		const wrongLinks = structuredClone(report)
+		wrongLinks.deployments.GaslessLayer.libraries = f.compatibility.libraries
+		await expectFailure(() => assertUpgradeDeployments(hre, ethers, f.input, wrongLinks), /Configuration drift/)
 		const wrong = structuredClone(report)
 		wrong.deployments.InstantLayer.address = f.admin.address
 		await expectFailure(() => deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, wrong, checkpoint, () => {}), /receipt journal/)
@@ -270,6 +320,19 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		expect((await ethers.provider.getStorage(String(f.gasless.target), IMPLEMENTATION_SLOT)).slice(-40)).to.equal(
 			report.deployments.GaslessLayer.address.slice(2),
 		)
+		expect(await f.gasless.getGaslessWalletAddress(f.admin.address, 0)).to.equal(f.legacyWallet)
+		const indexedWallet = await f.gasless.getGaslessWalletAddress(f.admin.address, 1)
+		expect(indexedWallet).not.to.equal(f.legacyWallet)
+		expect(await f.gasless.walletOperationNonces(f.admin.address, 0, f.relayer.address)).to.equal(37)
+		expect(await f.gasless.walletOperationNonces(f.admin.address, 1, f.relayer.address)).to.equal(0)
+		const coder = ethers.AbiCoder.defaultAbiCoder()
+		const indexedNonceSlot = ethers.keccak256(
+			coder.encode(["address", "bytes32"], [f.relayer.address, ethers.keccak256(coder.encode(["address", "uint256"], [indexedWallet, 19]))]),
+		)
+		await ethers.provider.send("hardhat_setStorageAt", [String(f.gasless.target), indexedNonceSlot, ethers.toBeHex(9, 32)])
+		expect(await f.gasless.walletNonces(indexedWallet, f.relayer.address)).to.equal(9)
+		expect(await f.gasless.walletOperationNonces(f.admin.address, 1, f.relayer.address)).to.equal(9)
+		expect(await f.gasless.walletOperationNonces(f.admin.address, 0, f.relayer.address)).to.equal(37)
 		const after = await readGaslessConfiguration(ethers, String(f.gasless.target), await ethers.provider.getBlockNumber())
 		assertConfigurationParity({ ...f.snapshot.gasless, instantLayer: String(replacement.target).toLowerCase() }, after)
 		expect(after.selectorFees).to.deep.equal([

@@ -9,6 +9,8 @@ import {
 	GASLESS_UINTS,
 	GASLESS_BOOLS,
 	GASLESS_LIBRARIES,
+	NEW_GASLESS_LIBRARIES,
+	verifyGaslessStorageLayout,
 	IMPLEMENTATION_SLOT,
 } from "../../deployment-tooling/account-instant-upgrade.js"
 import { assertRoundingRuntime } from "./arbitrumRoundingUpgrade.js"
@@ -385,58 +387,56 @@ export async function captureAccountInstantSnapshot(ethers: any, config: any, bl
 	}
 }
 
-/** Compile the reviewed old Gasless implementation with the exact current compiler/dependency graph.
- * Matching it to live code, and matching its linked libraries, proves the baseline before comparing layouts. */
+/** Restore the historical project dependency graph, using the deployment compiler/settings.
+ * Live runtime parity also verifies that the installed external dependencies reproduce the baseline. */
 export async function compileGaslessCompatibility(hre: any, baselineCommit: string) {
+	if (!/^[a-f0-9]{40}$/.test(baselineCommit)) throw new Error("Expected an exact Gasless baseline commit")
 	const artifact = await hre.artifacts.readArtifact("GaslessLayer")
 	const build = JSON.parse(fs.readFileSync(path.join(hre.config.paths.artifacts, "build-info", `${artifact.buildInfoId}.json`), "utf8"))
-	const source = artifact.inputSourceName
-	const baseline = execFileSync("git", ["show", `${baselineCommit}:contracts/gaslessLayer/GaslessLayer.sol`], {
-		encoding: "utf8",
-		maxBuffer: 4 * 1024 * 1024,
-	})
-	// Use the installed Hardhat compiler adapter: same compiler version, viaIR and EVM settings as deployment.
+	const artifacts = Object.fromEntries(
+		await Promise.all(["GaslessLayer", ...GASLESS_LIBRARIES].map(async name => [name, await hre.artifacts.readArtifact(name)])),
+	)
+	const historical = structuredClone(build.input)
+	for (const source of Object.keys(historical.sources)) {
+		if (!source.startsWith("project/")) continue
+		historical.sources[source].content = execFileSync("git", ["show", `${baselineCommit}:${source.slice("project/".length)}`], {
+			encoding: "utf8",
+			maxBuffer: 4 * 1024 * 1024,
+		})
+	}
 	const modulePath = path.join(process.cwd(), "node_modules/hardhat/dist/src/internal/builtin-plugins/solidity/build-system/compiler/index.js")
 	const { getCompiler } = await import(pathToFileURL(modulePath).href)
 	const compiler = await getCompiler(build.solcVersion, { preferWasm: false })
-	const compile = async (content: string) => {
-		const input = structuredClone(build.input)
-		input.sources[source].content = content
-		input.settings.outputSelection = { [source]: { GaslessLayer: ["storageLayout", "evm.deployedBytecode", "evm.bytecode"] } }
+	const compile = async (original: any) => {
+		const input = structuredClone(original)
+		input.settings.outputSelection = Object.fromEntries(
+			Object.entries(artifacts).map(([name, a]: any) => [
+				a.inputSourceName,
+				{ [name]: ["abi", "storageLayout", "evm.deployedBytecode", "evm.bytecode"] },
+			]),
+		)
 		const output = await compiler.compile(input)
 		const errors = output.errors?.filter((e: any) => e.severity === "error") || []
 		if (errors.length) throw new Error(errors.map((e: any) => e.formattedMessage).join("\n"))
-		return output.contracts[source].GaslessLayer
+		return Object.fromEntries(Object.entries(artifacts).map(([name, a]: any) => [name, output.contracts[a.inputSourceName][name]]))
 	}
-	const [old, current] = await Promise.all([compile(baseline), compile(build.input.sources[source].content)])
-	const normalizeType = (layout: any, id: string): any => {
-		const type = layout.types[id]
-		return {
-			encoding: type.encoding,
-			label: type.label,
-			numberOfBytes: type.numberOfBytes,
-			...(type.key ? { key: normalizeType(layout, type.key) } : {}),
-			...(type.value ? { value: normalizeType(layout, type.value) } : {}),
-			...(type.members
-				? { members: type.members.map((m: any) => ({ label: m.label, offset: m.offset, slot: m.slot, type: normalizeType(layout, m.type) })) }
-				: {}),
-		}
-	}
-	const normalize = (layout: any) =>
-		layout.storage.map((s: any) => ({ label: s.label, slot: s.slot, offset: s.offset, type: normalizeType(layout, s.type) }))
-	if (digest(normalize(old.storageLayout)) !== digest(normalize(current.storageLayout)))
-		throw new Error("GaslessLayer storage layout differs from the reviewed baseline")
+	const [old, current] = await Promise.all([compile(historical), compile(build.input)])
+	const asArtifact = (name: string) => ({
+		...artifacts[name],
+		abi: old[name].abi,
+		bytecode: `0x${old[name].evm.bytecode.object}`,
+		linkReferences: old[name].evm.bytecode.linkReferences,
+		deployedBytecode: `0x${old[name].evm.deployedBytecode.object}`,
+		deployedLinkReferences: old[name].evm.deployedBytecode.linkReferences,
+		immutableReferences: old[name].evm.deployedBytecode.immutableReferences,
+	})
 	return {
 		baselineCommit,
-		layoutDigest: digest(normalize(current.storageLayout)),
-		artifact: {
-			...artifact,
-			bytecode: `0x${old.evm.bytecode.object}`,
-			linkReferences: old.evm.bytecode.linkReferences,
-			deployedBytecode: `0x${old.evm.deployedBytecode.object}`,
-			deployedLinkReferences: old.evm.deployedBytecode.linkReferences,
-			immutableReferences: old.evm.deployedBytecode.immutableReferences,
-		},
+		baselineSourcesDigest: digest(historical.sources),
+		...verifyGaslessStorageLayout(old.GaslessLayer.storageLayout, current.GaslessLayer.storageLayout),
+		layouts: { baseline: old.GaslessLayer.storageLayout, current: current.GaslessLayer.storageLayout },
+		artifact: asArtifact("GaslessLayer"),
+		libraryArtifacts: Object.fromEntries(GASLESS_LIBRARIES.map(name => [name, asArtifact(name)])),
 	}
 }
 
@@ -451,7 +451,18 @@ export async function verifyGaslessCompatibility(hre: any, ethers: any, snapshot
 		}
 	if (Object.keys(libraries).length !== GASLESS_LIBRARIES.length) throw new Error("Incomplete baseline GaslessLayer library graph")
 	for (const [qualifiedName, address] of Object.entries(libraries))
-		await assertRoundingRuntime(ethers, await hre.artifacts.readArtifact(qualifiedName.split(":").at(-1)!), address, libraries)
+		await assertRoundingRuntime(ethers, compiled.libraryArtifacts[qualifiedName.split(":").at(-1)!], address, libraries)
 	await assertRoundingRuntime(ethers, compiled.artifact, snapshot.gaslessImplementation, libraries)
-	return { baselineCommit: compiled.baselineCommit, layoutDigest: compiled.layoutDigest, implementation: snapshot.gaslessImplementation, libraries }
+	const reusedLibraries = Object.fromEntries(Object.entries(libraries).filter(([name]) => !NEW_GASLESS_LIBRARIES.includes(name.split(":").at(-1)!)))
+	for (const [qualifiedName, address] of Object.entries(reusedLibraries))
+		await assertRoundingRuntime(ethers, await hre.artifacts.readArtifact(qualifiedName.split(":").at(-1)!), address, reusedLibraries)
+	return {
+		baselineCommit: compiled.baselineCommit,
+		baselineSourcesDigest: compiled.baselineSourcesDigest,
+		layoutDigest: compiled.layoutDigest,
+		baselineLayoutDigest: compiled.baselineLayoutDigest,
+		implementation: snapshot.gaslessImplementation,
+		libraries,
+		reusedLibraries,
+	}
 }
