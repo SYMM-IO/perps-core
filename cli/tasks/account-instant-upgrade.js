@@ -15,15 +15,16 @@ export const ACCOUNT_INSTANT_PLAN = Object.freeze([
 	{
 		id: "deploy",
 		phase: "deployment",
-		title: "Deploy the AccountLayer library and five facets, InstantLayer and Gasless implementation",
+		title: "Deploy the AccountLayer library and five facets, InstantLayer, two Gasless libraries and implementation",
 		items: UPGRADE_DEPLOYMENTS.map(name => name.toLowerCase()),
 	},
-	{ id: "publish", phase: "publication", title: "Publish all eight contracts on Arbiscan" },
+	{ id: "publish", phase: "publication", title: "Publish all ten contracts on Arbiscan" },
 	{ id: "account-cut", phase: "execution", title: "Export the AccountLayer cut for the Safe" },
 	{ id: "verify-account-cut", phase: "verification", title: "Verify the installed AccountLayer selectors" },
 	{ id: "configure-instant", phase: "execution", title: "Export current InstantLayer values and flow grants for the Safe" },
 	{ id: "verify-instant", phase: "verification", title: "Compare all replacement InstantLayer settings with the snapshot" },
 	{ id: "party-b", phase: "execution", title: "Export PartyB manager, trust and whitelist wiring for the Safe" },
+	{ id: "client-ready", phase: "verification", title: "Prepare relayer and event consumers for the indexed-wallet cutover" },
 	{ id: "wire", phase: "execution", title: "Export protocol grants and the existing Gasless proxy upgrade for the Safe" },
 	{ id: "verify-wire", phase: "verification", title: "Verify wiring and preservation of all Gasless settings" },
 	{ id: "canary", phase: "canary", title: "Verify a successful relay using the new InstantLayer" },
@@ -35,6 +36,7 @@ const CONFIG_PATH = "tasks/config/arbitrum-account-instant-upgrade-42161.json";
 const RECIPE_PATH = "deployment-recipes/arbitrum-vibe-production.json";
 const ADAPTER = "internal:account-instant-upgrade";
 const read = file => JSON.parse(fs.readFileSync(file, "utf8"));
+const clientHandoffPath = input => path.join(path.dirname(input.output), "client-upgrade.json");
 const configurationPath = input => path.join(path.dirname(input.output), "configuration-input.json");
 
 export function validateAccountInstantInput(input) {
@@ -115,6 +117,15 @@ export async function dispatchAccountInstantSafe(ctx, input, phase, label) {
 	ctx.wait(`Execute ${delivery.builderPath} through Safe ${safe}, then continue this task. Continuation checks the on-chain result.`);
 }
 
+function verifyClientHandoff(ctx, input) {
+	if (
+		ctx.state.clientHandoffDigest &&
+		(digest(read(clientHandoffPath(input))) !== ctx.state.clientHandoffDigest ||
+			readReport(input).clientHandoffDigest !== ctx.state.clientHandoffDigest)
+	)
+		throw new Error("Reviewed client handoff changed");
+}
+
 async function prepareUpgrade({ root, ui }) {
 	const config = validateUpgradeConfig(read(path.join(root, CONFIG_PATH)));
 	const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: root, encoding: "utf8" }).trim();
@@ -173,7 +184,7 @@ export async function reconcileAccountInstantUpgrade(ctx, input) {
 export function createAccountInstantUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-account-instant-upgrade",
-		version: 5,
+		version: 6,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum AccountLayer and InstantLayer upgrade — preserve current values",
@@ -189,9 +200,10 @@ export function createAccountInstantUpgradeTask(common) {
 		artifacts: [
 			"pinned configuration-input.json",
 			"fork rehearsal evidence",
-			"eight contract deployments and publication evidence",
+			"ten contract deployments and publication evidence",
 			"transaction journal",
 			"Safe batches",
+			"client-upgrade.json with deployed addresses and indexed-wallet ABIs",
 			"verified final report",
 		],
 		signerPolicy: {
@@ -204,11 +216,13 @@ export function createAccountInstantUpgradeTask(common) {
 		validateResume: (ctx, input) => {
 			validateAccountInstantInput(input);
 			if (ctx.state.configurationDigest) reviewedConfiguration(ctx, input);
+			verifyClientHandoff(ctx, input);
 		},
 		reconcile: reconcileAccountInstantUpgrade,
 		run: async (ctx, input) => {
 			validateAccountInstantInput(input);
 			if (ctx.state.configurationDigest) reviewedConfiguration(ctx, input);
+			verifyClientHandoff(ctx, input);
 			const step = (id, fn) => ctx.step(id, ACCOUNT_INSTANT_PLAN.find(s => s.id === id).title, fn);
 			await step("compile", () =>
 				ctx.runProcess("npm", ["run", "compile"], {
@@ -256,7 +270,7 @@ export function createAccountInstantUpgradeTask(common) {
 					"Upgrade scope",
 				);
 				const confirmation = await ctx.ui.text({
-					message: "Type 42161 to authorize the eight deployments and subsequent upgrade stages",
+					message: "Type 42161 to authorize the ten deployments and subsequent upgrade stages",
 					validate: value => (value === "42161" ? undefined : "Type exactly 42161"),
 				});
 				if (confirmation === null) {
@@ -275,6 +289,26 @@ export function createAccountInstantUpgradeTask(common) {
 			);
 			await step("verify-instant", () => runPhase(ctx, input, "verify-instant"));
 			await step("party-b", () => dispatchAccountInstantSafe(ctx, input, "plan-party-b", "PartyB manager, trust and whitelist wiring"));
+			await step("client-ready", async () => {
+				const report = await runPhase(ctx, input, "client-handoff");
+				const handoff = read(clientHandoffPath(input));
+				if (!report.clientHandoffDigest || digest(handoff) !== report.clientHandoffDigest)
+					throw new Error("Client handoff is not bound to the report");
+				ctx.ui.note(
+					`${clientHandoffPath(input)}\nNew InstantLayer: ${handoff.instantLayer}\n${handoff.instructions.join("\n")}`,
+					"Relayer and event consumer cutover",
+				);
+				const ready = await ctx.ui.confirm({
+					message: "Are relayer/client ABI, signing-domain and event-consumer changes staged for activation with the Gasless Safe upgrade?",
+					initialValue: false,
+				});
+				if (!ready)
+					ctx.wait(
+						`Prepare the relayer and event consumers using ${clientHandoffPath(input)}, then continue before exporting the Gasless upgrade.`,
+					);
+				ctx.state.clientHandoffDigest = report.clientHandoffDigest;
+				ctx.emit("upgrade.clients-ready", { digest: report.clientHandoffDigest });
+			});
 			await step("wire", () => dispatchAccountInstantSafe(ctx, input, "plan-wire", "Protocol wiring and existing Gasless proxy upgrade"));
 			await step("verify-wire", () => runPhase(ctx, input, "verify-wire"));
 			await step("canary", async () => {

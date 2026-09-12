@@ -16,6 +16,7 @@ import {
 } from "../../tasks/deploy/accountInstantSnapshot.js"
 import {
 	assertUpgradeDeployments,
+	buildUpgradeClientHandoff,
 	configureReplacementInstant,
 	deployAccountInstantSelection,
 	planInstantConfiguration,
@@ -271,6 +272,19 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		}
 		await deployAccountInstantSelection(hre, ethers, f.input, f.snapshot, report, checkpoint, () => {})
 		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 10)
+		const handoff = await buildUpgradeClientHandoff(hre, f.input, report)
+		const clientInterface = new ethers.Interface(handoff.gaslessABI)
+		expect(clientInterface.getFunction("relayInstantBatch")!.inputs.at(-1)!.type).to.equal("uint256[]")
+		expect(clientInterface.getFunction("getGaslessWalletAddress")!.inputs.map(i => i.type)).to.deep.equal(["address", "uint256"])
+		expect(clientInterface.getFunction("walletOperationNonces")!.inputs.map(i => i.type)).to.deep.equal(["address", "uint256", "address"])
+		expect(clientInterface.getEvent("WalletDepositSettled")).not.to.equal(null)
+		expect(clientInterface.getEvent("WalletNonCollateralTokenRecovered")).not.to.equal(null)
+		expect(clientInterface.getEvent("DepositSettledToNewAccount")).to.equal(null)
+		expect(handoff.gaslessLayer).to.equal(f.input.config.target.gaslessLayer)
+		expect(handoff.instantSigningDomain.verifyingContract).to.equal(report.deployments.InstantLayer.address)
+		const domain = await (await ethers.getContractAt("InstantLayer", report.deployments.InstantLayer.address)).eip712Domain()
+		expect(handoff.instantSigningDomain.name).to.equal(domain.name)
+		expect(handoff.instantSigningDomain.version).to.equal(domain.version)
 		const wrongLinks = structuredClone(report)
 		wrongLinks.deployments.GaslessLayer.libraries = f.compatibility.libraries
 		await expectFailure(() => assertUpgradeDeployments(hre, ethers, f.input, wrongLinks), /Configuration drift/)
