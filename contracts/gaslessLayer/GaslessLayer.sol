@@ -548,17 +548,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @dev Enforce the gross minimum, then deduct the deposit fee and any fee for deploying this wallet.
 	function _sweepDepositAndCollectFee(address owner, uint256 walletId) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
 		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
-		uint256 creationFee = deployed ? walletCreationFee : 0;
-		uint256 grossDeposit = qWallet.sweepTokenBalance(collateralToken, address(this));
-		if (grossDeposit < minimumDeposit) revert DepositAmountBelowMinimum(grossDeposit, minimumDeposit);
-		collectedDepositFee = depositFee;
-		uint256 totalFees = collectedDepositFee + creationFee;
-		if (grossDeposit <= totalFees) revert DepositAmountNotAboveFees(grossDeposit, totalFees);
-		if (totalFees > 0) IERC20(collateralToken).safeTransfer(treasury, totalFees);
-		if (collectedDepositFee > 0) emit DepositFeeCollected(owner, treasury, collectedDepositFee);
-		if (creationFee > 0) emit WalletCreationFeeCollected(address(qWallet), address(qWallet), creationFee);
-		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(qWallet), collectedDepositFee, creationFee);
-		netDeposit = grossDeposit - totalFees;
+		return GaslessFeeQuoteLib.sweepDepositAndCollectFee(owner, address(qWallet), deployed ? walletCreationFee : 0);
 	}
 
 	function _depositCollateralToCore(address account, uint256 amount) internal {

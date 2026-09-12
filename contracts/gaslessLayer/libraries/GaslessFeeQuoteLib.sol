@@ -2,6 +2,9 @@
 pragma solidity 0.8.36;
 
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { GaslessWallet } from "../GaslessWallet.sol";
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
 import { IGaslessLayerActions } from "../interfaces/IGaslessLayerActions.sol";
 import { IInstantLayer } from "../interfaces/IInstantLayer.sol";
@@ -17,6 +20,8 @@ interface IGaslessFeeConfig {
 	function accountLayer() external view returns (address);
 	function collateralToken() external view returns (address);
 	function depositFee() external view returns (uint256);
+	function minimumDeposit() external view returns (uint256);
+	function treasury() external view returns (address);
 	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address);
 	function getWalletCreationFee(address owner, uint256 walletId) external view returns (uint256);
 	function walletCreationFee() external view returns (uint256);
@@ -33,6 +38,30 @@ interface IGaslessFeeConfig {
 
 /// @notice Shared frontend quote dispatch and atomic simulation using the actual fee collection paths.
 library GaslessFeeQuoteLib {
+	using SafeERC20 for IERC20;
+
+	/// @notice Sweep wallet collateral and collect deposit/creation fees in gateway proxy context.
+	/// @dev The gateway deploys the wallet and determines its creation fee before calling this library.
+	function sweepDepositAndCollectFee(
+		address owner,
+		address wallet,
+		uint256 creationFee
+	) external returns (uint256 netDeposit, uint256 collectedDepositFee) {
+		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
+		address token = config.collateralToken();
+		uint256 grossDeposit = GaslessWallet(payable(wallet)).sweepTokenBalance(token, address(this));
+		uint256 minimum = config.minimumDeposit();
+		if (grossDeposit < minimum) revert IGaslessLayer.DepositAmountBelowMinimum(grossDeposit, minimum);
+		collectedDepositFee = config.depositFee();
+		uint256 totalFees = collectedDepositFee + creationFee;
+		if (grossDeposit <= totalFees) revert IGaslessLayer.DepositAmountNotAboveFees(grossDeposit, totalFees);
+		if (totalFees > 0) IERC20(token).safeTransfer(config.treasury(), totalFees);
+		if (collectedDepositFee > 0) emit IGaslessLayer.DepositFeeCollected(owner, config.treasury(), collectedDepositFee);
+		if (creationFee > 0) emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
+		_recordWalletPayment(token, wallet, collectedDepositFee, creationFee);
+		netDeposit = grossDeposit - totalFees;
+	}
+
 	/// @notice Preserve the original account-specific quote, including its approval-only special case and quota flag.
 	function accountOperationalFee(
 		address account,
@@ -102,6 +131,10 @@ library GaslessFeeQuoteLib {
 	}
 
 	function recordWalletPayment(address token, address wallet, uint256 deposit, uint256 creation) external {
+		_recordWalletPayment(token, wallet, deposit, creation);
+	}
+
+	function _recordWalletPayment(address token, address wallet, uint256 deposit, uint256 creation) private {
 		if (!GaslessFeeAccounting.state().active) return;
 		uint256 scale = 10 ** (18 - IERC20Metadata(token).decimals());
 		GaslessFeeAccounting.record(
