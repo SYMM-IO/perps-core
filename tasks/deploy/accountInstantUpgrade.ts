@@ -8,6 +8,8 @@ import path from "node:path"
 
 import {
 	ACCOUNT_FACETS,
+	NEW_GASLESS_LIBRARIES,
+	GASLESS_LIBRARIES,
 	UPGRADE_DEPLOYMENTS,
 	digest,
 	assertConfigurationParity,
@@ -146,6 +148,25 @@ export async function assertUpgradePreservation(ethers: any, input: any, snapsho
 	return block
 }
 
+const gaslessLibraryArtifact = (name: string) => `contracts/gaslessLayer/libraries/${name}.sol:${name}`
+
+function upgradeLibraries(report: any, name: string) {
+	const key = (library: string) => {
+		const matches = Object.keys(report.compatibility.libraries).filter(k => k.endsWith(`:${library}`))
+		if (matches.length !== 1) throw new Error(`Missing baseline library binding for ${library}`)
+		return matches[0]
+	}
+	const deployer = () => ({ [key("GaslessWalletDeployerLib")]: report.deployments.GaslessWalletDeployerLib.address })
+	if (name === "GaslessWalletExecutionLib") return deployer()
+	if (name !== "GaslessLayer") return {}
+	const reused = report.compatibility.reusedLibraries
+	const expectedReused = GASLESS_LIBRARIES.filter(n => !NEW_GASLESS_LIBRARIES.includes(n))
+		.map(key)
+		.sort()
+	if (digest(Object.keys(reused || {}).sort()) !== digest(expectedReused)) throw new Error("Incomplete verified Gasless library reuse plan")
+	return { ...reused, ...deployer(), [key("GaslessWalletExecutionLib")]: report.deployments.GaslessWalletExecutionLib.address }
+}
+
 export async function deployAccountInstantSelection(
 	hre: any,
 	ethers: any,
@@ -167,16 +188,23 @@ export async function deployAccountInstantSelection(
 	}
 	const specs = [
 		{ name: "LibQuoteParams", artifact: LibrarySpecs.accountLayer.LibQuoteParams.artifact, args: [], libraries: {} },
-		...ACCOUNT_FACETS.map(name => ({ name, artifact: FacetSpecs.accountLayer[name].artifact, args: [], libraries: {} })),
+		...ACCOUNT_FACETS.map(name => ({
+			name,
+			artifact: FacetSpecs.accountLayer[name].artifact,
+			args: [],
+			libraries: {},
+		})),
 		{
 			name: "InstantLayer",
 			artifact: "contracts/instantLayer/InstantLayer.sol:InstantLayer",
 			args: [input.config.target.core, input.config.target.safe],
 			libraries: {},
 		},
-		{ name: "GaslessLayer", artifact: "contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer", args: [], libraries: report.compatibility.libraries },
+		...NEW_GASLESS_LIBRARIES.map(name => ({ name, artifact: gaslessLibraryArtifact(name), args: [], libraries: {} })),
+		{ name: "GaslessLayer", artifact: "contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer", args: [], libraries: {} },
 	]
 	for (const spec of specs) {
+		spec.libraries = upgradeLibraries(report, spec.name)
 		if (spec.name === "CoreFacet")
 			spec.libraries = linkedLibrariesFor("accountLayer", FacetSpecs.accountLayer.CoreFacet, {
 				LibQuoteParams: report.deployments.LibQuoteParams.address,
@@ -195,7 +223,7 @@ export async function deployAccountInstantSelection(
 			recovered ||
 			(
 				await deployContract(null, {
-					key: `${spec.name === "InstantLayer" ? "peripherals" : spec.name === "GaslessLayer" ? "gaslessLayer" : "accountLayer"}/${spec.name}`,
+					key: `${spec.name === "InstantLayer" ? "peripherals" : spec.name.startsWith("Gasless") ? "gaslessLayer" : "accountLayer"}/${spec.name}`,
 					component,
 					label: spec.name,
 					factory: {
@@ -250,7 +278,9 @@ export async function assertUpgradeDeployments(hre: any, ethers: any, input: any
 					? "contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer"
 					: name === "LibQuoteParams"
 						? LibrarySpecs.accountLayer.LibQuoteParams.artifact
-						: FacetSpecs.accountLayer[name].artifact
+						: NEW_GASLESS_LIBRARIES.includes(name)
+							? gaslessLibraryArtifact(name)
+							: FacetSpecs.accountLayer[name].artifact
 		const artifact = await hre.artifacts.readArtifact(artifactName)
 		const iface = new ethers.Interface(name === "LibQuoteParams" ? [] : artifact.abi)
 		const selectors = iface.fragments
@@ -258,8 +288,8 @@ export async function assertUpgradeDeployments(hre: any, ethers: any, input: any
 			.map((f: any) => iface.getFunction(f.format("sighash")).selector)
 			.sort()
 		const libraries =
-			name === "GaslessLayer"
-				? report.compatibility.libraries
+			name === "GaslessLayer" || NEW_GASLESS_LIBRARIES.includes(name)
+				? upgradeLibraries(report, name)
 				: name === "CoreFacet"
 					? linkedLibrariesFor("accountLayer", FacetSpecs.accountLayer.CoreFacet, { LibQuoteParams: report.deployments.LibQuoteParams.address })
 					: {}
