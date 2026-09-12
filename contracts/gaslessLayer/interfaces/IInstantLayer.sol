@@ -2,9 +2,9 @@
 pragma solidity 0.8.36;
 
 /// @title IInstantLayer
-/// @notice Execution surface of the Symmio InstantLayer. The gateway calls `executeBatch` as a
-///         registered executor — i.e. the InstantLayer admin must grant the gateway OPERATOR_ROLE,
-///         since `executeBatch` is `onlyRole(OPERATOR_ROLE)` on the InstantLayer.
+/// @notice Symmio InstantLayer methods used by the gateway.
+/// @dev The InstantLayer admin must grant the gateway OPERATOR_ROLE to call `executeBatch`.
+///      `executeBatch` requires `onlyRole(OPERATOR_ROLE)` on InstantLayer.
 /// @dev Structs copied verbatim from perps-core
 ///      contracts/instantLayer/InstantLayer.sol so calldata encoding matches exactly.
 interface IInstantLayer {
@@ -55,10 +55,9 @@ interface IInstantLayer {
 		bytes[][] calldata flexFillerSignatures
 	) external returns (bytes[] memory results);
 
-	/// @notice Execute a registered Template (by id) with automatic result chaining between ops.
-	/// @dev Mirrors perps-core InstantLayer.executeTemplate; onlyRole(OPERATOR_ROLE) on the real
-	///      contract, so the gateway must be a registered executor. The template itself (op shape +
-	///      result-injection recipe) lives on the InstantLayer and is referenced only by id.
+	/// @notice Execute a registered template by id, passing results between operations.
+	/// @dev Matches perps-core InstantLayer.executeTemplate and requires onlyRole(OPERATOR_ROLE).
+	///      InstantLayer stores the template's operation structure and result-injection rules.
 	function executeTemplate(
 		uint256 templateId,
 		SignedOperation[] calldata signedOps,
@@ -73,16 +72,13 @@ interface IInstantLayer {
 	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external;
 
 	/// @notice Grant delegation permissions for `info.account` to `info.delegatedSigner`.
-	/// @dev Never called by the gateway directly. Declared so integrators can encode this call as the
-	///      callData of an owner-signed SignedOperation targeting the InstantLayer itself — the
-	///      InstantLayer applies such grant operations inside executeBatch/executeTemplate, letting
-	///      later operations in the same batch use the fresh delegation.
+	/// @dev The gateway does not call this directly. Integrators encode it in an owner-signed SignedOperation
+	///      targeting InstantLayer. executeBatch/executeTemplate applies the grant, so later operations in the batch can use it.
 	function grantDelegation(DelegationInfo calldata info) external;
 
 	/// @notice Grant delegation to several delegates of one account in a single call.
-	/// @dev Never called by the gateway directly. Encoded as the callData of one owner-signed
-	///      SignedOperation targeting the InstantLayer, it lets a single wallet signature grant a
-	///      session key and any further delegates at once inside a relayed batch.
+	/// @dev The gateway does not call this directly. One owner-signed SignedOperation targeting InstantLayer
+	///      can grant a session key and other delegates together inside a relayed batch.
 	function grantDelegations(DelegationInfo[] calldata infos) external;
 
 	/// @notice Return whether a delegate currently has permission for a delegator/selector pair.

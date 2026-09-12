@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.36;
 
+/// @title IGaslessLayer
+/// @notice Shared request types, events, and errors for GaslessLayer.
 interface IGaslessLayer {
 	// ─────────────────────────── Types ────────────────────────────
 
@@ -35,11 +37,25 @@ interface IGaslessLayer {
 	);
 	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount);
 	event DepositFeeCollected(address indexed wallet, address indexed treasury, uint256 amount);
-	event DepositSettledToNewAccount(address indexed wallet, address indexed subAccount, uint256 netDeposit, uint256 depositFee);
-	event DepositSettledToExistingAccount(address indexed wallet, address indexed subAccount, uint256 netDeposit, uint256 depositFee);
-	event GaslessWalletDeployed(address indexed ownerWallet, address wallet);
-	event WalletOperationRelayed(address indexed relayer, address indexed ownerWallet, address indexed wallet, uint256 callCount);
-	event NonCollateralTokenRecovered(address indexed wallet, address indexed token, address indexed recipient, uint256 amount);
+	/// @notice Emitted when a GaslessWallet is deployed, including at index zero.
+	/// @param owner Owner address used to derive the GaslessWallet address.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @param wallet Deployed GaslessWallet address.
+	event GaslessWalletDeployed(address indexed owner, uint256 indexed walletId, address wallet);
+	/// @notice Emitted when a wallet deposit settles into a new or existing sub-account, including at index zero.
+	/// @param owner Owner of the source wallet and destination sub-account.
+	/// @param walletId Index of the source GaslessWallet.
+	/// @param subAccount Sub-account credited with the net deposit.
+	/// @param netDeposit Collateral credited after the flat deposit fee.
+	/// @param depositFee Collateral paid to the treasury as the flat deposit fee.
+	event WalletDepositSettled(address indexed owner, uint256 indexed walletId, address indexed subAccount, uint256 netDeposit, uint256 depositFee);
+	event WalletOperationRelayed(address indexed relayer, address indexed owner, address indexed wallet, uint256 callCount);
+	/// @notice Emitted when non-collateral tokens are recovered from a GaslessWallet, including at index zero.
+	/// @param wallet Source GaslessWallet contract address.
+	/// @param token Token recovered.
+	/// @param recipient Address receiving the recovered tokens.
+	/// @param amount Token amount recovered.
+	event WalletNonCollateralTokenRecovered(address indexed wallet, address indexed token, address indexed recipient, uint256 amount);
 	event DepositFeeConfigUpdated(uint256 depositFee, uint256 minimumDeposit);
 	event DefaultSelectorFeeUpdated(uint256 amount);
 	event SelectorFeeConfigUpdated(bytes4 indexed selector, bool configured, uint256 amount);
