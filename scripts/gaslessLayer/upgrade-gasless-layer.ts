@@ -1,6 +1,6 @@
 import { LedgerSigner } from "@ethers-ext/signer-ledger"
 import { verifyContract } from "@nomicfoundation/hardhat-verify/verify"
-import { Contract, JsonRpcProvider, Wallet, ZeroHash, getAccountPath, getAddress, isAddress } from "ethers"
+import { Contract, Interface, JsonRpcProvider, Wallet, ZeroHash, getAccountPath, getAddress, isAddress } from "ethers"
 import hre from "hardhat"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -32,9 +32,11 @@ type VerifyProvider = "etherscan" | "blockscout" | "sourcify"
 const AccessControlABI = [
 	"function hasRole(bytes32 role, address account) view returns (bool)",
 	"function DEFAULT_ADMIN_ROLE() view returns (bytes32)",
+	"function CONFIG_ADMIN_ROLE() view returns (bytes32)",
 ]
 
 const UUPSABI = ["function upgradeToAndCall(address newImplementation, bytes data) payable", "function proxiableUUID() view returns (bytes32)"]
+const GaslessConfigABI = ["function setWalletCreationFee(uint256 amount)"]
 
 const WalletDerivationABI = ["function getGaslessWalletAddress(address owner, uint256 walletId) view returns (address)"]
 const LegacyWalletDerivationABI = ["function getGaslessWalletAddress(address owner) view returns (address)"]
@@ -450,6 +452,10 @@ async function main() {
 	const networkName = env("UPGRADE_NETWORK") || DEFAULT_NETWORK
 	const proxy = normalizeAddress(env("GASLESS_LAYER_PROXY") || DEFAULT_PROXY, "GASLESS_LAYER_PROXY")
 	const dryRun = process.env.CONFIRM_UPGRADE !== "true"
+	const upgradeWalletCreationFee = env("UPGRADE_WALLET_CREATION_FEE")
+	const upgradeCallData = upgradeWalletCreationFee
+		? new Interface(GaslessConfigABI).encodeFunctionData("setWalletCreationFee", [upgradeWalletCreationFee])
+		: "0x"
 	const verifyProvider = getVerifyProvider()
 	const rpcUrl = getRpcUrl()
 	const provider = new HyperEVMRetryingProvider(rpcUrl)
@@ -468,6 +474,7 @@ async function main() {
 	console.log("Signer:               ", signerAddress)
 	console.log("Signer type:          ", process.env.USE_LEDGER === "true" ? "Ledger" : "NEW_DEPLOYER")
 	console.log("Verification:         ", boolEnv("SKIP_VERIFY") ? "skipped" : verifyProvider)
+	console.log("Upgrade initialization:", upgradeWalletCreationFee ? `wallet creation fee ${upgradeWalletCreationFee}` : "none")
 
 	if (chainId !== HYPEREVM_CHAIN_ID) {
 		throw new Error(`Refusing to upgrade on chain ${chainId}; expected HyperEVM chain ${HYPEREVM_CHAIN_ID}`)
@@ -497,6 +504,16 @@ async function main() {
 		if (dryRun) console.warn(`WARNING: ${message}. Execution would fail.`)
 		else throw new Error(message)
 	}
+	if (upgradeWalletCreationFee) {
+		const configAdminRole = await gatewayReader.CONFIG_ADMIN_ROLE()
+		const signerIsConfigAdmin = await gatewayReader.hasRole(configAdminRole, signerAddress)
+		console.log("Signer has config role:", signerIsConfigAdmin)
+		if (!signerIsConfigAdmin) {
+			const message = `Signer ${signerAddress} cannot set the wallet creation fee during the upgrade`
+			if (dryRun) console.warn(`WARNING: ${message}. Execution would fail.`)
+			else throw new Error(message)
+		}
+	}
 
 	const suppliedImplementation = env("NEW_IMPLEMENTATION")
 	if (dryRun) {
@@ -507,7 +524,7 @@ async function main() {
 			await verifyUUPSImplementation(provider, implementation)
 			await assertWalletDerivationStable(provider, proxy, implementation)
 			const gateway = new Contract(proxy, UUPSABI, signer) as any
-			const tx = await gateway.upgradeToAndCall.populateTransaction(implementation, "0x")
+			const tx = await gateway.upgradeToAndCall.populateTransaction(implementation, upgradeCallData)
 			console.log("Prepared upgradeToAndCall calldata:", tx.data)
 		}
 		return
@@ -570,10 +587,10 @@ async function main() {
 	await assertWalletDerivationStable(provider, proxy, newImplementation)
 
 	const gateway = new Contract(proxy, UUPSABI, signer) as any
-	const estimatedGas = await gateway.upgradeToAndCall.estimateGas(newImplementation, "0x").catch(() => undefined)
+	const estimatedGas = await gateway.upgradeToAndCall.estimateGas(newImplementation, upgradeCallData).catch(() => undefined)
 	if (estimatedGas !== undefined) console.log("upgradeToAndCall gas estimate:", estimatedGas.toString())
 
-	const upgradeTx = await gateway.upgradeToAndCall(newImplementation, "0x")
+	const upgradeTx = await gateway.upgradeToAndCall(newImplementation, upgradeCallData)
 	console.log("Upgrade tx:           ", upgradeTx.hash)
 	const receipt = await upgradeTx.wait()
 	if (receipt.status !== 1) throw new Error(`Upgrade transaction reverted: ${upgradeTx.hash}`)

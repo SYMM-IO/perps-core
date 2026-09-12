@@ -58,6 +58,7 @@ describe("GaslessLayer", () => {
 			await instant.getAddress(),
 			treasury.address,
 			u("2"),
+			0,
 			u("5"),
 		])
 		const Proxy = await ethers.getContractFactory("contracts/gaslessLayer/mocks/LayerProxy.sol:LayerProxy")
@@ -266,8 +267,9 @@ describe("GaslessLayer", () => {
 		expect(await gateway.dailyNativeSponsorUsage(user.address)).to.deep.equal([123n, 456n])
 		await writeSlot(mappingSlot(user.address, 18n), 42n)
 		expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(42n)
-		await writeSlot(mappingSlot(user.address, mappingSlot(stranger.address, 19n)), 2n)
-		expect(await gateway.walletNonces(stranger.address, user.address)).to.equal(2n)
+		const indexedWallet = await gateway.getGaslessWalletAddress(user.address, 1n)
+		await writeSlot(mappingSlot(user.address, mappingSlot(indexedWallet, 19n)), 2n)
+		expect(await gateway.walletOperationNonces(user.address, 1n, user.address)).to.equal(2n)
 		expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(42n)
 	})
 
@@ -340,8 +342,8 @@ describe("GaslessLayer", () => {
 			await collateral.mint(wallet, u("10"))
 			const data = encodeWithdrawal(2n, collateral.target, stranger.address, u("1"))
 			for (const caller of [stranger, admin, relayer]) {
-				await expect(gateway.connect(caller).withdrawWalletFunds(2n, collateral.target, caller.address, u("1"))).to.be.reverted
-				await expect(gateway.connect(caller).executeWithFeeLimit(data, 0n)).to.be.reverted
+				await expect(gateway.connect(caller).withdrawWalletFunds(2n, collateral.target, caller.address, u("1"))).to.be.revert(ethers)
+				await expect(gateway.connect(caller).executeWithFeeLimit(data, 0n)).to.be.revert(ethers)
 			}
 			expect(await collateral.balanceOf(wallet)).to.equal(u("10"))
 			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
@@ -371,7 +373,7 @@ describe("GaslessLayer", () => {
 			] as const) {
 				const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
 				await collateral.mint(wallet, u(funded))
-				await expect(gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, user.address, amount)).to.be.reverted
+				await expect(gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, user.address, amount)).to.be.revert(ethers)
 				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
 				expect(await collateral.balanceOf(wallet)).to.equal(u(funded))
 			}
@@ -384,11 +386,12 @@ describe("GaslessLayer", () => {
 			const wallet = await gateway.getGaslessWalletAddress(user.address, 1n)
 			const value = ethers.parseEther("0.1")
 			await user.sendTransaction({ to: wallet, value })
-			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, user.address, ethers.MaxUint256)).to.be.reverted
+			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, user.address, ethers.MaxUint256)).to.be.revert(ethers)
 			await collateral.mint(wallet, u("3"))
 			const reject = await (await ethers.getContractFactory("RejectNativeReceiver")).deploy()
+			const walletContract = await ethers.getContractAt("GaslessWallet", wallet)
 			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, reject.target, ethers.MaxUint256)).to.be.revertedWithCustomError(
-				await ethers.getContractAt("GaslessWallet", wallet),
+				walletContract,
 				"NativeTransferFailed",
 			)
 			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
@@ -407,18 +410,18 @@ describe("GaslessLayer", () => {
 				const result = await quoteGaslessFee({ gateway, callData: data, mode, from: user.address })
 				expect(result.status).to.equal("quoted")
 				if (result.status !== "quoted") throw new Error(result.data)
-				expect(result.quote.totalFee).to.equal(fee)
-				expect(result.quote.totalDebit).to.equal(fee)
+				expect(result.quote.totalFee18).to.equal(fee)
+				expect(result.quote.totalDebit18).to.equal(fee)
 				expect(result.quote.payments).to.deep.equal([
 					{
 						account: wallet,
 						payer: wallet,
 						source: 1,
-						operationalFee: 0n,
-						depositFee: 0n,
-						walletCreationFee: fee,
-						nativeTopUpFee: 0n,
-						nativeGasCollateral: 0n,
+						operationalFee18: 0n,
+						depositFee18: 0n,
+						walletCreationFee18: fee,
+						nativeTopUpFee18: 0n,
+						nativeGasCollateral18: 0n,
 					},
 				])
 				expect(result.quote.exact).to.equal(mode === "exact")
@@ -437,7 +440,7 @@ describe("GaslessLayer", () => {
 			expect(await collateral.balanceOf(stranger.address)).to.equal(u("7"))
 			await collateral.mint(wallet, u("2"))
 			const next = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
-			expect(next.status === "quoted" && next.quote.totalFee).to.equal(0n)
+			expect(next.status === "quoted" && next.quote.totalFee18).to.equal(0n)
 			await gateway.connect(user).executeWithFeeLimit(data, 0n)
 			expect(await collateral.balanceOf(stranger.address)).to.equal(u("9"))
 			expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
@@ -519,7 +522,7 @@ describe("GaslessLayer", () => {
 					const op = await transferOp(walletId)
 					await collateral.mint(op.target, u("10"))
 					expect(await ethers.provider.getCode(op.target)).to.equal("0x")
-					expect((await gateway.getAccountOperationalFee(user.address, [op], [walletId])).amountDue).to.equal(coreUnits("3"))
+					expect((await gateway.getAccountOperationalFee(user.address, [op], [walletId])).amountDue18).to.equal(coreUnits("3"))
 					await expect(relay(op, walletId)).to.emit(gateway, "WalletCreationFeeCollected").withArgs(op.target, user.address, u("3"))
 					expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
 					expect(await collateral.balanceOf(treasury.address)).to.equal(0)
@@ -527,7 +530,7 @@ describe("GaslessLayer", () => {
 					expect(await gateway.getWalletCreationFee(user.address, walletId)).to.equal(0)
 					await collateral.mint(op.target, u("10"))
 					const next = { ...op, replayAttackHeader: { ...op.replayAttackHeader, nonce: 2n } }
-					expect((await gateway.getAccountOperationalFee(user.address, [next], [walletId])).amountDue).to.equal(0)
+					expect((await gateway.getAccountOperationalFee(user.address, [next], [walletId])).amountDue18).to.equal(0)
 					await expect(relay(next, walletId)).not.to.emit(gateway, "WalletCreationFeeCollected")
 					expect(await core.operationalFeesCharged(user.address)).to.equal(coreUnits("3"))
 				})
@@ -546,7 +549,9 @@ describe("GaslessLayer", () => {
 						tx = await gateway.connect(relayer).settleDepositToExistingAccount(user.address, walletId, subAccount)
 					}
 					await expect(tx).to.emit(gateway, "WalletCreationFeeCollected").withArgs(wallet, wallet, u("3"))
-					await expect(tx).to.emit(gateway, "WalletDepositSettled").withArgs(user.address, walletId, subAccount, u("15"), u("2"))
+					await expect(tx)
+						.to.emit(gateway, "WalletDepositSettled")
+						.withArgs(user.address, walletId, subAccount, u("15"), u("2"), walletId === 0n ? 0 : 1)
 					expect(await core.accountBalance(subAccount)).to.equal(u("15"))
 					expect(await collateral.balanceOf(treasury.address)).to.equal(u("5"))
 					await collateral.mint(wallet, u("5"))
@@ -573,10 +578,10 @@ describe("GaslessLayer", () => {
 				await collateral.mint(first.target, u("20"))
 				await collateral.mint(second.target, u("10"))
 				const quote = await gateway.getAccountOperationalFee(user.address, ops, [0n, 2n, 0n])
-				expect(quote.amountDue).to.equal(coreUnits("6"))
+				expect(quote.amountDue18).to.equal(coreUnits("6"))
 				expect(quote.freeOpsApplied).to.equal(3)
 				await gateway.connect(relayer).relayInstantBatch(ops, await Promise.all(ops.map(op => signWalletOperation(user, op))), [], [], [0n, 2n, 0n])
-				expect(await core.operationalFeesCharged(user.address)).to.equal(quote.amountDue)
+				expect(await core.operationalFeesCharged(user.address)).to.equal(quote.amountDue18)
 				expect(await core.operationalFeeChargeCount(user.address)).to.equal(1)
 				expect(await collateral.balanceOf(stranger.address)).to.equal(u("30"))
 			})
@@ -588,8 +593,8 @@ describe("GaslessLayer", () => {
 				const second = await transferOp(2n)
 				await collateral.mint(first.target, u("20"))
 				const ops = [first, second]
-				expect((await gateway.getAccountOperationalFee(affiliate.address, ops, [2n, 2n])).amountDue).to.equal(coreUnits("3"))
-				expect((await gateway.getAccountOperationalFee(user.address, ops, [2n, 2n])).amountDue).to.equal(0)
+				expect((await gateway.getAccountOperationalFee(affiliate.address, ops, [2n, 2n])).amountDue18).to.equal(coreUnits("3"))
+				expect((await gateway.getAccountOperationalFee(user.address, ops, [2n, 2n])).amountDue18).to.equal(0)
 				await gateway.connect(relayer).relayInstantBatch(ops, await Promise.all(ops.map(op => signWalletOperation(user, op))), [], [], [2n, 2n])
 				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(coreUnits("3"))
 				expect(await core.operationalFeesCharged(user.address)).to.equal(0)
@@ -610,7 +615,7 @@ describe("GaslessLayer", () => {
 				await core.setOperationalFeeMultiplier(relayer.address, gatewayAddr, 15000)
 				const op = await transferOp(2n, "10", { signerAccount: { addr: relayer.address, isPartyB: false } })
 				await collateral.mint(op.target, u("10"))
-				expect((await gateway.getAccountOperationalFee(affiliate.address, [op], [2n])).amountDue).to.equal(coreUnits("4.5"))
+				expect((await gateway.getAccountOperationalFee(affiliate.address, [op], [2n])).amountDue18).to.equal(coreUnits("4.5"))
 				await expect(relay(op, 2n)).to.emit(gateway, "WalletCreationFeeCollected").withArgs(op.target, relayer.address, u("3"))
 				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(0)
 				expect(await core.operationalFeesCharged(relayer.address)).to.equal(coreUnits("4.5"))
@@ -625,7 +630,7 @@ describe("GaslessLayer", () => {
 				expect(await ethers.provider.getCode(op.target)).to.equal("0x")
 				expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
 				expect(await collateral.balanceOf(stranger.address)).to.equal(0)
-				expect(await gateway.walletNonces(op.target, user.address)).to.equal(0)
+				expect(await gateway.walletOperationNonces(user.address, 2n, user.address)).to.equal(0)
 				await core.setInstantLayer(await instant.getAddress())
 				await instant.setTargetExecution(true, await core.getAddress())
 				const approval = {
@@ -654,29 +659,28 @@ describe("GaslessLayer", () => {
 				expect(await core.accountBalance(affiliate.address)).to.equal(1n)
 			})
 
-			it("requires wallet collateral to deploy during recovery, charges it once, and leaves Core untouched", async () => {
-				await gateway.connect(admin).setWalletCreationFee(u("3"))
+			it("deploys during admin recovery without charging a fee or moving prefunded collateral", async () => {
+				const configRole = await gateway.CONFIG_ADMIN_ROLE()
+				await gateway.connect(admin).grantRole(configRole, stranger.address)
+				expect(await gateway.hasRole(await gateway.DEFAULT_ADMIN_ROLE(), stranger.address)).to.equal(false)
+				await gateway.connect(stranger).setTreasury(stranger.address)
+				await gateway.connect(stranger).setWalletCreationFee(u("5"))
 				const ERC20 = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
 				const token = await ERC20.deploy("Other", "OTHER", 6)
 				const wallet = await addressFor(2n)
+				await collateral.mint(wallet, u("5"))
+
+				const recovery = gateway.connect(stranger).recoverNonCollateralToken(user.address, 2n, token.target, treasury.address)
+				await expect(recovery).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, 2n, wallet)
+				await expect(recovery).to.emit(gateway, "WalletNonCollateralTokenRecovered").withArgs(wallet, token.target, treasury.address, 0)
+				await expect(recovery).not.to.emit(gateway, "WalletCreationFeeCollected")
+				expect(await collateral.balanceOf(wallet)).to.equal(u("5"))
+				expect(await collateral.balanceOf(stranger.address)).to.equal(0)
+
 				await token.mint(wallet, u("10"))
-				await expect(gateway.connect(admin).recoverNonCollateralToken(user.address, 2n, token.target, stranger.address))
-					.to.be.revertedWithCustomError(collateral, "ERC20InsufficientBalance")
-					.withArgs(wallet, 0, u("3"))
-				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
-				expect(await token.balanceOf(wallet)).to.equal(u("10"))
-				await collateral.mint(wallet, u("3"))
-				await expect(gateway.connect(admin).recoverNonCollateralToken(user.address, 2n, token.target, stranger.address))
-					.to.emit(gateway, "WalletCreationFeeCollected")
-					.withArgs(wallet, wallet, u("3"))
-				expect(await collateral.balanceOf(wallet)).to.equal(0)
-				expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
-				await token.mint(wallet, u("1"))
-				await expect(gateway.connect(admin).recoverNonCollateralToken(user.address, 2n, token.target, stranger.address)).not.to.emit(
-					gateway,
-					"WalletCreationFeeCollected",
-				)
-				expect(await token.balanceOf(stranger.address)).to.equal(u("11"))
+				await gateway.connect(stranger).recoverNonCollateralToken(user.address, 2n, token.target, treasury.address)
+				expect(await token.balanceOf(treasury.address)).to.equal(u("10"))
+				expect(await collateral.balanceOf(wallet)).to.equal(u("5"))
 				expect(await core.totalOperationalFeesCharged()).to.equal(0)
 			})
 
@@ -716,10 +720,9 @@ describe("GaslessLayer", () => {
 			const third = { ...first, replayAttackHeader: { ...first.replayAttackHeader, nonce: 3n } }
 			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 			const quote = await gateway.getAccountOperationalFee(user.address, [third], [0n])
-			expect(quote.amountDue).to.equal(u("1"))
+			expect(quote.amountDue18).to.equal(u("1"))
 			await gateway.connect(relayer).relayInstantBatch([third], [await signWalletOperation(user, third)], [], [], [0n])
 			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(3)
-			expect(await gateway.walletNonces(wallet, user.address)).to.equal(0)
 			expect(await gateway.walletOperationNonces(user.address, 1n, user.address)).to.equal(0)
 			expect(await collateral.balanceOf(stranger.address)).to.equal(u("30"))
 		})
@@ -731,16 +734,17 @@ describe("GaslessLayer", () => {
 			const event = await findEvent(tx, "WalletDepositSettled")
 			expect(event.args.owner).to.equal(user.address)
 			expect(event.args.walletId).to.equal(0)
+			expect(event.args.destination).to.equal(0)
 			await expect(tx).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, 0n, wallet)
 			expect(await core.accountBalance(event.args.subAccount)).to.equal(u("23"))
 			await collateral.mint(wallet, u("10"))
 			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, event.args.subAccount))
 				.to.emit(gateway, "WalletDepositSettled")
-				.withArgs(user.address, 0n, event.args.subAccount, u("8"), u("2"))
+				.withArgs(user.address, 0n, event.args.subAccount, u("8"), u("2"), 1)
 			await collateral.mint(wallet, u("10"))
 			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, event.args.subAccount))
 				.to.emit(gateway, "WalletDepositSettled")
-				.withArgs(user.address, 0n, event.args.subAccount, u("8"), u("2"))
+				.withArgs(user.address, 0n, event.args.subAccount, u("8"), u("2"), 1)
 			expect(await core.accountBalance(event.args.subAccount)).to.equal(u("39"))
 		})
 
@@ -781,7 +785,7 @@ describe("GaslessLayer", () => {
 			await accountLayer.setAccountOwner(affiliate.address, user.address)
 			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 1n, affiliate.address))
 				.to.emit(gateway, "WalletDepositSettled")
-				.withArgs(user.address, 1n, affiliate.address, u("18"), u("2"))
+				.withArgs(user.address, 1n, affiliate.address, u("18"), u("2"), 1)
 			expect(await core.accountBalance(affiliate.address)).to.equal(u("18"))
 			expect(await collateral.balanceOf(first)).to.equal(0)
 			for (const address of [second, withdrawal, legacy]) expect(await collateral.balanceOf(address)).to.equal(u("20"))
@@ -844,7 +848,6 @@ describe("GaslessLayer", () => {
 			}
 			for (const i of [1, 0]) {
 				await gateway.connect(relayer).relayInstantBatch([ops[i]], [signatures[i]], [], [], [walletIds[i]])
-				expect(await gateway.walletNonces(ops[i].target, user.address)).to.equal(1)
 				expect(await gateway.walletOperationNonces(user.address, walletIds[i], user.address)).to.equal(1)
 			}
 			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(0)
@@ -866,7 +869,7 @@ describe("GaslessLayer", () => {
 				gateway.connect(relayer).relayInstantBatch([moved], [await signWalletOperation(user, op)], [], [], [2n]),
 			).to.be.revertedWithCustomError(gateway, "InvalidWalletOperationSignature")
 			await expect(relay({ ...op, signer: stranger.address }, walletId, stranger)).to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
-			expect(await gateway.walletNonces(op.target, user.address)).to.equal(0)
+			expect(await gateway.walletOperationNonces(user.address, walletId, user.address)).to.equal(0)
 			expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
 		})
 
@@ -899,7 +902,7 @@ describe("GaslessLayer", () => {
 			const op = await transferOp(walletId, "10", { signerAccount: { addr: stranger.address, isPartyB: false } })
 			await collateral.mint(op.target, u("10"))
 			await expect(relay(op, walletId)).to.emit(gateway, "OperationalFeeRouted").withArgs(stranger.address, affiliate.address, u("1"))
-			expect(await gateway.walletNonces(op.target, stranger.address)).to.equal(1)
+			expect(await gateway.walletOperationNonces(user.address, walletId, stranger.address)).to.equal(1)
 		})
 
 		it("does not grant a deleted VA access to its former owner's indexed wallet", async () => {
@@ -931,11 +934,11 @@ describe("GaslessLayer", () => {
 				})
 				await collateral.mint(op.target, u("10"))
 				const quote = await gateway.getAccountOperationalFee(affiliate.address, [op], [walletId])
-				expect(quote.amountDue).to.equal(u("5"))
+				expect(quote.amountDue18).to.equal(u("5"))
 				await expect(relay(op, walletId)).to.emit(gateway, "OperationalFeeRouted").withArgs(affiliate.address, affiliate.address, u("5"))
 				expect(await accountLayer.ownerOf(affiliate.address)).to.equal(stranger.address)
 				expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
-				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(quote.amountDue)
+				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(quote.amountDue18)
 			})
 		}
 
@@ -952,7 +955,7 @@ describe("GaslessLayer", () => {
 				const signatures = ops.length === 1 ? ["0x"] : ["0x", await signWalletOperation(user, walletOp)]
 				const expectedFee = ops.length === 1 ? u("7") : u("10")
 				const quote = await gateway.getAccountOperationalFee(user.address, ops, indices)
-				expect(quote.amountDue).to.equal(expectedFee)
+				expect(quote.amountDue18).to.equal(expectedFee)
 				await expect(gateway.connect(relayer).relayInstantBatch(ops, signatures, [[]], [[]], indices))
 					.to.emit(gateway, "InstantBatchRelayed")
 					.withArgs(relayer.address, ops.length, expectedFee)
@@ -967,7 +970,7 @@ describe("GaslessLayer", () => {
 			const op = await transferOp(2n)
 			expect(await ethers.provider.getCode(op.target)).to.equal("0x")
 			const quote = await gateway.getAccountOperationalFee(user.address, [op], [2n])
-			expect(quote.amountDue).to.equal(0)
+			expect(quote.amountDue18).to.equal(0)
 			expect(quote.freeOpsApplied).to.equal(1)
 			await expect(gateway.getAccountOperationalFee(user.address, [op], [1n]))
 				.to.be.revertedWithCustomError(gateway, "InvalidWalletOperationTarget")
@@ -982,10 +985,10 @@ describe("GaslessLayer", () => {
 			const ops = await Promise.all(walletIds.map(walletId => transferOp(walletId)))
 			for (const op of ops) await collateral.mint(op.target, u("10"))
 			const quote = await gateway.getAccountOperationalFee(user.address, ops, walletIds)
-			expect(quote.amountDue).to.equal(u("3"))
+			expect(quote.amountDue18).to.equal(u("3"))
 			expect(quote.freeOpsApplied).to.equal(1)
 			await gateway.connect(relayer).relayInstantBatch(ops, await Promise.all(ops.map(op => signWalletOperation(user, op))), [], [], walletIds)
-			expect(await core.operationalFeesCharged(user.address)).to.equal(quote.amountDue)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(quote.amountDue18)
 			expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
 		})
 
@@ -1013,7 +1016,7 @@ describe("GaslessLayer", () => {
 				)
 			expect(await core.operationalFeesCharged(user.address)).to.equal(u("3"))
 			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(1)
-			expect(await gateway.walletNonces(indexed.target, user.address)).to.equal(1)
+			expect(await gateway.walletOperationNonces(user.address, 2n, user.address)).to.equal(1)
 			expect(await collateral.balanceOf(stranger.address)).to.equal(u("20"))
 		})
 
@@ -1027,7 +1030,7 @@ describe("GaslessLayer", () => {
 			expect(await ethers.provider.getCode(op.target)).to.equal("0x")
 			expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
 			expect(await collateral.balanceOf(stranger.address)).to.equal(0)
-			expect(await gateway.walletNonces(op.target, user.address)).to.equal(0)
+			expect(await gateway.walletOperationNonces(user.address, walletId, user.address)).to.equal(0)
 			await core.setForceChargeFailure(false)
 			await relay(op, walletId)
 		})
@@ -1411,7 +1414,7 @@ describe("GaslessLayer", () => {
 		}
 
 		const quote = await gateway.getAccountOperationalFee(user.address, [approvalOp], [0n])
-		expect(quote.amountDue).to.equal(u("1"))
+		expect(quote.amountDue18).to.equal(u("1"))
 
 		await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]], [0n])
 		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
@@ -2019,8 +2022,8 @@ describe("GaslessLayer", () => {
 		const totalCharge = u("100.03")
 
 		const quote = await gateway.getNativeGasTopUpCharge(request.collateralAmount)
-		expect(quote.feeAmount).to.equal(feeAmount)
-		expect(quote.totalCollateralCharge).to.equal(totalCharge)
+		expect(quote.feeAmount18).to.equal(feeAmount)
+		expect(quote.totalCollateralCharge18).to.equal(totalCharge)
 
 		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, await signNativeTopUp(user, request), {
 			value: request.minNativeAmountOut,
@@ -2345,10 +2348,10 @@ describe("GaslessLayer", () => {
 				ops,
 				ops.map(() => 0n),
 			)
-			expect(actual.amountDue).to.equal(u("0.5"))
+			expect(actual.amountDue18).to.equal(u("0.5"))
 			expect(actual.freeOpsApplied).to.equal(1)
 			expect(actual.wouldBlockOnQuota).to.equal(false)
-			expect(actual.amountDue).to.equal(parent.amountDue)
+			expect(actual.amountDue18).to.equal(parent.amountDue18)
 			expect(actual.freeOpsApplied).to.equal(parent.freeOpsApplied)
 		})
 	})
@@ -2579,7 +2582,7 @@ describe("GaslessLayer", () => {
 				ops,
 				ops.map(() => 0n),
 			)
-			expect(quote.amountDue).to.equal(u("3")) // 1 on the parent + 2 on the VA (2x multiplier)
+			expect(quote.amountDue18).to.equal(u("3")) // 1 on the parent + 2 on the VA (2x multiplier)
 
 			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
 			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("3"))
@@ -2730,20 +2733,20 @@ describe("GaslessLayer", () => {
 		const op = makeSignedOp(user.address)
 
 		let q = await gateway.getAccountOperationalFee(user.address, [op], [0n]) // first op is free-covered
-		expect(q.amountDue).to.equal(0)
+		expect(q.amountDue18).to.equal(0)
 		expect(q.freeOpsApplied).to.equal(1)
 		expect(q.wouldBlockOnQuota).to.equal(false)
 
 		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n]) // consume the free op
 		q = await gateway.getAccountOperationalFee(user.address, [op], [0n])
-		expect(q.amountDue).to.equal(u("1"))
+		expect(q.amountDue18).to.equal(u("1"))
 		expect(q.freeOpsApplied).to.equal(0)
 		expect(q.wouldBlockOnQuota).to.equal(false)
 
 		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true) // now over-quota would revert
 		q = await gateway.getAccountOperationalFee(user.address, [op], [0n])
 		expect(q.wouldBlockOnQuota).to.equal(true)
-		expect(q.amountDue).to.equal(0)
+		expect(q.amountDue18).to.equal(0)
 	})
 
 	it("getAccountOperationalFee is scoped to the given account's ops in a multi-account batch", async () => {
@@ -2755,13 +2758,13 @@ describe("GaslessLayer", () => {
 			ops,
 			ops.map(() => 0n),
 		)
-		expect(qUser.amountDue).to.equal(u("2"))
+		expect(qUser.amountDue18).to.equal(u("2"))
 		const qSolver = await gateway.getAccountOperationalFee(
 			solver,
 			ops,
 			ops.map(() => 0n),
 		)
-		expect(qSolver.amountDue).to.equal(u("1"))
+		expect(qSolver.amountDue18).to.equal(u("1"))
 	})
 
 	it("getAccountOperationalFee prices wallet-only operations through inner call selectors", async () => {
@@ -2770,7 +2773,7 @@ describe("GaslessLayer", () => {
 
 		const q = await gateway.getAccountOperationalFee(user.address, [walletOp], [0n])
 
-		expect(q.amountDue).to.equal(u("2"))
+		expect(q.amountDue18).to.equal(u("2"))
 		expect(q.freeOpsApplied).to.equal(0)
 		expect(q.wouldBlockOnQuota).to.equal(false)
 	})
@@ -2783,7 +2786,7 @@ describe("GaslessLayer", () => {
 
 		const q = await gateway.getAccountOperationalFee(user.address, [walletOp], [0n])
 
-		expect(q.amountDue).to.equal(0)
+		expect(q.amountDue18).to.equal(0)
 		expect(q.freeOpsApplied).to.equal(0)
 		expect(q.wouldBlockOnQuota).to.equal(true)
 	})
@@ -2801,7 +2804,7 @@ describe("GaslessLayer", () => {
 			ops.map(() => 0n),
 		)
 
-		expect(q.amountDue).to.equal(u("2"))
+		expect(q.amountDue18).to.equal(u("2"))
 		expect(q.freeOpsApplied).to.equal(1)
 		expect(q.wouldBlockOnQuota).to.equal(false)
 	})
@@ -2872,7 +2875,7 @@ describe("GaslessLayer", () => {
 			const op = makeSignedOp(user.address)
 
 			const q = await gateway.getAccountOperationalFee(user.address, [op], [0n])
-			expect(q.amountDue).to.equal(u("0.5"))
+			expect(q.amountDue18).to.equal(u("0.5"))
 
 			await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
 			expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
@@ -2924,7 +2927,7 @@ describe("GaslessLayer", () => {
 				ops,
 				ops.map(() => 0n),
 			)
-			expect(q.amountDue).to.equal(u("1")) // 2 ops × 1 × 50%
+			expect(q.amountDue18).to.equal(u("1")) // 2 ops × 1 × 50%
 		})
 
 		it("does not expose fee helpers with quote or estimate naming", async () => {
@@ -3020,16 +3023,16 @@ describe("GaslessLayer", () => {
 			expect(preview.exact).to.equal(false)
 			expect(exact.exact).to.equal(true)
 			expect(exact.collateralDecimals).to.equal(6)
-			expect(exact.totalFee).to.equal(coreUnits("2"))
-			expect(exact.totalDebit).to.equal(exact.totalFee)
+			expect(exact.totalFee18).to.equal(coreUnits("2"))
+			expect(exact.totalDebit18).to.equal(exact.totalFee18)
 			expect(exact.freeOpsApplied).to.equal(1n)
 			expect(exact.payments.map(p => p.payer)).to.deep.equal([user.address, stranger.address])
-			expect(exact.payments.map(p => p.operationalFee)).to.deep.equal([0n, coreUnits("2")])
-			expect(preview.totalFee).to.equal(exact.totalFee)
+			expect(exact.payments.map(p => p.operationalFee18)).to.deep.equal([0n, coreUnits("2")])
+			expect(preview.totalFee18).to.equal(exact.totalFee18)
 			expect((await gateway.dailyFreeOpsUsage(user.address)).count).to.equal(0n)
 			expect(await core.operationalFeesCharged(stranger.address)).to.equal(0n)
 			await gateway.connect(relayer).relayInstantBatch(...args)
-			expect(await core.operationalFeesCharged(stranger.address)).to.equal(exact.totalFee)
+			expect(await core.operationalFeesCharged(stranger.address)).to.equal(exact.totalFee18)
 		})
 
 		it("uses post-execution approval state for exact template quotes", async () => {
@@ -3043,13 +3046,13 @@ describe("GaslessLayer", () => {
 			}
 			const args = [7n, [op], ["0x"], [[]], [[]]]
 			const data = encode("relayInstantTemplate", args)
-			expect((await quote(data, "preview")).totalFee).to.equal(coreUnits("1"))
+			expect((await quote(data, "preview")).totalFee18).to.equal(coreUnits("1"))
 			const exact = await quote(data)
-			expect(exact.totalFee).to.equal(coreUnits("3"))
+			expect(exact.totalFee18).to.equal(coreUnits("3"))
 			expect(await instant.lastTemplateId()).to.equal(0n)
 			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
 			await gateway.connect(relayer).relayInstantTemplate(...args)
-			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee18)
 		})
 
 		it("quotes standalone delegation as one operation and preserves quota until submitted", async () => {
@@ -3059,20 +3062,20 @@ describe("GaslessLayer", () => {
 			const data = encode("relayGrantBatchDelegationBySig", [delegation, "0x1234"])
 			for (const mode of ["preview", "exact"] as const) {
 				const q = await quote(data, mode)
-				expect(q.totalFee).to.equal(0n)
+				expect(q.totalFee18).to.equal(0n)
 				expect(q.freeOpsApplied).to.equal(1n)
 				expect(q.payments).to.have.length(1)
 			}
 			expect(await instant.lastDelegationAccount()).to.equal(ethers.ZeroAddress)
 			await gateway.connect(relayer).relayGrantBatchDelegationBySig(delegation, "0x1234")
-			expect((await quote(data)).totalFee).to.equal(coreUnits("1"))
+			expect((await quote(data)).totalFee18).to.equal(coreUnits("1"))
 		})
 
 		it("previews deposit fees before funds arrive and reports why the exact settlement cannot execute", async () => {
 			await gateway.setWalletCreationFee(u("3"))
 			await accountLayer.setAccountOwner(stranger.address, user.address)
 			const callData = encode("settleDepositToExistingAccount", [user.address, 19n, stranger.address])
-			expect((await quote(callData, "preview")).totalFee).to.equal(coreUnits("5"))
+			expect((await quote(callData, "preview")).totalFee18).to.equal(coreUnits("5"))
 			const exact = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
 			expect(exact).to.include({ status: "reverted", errorName: "DepositAmountBelowMinimum" })
 		})
@@ -3087,15 +3090,15 @@ describe("GaslessLayer", () => {
 					? encode("settleDepositToNewAccount", [user.address, 42n, affiliate.address, subAccountData("quoted")])
 					: encode("settleDepositToExistingAccount", [user.address, 42n, stranger.address])
 				const exact = await quote(data)
-				expect(exact.totalFee).to.equal(coreUnits("5"))
+				expect(exact.totalFee18).to.equal(coreUnits("5"))
 				expect(exact.payments[0]).to.include({
 					account: wallet,
 					payer: wallet,
 					source: 1,
-					depositFee: coreUnits("2"),
-					walletCreationFee: coreUnits("3"),
+					depositFee18: coreUnits("2"),
+					walletCreationFee18: coreUnits("3"),
 				})
-				expect((await quote(data, "preview")).totalFee).to.equal(exact.totalFee)
+				expect((await quote(data, "preview")).totalFee18).to.equal(exact.totalFee18)
 				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
 				expect(await collateral.balanceOf(wallet)).to.equal(u("20"))
 				expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
@@ -3104,15 +3107,15 @@ describe("GaslessLayer", () => {
 					"FeeLimitExceeded",
 				)
 				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
-				await gateway.connect(relayer).executeWithFeeLimit(data, exact.totalDebit)
+				await gateway.connect(relayer).executeWithFeeLimit(data, exact.totalDebit18)
 				expect(await collateral.balanceOf(treasury.address)).to.equal(u("5"))
 				await collateral.mint(wallet, u("10"))
-				expect((await quote(data)).totalFee).to.equal(coreUnits("2"))
+				expect((await quote(data)).totalFee18).to.equal(coreUnits("2"))
 				await gateway.connect(relayer).executeWithFeeLimit(data, coreUnits("2"))
 			})
 		}
 
-		it("quotes admin recovery from wallet collateral and retains the admin role check", async () => {
+		it("quotes admin recovery as fee-free and retains the admin role check", async () => {
 			await gateway.setWalletCreationFee(u("3"))
 			const wallet = await gateway.getGaslessWalletAddress(user.address, 3n)
 			const ERC20 = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
@@ -3120,14 +3123,20 @@ describe("GaslessLayer", () => {
 			await collateral.mint(wallet, u("3"))
 			await other.mint(wallet, coreUnits("10"))
 			const data = encode("recoverNonCollateralToken", [user.address, 3n, await other.getAddress(), user.address])
-			expect((await quote(data, "preview")).totalFee).to.equal(coreUnits("3"))
+			const preview = await quote(data, "preview")
+			expect(preview.totalFee18).to.equal(0n)
+			expect(preview.totalDebit18).to.equal(0n)
+			expect(preview.payments).to.deep.equal([])
 			const exact = await quote(data, "exact", 0n, admin.address)
-			expect(exact.payments[0]).to.include({ payer: wallet, source: 1, walletCreationFee: coreUnits("3") })
+			expect(exact.totalFee18).to.equal(0n)
+			expect(exact.totalDebit18).to.equal(0n)
+			expect(exact.payments).to.deep.equal([])
 			const denied = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: relayer.address })
 			expect(denied.status).to.equal("reverted")
 			expect(await other.balanceOf(user.address)).to.equal(0n)
-			await gateway.executeWithFeeLimit(data, exact.totalDebit)
-			expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+			await gateway.executeWithFeeLimit(data, 0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+			expect(await collateral.balanceOf(wallet)).to.equal(u("3"))
 			expect(await other.balanceOf(user.address)).to.equal(coreUnits("10"))
 		})
 
@@ -3137,15 +3146,15 @@ describe("GaslessLayer", () => {
 			const signature = await signCappedNativeGasTopUp(user, gateway, request, coreUnits("8.1"))
 			const data = encode("relayNativeGasTopUp", [request, signature])
 			const exact = await quote(data, "exact", request.minNativeAmountOut)
-			expect(exact.totalFee).to.equal(coreUnits("0.1"))
-			expect(exact.totalDebit).to.equal(coreUnits("8.1"))
-			expect(exact.payments[0].nativeGasCollateral).to.equal(coreUnits("8"))
-			expect((await quote(data, "preview", request.minNativeAmountOut)).totalDebit).to.equal(exact.totalDebit)
+			expect(exact.totalFee18).to.equal(coreUnits("0.1"))
+			expect(exact.totalDebit18).to.equal(coreUnits("8.1"))
+			expect(exact.payments[0].nativeGasCollateral18).to.equal(coreUnits("8"))
+			expect((await quote(data, "preview", request.minNativeAmountOut)).totalDebit18).to.equal(exact.totalDebit18)
 			expect(await gateway.topUpNonces(user.address)).to.equal(0n)
 			await gateway.setNativeGasTopUpConfig(request.minNativeAmountOut, false)
 			const sponsored = await quote(data, "exact", request.minNativeAmountOut)
 			expect(sponsored.nativeSponsored).to.equal(true)
-			expect(sponsored.totalDebit).to.equal(0n)
+			expect(sponsored.totalDebit18).to.equal(0n)
 			expect((await quote(data, "preview", request.minNativeAmountOut)).nativeSponsored).to.equal(true)
 			expect((await gateway.dailyNativeSponsorUsage(user.address)).amount).to.equal(0n)
 			await gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut })
@@ -3191,10 +3200,10 @@ describe("GaslessLayer", () => {
 			]
 			const data = encode("relayInstantBatch", args)
 			const exact = await quote(data)
-			expect(exact.totalFee).to.equal(coreUnits("3"))
-			expect(exact.payments.map(p => p.walletCreationFee)).to.deep.equal([coreUnits("3"), 0n])
+			expect(exact.totalFee18).to.equal(coreUnits("3"))
+			expect(exact.payments.map(p => p.walletCreationFee18)).to.deep.equal([coreUnits("3"), 0n])
 			expect(exact.freeOpsApplied).to.equal(2n)
-			expect((await quote(data, "preview")).totalFee).to.equal(exact.totalFee)
+			expect((await quote(data, "preview")).totalFee18).to.equal(exact.totalFee18)
 			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
 			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(0n)
 			await gateway.setWalletCreationFee(u("4"))
@@ -3209,7 +3218,7 @@ describe("GaslessLayer", () => {
 			)
 			await gateway.setWalletCreationFee(u("3"))
 			await gateway.connect(relayer).relayInstantBatch(...args)
-			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee18)
 		})
 
 		it("enforces per-operation limits on batches, templates and delegation relays", async () => {

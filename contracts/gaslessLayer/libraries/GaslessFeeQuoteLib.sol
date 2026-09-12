@@ -3,7 +3,6 @@ pragma solidity 0.8.36;
 
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
-import { IGaslessLayerActions } from "../interfaces/IGaslessLayerActions.sol";
 import { IInstantLayer } from "../interfaces/IInstantLayer.sol";
 import { ISymmioCore } from "../interfaces/ISymmioCore.sol";
 import { ISymmioAccountLayer, SubAccountCreationData } from "../interfaces/ISymmioAccountLayer.sol";
@@ -38,7 +37,7 @@ library GaslessFeeQuoteLib {
 		address account,
 		IInstantLayer.SignedOperation[] calldata signedOps,
 		uint256[] calldata walletIds
-	) external view returns (uint256 amountDue, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
+	) external view returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
 		if (walletIds.length != signedOps.length) revert IGaslessLayer.ArrayLengthMismatch();
 		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
 		ISymmioAccountLayer accounts = ISymmioAccountLayer(config.accountLayer());
@@ -81,7 +80,7 @@ library GaslessFeeQuoteLib {
 				signedOps[i].flexFields.length == 0 &&
 				(selector == ISymmioCore.approveOperationalFee.selector || selector == ISymmioCore.approveOperationalFeeWithMultiplier.selector)
 			) {
-				amountDue = GaslessOperationalFeeLib.postApprovalOperationalFee(
+				amountDue18 = GaslessOperationalFeeLib.postApprovalOperationalFee(
 					config.core(),
 					billingAccount,
 					address(this),
@@ -98,7 +97,7 @@ library GaslessFeeQuoteLib {
 			mstore(ops, count)
 		}
 		(, uint256[] memory fees) = GaslessOperationalFeeLib.planOperationalFees(config.core(), address(accounts), ops);
-		for (uint256 i; i < fees.length; i++) amountDue += fees[i];
+		for (uint256 i; i < fees.length; i++) amountDue18 += fees[i];
 	}
 
 	function recordWalletPayment(address token, address wallet, uint256 deposit, uint256 creation) external {
@@ -113,27 +112,26 @@ library GaslessFeeQuoteLib {
 		bytes4 selector = _checkSelector(callData);
 		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
 		quote = _newQuote(config);
-		if (selector != IGaslessLayerActions.relayNativeGasTopUp.selector && nativeAmount != 0)
-			revert IGaslessLayer.UnexpectedNativeValue(nativeAmount);
-		if (selector == IGaslessLayerActions.relayInstantBatch.selector) {
+		if (selector != IGaslessLayer.relayNativeGasTopUp.selector && nativeAmount != 0) revert IGaslessLayer.UnexpectedNativeValue(nativeAmount);
+		if (selector == IGaslessLayer.relayInstantBatch.selector) {
 			(IInstantLayer.SignedOperation[] memory ops, , , , uint256[] memory walletIds) = abi.decode(
 				callData[4:],
 				(IInstantLayer.SignedOperation[], bytes[], bytes[][], bytes[][], uint256[])
 			);
 			_operations(config, quote, ops, walletIds, false);
-		} else if (selector == IGaslessLayerActions.relayInstantTemplate.selector) {
+		} else if (selector == IGaslessLayer.relayInstantTemplate.selector) {
 			(, IInstantLayer.SignedOperation[] memory ops, , , ) = abi.decode(
 				callData[4:],
 				(uint256, IInstantLayer.SignedOperation[], bytes[], bytes[][], bytes[][])
 			);
 			_operations(config, quote, ops, new uint256[](ops.length), true);
-		} else if (selector == IGaslessLayerActions.relayGrantBatchDelegationBySig.selector) {
+		} else if (selector == IGaslessLayer.relayGrantBatchDelegationBySig.selector) {
 			(IInstantLayer.SignedDelegation memory delegation, ) = abi.decode(callData[4:], (IInstantLayer.SignedDelegation, bytes));
 			IInstantLayer.SignedOperation[] memory ops = new IInstantLayer.SignedOperation[](1);
 			ops[0].signerAccount = delegation.delegationInfo.account;
 			ops[0].callData = abi.encodePacked(IInstantLayer.grantBatchDelegationBySig.selector);
 			_operations(config, quote, ops, new uint256[](1), true);
-		} else if (selector == IGaslessLayerActions.relayNativeGasTopUp.selector) {
+		} else if (selector == IGaslessLayer.relayNativeGasTopUp.selector) {
 			(IGaslessLayer.NativeGasTopUpRequest memory request, ) = abi.decode(callData[4:], (IGaslessLayer.NativeGasTopUpRequest, bytes));
 			_native(config, quote, request, nativeAmount);
 		} else {
@@ -146,7 +144,7 @@ library GaslessFeeQuoteLib {
 	///      Wrap failures so an inner call cannot impersonate the outer successful quote result.
 	function execute(bytes calldata callData, bool simulation, uint256 maxTotalDebit) external returns (bytes memory result) {
 		bytes4 selector = _checkSelector(callData);
-		if (selector != IGaslessLayerActions.relayNativeGasTopUp.selector && msg.value != 0) revert IGaslessLayer.UnexpectedNativeValue(msg.value);
+		if (selector != IGaslessLayer.relayNativeGasTopUp.selector && msg.value != 0) revert IGaslessLayer.UnexpectedNativeValue(msg.value);
 		GaslessFeeAccounting.State storage s = GaslessFeeAccounting.state();
 		if (s.active) revert IGaslessLayer.FeeQuoteContextActive();
 		IGaslessLayer.FeeQuote memory quote = _newQuote(IGaslessFeeConfig(address(this)));
@@ -165,7 +163,7 @@ library GaslessFeeQuoteLib {
 		quote.nativeSponsored = s.nativeSponsored;
 		_total(quote);
 		if (simulation) revert IGaslessLayer.FeeQuoteResult(quote);
-		if (quote.totalDebit > maxTotalDebit) revert IGaslessLayer.FeeLimitExceeded(quote.totalDebit, maxTotalDebit);
+		if (quote.totalDebit18 > maxTotalDebit) revert IGaslessLayer.FeeLimitExceeded(quote.totalDebit18, maxTotalDebit);
 		GaslessFeeAccounting.clear();
 	}
 
@@ -179,10 +177,10 @@ library GaslessFeeQuoteLib {
 	function _total(IGaslessLayer.FeeQuote memory q) private pure {
 		for (uint256 i; i < q.payments.length; i++) {
 			IGaslessLayer.FeePayment memory p = q.payments[i];
-			q.totalFee += p.operationalFee + p.depositFee + p.walletCreationFee + p.nativeTopUpFee;
-			q.totalDebit += p.nativeGasCollateral;
+			q.totalFee18 += p.operationalFee18 + p.depositFee18 + p.walletCreationFee18 + p.nativeTopUpFee18;
+			q.totalDebit18 += p.nativeGasCollateral18;
 		}
-		q.totalDebit += q.totalFee;
+		q.totalDebit18 += q.totalFee18;
 	}
 
 	function _operations(
@@ -279,8 +277,8 @@ library GaslessFeeQuoteLib {
 	function _wallet(IGaslessFeeConfig config, IGaslessLayer.FeeQuote memory q, bytes calldata data, bytes4 selector) private view {
 		address owner;
 		uint256 walletId;
-		bool recovery = selector == IGaslessLayerActions.recoverNonCollateralToken.selector;
-		bool withdrawal = selector == IGaslessLayerActions.withdrawWalletFunds.selector;
+		bool recovery = selector == IGaslessLayer.recoverNonCollateralToken.selector;
+		bool withdrawal = selector == IGaslessLayer.withdrawWalletFunds.selector;
 		if (withdrawal) {
 			address recipient;
 			uint256 amount;
@@ -294,7 +292,7 @@ library GaslessFeeQuoteLib {
 			(owner, walletId, token, recipient) = abi.decode(data[4:], (address, uint256, address, address));
 			if (token == q.collateralToken) revert IGaslessLayer.CollateralRecoveryDisabled();
 			if (recipient == address(0)) revert IGaslessLayer.ZeroAddress();
-		} else if (selector == IGaslessLayerActions.settleDepositToExistingAccount.selector) {
+		} else if (selector == IGaslessLayer.settleDepositToExistingAccount.selector) {
 			address account;
 			(owner, walletId, account) = abi.decode(data[4:], (address, uint256, address));
 			if (account == address(0)) revert IGaslessLayer.ZeroAddress();
@@ -304,9 +302,13 @@ library GaslessFeeQuoteLib {
 			(owner, walletId, , ) = abi.decode(data[4:], (address, uint256, address, SubAccountCreationData));
 		}
 		if (!recovery && owner == address(0)) revert IGaslessLayer.ZeroAddress();
+		if (recovery) {
+			q.payments = new IGaslessLayer.FeePayment[](0);
+			return;
+		}
 		address wallet = config.getGaslessWalletAddress(owner, walletId);
 		uint256 creation = config.getWalletCreationFee(owner, walletId);
-		uint256 deposit = recovery || withdrawal ? 0 : config.depositFee();
+		uint256 deposit = withdrawal ? 0 : config.depositFee();
 		q.payments = new IGaslessLayer.FeePayment[](1);
 		uint256 scale = 10 ** (18 - q.collateralDecimals);
 		q.payments[0] = IGaslessLayer.FeePayment(
@@ -324,14 +326,14 @@ library GaslessFeeQuoteLib {
 	function _checkSelector(bytes calldata callData) private pure returns (bytes4 selector) {
 		selector = callData.length < 4 ? bytes4(0) : bytes4(callData[:4]);
 		if (
-			selector != IGaslessLayerActions.relayInstantBatch.selector &&
-			selector != IGaslessLayerActions.relayInstantTemplate.selector &&
-			selector != IGaslessLayerActions.relayGrantBatchDelegationBySig.selector &&
-			selector != IGaslessLayerActions.relayNativeGasTopUp.selector &&
-			selector != IGaslessLayerActions.settleDepositToNewAccount.selector &&
-			selector != IGaslessLayerActions.settleDepositToExistingAccount.selector &&
-			selector != IGaslessLayerActions.recoverNonCollateralToken.selector &&
-			selector != IGaslessLayerActions.withdrawWalletFunds.selector
+			selector != IGaslessLayer.relayInstantBatch.selector &&
+			selector != IGaslessLayer.relayInstantTemplate.selector &&
+			selector != IGaslessLayer.relayGrantBatchDelegationBySig.selector &&
+			selector != IGaslessLayer.relayNativeGasTopUp.selector &&
+			selector != IGaslessLayer.settleDepositToNewAccount.selector &&
+			selector != IGaslessLayer.settleDepositToExistingAccount.selector &&
+			selector != IGaslessLayer.recoverNonCollateralToken.selector &&
+			selector != IGaslessLayer.withdrawWalletFunds.selector
 		) revert IGaslessLayer.UnsupportedFeeQuoteCall(selector);
 	}
 }

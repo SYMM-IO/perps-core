@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.36;
 
+import { IInstantLayer } from "./IInstantLayer.sol";
+import { SubAccountCreationData } from "./ISymmioAccountLayer.sol";
+
 /// @title IGaslessLayer
-/// @notice Shared request types, events, and errors for GaslessLayer.
+/// @notice Canonical user interface, request types, events, and errors for GaslessLayer.
 interface IGaslessLayer {
 	// ─────────────────────────── Types ────────────────────────────
 
@@ -11,20 +14,25 @@ interface IGaslessLayer {
 		WALLET_COLLATERAL
 	}
 
+	enum DepositDestination {
+		NEW_ACCOUNT,
+		EXISTING_ACCOUNT
+	}
+
 	/// @notice One operation's charge. All amounts use 18 decimals, including wallet collateral fees.
 	struct FeePayment {
 		address account;
 		address payer;
 		uint8 source; // FeeSource, encoded as uint8 for standard library ABI tooling.
-		uint256 operationalFee;
-		uint256 depositFee;
-		uint256 walletCreationFee;
-		uint256 nativeTopUpFee;
-		uint256 nativeGasCollateral;
+		uint256 operationalFee18;
+		uint256 depositFee18;
+		uint256 walletCreationFee18;
+		uint256 nativeTopUpFee18;
+		uint256 nativeGasCollateral18;
 	}
 
 	/// @notice GaslessLayer charges only. Core operation fees, bridge fees, and transaction gas are excluded.
-	/// @dev totalDebit is totalFee plus collateral exchanged for native gas. It excludes deposited or withdrawn funds themselves.
+	/// @dev totalDebit18 is totalFee18 plus collateral exchanged for native gas. It excludes deposited or withdrawn funds themselves.
 	struct FeeQuote {
 		address collateralToken;
 		uint8 collateralDecimals;
@@ -32,8 +40,8 @@ interface IGaslessLayer {
 		uint256 timestamp;
 		bool exact;
 		FeePayment[] payments;
-		uint256 totalFee;
-		uint256 totalDebit;
+		uint256 totalFee18;
+		uint256 totalDebit18;
 		uint256 freeOpsApplied;
 		bool nativeSponsored;
 	}
@@ -54,21 +62,90 @@ interface IGaslessLayer {
 		uint192 amount; // native amount sponsored on that day
 	}
 
+	// ───────────────────────── User actions ─────────────────────────
+
+	function relayInstantBatch(
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		bytes[] calldata signatures,
+		bytes[][] calldata fills,
+		bytes[][] calldata flexFillerSignatures,
+		uint256[] calldata walletIds
+	) external returns (bytes[] memory);
+
+	function relayInstantTemplate(
+		uint256 templateId,
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		bytes[] calldata signatures,
+		bytes[][] calldata fills,
+		bytes[][] calldata flexFillerSignatures
+	) external returns (bytes[] memory);
+
+	function relayGrantBatchDelegationBySig(IInstantLayer.SignedDelegation calldata signedDelegation, bytes calldata signature) external;
+
+	function relayNativeGasTopUp(NativeGasTopUpRequest calldata request, bytes calldata signature) external payable;
+
+	function settleDepositToNewAccount(
+		address owner,
+		uint256 walletId,
+		address affiliate,
+		SubAccountCreationData calldata accountData
+	) external returns (address);
+
+	function settleDepositToExistingAccount(address owner, uint256 walletId, address subAccount) external;
+
+	/// @notice Recover a wallet's full balance of a non-collateral token without charging any fee.
+	/// @dev May deploy the wallet, but must not move its collateral or collect a wallet-creation fee.
+	function recoverNonCollateralToken(address owner, uint256 walletId, address token, address recipient) external returns (uint256);
+
+	function withdrawWalletFunds(uint256 walletId, address token, address recipient, uint256 amount) external returns (uint256);
+
+	// ───────────────────────── User views ─────────────────────────
+
+	function previewFeeQuote(bytes calldata callData, uint256 nativeAmount) external view returns (FeeQuote memory);
+
+	function simulateFeeQuote(bytes calldata callData) external payable;
+
+	function executeWithFeeLimit(bytes calldata callData, uint256 maxTotalDebit18) external payable returns (bytes memory);
+
+	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address);
+
+	/// @return feeTokenUnits Fee in the collateral token's native decimals; zero if the wallet is already deployed.
+	function getWalletCreationFee(address owner, uint256 walletId) external view returns (uint256 feeTokenUnits);
+
+	function walletOperationNonces(address owner, uint256 walletId, address signerAccount) external view returns (uint256);
+
+	function getWalletOperationHash(IInstantLayer.SignedOperation calldata signedOp) external view returns (bytes32);
+
+	function isValidWalletOperationSignature(IInstantLayer.SignedOperation calldata signedOp, bytes calldata signature) external view returns (bool);
+
+	function getNativeGasTopUpCharge(uint256 collateralAmount18) external view returns (uint256 feeAmount18, uint256 totalCollateralCharge18);
+
+	function dailyFreeOpsRemaining(address account) external view returns (uint256);
+
+	function getBaseOperationalFee(bytes4 selector) external view returns (uint256 amount18);
+
+	function getAccountOperationalFee(
+		address account,
+		IInstantLayer.SignedOperation[] calldata signedOps,
+		uint256[] calldata walletIds
+	) external view returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota);
+
 	// ────────────────────────── Events ────────────────────────────
 
 	// Payers are read from the per-op OperationalFeeRouted events in the same receipt.
-	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 totalFee);
-	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 totalFee);
+	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 totalFee18);
+	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 totalFee18);
 	event DelegationBySigRelayed(
 		address indexed relayer,
 		address indexed delegatorAccount,
 		address indexed payer,
 		address delegate,
 		uint256 selectorCount,
-		uint256 fee
+		uint256 fee18
 	);
-	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount);
-	event DepositFeeCollected(address indexed wallet, address indexed treasury, uint256 amount);
+	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount18);
+	/// @notice Deposit fee in collateral-token units, attributed to the wallet owner.
+	event DepositFeeCollected(address indexed owner, address indexed treasury, uint256 amount);
 	/// @notice Creation fee in collateral token decimals, paid from the wallet or charged to a SYMMIO billing account.
 	event WalletCreationFeeCollected(address indexed wallet, address indexed payer, uint256 amount);
 	event WalletCreationFeeUpdated(uint256 amount);
@@ -83,7 +160,15 @@ interface IGaslessLayer {
 	/// @param subAccount Sub-account credited with the net deposit.
 	/// @param netDeposit Collateral credited after deposit and any wallet creation fees.
 	/// @param depositFee Collateral paid to the treasury as the flat deposit fee.
-	event WalletDepositSettled(address indexed owner, uint256 indexed walletId, address indexed subAccount, uint256 netDeposit, uint256 depositFee);
+	/// @param destination Whether settlement created the destination account or used an existing one.
+	event WalletDepositSettled(
+		address indexed owner,
+		uint256 indexed walletId,
+		address indexed subAccount,
+		uint256 netDeposit,
+		uint256 depositFee,
+		DepositDestination destination
+	);
 	event WalletOperationRelayed(address indexed relayer, address indexed owner, address indexed wallet, uint256 callCount);
 	/// @notice Owner-submitted withdrawal; amount uses the token's decimals, or wei for native funds.
 	event WalletFundsWithdrawn(address indexed owner, uint256 indexed walletId, address indexed token, address recipient, uint256 amount);
@@ -154,5 +239,5 @@ interface IGaslessLayer {
 	error FeeQuoteResult(FeeQuote quote);
 	/// @notice The complete request failed. reason is the original revert data.
 	error FeeQuoteExecutionFailed(bytes reason);
-	error FeeLimitExceeded(uint256 actual, uint256 maximum);
+	error FeeLimitExceeded(uint256 actual18, uint256 maximum18);
 }

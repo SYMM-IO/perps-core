@@ -4,11 +4,11 @@ export type GaslessFeePayment = {
 	account: string
 	payer: string
 	source: number // 0: SYMMIO account, 1: wallet collateral
-	operationalFee: bigint
-	depositFee: bigint
-	walletCreationFee: bigint
-	nativeTopUpFee: bigint
-	nativeGasCollateral: bigint
+	operationalFee18: bigint
+	depositFee18: bigint
+	walletCreationFee18: bigint
+	nativeTopUpFee18: bigint
+	nativeGasCollateral18: bigint
 }
 
 /** All monetary fields use 18 decimals. collateralDecimals describes the actual ERC-20. */
@@ -19,8 +19,8 @@ export type GaslessFeeQuote = {
 	timestamp: bigint
 	exact: boolean
 	payments: GaslessFeePayment[]
-	totalFee: bigint
-	totalDebit: bigint
+	totalFee18: bigint
+	totalDebit18: bigint
 	freeOpsApplied: bigint
 	nativeSponsored: boolean
 }
@@ -93,14 +93,14 @@ function normalizeQuote(q: any): GaslessFeeQuote {
 			account: p.account,
 			payer: p.payer,
 			source: Number(p.source),
-			operationalFee: p.operationalFee,
-			depositFee: p.depositFee,
-			walletCreationFee: p.walletCreationFee,
-			nativeTopUpFee: p.nativeTopUpFee,
-			nativeGasCollateral: p.nativeGasCollateral,
+			operationalFee18: p.operationalFee18,
+			depositFee18: p.depositFee18,
+			walletCreationFee18: p.walletCreationFee18,
+			nativeTopUpFee18: p.nativeTopUpFee18,
+			nativeGasCollateral18: p.nativeGasCollateral18,
 		})),
-		totalFee: q.totalFee,
-		totalDebit: q.totalDebit,
+		totalFee18: q.totalFee18,
+		totalDebit18: q.totalDebit18,
 		freeOpsApplied: q.freeOpsApplied,
 		nativeSponsored: q.nativeSponsored,
 	}

@@ -61,6 +61,7 @@ describe("GaslessLayer onboarding scenario", function () {
 			instantLayerAddress,
 			treasury.address,
 			DEPOSIT_FEE,
+			0,
 			MIN_DEPOSIT,
 		])
 		const Proxy = await ethers.getContractFactory("contracts/gaslessLayer/mocks/LayerProxy.sol:LayerProxy")
@@ -138,7 +139,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const quoted = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
 		expect(quoted.status).to.equal("quoted")
 		if (quoted.status !== "quoted") throw new Error(quoted.data)
-		expect(quoted.quote.totalFee).to.equal(OP_FEE * 2n)
+		expect(quoted.quote.totalFee18).to.equal(OP_FEE * 2n)
 		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(before)
 		// The fee-bearing real Core approval and the InstantLayer replay state both roll back in a quote.
 		await gateway.connect(context.signers.admin).setDefaultSelectorFee(OP_FEE * 2n)
@@ -148,7 +149,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		await expect(gateway.connect(relayer).relayInstantBatch([changed], [signature], [[]], [[]], [0n])).to.be.revert(ethers)
 		await gateway.connect(context.signers.admin).setDefaultSelectorFee(OP_FEE)
 		await gateway.connect(relayer).relayInstantBatch(...args)
-		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(before - quoted.quote.totalFee)
+		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(before - quoted.quote.totalFee18)
 	})
 
 	it("onboards a user end to end: deposit address, account creation, then one user signature + session-key setup", async function () {
@@ -333,8 +334,8 @@ describe("GaslessLayer onboarding scenario", function () {
 		const quote = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
 		expect(quote.status).to.equal("quoted")
 		if (quote.status !== "quoted") throw new Error(quote.data)
-		expect(quote.quote.totalFee).to.equal(creationFee)
-		await gateway.connect(user).executeWithFeeLimit(data, quote.quote.totalDebit)
+		expect(quote.quote.totalFee18).to.equal(creationFee)
+		await gateway.connect(user).executeWithFeeLimit(data, quote.quote.totalDebit18)
 		expect(await context.collateral.balanceOf(user.address)).to.equal(userBefore + withdrawalAmount - creationFee)
 		expect(await context.collateral.balanceOf(treasury.address)).to.equal(treasuryBefore + creationFee)
 		expect(await context.collateral.balanceOf(wallet)).to.equal(0n)
@@ -438,7 +439,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const signature = await user.signTypedData({ ...domain, name: "GaslessGateway", verifyingContract: gatewayAddr }, walletTypes, bridgeOp)
 		const receiverBefore = await context.collateral.balanceOf(sessionKey.address)
 		const quote = await gateway.getAccountOperationalFee(subAccount, [bridgeOp], [withdrawalId])
-		expect(quote.amountDue).to.equal(OP_FEE * 2n + creationFee)
+		expect(quote.amountDue18).to.equal(OP_FEE * 2n + creationFee)
 		const exact = await quoteGaslessFee({
 			gateway,
 			mode: "exact",
@@ -447,8 +448,8 @@ describe("GaslessLayer onboarding scenario", function () {
 		})
 		expect(exact.status).to.equal("quoted")
 		if (exact.status === "quoted") {
-			expect(exact.quote.totalFee).to.equal(OP_FEE * 2n + creationFee)
-			expect(exact.quote.payments[0].walletCreationFee).to.equal(creationFee)
+			expect(exact.quote.totalFee18).to.equal(OP_FEE * 2n + creationFee)
+			expect(exact.quote.payments[0].walletCreationFee18).to.equal(creationFee)
 		}
 		expect(await ethers.provider.getCode(withdrawalWallet)).to.equal("0x")
 		expect(await context.collateral.balanceOf(sessionKey.address)).to.equal(receiverBefore)
@@ -457,7 +458,7 @@ describe("GaslessLayer onboarding scenario", function () {
 			.withArgs(withdrawalWallet, subAccount, creationFee)
 		expect(await context.collateral.balanceOf(sessionKey.address)).to.equal(receiverBefore + withdrawalAmount)
 		expect(await context.collateral.balanceOf(withdrawalWallet)).to.equal(0)
-		expect(await gateway.walletNonces(withdrawalWallet, subAccount)).to.equal(1)
+		expect(await gateway.walletOperationNonces(user.address, withdrawalId, subAccount)).to.equal(1)
 		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(
 			(BRIDGED_AMOUNT - DEPOSIT_FEE - creationFee) * 2n - withdrawalAmount - OP_FEE * 4n - creationFee,
 		)

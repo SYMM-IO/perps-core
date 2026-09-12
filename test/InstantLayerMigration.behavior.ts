@@ -65,6 +65,7 @@ describe("InstantLayer migration rehearsal", function () {
 			oldInstantLayer,
 			context.signers.feeCollector.address,
 			2_000_000n,
+			0,
 			5_000_000n,
 		])
 		const Proxy = await ethers.getContractFactory("contracts/gaslessLayer/mocks/LayerProxy.sol:LayerProxy")
