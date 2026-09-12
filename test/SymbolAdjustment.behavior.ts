@@ -69,8 +69,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		return context.symbolAdjustmentFacet.connect(context.signers.admin).startRestatement(symbolId, liquidationStartNonce)
 	}
 
-	// finalizeRestatement requires the symbol to have stayed frozen for a full Muon UPNL validity period, so that
-	// signatures priced in the old basis have expired before quote storage is rewritten. The fixture sets a
+	// finalizeRestatement requires the restatement window to have been open for a full Muon UPNL validity period, so that
+	// signatures priced in the old basis have expired before finalization. The fixture sets a
 	// hundred-year validity to disable expiry, so shrink it just long enough to clear the guard, then restore it —
 	// this advances the chain by seconds rather than a century and leaves other signatures in the test unaffected.
 	async function finalizeRestatementAfterWindow(symbolId: number, partyBs: string[] = []): Promise<void> {
@@ -2153,6 +2153,43 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.OPENED)
 		})
 
+		for (const pastEffective of [false, true]) {
+			for (const atOpening of [false, true]) {
+				it(`rejects a liquidation price signature ${atOpening ? "at" : "before"} delayed restatement opening after a ${pastEffective ? "past-effective" : "future"} schedule`, async function () {
+					const quoteId = await openPosition()
+					const now = await getBlockTimestamp()
+					const effectiveTimestamp = pastEffective ? now - 100n : now + 100n
+					await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), effectiveTimestamp)
+					await time.increase(200)
+					expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.true
+
+					// The feed can still issue an old-unit price after the scheduled freeze but before the window opens.
+					const liquidationSig = await getDummyLiquidationSig(
+						"0x23",
+						-decimal(1_000_000n),
+						[BigInt(SYMBOL_ID)],
+						[decimal(8n, 17)],
+						-decimal(1_000_000n),
+						(await user.getBalanceInfo()).allocatedBalances,
+					)
+					expect(liquidationSig.timestamp).to.be.greaterThan(effectiveTimestamp)
+					await time.increase(100)
+					const startTx = await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+					const startReceipt = await startTx.wait()
+					const startBlock = await ethers.provider.getBlock(startReceipt!.blockNumber)
+					if (atOpening) liquidationSig.timestamp = BigInt(startBlock!.timestamp)
+					else expect(liquidationSig.timestamp).to.be.lessThan(BigInt(startBlock!.timestamp))
+
+					await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig)
+					await expect(
+						context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user.address, liquidationSig),
+					).to.be.revertedWith("LibSymbolAdjustment: Liquidation signature predates restatement")
+					expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.OPENED)
+					expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
+				})
+			}
+		}
+
 		it("lets the Clearing House unwind tracked inventory without scanning symbols", async function () {
 			const quoteId = await openPosition()
 			await migratePartyBToCross(context, hedger, [quoteId])
@@ -2542,7 +2579,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address])
 			await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
 
-			// Quotes are rewritten, but the symbol has not been frozen long enough for in-flight signatures to expire.
+			// Quotes are rewritten, but the window has not been open long enough for in-flight signatures to expire.
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement window too short",
 			)
@@ -2555,7 +2592,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
 		})
 
-		it("starts the expiry window when a past-effective adjustment is actually scheduled", async function () {
+		it("starts the expiry window at restatement opening after a long scheduled freeze", async function () {
 			const [upnlValidTime, priceValidTime] = await context.viewFacet.getMuonConfig()
 			await context.controlFacet.connect(context.signers.admin).setMuonConfig(1000n, priceValidTime)
 
@@ -2564,10 +2601,14 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const scheduleReceipt = await scheduleTx.wait()
 			const scheduleBlock = await ethers.provider.getBlock(scheduleReceipt!.blockNumber)
 
-			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await time.increase(2000)
+			const startTx = await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			const startReceipt = await startTx.wait()
+			const startBlock = await ethers.provider.getBlock(startReceipt!.blockNumber)
 			await completeFundingPreparation(SYMBOL_ID)
 			const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
-			expect(adjustment.restatementStartedAt).to.equal(BigInt(scheduleBlock!.timestamp))
+			expect(adjustment.restatementStartedAt).to.equal(BigInt(startBlock!.timestamp))
+			expect(adjustment.restatementStartedAt).to.be.greaterThan(BigInt(scheduleBlock!.timestamp) + 1000n)
 			await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).finalizeRestatement(SYMBOL_ID)).to.be.revertedWith(
 				"SymbolAdjustmentFacet: Restatement window too short",
 			)

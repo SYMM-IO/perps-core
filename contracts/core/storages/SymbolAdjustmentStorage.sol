@@ -70,10 +70,9 @@ struct SymbolAdjustment {
 	/// @notice Highest global quote ID that existed when the symbol's latest physical restatement finalized.
 	/// @dev Pending quotes at or below this cutoff were created in an older storage basis and cannot be locked or opened.
 	uint256 pendingQuoteIdCutoff;
-	/// @notice Timestamp from which the symbol has been continuously frozen for the current restatement window.
-	/// @dev Set when the window opens. On the direct route, it is the later of the venue effective time and the on-chain scheduling
-	///      time. finalizeRestatement refuses to advance `basisVersion` until signatures minted under the current validity
-	///      configuration have expired.
+	/// @notice Block timestamp at which the current restatement window opened.
+	/// @dev Liquidation price signatures must strictly postdate this boundary, even if the symbol was already frozen.
+	///      finalizeRestatement waits a full maximum UPNL validity period from this timestamp before advancing `basisVersion`.
 	uint256 restatementStartedAt;
 	/// @notice Current preparation and funding-restoration phase for the open restatement window.
 	/// @dev Inventory and funding preparation share the first phase. Quote mutation is allowed only in QUOTE_PROCESSING.
