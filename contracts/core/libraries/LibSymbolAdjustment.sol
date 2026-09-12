@@ -33,11 +33,14 @@ library LibSymbolAdjustment {
 		require(!isFrozen(symbolId) || adjustment.restating, "LibSymbolAdjustment: Symbol is frozen");
 	}
 
-	/// @notice Requires a liquidation price payload for a restating symbol to postdate the window's basis boundary.
-	/// @dev Strict inequality removes same-block ordering ambiguity because Muon payloads do not carry restatement epochs.
+	/// @notice Requires liquidation price payloads to postdate the latest abort and any currently open window.
+	/// @dev Strict inequality enforces freshness in addition to the price-basis commitment verified by LibMuonLiquidation.
 	function requireCurrentLiquidationSignature(uint256 symbolId, uint256 signatureTimestamp) internal view {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		requireLiquidationAllowed(symbolId);
+		if (adjustment.lastRestatementAbortedAt != 0) {
+			require(signatureTimestamp > adjustment.lastRestatementAbortedAt, "LibSymbolAdjustment: Liquidation signature predates abort completion");
+		}
 		if (adjustment.restating) {
 			require(signatureTimestamp > adjustment.restatementStartedAt, "LibSymbolAdjustment: Liquidation signature predates restatement");
 		}
