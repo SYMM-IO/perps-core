@@ -378,6 +378,7 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 	}
 
 	function _completeAbort(uint256 symbolId, SymbolAdjustment storage adjustment) private {
+		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
 		adjustment.restating = false;
 		adjustment.restatementFactor = 0;
 		adjustment.restatementStartedAt = 0;
