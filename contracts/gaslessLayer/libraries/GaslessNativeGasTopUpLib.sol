@@ -8,6 +8,7 @@ import { ISymmioCore } from "../interfaces/ISymmioCore.sol";
 import { ISymmioAccountLayer } from "../interfaces/ISymmioAccountLayer.sol";
 import { GaslessBillingIdentity } from "./GaslessBillingIdentity.sol";
 import { GaslessLayerDomain } from "./GaslessLayerDomain.sol";
+import { GaslessFeeAccounting } from "./GaslessFeeAccounting.sol";
 
 /// @title GaslessNativeGasTopUpLib
 /// @notice Linked native-gas top-up implementation for GaslessLayer.
@@ -17,6 +18,9 @@ library GaslessNativeGasTopUpLib {
 	uint256 internal constant FEE_MULTIPLIER_BASE = 10000;
 	bytes32 internal constant NATIVE_GAS_TOP_UP_TYPEHASH = keccak256(
 		"NativeGasTopUpRequest(address payerAccount,address recipientWallet,uint256 collateralAmount,uint256 minNativeAmountOut,uint256 nonce,uint256 deadline)"
+	);
+	bytes32 internal constant CAPPED_NATIVE_GAS_TOP_UP_TYPEHASH = keccak256(
+		"CappedNativeGasTopUpRequest(address payerAccount,address recipientWallet,uint256 collateralAmount,uint256 minNativeAmountOut,uint256 nonce,uint256 deadline,uint256 maxTotalCharge)"
 	);
 
 	struct NativeGasTopUpResult {
@@ -50,7 +54,7 @@ library GaslessNativeGasTopUpLib {
 
 		ISymmioAccountLayer accountLayerContract = ISymmioAccountLayer(accountLayer);
 		address payer = _resolveBillingAccount(accountLayerContract, request.payerAccount);
-		_verifyNativeGasTopUpSignature(accountLayerContract, request, payer, signature);
+		uint256 maxTotalCharge = _verifyNativeGasTopUpSignature(accountLayerContract, request, payer, signature);
 		_consumeTopUpNonce(topUpNonces, request);
 
 		(bool sponsored, uint256 sponsoredUsedToday) = _useSponsoredNativeGas(
@@ -63,8 +67,22 @@ library GaslessNativeGasTopUpLib {
 		uint256 totalCollateralCharge;
 		if (!sponsored) {
 			(, totalCollateralCharge) = getNativeGasTopUpCharge(request.collateralAmount, nativeGasTopUpFeeBps);
+			if (totalCollateralCharge > maxTotalCharge) revert IGaslessLayer.FeeLimitExceeded(totalCollateralCharge, maxTotalCharge);
 			ISymmioCore(core).chargeOperationalFee(payer, totalCollateralCharge);
 		}
+		GaslessFeeAccounting.record(
+			IGaslessLayer.FeePayment(
+				request.payerAccount,
+				payer,
+				uint8(IGaslessLayer.FeeSource.SYMMIO_ACCOUNT),
+				0,
+				0,
+				0,
+				sponsored ? 0 : totalCollateralCharge - request.collateralAmount,
+				sponsored ? 0 : request.collateralAmount
+			)
+		);
+		if (sponsored) GaslessFeeAccounting.sponsored();
 
 		_sendNativeGas(request.recipientWallet, msg.value);
 		return
@@ -115,8 +133,31 @@ library GaslessNativeGasTopUpLib {
 		IGaslessLayer.NativeGasTopUpRequest calldata request,
 		address payer,
 		bytes calldata signature
-	) internal view {
-		address recovered = ECDSA.recover(_nativeGasTopUpDigest(request), signature);
+	) internal view returns (uint256 maximum) {
+		maximum = type(uint256).max;
+		bytes32 digest;
+		bytes memory rawSignature;
+		if (signature.length > 65) {
+			(maximum, rawSignature) = abi.decode(signature, (uint256, bytes));
+			digest = GaslessLayerDomain.hashTypedData(
+				keccak256(
+					abi.encode(
+						CAPPED_NATIVE_GAS_TOP_UP_TYPEHASH,
+						request.payerAccount,
+						request.recipientWallet,
+						request.collateralAmount,
+						request.minNativeAmountOut,
+						request.nonce,
+						request.deadline,
+						maximum
+					)
+				)
+			);
+		} else {
+			digest = _nativeGasTopUpDigest(request);
+			rawSignature = signature;
+		}
+		address recovered = ECDSA.recover(digest, rawSignature);
 		if (recovered != _expectedNativeGasTopUpSigner(accountLayer, request.payerAccount, payer)) {
 			revert IGaslessLayer.InvalidNativeGasTopUpSignature();
 		}

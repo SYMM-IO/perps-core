@@ -118,6 +118,22 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "totalFees",
+                "type": "uint256"
+            }
+        ],
+        "name": "DepositAmountNotAboveFees",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "implementation",
                 "type": "address"
@@ -139,6 +155,143 @@
     {
         "inputs": [],
         "name": "FailedCall",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "actual",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maximum",
+                "type": "uint256"
+            }
+        ],
+        "name": "FeeLimitExceeded",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "FeeQuoteContextActive",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes",
+                "name": "reason",
+                "type": "bytes"
+            }
+        ],
+        "name": "FeeQuoteExecutionFailed",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "collateralToken",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "collateralDecimals",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "blockNumber",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "exact",
+                        "type": "bool"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "account",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "payer",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "uint8",
+                                "name": "source",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "operationalFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "depositFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "walletCreationFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "nativeTopUpFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "nativeGasCollateral",
+                                "type": "uint256"
+                            }
+                        ],
+                        "internalType": "struct IGaslessLayer.FeePayment[]",
+                        "name": "payments",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalFee",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalDebit",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "freeOpsApplied",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "nativeSponsored",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct IGaslessLayer.FeeQuote",
+                "name": "quote",
+                "type": "tuple"
+            }
+        ],
+        "name": "FeeQuoteResult",
         "type": "error"
     },
     {
@@ -356,6 +509,28 @@
             }
         ],
         "name": "UUPSUnsupportedProxiableUUID",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "value",
+                "type": "uint256"
+            }
+        ],
+        "name": "UnexpectedNativeValue",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "UnsupportedFeeQuoteCall",
         "type": "error"
     },
     {
@@ -972,6 +1147,44 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "wallet",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "payer",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "WalletCreationFeeCollected",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "WalletCreationFeeUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "owner",
                 "type": "address"
             },
@@ -1317,6 +1530,30 @@
     {
         "inputs": [
             {
+                "internalType": "bytes",
+                "name": "callData",
+                "type": "bytes"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxTotalDebit",
+                "type": "uint256"
+            }
+        ],
+        "name": "executeWithFeeLimit",
+        "outputs": [
+            {
+                "internalType": "bytes",
+                "name": "",
+                "type": "bytes"
+            }
+        ],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "account",
                 "type": "address"
@@ -1517,6 +1754,30 @@
                 "internalType": "bytes32",
                 "name": "",
                 "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getWalletCreationFee",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",
@@ -1863,6 +2124,124 @@
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes",
+                "name": "callData",
+                "type": "bytes"
+            },
+            {
+                "internalType": "uint256",
+                "name": "nativeAmount",
+                "type": "uint256"
+            }
+        ],
+        "name": "previewFeeQuote",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "collateralToken",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "collateralDecimals",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "blockNumber",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "exact",
+                        "type": "bool"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "address",
+                                "name": "account",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "payer",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "uint8",
+                                "name": "source",
+                                "type": "uint8"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "operationalFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "depositFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "walletCreationFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "nativeTopUpFee",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "nativeGasCollateral",
+                                "type": "uint256"
+                            }
+                        ],
+                        "internalType": "struct IGaslessLayer.FeePayment[]",
+                        "name": "payments",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalFee",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalDebit",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "freeOpsApplied",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "nativeSponsored",
+                        "type": "bool"
+                    }
+                ],
+                "internalType": "struct IGaslessLayer.FeeQuote",
+                "name": "",
+                "type": "tuple"
             }
         ],
         "stateMutability": "view",
@@ -2529,6 +2908,19 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "setWalletCreationFee",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "owner",
                 "type": "address"
@@ -2613,6 +3005,19 @@
     {
         "inputs": [
             {
+                "internalType": "bytes",
+                "name": "callData",
+                "type": "bytes"
+            }
+        ],
+        "name": "simulateFeeQuote",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "bytes4",
                 "name": "interfaceId",
                 "type": "bytes4"
@@ -2677,6 +3082,19 @@
         "name": "upgradeToAndCall",
         "outputs": [],
         "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "walletCreationFee",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {

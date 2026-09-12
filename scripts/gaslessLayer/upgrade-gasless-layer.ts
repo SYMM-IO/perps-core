@@ -20,6 +20,7 @@ const NATIVE_TOP_UP_LIBRARY_CONTRACT = "contracts/gaslessLayer/libraries/Gasless
 const OPERATIONAL_FEE_LIBRARY_CONTRACT = "contracts/gaslessLayer/libraries/GaslessOperationalFeeLib.sol:GaslessOperationalFeeLib"
 const DEPLOYER_LIBRARY_CONTRACT = "contracts/gaslessLayer/libraries/GaslessWalletDeployerLib.sol:GaslessWalletDeployerLib"
 const EXECUTION_LIBRARY_CONTRACT = "contracts/gaslessLayer/libraries/GaslessWalletExecutionLib.sol:GaslessWalletExecutionLib"
+const QUOTE_LIBRARY_CONTRACT = "contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:GaslessFeeQuoteLib"
 const DEFAULT_VERIFY_PROVIDER = "etherscan"
 const require = createRequire(import.meta.url)
 const VERIFY_PROVIDERS = new Set(["etherscan", "blockscout", "sourcify"])
@@ -89,10 +90,11 @@ function readGaslessLayerLibrariesFromEnv(required: boolean): GaslessLayerLibrar
 	const operationalFeeLib = env("GASLESS_OPERATIONAL_FEE_LIB")
 	const deployerLib = env("GASLESS_WALLET_DEPLOYER_LIB")
 	const executionLib = env("GASLESS_WALLET_EXECUTION_LIB")
-	if (!nativeTopUpLib && !operationalFeeLib && !deployerLib && !executionLib && !required) return undefined
-	if (!nativeTopUpLib || !operationalFeeLib || !deployerLib || !executionLib) {
+	const quoteLib = env("GASLESS_FEE_QUOTE_LIB")
+	if (!nativeTopUpLib && !operationalFeeLib && !deployerLib && !executionLib && !quoteLib && !required) return undefined
+	if (!nativeTopUpLib || !operationalFeeLib || !deployerLib || !executionLib || !quoteLib) {
 		throw new Error(
-			"GASLESS_NATIVE_GAS_TOP_UP_LIB, GASLESS_OPERATIONAL_FEE_LIB, GASLESS_WALLET_DEPLOYER_LIB and GASLESS_WALLET_EXECUTION_LIB must all be set when verifying or using a supplied linked implementation.",
+			"GASLESS_NATIVE_GAS_TOP_UP_LIB, GASLESS_OPERATIONAL_FEE_LIB, GASLESS_WALLET_DEPLOYER_LIB, GASLESS_WALLET_EXECUTION_LIB and GASLESS_FEE_QUOTE_LIB must all be set when verifying or using a supplied linked implementation.",
 		)
 	}
 	return {
@@ -100,6 +102,7 @@ function readGaslessLayerLibrariesFromEnv(required: boolean): GaslessLayerLibrar
 		GaslessOperationalFeeLib: normalizeAddress(operationalFeeLib, "GASLESS_OPERATIONAL_FEE_LIB"),
 		GaslessWalletDeployerLib: normalizeAddress(deployerLib, "GASLESS_WALLET_DEPLOYER_LIB"),
 		GaslessWalletExecutionLib: normalizeAddress(executionLib, "GASLESS_WALLET_EXECUTION_LIB"),
+		GaslessFeeQuoteLib: normalizeAddress(quoteLib, "GASLESS_FEE_QUOTE_LIB"),
 	}
 }
 
@@ -422,6 +425,10 @@ async function verifyGaslessLayerLibrariesOnExplorer(libraries: GaslessLayerLibr
 	await verifyOnExplorer(libraries.GaslessWalletExecutionLib, EXECUTION_LIBRARY_CONTRACT, "GaslessWalletExecutionLib", {
 		GaslessWalletDeployerLib: libraries.GaslessWalletDeployerLib,
 	})
+	await verifyOnExplorer(libraries.GaslessFeeQuoteLib, QUOTE_LIBRARY_CONTRACT, "GaslessFeeQuoteLib", {
+		GaslessOperationalFeeLib: libraries.GaslessOperationalFeeLib,
+		GaslessWalletExecutionLib: libraries.GaslessWalletExecutionLib,
+	})
 }
 
 async function verifyImplementationOnExplorer(implementation: string, libraries?: GaslessLayerLibraryAddresses): Promise<void> {
@@ -517,6 +524,7 @@ async function main() {
 			console.log("Using supplied GaslessOperationalFeeLib:", linkedLibraries.GaslessOperationalFeeLib)
 			console.log("Using supplied GaslessWalletDeployerLib:", linkedLibraries.GaslessWalletDeployerLib)
 			console.log("Using supplied GaslessWalletExecutionLib:", linkedLibraries.GaslessWalletExecutionLib)
+			console.log("Using supplied GaslessFeeQuoteLib:", linkedLibraries.GaslessFeeQuoteLib)
 		}
 		console.log("Using supplied implementation:", newImplementation)
 	} else {
@@ -533,6 +541,7 @@ async function main() {
 			console.log("GaslessOperationalFeeLib:", linkedLibraries.GaslessOperationalFeeLib)
 			console.log("GaslessWalletDeployerLib:", linkedLibraries.GaslessWalletDeployerLib)
 			console.log("GaslessWalletExecutionLib:", linkedLibraries.GaslessWalletExecutionLib)
+			console.log("GaslessFeeQuoteLib:", linkedLibraries.GaslessFeeQuoteLib)
 
 			const Gateway = await ethers.getContractFactory("GaslessLayer", gaslessLayerFactoryOptions(linkedLibraries, signer))
 			console.log("Deploying GaslessLayer implementation...")

@@ -119,6 +119,8 @@ export interface GaslessLayerRecipe {
 	admin?: string
 	treasury?: string
 	depositFee?: string
+	/** Flat collateral fee per wallet deployment; defaults to zero. */
+	walletCreationFee?: string
 	minimumDeposit?: string
 	defaultSelectorFee?: string
 	dailyFreeOpsLimit?: string

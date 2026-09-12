@@ -12,6 +12,7 @@ export const GASLESS_LIBRARY_FQNS = {
 	GaslessOperationalFeeLib: "contracts/gaslessLayer/libraries/GaslessOperationalFeeLib.sol:GaslessOperationalFeeLib",
 	GaslessWalletDeployerLib: "contracts/gaslessLayer/libraries/GaslessWalletDeployerLib.sol:GaslessWalletDeployerLib",
 	GaslessWalletExecutionLib: "contracts/gaslessLayer/libraries/GaslessWalletExecutionLib.sol:GaslessWalletExecutionLib",
+	GaslessFeeQuoteLib: "contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:GaslessFeeQuoteLib",
 } as const
 
 export type GaslessLayerLibraries = Record<keyof typeof GASLESS_LIBRARY_FQNS, string>
@@ -36,6 +37,7 @@ export interface GaslessLayerResolvedConfig {
 	collateral: string
 	treasury: string
 	depositFee: string
+	walletCreationFee: string
 	minimumDeposit: string
 	defaultSelectorFee: string
 	dailyFreeOpsLimit: string
@@ -84,12 +86,20 @@ export function createGaslessLayerVerificationRecords(
 ): GaslessLayerVerificationRecord[] {
 	const initData = factory.interface.encodeFunctionData("initialize", initializerArgs)
 	return [
-		...Object.entries(addresses.libraries).map(([name, address]) => ({
-			name: GASLESS_LIBRARY_FQNS[name as keyof typeof GASLESS_LIBRARY_FQNS],
-			address,
-			constructorArguments: [],
-			...(name === "GaslessWalletExecutionLib" ? { libraries: { GaslessWalletDeployerLib: addresses.libraries.GaslessWalletDeployerLib } } : {}),
-		})),
+		...Object.entries(addresses.libraries).map(([name, address]) => {
+			const record: GaslessLayerVerificationRecord = {
+				name: GASLESS_LIBRARY_FQNS[name as keyof typeof GASLESS_LIBRARY_FQNS],
+				address,
+				constructorArguments: [],
+			}
+			if (name === "GaslessWalletExecutionLib") record.libraries = { GaslessWalletDeployerLib: addresses.libraries.GaslessWalletDeployerLib }
+			if (name === "GaslessFeeQuoteLib")
+				record.libraries = {
+					GaslessOperationalFeeLib: addresses.libraries.GaslessOperationalFeeLib,
+					GaslessWalletExecutionLib: addresses.libraries.GaslessWalletExecutionLib,
+				}
+			return record
+		}),
 		{
 			name: GASLESS_LAYER_FQN,
 			address: addresses.implementation,
@@ -129,12 +139,19 @@ export async function deployGaslessLayer(
 	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.gaslessLayer")
 
 	const GaslessWalletDeployerLib = await deployLibrary(hre, checkpoint, input.vanity || null, "GaslessWalletDeployerLib")
-	const libraries: GaslessLayerLibraries = {
+	const baseLibraries = {
 		GaslessNativeGasTopUpLib: await deployLibrary(hre, checkpoint, input.vanity || null, "GaslessNativeGasTopUpLib"),
 		GaslessOperationalFeeLib: await deployLibrary(hre, checkpoint, input.vanity || null, "GaslessOperationalFeeLib"),
 		GaslessWalletDeployerLib,
 		GaslessWalletExecutionLib: await deployLibrary(hre, checkpoint, input.vanity || null, "GaslessWalletExecutionLib", {
 			GaslessWalletDeployerLib,
+		}),
+	}
+	const libraries: GaslessLayerLibraries = {
+		...baseLibraries,
+		GaslessFeeQuoteLib: await deployLibrary(hre, checkpoint, input.vanity || null, "GaslessFeeQuoteLib", {
+			GaslessOperationalFeeLib: baseLibraries.GaslessOperationalFeeLib,
+			GaslessWalletExecutionLib: baseLibraries.GaslessWalletExecutionLib,
 		}),
 	}
 	const factory = await ethers.getContractFactory("GaslessLayer", { libraries })
