@@ -563,6 +563,7 @@ export async function resolveGaslessLayerConfig(
 		collateral,
 		treasury,
 		depositFee: String(componentConfig.depositFee),
+		walletCreationFee: String(componentConfig.walletCreationFee ?? "0"),
 		minimumDeposit: String(componentConfig.minimumDeposit),
 		defaultSelectorFee: String(componentConfig.defaultSelectorFee),
 		dailyFreeOpsLimit: String(componentConfig.dailyFreeOpsLimit),
@@ -603,6 +604,7 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 		collateral,
 		treasury,
 		depositFee,
+		walletCreationFee,
 		minimumDeposit,
 		defaultSelectorFee,
 		dailyFreeOpsLimit,
@@ -626,6 +628,7 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 		contract.collateralToken(),
 		contract.treasury(),
 		contract.depositFee(),
+		contract.walletCreationFee(),
 		contract.minimumDeposit(),
 		contract.defaultSelectorFee(),
 		contract.dailyFreeOpsLimit(),
@@ -691,6 +694,7 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 	}
 	for (const [name, actual, expected] of [
 		["deposit fee", depositFee, input.depositFee],
+		["wallet creation fee", walletCreationFee, input.walletCreationFee],
 		["minimum deposit", minimumDeposit, input.minimumDeposit],
 		["default selector fee", defaultSelectorFee, input.defaultSelectorFee],
 		["daily free ops limit", dailyFreeOpsLimit, input.dailyFreeOpsLimit],
@@ -809,6 +813,9 @@ export async function deployAndConfigureGaslessLayer(
 		contract.RELAYER_ROLE(),
 	])
 
+	if ((await contract.walletCreationFee()).toString() !== resolved.walletCreationFee) {
+		await send(connected.setWalletCreationFee(resolved.walletCreationFee), "set GaslessLayer wallet creation fee")
+	}
 	if ((await contract.defaultSelectorFee()).toString() !== resolved.defaultSelectorFee) {
 		await send(connected.setDefaultSelectorFee(resolved.defaultSelectorFee), "set GaslessLayer default selector fee")
 	}

@@ -404,6 +404,12 @@ test("GaslessLayer rejects incomplete or unsafe operating policy", () => {
 	feeOrder.gaslessLayer = gaslessLayerDeploy({ depositFee: "5", minimumDeposit: "5" });
 	assert.throws(() => createDeploymentPlan(feeOrder), /minimumDeposit must be greater than depositFee/);
 
+	const creationFee = localRecipe();
+	creationFee.gaslessLayer = gaslessLayerDeploy({ walletCreationFee: "3" });
+	assert.doesNotThrow(() => createDeploymentPlan(creationFee));
+	creationFee.gaslessLayer.walletCreationFee = "-1";
+	assert.throws(() => createDeploymentPlan(creationFee), /walletCreationFee/);
+
 	const bps = localRecipe();
 	bps.gaslessLayer = gaslessLayerDeploy({ nativeGasTopUpFeeBps: 10001 });
 	assert.throws(() => createDeploymentPlan(bps), /nativeGasTopUpFeeBps must be <= 10000/);

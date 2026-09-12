@@ -225,6 +225,7 @@ describe("deployment recipe standalone component execution", function () {
 				admin: admin.address,
 				treasury: treasury.address,
 				depositFee: "2",
+				walletCreationFee: "13",
 				minimumDeposit: "5",
 				defaultSelectorFee: "7",
 				dailyFreeOpsLimit: "3",
@@ -258,7 +259,7 @@ describe("deployment recipe standalone component execution", function () {
 		const deployed = await executeComponentDeployment(hre, input)
 		expect(deployed.report.lifecycle).to.equal("complete")
 		expect(deployed.report.health.status).to.equal("passed")
-		expect(deployed.report.verification.records).to.have.length(6)
+		expect(deployed.report.verification.records).to.have.length(7)
 		expect(deployed.report.implementation).to.properAddress
 
 		const layer = await ethers.getContractAt("GaslessLayer", deployed.report.address!)
@@ -267,6 +268,7 @@ describe("deployment recipe standalone component execution", function () {
 		expect(await layer.instantLayer()).to.equal(await context.instantLayer.getAddress())
 		expect(await layer.treasury()).to.equal(treasury.address)
 		expect(await layer.defaultSelectorFee()).to.equal(7n)
+		expect(await layer.walletCreationFee()).to.equal(13n)
 		expect(await layer.dailyFreeOpsLimit()).to.equal(3n)
 		expect(await layer.revertWhenNativeSponsorLimitExhausted()).to.equal(true)
 		expect(await layer.nativeGasTopUpFeeBps()).to.equal(250n)

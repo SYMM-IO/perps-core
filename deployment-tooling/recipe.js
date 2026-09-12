@@ -535,6 +535,7 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 		"admin",
 		"treasury",
 		"depositFee",
+		"walletCreationFee",
 		"minimumDeposit",
 		"defaultSelectorFee",
 		"dailyFreeOpsLimit",
@@ -558,10 +559,11 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 	}
 	if (component.mode === "reuse") fail(source, `${name}.mode`, "reuse is not supported; use deploy or skip");
 
-	const requiredConfig = configFields.filter(field => field !== "admin");
+	const requiredConfig = configFields.filter(field => field !== "admin" && field !== "walletCreationFee");
 	required(component, requiredConfig, source, name);
 	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
 	address(component.treasury, source, `${name}.treasury`);
+	if (component.walletCreationFee !== undefined) uintString(component.walletCreationFee, source, `${name}.walletCreationFee`);
 	for (const field of [
 		"depositFee",
 		"minimumDeposit",
