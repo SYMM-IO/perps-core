@@ -379,6 +379,9 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 
 	function _completeAbort(uint256 symbolId, SymbolAdjustment storage adjustment) private {
 		require(!adjustment.restatementMutated, "SymbolAdjustmentFacet: Restatement already mutated");
+		// Prices remain in venue units throughout funding restoration. Invalidate those signatures at the final batch,
+		// and retain this boundary after the window closes and the old quote basis becomes active again.
+		adjustment.lastRestatementAbortedAt = block.timestamp;
 		adjustment.restating = false;
 		adjustment.restatementFactor = 0;
 		adjustment.restatementStartedAt = 0;

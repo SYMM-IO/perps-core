@@ -645,6 +645,12 @@ funding amount = 1 * 8 = 8</code></pre>
 						liquidation removal, and pending-quote cancellation do not set this flag because they do not leave basis-dependent state
 						behind. Operations must still reconcile the book before aborting. An aborted window's epoch is not reused.
 					</p>
+					<p>
+						Abort completion also records <code>lastRestatementAbortedAt</code>. With funding checkpoints, this is the final restoration
+						batch's block timestamp, not the earlier abort-start timestamp. Liquidation price signatures at or before this cutoff are
+						rejected even after the symbol becomes live again, preventing a venue-basis signature from being replayed against unchanged
+						old-basis quotes. Scheduling, confirmation, cancellation, and later restatement windows do not clear this cutoff.
+					</p>
 					<aside class="callout callout-important">
 						<strong>Abort requires completed funding preparation.</strong>
 						Core rejects abort in <code>FUNDING_PREPARATION</code>. Operations must submit and seal the complete PartyB manifest first, so
@@ -1082,14 +1088,44 @@ else:
 						prefer the dedicated PartyB dust-close flow because no exact normalized quantity exists for that quote.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Fresh liquidation price payloads have a strict timestamp boundary.</strong>
+						<strong>Liquidation price signatures commit to the current restatement state and have a strict timestamp boundary.</strong>
 						For PartyA legacy/deferred symbol prices, PartyA snapshot states, and isolated PartyB quote prices, the signed timestamp must
-						be strictly greater than <code>restatementStartedAt</code>. Equality is rejected to remove same-block ordering ambiguity
-						because those payloads do not carry <code>restatementEpoch</code>. Muon must value UPNL from the normalized mixed book and
-						issue the price payload after the window opens. Snapshot cumulative funding fields are not prices: they must continue to
-						reproduce Core's cumulative funding state. Clearing House prices are trusted role inputs rather than Muon signatures, but use
-						the same venue price basis while the window is open.
+						be strictly greater than <code>restatementStartedAt</code> while a window is open. If a restatement was aborted, the timestamp
+						must also strictly exceed <code>lastRestatementAbortedAt</code>, including outside a window. Equality is rejected to remove
+						same-block ordering ambiguity. The signed hash additionally binds each priced symbol's <code>restatementEpoch</code> and
+						<code>restating</code> flag, so even future-dated signatures become invalid when abort completes. Muon must value UPNL from
+						the normalized mixed book and issue the price payload after the window opens. Snapshot cumulative funding fields are not
+						prices: they must continue to reproduce Core's cumulative funding state. Clearing House prices are trusted role inputs rather
+						than Muon signatures, but use the same venue price basis while the window is open.
 					</aside>
+					<h3 id="liquidation-price-signature-domain">Muon liquidation price hash format</h3>
+					<p>
+						The liquidation signature structs and function selectors stay the same, but the signed hash changes. Muon and its gateway must
+						both sign the following envelope. <code>payloadHash</code> is the previous hash from <code>verifyLiquidationSig</code>,
+						<code>verifyDeferredLiquidationSig</code>, <code>verifyLiquidationSnapshotSig</code>, or <code>verifyQuotePrices</code>,
+						including its existing chain ID.
+					</p>
+					<pre><code class="language-solidity">domain = keccak256("SYMMIO_LIQUIDATION_PRICE_BASIS_V1");
+priceBases[i] = keccak256(abi.encode(
+    symbolIds[i],              // uint256
+    restatementEpoch[i],       // uint256
+    restating[i]               // bool
+));
+signedHash = keccak256(abi.encode(domain, payloadHash, priceBases)); // bytes32, bytes32, bytes32[]</code></pre>
+					<p>
+						Use the supplied symbol IDs for legacy/deferred PartyA payloads, each state's symbol ID for snapshots, and each quote's
+						on-chain symbol ID for PartyB quote prices. Preserve the exact payload order and duplicate entries. Empty snapshot-start
+						payloads still use the envelope with an empty <code>bytes32[]</code>; they authorize no prices. Read each symbol's epoch and
+						flag through <code>getSymbolAdjustment</code> at the same block used to construct its prices and funding values.
+					</p>
+					<p>
+						Opening a window increments its epoch and sets <code>restating = true</code>. The flag stays true throughout
+						abort/finalization restoration and changes to false only at completion. A later window increments the epoch again. These
+						transitions invalidate the previous price signatures permanently, regardless of their timestamps. Changes to unrelated symbols
+						do not invalidate a payload. Release the Muon/gateway hash update together with these contract changes: signatures over the
+						previous hash are no longer accepted, including for symbols that have never been restated. There is no fallback to the
+						previous hash.
+					</p>
 					<p>
 						Liquidation funding follows the same cutoff as ordinary quote debt. Before an exit begins, internal quote and aggregate
 						calculations use the crystallized cutoff value even if Operations has not yet materialized that PartyB's checkpoint; the later
@@ -1098,7 +1134,8 @@ else:
 						restoration, internal calculations use the fresh epoch from the shared restoration timestamp, including before that PartyB's
 						restoration batch lands. The snapshot PartyA route carries Muon-signed cumulative fees instead of recomputing them at close
 						time, so Muon must publish the frozen cutoff cumulative value during maintenance and the fresh-epoch cumulative value after an
-						exit begins. No signature field or payload schema changes; only the cumulative-value calculation follows this lifecycle.
+						exit begins. The cumulative funding fields retain their existing types and follow this lifecycle; the signature hash uses the
+						price-basis envelope above.
 					</p>
 					<p>
 						When an old-basis quote closes, <code>closePositionFully</code> calls the inventory hook before subtracting normal aggregates.
@@ -1118,11 +1155,14 @@ else:
 						multi-step. When its price-setting step stores a venue-basis price for a restating symbol, Core sets
 						<code>restatementMutated</code> immediately. This prevents an abort from returning to the old basis and then reinterpreting
 						that stored price. During <code>ABORT_FUNDING_RESTORATION</code>, legacy, deferred, and snapshot PartyA price setup for the
-						affected symbol reverts, including between funding-restoration batches. Atomic isolated-PartyB and Clearing House closes
-						remain available under their existing guards. There is no governance function that zeros inventory or forces finalization past
-						nonzero counters. The emergency governance route is the existing <code>CLEARING_HOUSE_ROLE</code> takeover of an active PartyA
-						liquidation, or cross-PartyB liquidation, followed by explicit quote-ID batches and normal settlement. It cannot fabricate
-						completion and it does not bypass financial accounting.
+						affected symbol reverts, including between funding-restoration batches. After completion, the price-basis commitment rejects
+						signatures from the aborted window, even if they already started a liquidation or have a future timestamp. The persistent
+						timestamp cutoff also requires fresh timestamps. A snapshot liquidation bound to an invalidated timestamp cannot reuse that
+						snapshot; Operations must use the existing Clearing House takeover and settlement flow to resolve it. Atomic isolated-PartyB
+						and Clearing House closes remain available under their existing guards. There is no governance function that zeros inventory
+						or forces finalization past nonzero counters. The emergency governance route is the existing
+						<code>CLEARING_HOUSE_ROLE</code> takeover of an active PartyA liquidation, or cross-PartyB liquidation, followed by explicit
+						quote-ID batches and normal settlement. It cannot fabricate completion and it does not bypass financial accounting.
 					</p>
 					<aside class="callout callout-invariant">
 						<strong>Gas is bounded by caller-supplied liquidation batches.</strong>
@@ -1398,8 +1438,8 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 
 					<h3>Signature expiry and account-level payloads</h3>
 					<p>
-						Muon payloads do not carry <code>basisVersion</code>. Core uses a time gate, rather than a payload version, to separate old
-						and new bases. Finalization requires:
+						Ordinary Muon payloads do not carry <code>basisVersion</code>. Core retains a time gate for their expiry alongside the
+						separate price-basis commitment used by liquidation price signatures. Finalization requires:
 					</p>
 					<pre><code class="language-solidity">block.timestamp &gt; restatementStartedAt + LibMuon.maxUpnlValidTime()</code></pre>
 					<p>
@@ -1424,9 +1464,10 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 					<p>
 						Liquidation price payloads issued for use inside the window are different: their prices are explicitly venue-basis values, so
 						they do not extend the old-basis cutoff. Core requires each affected PartyA price/snapshot timestamp and PartyB quote-price
-						timestamp to be strictly later than <code>restatementStartedAt</code>. This local check does not validate the basis of the
-						signed UPNL or inspect symbols absent from an account-level payload; Muon must still construct the UPNL from normalized
-						venue-unit quotes. The ordinary signature expiry and liquidation timeout checks continue to apply independently.
+						timestamp to be strictly later than <code>restatementStartedAt</code>, and verifies the signed restatement state for every
+						priced symbol. These checks do not validate the basis of the signed UPNL or inspect symbols absent from an account-level
+						payload; Muon must still construct the UPNL from normalized venue-unit quotes. The ordinary signature expiry and liquidation
+						timeout checks continue to apply independently.
 					</p>
 					<p>
 						The on-chain finalization deadline is sufficient only when the proven latest old-basis timestamp is no later than
@@ -1900,6 +1941,8 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 										<code>restating</code> is the open-window flag. <code>restatementMutated</code> resets to false at start,
 										becomes true on a quote rewrite or PartyA liquidation price snapshot, and is not cleared by finalization.
 										<code>restatementFactor</code> and <code>restatementStartedAt</code> are zero outside a window.
+										<code>lastRestatementAbortedAt</code> retains the latest abort-completion timestamp; zero means no abort.
+										Liquidation price signatures must strictly postdate it, including after later windows and schedule changes.
 									</td>
 								</tr>
 								<tr>

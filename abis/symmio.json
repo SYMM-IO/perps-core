@@ -21876,6 +21876,11 @@
                         "internalType": "bool",
                         "name": "fundingSettlementRequired",
                         "type": "bool"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "lastRestatementAbortedAt",
+                        "type": "uint256"
                     }
                 ],
                 "internalType": "struct SymbolAdjustment",
