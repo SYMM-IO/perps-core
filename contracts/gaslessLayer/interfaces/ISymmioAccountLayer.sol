@@ -41,9 +41,9 @@ struct VirtualAccountDetail {
 /// @title ISymmioAccountLayer
 /// @notice Account-layer methods the gateway depends on.
 interface ISymmioAccountLayer {
-	/// @notice Create one or more sub-accounts OWNED BY `owner` (not `msg.sender`) under `affiliate`.
+	/// @notice Create one or more sub-accounts under `affiliate`, assigning ownership to `owner` rather than `msg.sender`.
 	/// @dev Matches perps-core 0.8.6 `CoreFacet.createSubAccountsFor`, which is gated by
-	///      `ACCOUNT_CREATOR_ROLE` — the gateway must be granted that role on the account layer.
+	///      `ACCOUNT_CREATOR_ROLE`. The gateway must have that role on the account layer.
 	/// @return subAccounts The addresses of the newly created sub-accounts, in order.
 	function createSubAccountsFor(
 		address owner,

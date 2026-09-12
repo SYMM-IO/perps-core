@@ -1,12 +1,12 @@
 import { expect } from "chai"
-import { keccak256 } from "ethers"
+import { Interface, keccak256 } from "ethers"
 import { readFileSync } from "node:fs"
 
 import {
 	GOLDEN_WALLET_INITCODE_HASH,
 	GOLDEN_WALLET_SALT_FOR_REFERENCE_OWNER,
 	REFERENCE_WALLET_OWNER,
-	gaslessWalletSalt,
+	walletSalt,
 } from "../scripts/gaslessLayer/gasless-wallet.js"
 
 describe("GaslessWallet frozen bytecode", () => {
@@ -26,8 +26,43 @@ describe("GaslessWallet frozen bytecode", () => {
 
 	it("pins the CREATE2 salt scheme to its golden value", () => {
 		expect(
-			gaslessWalletSalt(REFERENCE_WALLET_OWNER),
+			walletSalt(REFERENCE_WALLET_OWNER, 0n),
 			"The GaslessWallet salt scheme changed (version tag or abi.encode shape) — this MOVES every deposit address.",
 		).to.equal(GOLDEN_WALLET_SALT_FOR_REFERENCE_OWNER)
+	})
+})
+
+describe("GaslessLayer wallet API", () => {
+	it("keeps the original method names with explicit wallet parameters and no aliases or overloads", () => {
+		const artifact = JSON.parse(readFileSync("artifacts/contracts/gaslessLayer/GaslessLayer.sol/GaslessLayer.json", "utf8"))
+		const abi = new Interface(artifact.abi)
+		for (const name of [
+			"relayWalletBatch",
+			"getWalletAddress",
+			"settleWalletDepositToNewAccount",
+			"settleWalletDepositToExistingAccount",
+			"recoverWalletNonCollateralToken",
+			"getAccountOperationalFeeForWallets",
+			"getWalletOperationNonce",
+		]) {
+			expect(abi.getFunction(name), name).to.equal(null)
+		}
+		const expectedInputs: Record<string, string[]> = {
+			relayInstantBatch: ["signedOps", "signatures", "fills", "flexFillerSignatures", "walletIds"],
+			getGaslessWalletAddress: ["owner", "walletId"],
+			settleDepositToNewAccount: ["owner", "walletIndex", "affiliate", "accountData"],
+			settleDepositToExistingAccount: ["owner", "walletIndex", "subAccount"],
+			recoverNonCollateralToken: ["owner", "walletId", "token", "recipient"],
+			getAccountOperationalFee: ["account", "signedOps", "walletIds"],
+			walletOperationNonces: ["owner", "walletId", "signerAccount"],
+		}
+		for (const [name, inputs] of Object.entries(expectedInputs)) {
+			expect(
+				abi.getFunction(name)!.inputs.map(input => input.name),
+				name,
+			).to.deep.equal(inputs)
+		}
+		const functions = artifact.abi.filter((fragment: any) => fragment.type === "function")
+		expect(new Set(functions.map((fragment: any) => fragment.name)).size).to.equal(functions.length)
 	})
 })

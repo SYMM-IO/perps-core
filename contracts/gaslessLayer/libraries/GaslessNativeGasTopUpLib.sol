@@ -11,9 +11,8 @@ import { GaslessLayerDomain } from "./GaslessLayerDomain.sol";
 
 /// @title GaslessNativeGasTopUpLib
 /// @notice Linked native-gas top-up implementation for GaslessLayer.
-/// @dev This library is called through Solidity's linked-library delegatecall path. That keeps
-///      `address(this)`, `msg.sender`, and `msg.value` in the gateway/proxy context, which is required
-///      for the EIP-712 verifying contract, native transfer source, and storage writes to stay stable.
+/// @dev The gateway calls this linked library through delegatecall, preserving `address(this)`, `msg.sender`, and `msg.value`.
+///      The gateway proxy is the EIP-712 verifying contract, sends the native funds, and holds the updated storage.
 library GaslessNativeGasTopUpLib {
 	uint256 internal constant FEE_MULTIPLIER_BASE = 10000;
 	bytes32 internal constant NATIVE_GAS_TOP_UP_TYPEHASH = keccak256(
