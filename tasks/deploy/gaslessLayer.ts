@@ -123,6 +123,7 @@ export async function deployGaslessLayer(
 		instantLayer: string
 		treasury: string
 		depositFee: string
+		walletCreationFee: string
 		minimumDeposit: string
 		checkpoint: DeploymentCheckpoint
 		vanity?: VanityContext | null
@@ -162,6 +163,7 @@ export async function deployGaslessLayer(
 		input.instantLayer,
 		input.treasury,
 		input.depositFee,
+		input.walletCreationFee,
 		input.minimumDeposit,
 	] as const
 

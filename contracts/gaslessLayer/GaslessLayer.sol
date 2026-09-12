@@ -11,7 +11,6 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 
 import { GaslessWallet } from "./GaslessWallet.sol";
 import { IGaslessLayer } from "./interfaces/IGaslessLayer.sol";
-import { IGaslessLayerActions } from "./interfaces/IGaslessLayerActions.sol";
 import { IInstantLayer } from "./interfaces/IInstantLayer.sol";
 import { ISymmioCore } from "./interfaces/ISymmioCore.sol";
 import { ISymmioAccountLayer, SubAccountCreationData } from "./interfaces/ISymmioAccountLayer.sol";
@@ -32,7 +31,7 @@ import { GaslessFeeLimits } from "./libraries/GaslessFeeLimits.sol";
 ///      Operational fees are charged to SYMMIO billing accounts after batch execution. Deposits
 ///      sweep the selected wallet's full collateral balance and deduct the configured flat fee.
 ///      Linked libraries execute in proxy context and keep implementation size within EIP-170.
-contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, AccessControlUpgradeable, ReentrancyGuard, UUPSUpgradeable {
+contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable, ReentrancyGuard, UUPSUpgradeable {
 	using SafeERC20 for IERC20;
 
 	// ───────────────────────── Constants ──────────────────────────
@@ -95,7 +94,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 
 	/// @notice Last consumed nonce by GaslessWallet address and signer account for positive wallet indices.
 	/// @dev Index zero uses _legacyWalletOperationNonces to preserve its existing nonce stream.
-	mapping(address => mapping(address => uint256)) public walletNonces;
+	mapping(address => mapping(address => uint256)) private walletNonces;
 
 	/// @notice Flat collateral fee charged once per wallet deployment. Zero disables collection.
 	/// @dev Uses the first reserved slot so existing proxy storage and wallet addresses remain unchanged.
@@ -117,6 +116,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		address instantLayer_,
 		address treasury_,
 		uint256 depositFee_,
+		uint256 walletCreationFee_,
 		uint256 minimumDeposit_
 	) external initializer {
 		if (admin == address(0) || core_ == address(0) || accountLayer_ == address(0) || instantLayer_ == address(0) || treasury_ == address(0))
@@ -134,6 +134,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		instantLayer = IInstantLayer(instantLayer_);
 		treasury = treasury_;
 		depositFee = depositFee_;
+		walletCreationFee = walletCreationFee_;
 		minimumDeposit = minimumDeposit_;
 		collateralToken = ISymmioCore(core_).getCollateral();
 	}
@@ -155,7 +156,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		bytes[][] calldata fills,
 		bytes[][] calldata flexFillerSignatures,
 		uint256[] memory walletIds
-	) external onlyRole(RELAYER_ROLE) nonReentrant returns (bytes[] memory results) {
+	) external override onlyRole(RELAYER_ROLE) nonReentrant returns (bytes[] memory results) {
 		if (walletIds.length != signedOps.length) revert ArrayLengthMismatch();
 		if (signedOps.length == 0) revert EmptyOperationBatch();
 		if (signedOps.length != signatures.length) revert ArrayLengthMismatch();
@@ -208,7 +209,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		bytes[] calldata signatures,
 		bytes[][] calldata fills,
 		bytes[][] calldata flexFillerSignatures
-	) external onlyRole(RELAYER_ROLE) nonReentrant returns (bytes[] memory results) {
+	) external override onlyRole(RELAYER_ROLE) nonReentrant returns (bytes[] memory results) {
 		if (signedOps.length == 0) revert EmptyOperationBatch();
 
 		// Templates execute entirely through InstantLayer. instantLayer.executeTemplate checks the
@@ -227,7 +228,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	function relayGrantBatchDelegationBySig(
 		IInstantLayer.SignedDelegation calldata signedDelegation,
 		bytes calldata signature
-	) external onlyRole(RELAYER_ROLE) nonReentrant {
+	) external override onlyRole(RELAYER_ROLE) nonReentrant {
 		IInstantLayer.DelegationInfo calldata info = signedDelegation.delegationInfo;
 		address delegatorAccount = info.account.addr;
 		(address payer, uint256 fee) = _collectOneOperationalFee(delegatorAccount, IInstantLayer.grantBatchDelegationBySig.selector);
@@ -246,7 +247,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	function relayNativeGasTopUp(
 		IGaslessLayer.NativeGasTopUpRequest calldata request,
 		bytes calldata signature
-	) external payable onlyRole(RELAYER_ROLE) nonReentrant {
+	) external payable override onlyRole(RELAYER_ROLE) nonReentrant {
 		GaslessNativeGasTopUpLib.NativeGasTopUpResult memory topUp = GaslessNativeGasTopUpLib.relayNativeGasTopUp(
 			topUpNonces,
 			dailyNativeSponsorUsage,
@@ -277,19 +278,19 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @dev Relayer-only. Sweeps the full collateral balance and deducts the flat fee. The relayer supplies account settings without a user signature.
 	///      Emits WalletDepositSettled for every index, including zero.
 	/// @param owner Owner address used to derive the GaslessWallet address.
-	/// @param walletIndex Wallet index; zero selects the original wallet.
+	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @param affiliate Affiliate selected by the relayer for the new account.
 	/// @param accountData Account settings; symmioCore is replaced with the gateway's configured core.
 	/// @return subAccount Address of the created and funded sub-account.
 	function settleDepositToNewAccount(
 		address owner,
-		uint256 walletIndex,
+		uint256 walletId,
 		address affiliate,
 		SubAccountCreationData calldata accountData
-	) external onlyRole(RELAYER_ROLE) nonReentrant returns (address subAccount) {
+	) external override onlyRole(RELAYER_ROLE) nonReentrant returns (address subAccount) {
 		if (owner == address(0)) revert ZeroAddress();
 
-		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletIndex);
+		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletId);
 
 		SubAccountCreationData[] memory accountsData = new SubAccountCreationData[](1);
 		accountsData[0] = accountData;
@@ -302,24 +303,28 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		if (actualOwner != owner) revert AccountOwnerMismatch(subAccount, owner, actualOwner);
 
 		_depositCollateralToCore(subAccount, netDeposit);
-		emit WalletDepositSettled(owner, walletIndex, subAccount, netDeposit, collectedDepositFee);
+		emit WalletDepositSettled(owner, walletId, subAccount, netDeposit, collectedDepositFee, DepositDestination.NEW_ACCOUNT);
 	}
 
 	/// @notice Settle collateral from the selected wallet into an existing owner-held sub-account.
 	/// @dev Relayer-only. The destination must belong to owner. Sweeps the full collateral balance and deducts the flat fee.
 	///      Emits WalletDepositSettled for every index, including zero.
 	/// @param owner Owner address used to derive the GaslessWallet address.
-	/// @param walletIndex Wallet index; zero selects the original wallet.
+	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @param subAccount Existing sub-account that receives the net deposit.
-	function settleDepositToExistingAccount(address owner, uint256 walletIndex, address subAccount) external onlyRole(RELAYER_ROLE) nonReentrant {
+	function settleDepositToExistingAccount(
+		address owner,
+		uint256 walletId,
+		address subAccount
+	) external override onlyRole(RELAYER_ROLE) nonReentrant {
 		if (owner == address(0) || subAccount == address(0)) revert ZeroAddress();
 
 		address actualOwner = accountLayer.ownerOf(subAccount);
 		if (actualOwner != owner) revert AccountOwnerMismatch(subAccount, owner, actualOwner);
 
-		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletIndex);
+		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletId);
 		_depositCollateralToCore(subAccount, netDeposit);
-		emit WalletDepositSettled(owner, walletIndex, subAccount, netDeposit, collectedDepositFee);
+		emit WalletDepositSettled(owner, walletId, subAccount, netDeposit, collectedDepositFee, DepositDestination.EXISTING_ACCOUNT);
 	}
 
 	/// @notice Withdraw funds from the caller's selected wallet without a relayer or SYMMIO account.
@@ -335,7 +340,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		address token,
 		address recipient,
 		uint256 amount
-	) external nonReentrant returns (uint256 withdrawnAmount) {
+	) external override nonReentrant returns (uint256 withdrawnAmount) {
 		if (recipient == address(0)) revert ZeroAddress();
 		if (amount == 0) revert WalletWithdrawalAmountZero();
 		GaslessWallet wallet = _getWalletAndCollectCreationFee(msg.sender, walletId);
@@ -351,14 +356,14 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @notice Preview GaslessLayer charges for encoded action calldata without signatures or state changes.
 	/// @dev Uses current balances, allowances and configuration. Does not execute the action or validate its signatures.
 	///      State changes inside a batch can change the fees and payer. Use simulateFeeQuote on the completed request.
-	function previewFeeQuote(bytes calldata callData, uint256 nativeAmount) external view returns (FeeQuote memory) {
+	function previewFeeQuote(bytes calldata callData, uint256 nativeAmount) external view override returns (FeeQuote memory) {
 		return GaslessFeeQuoteLib.preview(callData, nativeAmount);
 	}
 
 	/// @notice Simulate the complete call, including signatures, roles and fee collection, through eth_call.
 	/// @dev ALWAYS reverts: FeeQuoteResult contains the exact quote; FeeQuoteExecutionFailed contains the original failure.
 	///      Use the submitting relayer/admin/owner as `from` and the intended native `value`. No changes can persist, even if sent as a transaction.
-	function simulateFeeQuote(bytes calldata callData) external payable {
+	function simulateFeeQuote(bytes calldata callData) external payable override {
 		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
 		GaslessFeeQuoteLib.execute(callData, true, 0);
 	}
@@ -366,9 +371,9 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @notice Execute an action with a caller-supplied cap on total GaslessLayer collateral debit, in 18 decimals.
 	/// @dev Retains the underlying action's roles. This caller limit is useful for unsigned settlement/admin actions.
 	///      User-signed operation limits are enforced separately, even when relayed directly.
-	function executeWithFeeLimit(bytes calldata callData, uint256 maxTotalDebit) external payable returns (bytes memory) {
+	function executeWithFeeLimit(bytes calldata callData, uint256 maxTotalDebit18) external payable override returns (bytes memory) {
 		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
-		return GaslessFeeQuoteLib.execute(callData, false, maxTotalDebit);
+		return GaslessFeeQuoteLib.execute(callData, false, maxTotalDebit18);
 	}
 
 	/// @notice Predict the owner's selected GaslessWallet address without deploying it.
@@ -376,15 +381,15 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @return Predicted GaslessWallet address.
-	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address) {
+	function getGaslessWalletAddress(address owner, uint256 walletId) external view override returns (address) {
 		return GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
 	}
 
 	/// @notice Quote the flat collateral fee for deploying the selected wallet now.
 	/// @dev Already deployed wallets return zero. This fee is separate from SYMMIO operational fees and their free quota.
-	function getWalletCreationFee(address owner, uint256 walletId) external view returns (uint256) {
+	function getWalletCreationFee(address owner, uint256 walletId) external view override returns (uint256 feeTokenUnits) {
 		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
-		return wallet.code.length == 0 ? walletCreationFee : 0;
+		feeTokenUnits = wallet.code.length == 0 ? walletCreationFee : 0;
 	}
 
 	/// @notice Read the last consumed wallet-operation nonce for the selected wallet and signer account.
@@ -393,7 +398,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @param signerAccount Account specified in the signed operation.
 	/// @return Last consumed nonce; the next operation must use this value plus one.
-	function walletOperationNonces(address owner, uint256 walletId, address signerAccount) external view returns (uint256) {
+	function walletOperationNonces(address owner, uint256 walletId, address signerAccount) external view override returns (uint256) {
 		if (walletId == 0) return _legacyWalletOperationNonces[signerAccount];
 		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
 		return walletNonces[wallet][signerAccount];
@@ -403,7 +408,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @dev Uses the existing GaslessGateway domain and signed target; the wallet index is not a separate signed field.
 	/// @param signedOp Wallet operation to hash.
 	/// @return EIP-712 operation digest.
-	function getWalletOperationHash(IInstantLayer.SignedOperation calldata signedOp) public view returns (bytes32) {
+	function getWalletOperationHash(IInstantLayer.SignedOperation calldata signedOp) public view override returns (bytes32) {
 		return GaslessWalletExecutionLib.getWalletOperationHash(signedOp);
 	}
 
@@ -412,7 +417,10 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @param signedOp Wallet operation whose digest is checked.
 	/// @param signature Signature to verify.
 	/// @return Whether the signature is valid for signedOp.signer.
-	function isValidWalletOperationSignature(IInstantLayer.SignedOperation calldata signedOp, bytes calldata signature) external view returns (bool) {
+	function isValidWalletOperationSignature(
+		IInstantLayer.SignedOperation calldata signedOp,
+		bytes calldata signature
+	) external view override returns (bool) {
 		return GaslessWalletExecutionLib.isValidWalletOperationSignature(signedOp, signature);
 	}
 
@@ -478,12 +486,14 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	}
 
 	/// @notice Total Symmio collateral charged for a paid top-up with `collateralAmount`.
-	function getNativeGasTopUpCharge(uint256 collateralAmount) external view returns (uint256 feeAmount, uint256 totalCollateralCharge) {
-		return GaslessNativeGasTopUpLib.getNativeGasTopUpCharge(collateralAmount, nativeGasTopUpFeeBps);
+	function getNativeGasTopUpCharge(
+		uint256 collateralAmount18
+	) external view override returns (uint256 feeAmount18, uint256 totalCollateralCharge18) {
+		return GaslessNativeGasTopUpLib.getNativeGasTopUpCharge(collateralAmount18, nativeGasTopUpFeeBps);
 	}
 
 	/// @notice Free instant-operations remaining for `account` today (max uint when the quota is disabled).
-	function dailyFreeOpsRemaining(address account) external view returns (uint256) {
+	function dailyFreeOpsRemaining(address account) external view override returns (uint256) {
 		uint256 limit = dailyFreeOpsLimit;
 		if (limit == 0) return type(uint256).max;
 		address billingAccount = _resolveBillingAccount(account);
@@ -499,8 +509,8 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	}
 
 	/// @notice Base fee for a single operation with the given function `selector`, before core multipliers or quota.
-	function getBaseOperationalFee(bytes4 selector) external view returns (uint256) {
-		return _baseSelectorFee(selector);
+	function getBaseOperationalFee(bytes4 selector) external view override returns (uint256 amount18) {
+		amount18 = _baseSelectorFee(selector);
 	}
 
 	/// @notice Quote account fees for InstantLayer and indexed GaslessWallet operations.
@@ -511,14 +521,14 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	/// @param account Account whose operations are quoted; virtual accounts resolve to their billing parent.
 	/// @param signedOps Operations to identify and price; only the requested billing account's operations contribute to the quote.
 	/// @param walletIds Wallet index per operation; use zero for InstantLayer operations or the original wallet.
-	/// @return amountDue Total quoted collateral charge; zero when fully waived or blocked by the quota policy.
+	/// @return amountDue18 Total quoted collateral charge in 18 decimals; zero when fully waived or blocked by the quota policy.
 	/// @return freeOpsApplied Number of the billing account's operations covered by its remaining daily quota.
 	/// @return wouldBlockOnQuota Whether execution would exceed the daily quota in block mode.
 	function getAccountOperationalFee(
 		address account,
 		IInstantLayer.SignedOperation[] calldata signedOps,
 		uint256[] calldata walletIds
-	) external view returns (uint256 amountDue, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
+	) external view override returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
 		return GaslessFeeQuoteLib.accountOperationalFee(account, signedOps, walletIds);
 	}
 
@@ -542,7 +552,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 
 	/// @notice Recover non-collateral tokens from the selected GaslessWallet.
 	/// @dev Config-admin-only. Rejects the collateral token and a zero recipient. Deploys the wallet if needed
-	///      and pays its creation fee from wallet collateral to treasury before recovering the other token.
+	///      without collecting a creation fee or moving wallet collateral.
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @param token Non-collateral token to recover.
@@ -553,15 +563,15 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		uint256 walletId,
 		address token,
 		address recipient
-	) external onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
+	) external override onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
 		if (token == collateralToken) revert CollateralRecoveryDisabled();
 		if (recipient == address(0)) revert ZeroAddress();
-		GaslessWallet qWallet = _getWalletAndCollectCreationFee(owner, walletId);
+		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		amount = qWallet.sweepTokenBalance(token, recipient);
 		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
 	}
 
-	/// @dev Owner withdrawals and admin recovery pay first-deployment fees from the wallet's collateral.
+	/// @dev Owner withdrawals pay first-deployment fees from the wallet's collateral.
 	function _getWalletAndCollectCreationFee(address owner, uint256 walletId) internal returns (GaslessWallet) {
 		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		uint256 creationFee = deployed ? walletCreationFee : 0;
@@ -677,7 +687,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 
 	// ═════════════════════ Internal: Fee Accounting ═════════════════════
 
-	/// @dev Core balances and allowances use 18 decimals; deposit and recovery fees use collateral token decimals.
+	/// @dev Core balances and allowances use 18 decimals; deposit and owner-withdrawal fees use collateral token decimals.
 	///      Core only permits collateral tokens with at most 18 decimals, so conversion is exact.
 	function _creationFeeInCoreDecimals(uint256 amount) internal view returns (uint256) {
 		if (amount == 0) return 0;
