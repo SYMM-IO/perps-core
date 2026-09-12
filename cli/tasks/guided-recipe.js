@@ -355,7 +355,7 @@ function recipeReviewText(recipe, { identityPath, digest, only } = {}) {
 			? [
 					`Gasless treasury: ${recipe.gaslessLayer.treasury}`,
 					`Gasless relayers: ${recipe.gaslessLayer.relayers?.length || 0}`,
-					`Gasless fees: deposit ${recipe.gaslessLayer.depositFee} • minimum ${recipe.gaslessLayer.minimumDeposit} • default selector ${recipe.gaslessLayer.defaultSelectorFee}`,
+					`Gasless fees: deposit ${recipe.gaslessLayer.depositFee} • wallet creation ${recipe.gaslessLayer.walletCreationFee ?? "0"} • minimum ${recipe.gaslessLayer.minimumDeposit} • default selector ${recipe.gaslessLayer.defaultSelectorFee}`,
 					`Gasless quotas: ${recipe.gaslessLayer.dailyFreeOpsLimit} free operations • ${recipe.gaslessLayer.dailySponsoredNativeLimit} sponsored native units`,
 					`Gasless selector overrides: ${recipe.gaslessLayer.selectorFees?.length || 0}`,
 				]
@@ -802,6 +802,7 @@ export async function editGaslessLayer(ui, recipe) {
 	const gasless = recipe.gaslessLayer;
 	const treasury = await askAddress(ui, "GaslessLayer treasury", gasless.treasury);
 	const depositFee = await askUintString(ui, "GaslessLayer deposit fee", gasless.depositFee);
+	const walletCreationFee = await askUintString(ui, "GaslessLayer wallet creation fee", gasless.walletCreationFee ?? "0");
 	const minimumDeposit = await askUintString(ui, "GaslessLayer minimum deposit", gasless.minimumDeposit);
 	const defaultSelectorFee = await askUintString(ui, "Default operational fee per selector", gasless.defaultSelectorFee);
 	const dailyFreeOpsLimit = await askUintString(ui, "Daily free operations per account", gasless.dailyFreeOpsLimit);
@@ -828,6 +829,7 @@ export async function editGaslessLayer(ui, recipe) {
 		[
 			treasury,
 			depositFee,
+			walletCreationFee,
 			minimumDeposit,
 			defaultSelectorFee,
 			dailyFreeOpsLimit,
@@ -872,6 +874,7 @@ export async function editGaslessLayer(ui, recipe) {
 	Object.assign(gasless, {
 		treasury,
 		depositFee,
+		walletCreationFee,
 		minimumDeposit,
 		defaultSelectorFee,
 		dailyFreeOpsLimit,

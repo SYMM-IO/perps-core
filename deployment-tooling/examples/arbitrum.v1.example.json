@@ -161,6 +161,7 @@
 		"mode": "deploy",
 		"treasury": "REPLACE_WITH_GASLESS_TREASURY_ADDRESS",
 		"depositFee": "2000000",
+		"walletCreationFee": "0",
 		"minimumDeposit": "5000000",
 		"defaultSelectorFee": "0",
 		"dailyFreeOpsLimit": "0",

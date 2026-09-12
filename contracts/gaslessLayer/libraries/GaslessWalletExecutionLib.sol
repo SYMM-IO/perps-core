@@ -38,6 +38,7 @@ library GaslessWalletExecutionLib {
 		bytes result;
 		address owner;
 		address wallet;
+		bool deployed;
 		uint256 callCount;
 		bytes4[] feeSelectors;
 	}
@@ -113,11 +114,12 @@ library GaslessWalletExecutionLib {
 		GaslessWallet.Call[] memory calls = _decodeWalletExecuteCalls(signedOp.callData);
 		_assertWalletAuthority(IInstantLayer(instantLayer), signedOp, owner, canonicalAccount, calls);
 
-		(GaslessWallet wallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		execution = WalletExecutionResult({
 			result: abi.encode(wallet.execute(calls)),
 			owner: owner,
 			wallet: address(wallet),
+			deployed: deployed,
 			callCount: calls.length,
 			feeSelectors: _walletCallSelectors(calls)
 		});

@@ -53,6 +53,8 @@
 				<a class="toc-link level-3" href="#selector-pricing">Selector pricing</a>
 				<a class="toc-link level-3" href="#billing-identity">Billing identity and fallback</a>
 				<a class="toc-link level-3" href="#fee-timing">Fee timing and atomicity</a>
+				<a class="toc-link level-2" href="#frontend-fee-quotes">Frontend fee quotes</a>
+				<a class="toc-link level-3" href="#fee-limits">Signed fee limits</a>
 				<a class="toc-link level-2" href="#deployment">Deployment and wiring</a>
 				<a class="toc-link level-2" href="#integration-checklist">Integration checklist</a>
 				<a class="toc-link level-2" href="#events">Events</a>
@@ -329,7 +331,9 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 						</li>
 					</ul>
 					<p>
-						Gasless Layer sends the flat <code>depositFee</code> to <code>treasury</code> and deposits the remainder into Core.
+						Gasless Layer sends the flat <code>depositFee</code> and any <code>walletCreationFee</code> to <code>treasury</code> and
+						deposits the remainder into Core. The creation fee applies only when settlement deploys the wallet. The gross balance must
+						cover <code>minimumDeposit</code> and exceed the sum of both fees, leaving a positive net deposit.
 						<code>minimumDeposit</code> must remain greater than <code>depositFee</code>. A balance below the minimum stays at the
 						deterministic wallet until more collateral arrives or governance changes the fee policy.
 					</p>
@@ -340,6 +344,38 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 					</aside>
 
 					<h2 id="fees">Operational fees and billing</h2>
+					<h3 id="wallet-creation-fee">Wallet creation fee</h3>
+					<p>
+						A config admin sets the flat <code>walletCreationFee</code> with <code>setWalletCreationFee(amount)</code>, in collateral
+						token units. It defaults to zero. Deployment recipes accept the optional <code>gaslessLayer.walletCreationFee</code> field;
+						omitting it keeps the fee at zero. Existing proxies can configure it after upgrading without running the initializer again.
+					</p>
+					<ul>
+						<li>Deposit settlement deducts the fee from the wallet's incoming collateral and sends it to treasury.</li>
+						<li>
+							Wallet execution charges the SYMMIO billing account after the batch, using its operational-fee allowance and the usual
+							Virtual Account fallback. The wallet can spend its full withdrawal balance.
+						</li>
+						<li>
+							Admin token recovery takes the fee from wallet collateral and sends it to treasury. An undeployed wallet must hold enough
+							collateral for the fee before recovery can succeed.
+						</li>
+					</ul>
+					<p>
+						The fee applies once per wallet, including wallet ID zero. Reusing a wallet never charges it again, even if the fee was zero
+						when that wallet was deployed. Free-operation quotas and selector-fee multipliers do not change the creation fee. Execution
+						converts the fee to Core's 18-decimal accounting units; deposit and recovery payments use the token's decimals.
+						<code>getWalletCreationFee(owner, walletId)</code> returns the fee due for that wallet at the current state, or zero if
+						deployed. <code>getAccountOperationalFee</code> includes execution creation fees once per distinct undeployed wallet in the
+						supplied batch, assigned to its first operation. Do not add that fee again to the account quote. The common frontend quote
+						below includes creation fees for every deployment route.
+					</p>
+					<p>
+						<code>WalletCreationFeeCollected(wallet, payer, amount)</code> reports the creation fee in collateral token units. For
+						execution, <code>OperationalFeeRouted</code> and <code>InstantBatchRelayed.totalFee</code> include the converted fee in Core's
+						18 decimals. Core sends execution fees to its configured operational-fee receiver. Any failure rolls back the deployment, fee,
+						and other actions in that transaction.
+					</p>
 					<h3 id="selector-pricing">Selector pricing</h3>
 					<p>
 						The relayer never submits an operational-fee amount. Gasless Layer reads each operation selector, applies an explicit
@@ -380,11 +416,134 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 						still rolls that state back in the same transaction.
 					</p>
 
+					<h2 id="frontend-fee-quotes">Frontend fee quotes</h2>
+					<p>
+						Encode the exact GaslessLayer action you intend to submit. Both quote methods accept that calldata and cover InstantLayer
+						batches, templates, wallet execution, delegation relays, native gas top-ups, both deposit settlement methods, and admin token
+						recovery. They include GaslessLayer charges only. Core trading charges, external bridge fees, and transaction gas are outside
+						this quote.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Method</th>
+									<th>Use</th>
+									<th>Result</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>previewFeeQuote(callData, nativeAmount)</code></td>
+									<td>Before signing. Empty signatures are allowed.</td>
+									<td>
+										Prices the planned action using current configuration, wallet deployment state, quotas, balances and
+										allowances. Does not execute the action. Deposits can be priced before funds arrive.
+									</td>
+								</tr>
+								<tr>
+									<td><code>simulateFeeQuote(callData)</code></td>
+									<td>
+										After signing, through <code>eth_call</code>, with the submitting relayer/admin as <code>from</code> and the
+										actual native <code>value</code>.
+									</td>
+									<td>
+										Runs the complete action, including signatures, roles and fee collection. Always reverts to roll back all
+										changes. <code>FeeQuoteResult(quote)</code> means success;
+										<code>FeeQuoteExecutionFailed(reason)</code> carries the original failure.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Both methods return the same <code>FeeQuote</code> structure. Every monetary field uses <strong>18 decimals</strong>,
+						including wallet creation and deposit fees. <code>collateralDecimals</code> describes the ERC20 token and does not change
+						quote units. <code>totalFee</code> sums operational, deposit, wallet creation and native top-up fees.
+						<code>totalDebit</code> adds the collateral exchanged for native gas. It excludes the net deposit transferred into Core.
+					</p>
+					<p>
+						<code>payments</code> has one row per operation, or one row for a deposit, recovery or top-up. Each row identifies the
+						initiating <code>account</code>, actual <code>payer</code>, and <code>source</code>: <code>0</code> is a SYMMIO account and
+						<code>1</code> is wallet collateral. Its fields are <code>operationalFee</code>, <code>depositFee</code>,
+						<code>walletCreationFee</code>, <code>nativeTopUpFee</code>, and <code>nativeGasCollateral</code>. Group rows by payer and
+						source for account-level totals. The quote also reports <code>freeOpsApplied</code>, <code>nativeSponsored</code>,
+						<code>blockNumber</code>, <code>timestamp</code>, and <code>exact</code>.
+					</p>
+					<p>
+						A preview is a pricing estimate, not an execution check. For example, an approval inside a batch can change the multiplier
+						used for its own fee, and a transfer can change which account pays. Exact simulation observes these changes. An exact quote
+						applies at its reported block; later configuration, quota or balance changes can affect submission. Signed limits below bound
+						what the user accepts. Legacy signatures remain valid and uncapped.
+					</p>
+					<p>
+						The Ethers helper in <code>scripts/gaslessLayer/fee-quote.ts</code> handles both modes and decodes the simulation result. It
+						uses Ethers only and can be copied into a frontend or relayer. A failed call returns <code>status: "reverted"</code>, its
+						original revert bytes, and an error name when recognized. RPC failures are thrown. Never send the simulation method as a
+						transaction.
+					</p>
+					<pre><code class="language-typescript">import { formatUnits } from "ethers"
+import { quoteGaslessFee, gaslessFeeLimitSalt } from "./fee-quote"
+
+// Preview the operation before requesting its existing EIP-712 signature.
+let callData = gateway.interface.encodeFunctionData("relayInstantBatch", [
+  [operation], ["0x"], [[]], [[]], [walletId],
+])
+const preview = await quoteGaslessFee({ gateway, callData, mode: "preview" })
+if (preview.status !== "quoted") throw new Error(preview.errorName ?? preview.data)
+const acceptedMaximum = preview.quote.totalFee // User-approved limit for this one operation.
+operation.replayAttackHeader.salt = gaslessFeeLimitSalt(acceptedMaximum)
+const signature = await user.signTypedData(domain, operationTypes, operation)
+
+callData = gateway.interface.encodeFunctionData("relayInstantBatch", [
+  [operation], [signature], [[]], [[]], [walletId],
+])
+const result = await quoteGaslessFee({
+  gateway, callData, mode: "exact", from: relayerAddress,
+})
+if (result.status !== "quoted") throw new Error(result.errorName ?? result.data)
+console.log("GaslessLayer fee:", formatUnits(result.quote.totalFee, 18))
+console.log("Collateral debit:", formatUnits(result.quote.totalDebit, 18))
+// Submit this same callData through the relayer.</code></pre>
+
+					<h3 id="fee-limits">Signed fee limits</h3>
+					<p>
+						For a batch operation, template operation or signed delegation, use <code>gaslessFeeLimitSalt(maxFee)</code> as
+						<code>replayAttackHeader.salt</code> before signing. The existing EIP-712 type and relay arguments stay the same. The salt
+						contains the first eight bytes of <code>keccak256("SYMMIO_GASLESS_FEE_LIMIT_V1")</code>, a 16-byte unsigned fee limit, and
+						eight random bytes. The limit uses 18 decimals and includes the operation's wallet creation fee, regardless of quota or payer
+						fallback. It applies per use of that operation; multi-use operations retain their existing replay rules. Set zero to allow
+						only free execution. Removing or changing the limit invalidates the signature.
+					</p>
+					<p>
+						For native top-ups, use <code>signCappedNativeGasTopUp(signer, gateway, request, maxTotalCharge)</code>. The maximum includes
+						the collateral exchanged for native gas and the top-up fee, both in 18 decimals. It signs
+						<code>CappedNativeGasTopUpRequest</code>, which has the existing request fields followed by
+						<code>uint256 maxTotalCharge</code>, using the existing <code>GaslessGateway</code> version <code>1</code> domain. Pass the
+						returned <code>abi.encode(maxTotalCharge, signature)</code> as the existing relay's signature argument. Stripping that
+						envelope does not produce a valid legacy signature. A zero limit permits sponsorship only; exhaustion then reverts instead of
+						charging.
+					</p>
+					<p>
+						For unsigned deposit settlement or admin recovery, the submitting relayer or admin can call
+						<code>executeWithFeeLimit(callData, maxTotalDebit)</code>. It enforces the caller's aggregate 18-decimal debit limit and
+						retains the original role checks. This is a caller limit, not a user signature or a restriction on other authorized
+						relayer/admin calls. Quote the inner calldata and compare its <code>totalDebit</code> with the chosen limit before using this
+						wrapper. A limit failure reverts the entire action, including wallet deployment and all transfers.
+					</p>
+
 					<h2 id="deployment">Deployment and wiring</h2>
 					<p>
-						Gasless Layer depends on deployed Core, AccountLayer, and InstantLayer addresses. The deployment operator deploys four linked
+						Gasless Layer depends on deployed Core, AccountLayer, and InstantLayer addresses. The deployment operator deploys five linked
 						libraries, then the implementation and ERC1967 proxy. It records the implementation, libraries, initializer arguments,
 						verification data, and checkpoint state so an interrupted deployment can resume.
+					</p>
+					<p>
+						The quote interface adds <code>GaslessFeeQuoteLib</code>, linked to <code>GaslessOperationalFeeLib</code> and
+						<code>GaslessWalletExecutionLib</code>. Deploy compatible updated fee libraries and the implementation, then upgrade the
+						existing proxy without reinitializing it. Wallet creation code, deterministic addresses, existing storage slots, and existing
+						relay signatures are preserved. Refresh the frontend ABI from <code>abis/gaslessLayer.json</code> to expose the quote methods
+						and errors.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -433,8 +592,8 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 							withdrawal address.
 						</li>
 						<li>
-							Quote the fee with <code>getAccountOperationalFee</code>, but simulate the complete relay because earlier operations can
-							change the payer's final balance or allowance.
+							Preview through <code>previewFeeQuote</code>, sign the accepted fee limit, then use <code>simulateFeeQuote</code> on the
+							complete request before submission. Keep the caller, value and calldata identical to the intended transaction.
 						</li>
 						<li>Track InstantLayer replay headers, native top-up nonces, and wallet-operation nonces as separate replay spaces.</li>
 						<li>Index per-operation <code>OperationalFeeRouted</code> events instead of inferring one payer from a batch total.</li>

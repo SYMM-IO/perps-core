@@ -79,6 +79,7 @@ function entries() {
 	map["gaslessLayer/GaslessOperationalFeeLib"] = "libraries";
 	map["gaslessLayer/GaslessWalletDeployerLib"] = "libraries";
 	map["gaslessLayer/GaslessWalletExecutionLib"] = "libraries";
+	map["gaslessLayer/GaslessFeeQuoteLib"] = "libraries";
 	for (const name of CORE_FACETS) map[`core/${name}`] = "facets";
 	for (const name of CORE_LIBRARIES) map[`core/${name}`] = "libraries";
 	for (const name of ACCOUNT_LAYER_FACETS) map[`accountLayer/${name}`] = "facets";

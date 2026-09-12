@@ -4,6 +4,7 @@ pragma solidity 0.8.36;
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
 import { ISymmioCore } from "../interfaces/ISymmioCore.sol";
 import { ISymmioAccountLayer } from "../interfaces/ISymmioAccountLayer.sol";
+import { GaslessFeeAccounting } from "./GaslessFeeAccounting.sol";
 
 /// @title GaslessOperationalFeeLib
 /// @notice Settle operational fees with signer-VA fallback and quote fees using core's allowance state.
@@ -15,10 +16,12 @@ library GaslessOperationalFeeLib {
 	/// @param signer The op's signer account (may be a virtual account).
 	/// @param billingParent The signer's billing account (VA → parent SubAccount).
 	/// @param baseFee Sum of selector fees before any core multiplier; 0 when the free quota covers the operation.
+	/// @param creationFee Flat wallet creation fee in Core's 18 decimals, unaffected by the selector multiplier or free-operation quota.
 	struct OpBilling {
 		address signer;
 		address billingParent;
 		uint256 baseFee;
+		uint256 creationFee;
 	}
 
 	/// @dev Track each payer's total due and limits while assigning fees in operation order. Load limits once per payer.
@@ -39,7 +42,7 @@ library GaslessOperationalFeeLib {
 	///      on the parent so core reverts as usual.
 	/// @return totalFee Total charged across all payers.
 	/// @return opPayers Payer for each operation, used in the layer's OperationalFeeRouted events.
-	/// @return opFees Fee for each operation (0 when covered by the free quota).
+	/// @return opFees Fee for each operation, including any wallet creation fee.
 	function settleOperationalFees(
 		address core,
 		address accountLayer,
@@ -48,6 +51,20 @@ library GaslessOperationalFeeLib {
 		PayerState[] memory states;
 		uint256 stateCount;
 		(states, stateCount, opPayers, opFees) = _planOperationalFees(core, accountLayer, ops);
+		for (uint256 i; i < ops.length; i++) {
+			GaslessFeeAccounting.record(
+				IGaslessLayer.FeePayment(
+					ops[i].signer,
+					opPayers[i],
+					uint8(IGaslessLayer.FeeSource.SYMMIO_ACCOUNT),
+					opFees[i] - ops[i].creationFee,
+					0,
+					ops[i].creationFee,
+					0,
+					0
+				)
+			);
+		}
 
 		for (uint256 s = 0; s < stateCount; s++) {
 			if (states[s].due > 0) {
@@ -109,7 +126,7 @@ library GaslessOperationalFeeLib {
 		opFees = new uint256[](n);
 
 		for (uint256 i = 0; i < n; i++) {
-			if (ops[i].baseFee == 0) {
+			if (ops[i].baseFee == 0 && ops[i].creationFee == 0) {
 				opPayers[i] = ops[i].billingParent; // Record the parent for operations covered by the quota or priced at zero.
 				continue;
 			}
@@ -117,7 +134,7 @@ library GaslessOperationalFeeLib {
 			uint256 parentSlot;
 			(parentSlot, stateCount) = _payerSlot(states, stateCount, core, ops[i].billingParent);
 
-			uint256 parentFee = (ops[i].baseFee * states[parentSlot].feeMultiplier) / FEE_MULTIPLIER_BASE;
+			uint256 parentFee = (ops[i].baseFee * states[parentSlot].feeMultiplier) / FEE_MULTIPLIER_BASE + ops[i].creationFee;
 			if (_covers(states[parentSlot], parentFee)) {
 				states[parentSlot].due += parentFee;
 				opPayers[i] = ops[i].billingParent;
@@ -129,7 +146,7 @@ library GaslessOperationalFeeLib {
 			if (ops[i].signer != ops[i].billingParent && ISymmioAccountLayer(accountLayer).getVirtualAccount(ops[i].signer).isExists) {
 				uint256 vaSlot;
 				(vaSlot, stateCount) = _payerSlot(states, stateCount, core, ops[i].signer);
-				uint256 vaFee = (ops[i].baseFee * states[vaSlot].feeMultiplier) / FEE_MULTIPLIER_BASE;
+				uint256 vaFee = (ops[i].baseFee * states[vaSlot].feeMultiplier) / FEE_MULTIPLIER_BASE + ops[i].creationFee;
 				if (_covers(states[vaSlot], vaFee)) {
 					states[vaSlot].due += vaFee;
 					opPayers[i] = ops[i].signer;

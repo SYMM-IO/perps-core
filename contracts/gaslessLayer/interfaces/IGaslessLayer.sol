@@ -6,6 +6,38 @@ pragma solidity 0.8.36;
 interface IGaslessLayer {
 	// ─────────────────────────── Types ────────────────────────────
 
+	enum FeeSource {
+		SYMMIO_ACCOUNT,
+		WALLET_COLLATERAL
+	}
+
+	/// @notice One operation's charge. All amounts use 18 decimals, including wallet collateral fees.
+	struct FeePayment {
+		address account;
+		address payer;
+		uint8 source; // FeeSource, encoded as uint8 for standard library ABI tooling.
+		uint256 operationalFee;
+		uint256 depositFee;
+		uint256 walletCreationFee;
+		uint256 nativeTopUpFee;
+		uint256 nativeGasCollateral;
+	}
+
+	/// @notice GaslessLayer charges only. Core operation fees, bridge fees, and transaction gas are excluded.
+	/// @dev totalDebit is totalFee plus collateral exchanged for native gas. It excludes the net deposit itself.
+	struct FeeQuote {
+		address collateralToken;
+		uint8 collateralDecimals;
+		uint256 blockNumber;
+		uint256 timestamp;
+		bool exact;
+		FeePayment[] payments;
+		uint256 totalFee;
+		uint256 totalDebit;
+		uint256 freeOpsApplied;
+		bool nativeSponsored;
+	}
+
 	/// @notice User-signed native gas top-up intent.
 	struct NativeGasTopUpRequest {
 		address payerAccount;
@@ -37,6 +69,9 @@ interface IGaslessLayer {
 	);
 	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount);
 	event DepositFeeCollected(address indexed wallet, address indexed treasury, uint256 amount);
+	/// @notice Creation fee in collateral token decimals, paid from the wallet or charged to a SYMMIO billing account.
+	event WalletCreationFeeCollected(address indexed wallet, address indexed payer, uint256 amount);
+	event WalletCreationFeeUpdated(uint256 amount);
 	/// @notice Emitted when a GaslessWallet is deployed, including at index zero.
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
@@ -46,7 +81,7 @@ interface IGaslessLayer {
 	/// @param owner Owner of the source wallet and destination sub-account.
 	/// @param walletId Index of the source GaslessWallet.
 	/// @param subAccount Sub-account credited with the net deposit.
-	/// @param netDeposit Collateral credited after the flat deposit fee.
+	/// @param netDeposit Collateral credited after deposit and any wallet creation fees.
 	/// @param depositFee Collateral paid to the treasury as the flat deposit fee.
 	event WalletDepositSettled(address indexed owner, uint256 indexed walletId, address indexed subAccount, uint256 netDeposit, uint256 depositFee);
 	event WalletOperationRelayed(address indexed relayer, address indexed owner, address indexed wallet, uint256 callCount);
@@ -85,6 +120,7 @@ interface IGaslessLayer {
 	error ArrayLengthMismatch();
 	error DepositAmountBelowMinimum(uint256 amount, uint256 minimum);
 	error MinimumDepositNotAboveFee(uint256 minimumDeposit, uint256 depositFee);
+	error DepositAmountNotAboveFees(uint256 amount, uint256 totalFees);
 	error AccountOwnerMismatch(address account, address expectedOwner, address actualOwner);
 	error CollateralRecoveryDisabled();
 	error GaslessWalletAddressMismatch();
@@ -108,4 +144,12 @@ interface IGaslessLayer {
 	error InvalidWalletOperationSigner(address expectedOwner, address actualSigner);
 	error WalletDelegationMissing(address delegator, address delegate, bytes4 selector);
 	error InvalidWalletExecuteSelector(bytes4 selector);
+	error UnsupportedFeeQuoteCall(bytes4 selector);
+	error UnexpectedNativeValue(uint256 value);
+	error FeeQuoteContextActive();
+	/// @notice Successful simulation, returned by reverting so no state changes can persist.
+	error FeeQuoteResult(FeeQuote quote);
+	/// @notice The complete request failed. reason is the original revert data.
+	error FeeQuoteExecutionFailed(bytes reason);
+	error FeeLimitExceeded(uint256 actual, uint256 maximum);
 }

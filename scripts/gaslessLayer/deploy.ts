@@ -26,6 +26,7 @@ async function main() {
 	const INSTANT_LAYER = need("SYMMIO_INSTANT_LAYER")
 	const TREASURY = process.env.TREASURY || deployer.address
 	const DEPOSIT_FEE = process.env.DEPOSIT_FEE || "2000000"
+	const WALLET_CREATION_FEE = process.env.WALLET_CREATION_FEE || "0"
 	const MINIMUM_DEPOSIT = process.env.MINIMUM_DEPOSIT || "5000000"
 
 	if (isHyperEVM) {
@@ -40,6 +41,7 @@ async function main() {
 		console.log("GaslessOperationalFeeLib:", libraries.GaslessOperationalFeeLib)
 		console.log("GaslessWalletDeployerLib:", libraries.GaslessWalletDeployerLib)
 		console.log("GaslessWalletExecutionLib:", libraries.GaslessWalletExecutionLib)
+		console.log("GaslessFeeQuoteLib:", libraries.GaslessFeeQuoteLib)
 
 		const Gateway = await ethers.getContractFactory("GaslessLayer", gaslessLayerFactoryOptions(libraries, deployer))
 		const impl = await Gateway.deploy()
@@ -60,6 +62,8 @@ async function main() {
 		const proxy = await Proxy.deploy(await impl.getAddress(), initData)
 		await proxy.waitForDeployment()
 		console.log("GaslessLayer (proxy):", await proxy.getAddress())
+		const gateway = Gateway.attach(await proxy.getAddress())
+		await (await gateway.setWalletCreationFee(WALLET_CREATION_FEE)).wait()
 	} finally {
 		if (isHyperEVM) {
 			console.log("")
