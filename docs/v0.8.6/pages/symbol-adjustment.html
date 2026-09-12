@@ -640,9 +640,10 @@ funding amount = 1 * 8 = 8</code></pre>
 						After a direct-route abort, the state is still effective <code>SCHEDULED</code>, so the symbol remains frozen. Operations must
 						restart restatement, switch to the adjusted-price route with <code>confirmPriceAdjusted</code>, or cancel if the event was
 						called off. An abort from a later window normally returns to live <code>PRICE_ADJUSTED</code>. Core rejects abort once a quote
-						rewrite or a PartyA liquidation price snapshot sets <code>restatementMutated</code>. Funding settlement, atomic liquidation
-						removal, and pending-quote cancellation do not set this flag because they do not leave basis-dependent state behind.
-						Operations must still reconcile the book before aborting. An aborted window's epoch is not reused.
+						rewrite or a PartyA liquidation price snapshot sets <code>restatementMutated</code>. Once abort restoration starts, Core
+						rejects new basis-dependent mutations and rechecks the flag before completing the abort. Funding settlement, atomic
+						liquidation removal, and pending-quote cancellation do not set this flag because they do not leave basis-dependent state
+						behind. Operations must still reconcile the book before aborting. An aborted window's epoch is not reused.
 					</p>
 					<aside class="callout callout-important">
 						<strong>Abort requires completed funding preparation.</strong>
@@ -1116,10 +1117,12 @@ else:
 						of rewriting its basis, so a window containing only those closes can still be aborted safely. PartyA liquidation is
 						multi-step. When its price-setting step stores a venue-basis price for a restating symbol, Core sets
 						<code>restatementMutated</code> immediately. This prevents an abort from returning to the old basis and then reinterpreting
-						that stored price. There is no governance function that zeros inventory or forces finalization past nonzero counters. The
-						emergency governance route is the existing <code>CLEARING_HOUSE_ROLE</code> takeover of an active PartyA liquidation, or
-						cross-PartyB liquidation, followed by explicit quote-ID batches and normal settlement. It cannot fabricate completion and it
-						does not bypass financial accounting.
+						that stored price. During <code>ABORT_FUNDING_RESTORATION</code>, legacy, deferred, and snapshot PartyA price setup for the
+						affected symbol reverts, including between funding-restoration batches. Atomic isolated-PartyB and Clearing House closes
+						remain available under their existing guards. There is no governance function that zeros inventory or forces finalization past
+						nonzero counters. The emergency governance route is the existing <code>CLEARING_HOUSE_ROLE</code> takeover of an active PartyA
+						liquidation, or cross-PartyB liquidation, followed by explicit quote-ID batches and normal settlement. It cannot fabricate
+						completion and it does not bypass financial accounting.
 					</p>
 					<aside class="callout callout-invariant">
 						<strong>Gas is bounded by caller-supplied liquidation batches.</strong>

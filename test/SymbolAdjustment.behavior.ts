@@ -1879,6 +1879,108 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			return context.viewFacet.partyBLiquidationTimestamp(context.signers.hedger.address, context.signers.user.address)
 		}
 
+		async function startBatchedAbort(confirmed: boolean): Promise<bigint> {
+			const quoteId = await openPosition()
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			for (const signer of [context.signers.hedger, context.signers.hedger2]) {
+				await context.fundingRateFacet.connect(signer).setEpochDurations([SYMBOL_ID], [1])
+				await context.fundingRateFacet.connect(signer).setFundingFee([SYMBOL_ID], [8n], [-4n], [decimal(1n)])
+			}
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			if (confirmed) await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await completeFundingPreparation(SYMBOL_ID, [context.signers.hedger.address, context.signers.hedger2.address])
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
+			const progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
+			expect(progress.phase).to.equal(RESTATEMENT_PHASE.ABORT_FUNDING_RESTORATION)
+			expect(progress.pendingPartyBCount).to.equal(2n)
+			return quoteId
+		}
+
+		for (const confirmed of [false, true]) {
+			for (const path of ["legacy", "deferred", "snapshot"] as const) {
+				it(`blocks ${path} price storage throughout batched abort on the ${confirmed ? "confirmed" : "direct"} route`, async function () {
+					const quoteId = await startBatchedAbort(confirmed)
+					const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+					const liquidationSig = await getDummyLiquidationSig(
+						"0x24",
+						-decimal(1_000_000n),
+						[BigInt(SYMBOL_ID)],
+						[decimal(2n, 17)],
+						-decimal(1_000_000n),
+						(await user.getBalanceInfo()).allocatedBalances,
+					)
+					const legacyFacet = context.partyALiquidationFacet.connect(context.signers.liquidator)
+					const snapshotFacet = context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator)
+					let setPrice: () => Promise<unknown>
+					if (path === "legacy") {
+						await legacyFacet.liquidatePartyA(user.address, liquidationSig)
+						setPrice = () => legacyFacet.setSymbolsPrice(user.address, liquidationSig)
+					} else if (path === "deferred") {
+						await legacyFacet.deferredLiquidatePartyA(user.address, liquidationSig)
+						setPrice = () => legacyFacet.deferredSetSymbolsPrice(user.address, liquidationSig)
+					} else {
+						const snapshotSig = {
+							...liquidationSig,
+							states: [
+								{ partyB: quoteBefore.partyB, symbolId: BigInt(SYMBOL_ID), price: decimal(2n, 17), cumulativeLongFee: 0n, cumulativeShortFee: 0n },
+							],
+						}
+						await snapshotFacet.liquidatePartyAWithSnapshot(user.address, { ...snapshotSig, states: [] })
+						setPrice = () => snapshotFacet.setSymbolsPriceWithSnapshot(user.address, snapshotSig)
+					}
+
+					const liquidationNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
+					await expect(setPrice()).to.be.revertedWith("LibSymbolAdjustment: Restatement abort in progress")
+					expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
+					expect(await context.viewFacetSymbol.getLiquidationStartNonce()).to.equal(liquidationNonce)
+
+					// Price setup must remain blocked after some, but not all, funding checkpoints have been restored.
+					await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger2.address])
+					const progress = await context.viewFacetSymbol.getRestatementFundingProgress(SYMBOL_ID)
+					expect(progress.phase).to.equal(RESTATEMENT_PHASE.ABORT_FUNDING_RESTORATION)
+					expect(progress.pendingPartyBCount).to.equal(1n)
+					await expect(setPrice()).to.be.revertedWith("LibSymbolAdjustment: Restatement abort in progress")
+					expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
+					expect(await context.viewFacetSymbol.getLiquidationStartNonce()).to.equal(liquidationNonce)
+
+					await expect(
+						context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address]),
+					).to.emit(context.symbolAdjustmentFacet, "RestatementAborted")
+					const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
+					expect(adjustment.restating).to.be.false
+					expect(adjustment.restatementPhase).to.equal(RESTATEMENT_PHASE.NONE)
+					expect(adjustment.pendingFundingPartyBCount).to.equal(0n)
+					expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.equal(!confirmed)
+					expect(await context.viewFacetSymbol.getCumulativeFactor(SYMBOL_ID)).to.equal(decimal(confirmed ? 4n : 1n))
+					expect(await context.viewFacetQuote.getQuote(quoteId)).to.deep.equal(quoteBefore)
+					for (const signer of [context.signers.hedger, context.signers.hedger2]) {
+						const funding = await context.viewFacetSymbol.getFundingFeesOfPartyB(SYMBOL_ID, signer.address)
+						expect(funding.currentLongRate).to.equal(8n)
+						expect(funding.currentShortRate).to.equal(-4n)
+					}
+				})
+			}
+
+			it(`allows atomic PartyB liquidation during batched abort on the ${confirmed ? "confirmed" : "direct"} route`, async function () {
+				const quoteId = await startBatchedAbort(confirmed)
+				const liquidationTimestamp = await startIsolatedPartyBLiquidation()
+				const priceSig = await getDummyPriceSig([quoteId], [decimal(2n, 17)])
+				priceSig.timestamp = liquidationTimestamp
+				await context.partyBLiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyB(hedger.address, user.address, priceSig)
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quote.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+				expect(quote.avgClosedPrice).to.equal(decimal(8n, 17))
+				expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementMutated).to.be.false
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger2.address])
+				await expect(
+					context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger.address]),
+				).to.emit(context.symbolAdjustmentFacet, "RestatementAborted")
+				expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restating).to.be.false
+			})
+		}
+
 		it("consumes prepared inventory when isolated PartyB liquidation closes an old-basis quote", async function () {
 			const quoteId = await openPosition()
 			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)

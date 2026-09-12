@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState } from "../storages/SymbolAdjustmentStorage.sol";
+import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState, RestatementPhase } from "../storages/SymbolAdjustmentStorage.sol";
 import { Quote, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { LibQuoteAdjustment } from "./LibQuoteAdjustment.sol";
 
@@ -114,9 +114,11 @@ library LibSymbolAdjustment {
 	/// @notice Marks that a basis-dependent mutation occurred during the current restatement window.
 	/// @dev Used to prevent aborting after a physical quote rewrite or after a multi-step liquidation stores a
 	///      venue-basis price that would be reinterpreted incorrectly if the window returned to the old basis.
+	///      Once abort restoration starts, reject these mutations so every remaining batch can safely complete.
 	function recordRestatementMutation(uint256 symbolId) internal {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		if (!adjustment.restating) return;
+		require(adjustment.restatementPhase != RestatementPhase.ABORT_FUNDING_RESTORATION, "LibSymbolAdjustment: Restatement abort in progress");
 		adjustment.restatementMutated = true;
 	}
 }
