@@ -3,6 +3,7 @@ export type GaslessLayerLibraryAddresses = {
 	GaslessOperationalFeeLib: string
 	GaslessWalletDeployerLib: string
 	GaslessWalletExecutionLib: string
+	GaslessFeeQuoteLib: string
 }
 
 type DeployLogger = (message?: any, ...optionalParams: any[]) => void
@@ -45,11 +46,21 @@ export async function deployGaslessLayerLibraries(ethers: any, signer?: any, log
 	await executionLib.waitForDeployment()
 	const executionLibAddress = await executionLib.getAddress()
 
+	log("Deploying GaslessFeeQuoteLib...")
+	const quoteFactory = await ethers.getContractFactory("GaslessFeeQuoteLib", {
+		...(signer ? { signer } : {}),
+		libraries: { GaslessOperationalFeeLib: operationalFeeLibAddress, GaslessWalletExecutionLib: executionLibAddress },
+	})
+	const quoteLib = await quoteFactory.deploy()
+	log("GaslessFeeQuoteLib tx:", quoteLib.deploymentTransaction()?.hash)
+	await quoteLib.waitForDeployment()
+
 	return {
 		GaslessNativeGasTopUpLib: nativeTopUpLibAddress,
 		GaslessOperationalFeeLib: operationalFeeLibAddress,
 		GaslessWalletDeployerLib: deployerLibAddress,
 		GaslessWalletExecutionLib: executionLibAddress,
+		GaslessFeeQuoteLib: await quoteLib.getAddress(),
 	}
 }
 
