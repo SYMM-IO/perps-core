@@ -31,4 +31,5 @@ interface IGaslessLayerActions {
 	) external returns (address);
 	function settleDepositToExistingAccount(address owner, uint256 walletId, address account) external;
 	function recoverNonCollateralToken(address owner, uint256 walletId, address token, address recipient) external returns (uint256);
+	function withdrawWalletFunds(uint256 walletId, address token, address recipient, uint256 amount) external returns (uint256);
 }

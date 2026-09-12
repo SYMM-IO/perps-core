@@ -598,6 +598,11 @@
     },
     {
         "inputs": [],
+        "name": "WalletWithdrawalAmountZero",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "ZeroAddress",
         "type": "error"
     },
@@ -1214,6 +1219,43 @@
             }
         ],
         "name": "WalletDepositSettled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "WalletFundsWithdrawn",
         "type": "event"
     },
     {
@@ -3148,6 +3190,40 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "withdrawWalletFunds",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "withdrawnAmount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
         "type": "function"
     }
 ]

@@ -24,7 +24,7 @@ interface IGaslessLayer {
 	}
 
 	/// @notice GaslessLayer charges only. Core operation fees, bridge fees, and transaction gas are excluded.
-	/// @dev totalDebit is totalFee plus collateral exchanged for native gas. It excludes the net deposit itself.
+	/// @dev totalDebit is totalFee plus collateral exchanged for native gas. It excludes deposited or withdrawn funds themselves.
 	struct FeeQuote {
 		address collateralToken;
 		uint8 collateralDecimals;
@@ -85,6 +85,8 @@ interface IGaslessLayer {
 	/// @param depositFee Collateral paid to the treasury as the flat deposit fee.
 	event WalletDepositSettled(address indexed owner, uint256 indexed walletId, address indexed subAccount, uint256 netDeposit, uint256 depositFee);
 	event WalletOperationRelayed(address indexed relayer, address indexed owner, address indexed wallet, uint256 callCount);
+	/// @notice Owner-submitted withdrawal; amount uses the token's decimals, or wei for native funds.
+	event WalletFundsWithdrawn(address indexed owner, uint256 indexed walletId, address indexed token, address recipient, uint256 amount);
 	/// @notice Emitted when non-collateral tokens are recovered from a GaslessWallet, including at index zero.
 	/// @param wallet Source GaslessWallet contract address.
 	/// @param token Token recovered.
@@ -123,6 +125,7 @@ interface IGaslessLayer {
 	error DepositAmountNotAboveFees(uint256 amount, uint256 totalFees);
 	error AccountOwnerMismatch(address account, address expectedOwner, address actualOwner);
 	error CollateralRecoveryDisabled();
+	error WalletWithdrawalAmountZero();
 	error GaslessWalletAddressMismatch();
 	error WalletCallDataTooShort();
 	error DailyFreeOpsLimitExceeded(address account, uint256 limit);
