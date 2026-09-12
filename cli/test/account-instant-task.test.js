@@ -66,7 +66,7 @@ test("account/instant task has the exact ordered deployment scope and strict rec
 		definition.plan().find(step => step.id === "deploy").items,
 		UPGRADE_DEPLOYMENTS.map(name => name.toLowerCase()),
 	);
-	assert.equal(UPGRADE_DEPLOYMENTS.length, 8);
+	assert.equal(UPGRADE_DEPLOYMENTS.length, 10);
 	assert.deepEqual(
 		definition.plan().map(step => step.id),
 		ACCOUNT_INSTANT_PLAN.map(step => step.id),
@@ -104,10 +104,35 @@ test("adapter environment defaults to nonexecution and uses the same credential 
 	assert.equal(read(f.input.config).secrets.rpc, read(f.input.forkConfig).secrets.rpc);
 });
 
+test("resume refuses changes to the acknowledged client handoff", t => {
+	const f = fixture();
+	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+	const handoff = { instantLayer: f.standard.config.target.instantLayer, instructions: ["Use wallet IDs"] };
+	const clientHandoffDigest = digest(handoff);
+	const configurationDigest = digest(f.snapshot);
+	write(path.join(f.directory, "configuration-input.json"), f.snapshot);
+	write(path.join(f.directory, "client-upgrade.json"), handoff);
+	write(f.input.output, { ...read(f.input.output), snapshotDigest: configurationDigest, clientHandoffDigest });
+	const ctx = { state: { configurationDigest, clientHandoffDigest } };
+	assert.doesNotThrow(() => definition.validateResume(ctx, f.input));
+	handoff.instantLayer = f.standard.config.target.gaslessLayer;
+	write(path.join(f.directory, "client-upgrade.json"), handoff);
+	assert.throws(() => definition.validateResume(ctx, f.input), /Reviewed client handoff changed/);
+});
+
 test("runner exports PartyB wiring and retirement for the Safe and verifies them before cutover and completion", async t => {
 	const f = fixture();
 	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
-	const flags = { configured: false, cut: false, wired: false, retired: false, partyB: false, partyBRetired: false, canary: "" };
+	const flags = {
+		configured: false,
+		cut: false,
+		wired: false,
+		retired: false,
+		partyB: false,
+		partyBRetired: false,
+		clientsReady: false,
+		canary: "",
+	};
 	const phases = [],
 		events = [];
 	const admin = Object.values(f.standard.config.target.partyBAdmins)[0].toLowerCase();
@@ -156,6 +181,11 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 						assert.equal(options.env.SYMMIO_RECIPE_READ_ONLY, "true");
 						assert.equal(options.env.SYMMIO_SIGNER_MODE, "safe-file");
 					}
+					if (phase === "client-handoff") {
+						const handoff = { instantLayer: "0x1234", instructions: ["Use the new ABI at cutover"] };
+						write(path.join(f.directory, "client-upgrade.json"), handoff);
+						report.clientHandoffDigest = digest(handoff);
+					}
 					if (phase === "canary") report.canary = { hash: options.env.SYMMIO_ACCOUNT_UPGRADE_CANARY };
 					if (phase === "verify-final") {
 						report.status = "complete";
@@ -170,7 +200,7 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 	const runner = createTaskRunner({ root: f.root, definitions: [task], idFactory: () => "account-upgrade-run" });
 	const ui = {
 		note() {},
-		confirm: async () => true,
+		confirm: async () => flags.clientsReady,
 		select: async () => assert.fail("No PartyB signer should be requested"),
 		text: async ({ message }) => {
 			assert.doesNotMatch(message, /Ledger address|PartyB administrator/);
@@ -210,6 +240,13 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 	assert.equal(phases.includes("plan-wire"), false);
 	flags.partyB = true;
 	state = await runner.resumeActive(runtime);
+	assert.equal(state.status, "waiting_external", state.lastError);
+	assert.match(state.waitingFor, /Prepare the relayer and event consumers/);
+	assert.equal(phases.includes("plan-wire"), false);
+	assert.equal(state.completedSteps.includes("client-ready"), false);
+	flags.clientsReady = true;
+	state = await runner.resumeActive(runtime);
+	assert.equal(state.completedSteps.includes("client-ready"), true);
 	assert.equal(state.status, "waiting_external", state.lastError);
 	assert.match(state.waitingFor, /Execute .* through Safe/);
 	assert.equal(state.completedSteps.includes("party-b"), true);

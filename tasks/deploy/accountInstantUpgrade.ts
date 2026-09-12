@@ -68,6 +68,7 @@ const PHASES = [
 	"rehearse",
 	"deploy",
 	"publish",
+	"client-handoff",
 	"plan-account-cut",
 	"verify-account-cut",
 	"plan-configure-instant",
@@ -629,6 +630,32 @@ export async function verifyUpgradeCanary(ethers: any, input: any, report: any, 
 	report.canary = { hash, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash, instantLayer: lower(instant.target) }
 }
 
+export async function buildUpgradeClientHandoff(hre: any, input: any, report: any) {
+	const gasless = await hre.artifacts.readArtifact("GaslessLayer")
+	const instant = await hre.artifacts.readArtifact("InstantLayer")
+	return {
+		apiVersion: "operations.symm.io/indexed-wallet-client-upgrade-v1",
+		chainId: 42161,
+		inputDigest: digest(input),
+		snapshotDigest: report.snapshotDigest,
+		gaslessLayer: input.config.target.gaslessLayer,
+		gaslessImplementation: report.deployments.GaslessLayer.address,
+		instantLayer: report.deployments.InstantLayer.address,
+		gaslessABI: gasless.abi,
+		instantABI: instant.abi,
+		instantSigningDomain: { name: "SymmioInstantLayer", version: "1", chainId: 42161, verifyingContract: report.deployments.InstantLayer.address },
+		instructions: [
+			"Stage the indexed-wallet ABI before the Gasless Safe cutover; activate it when that upgrade executes.",
+			"relayInstantBatch requires walletIds with one entry per signed operation. Use 0 for InstantLayer operations and the original wallet.",
+			"Wallet address, deposit settlement, recovery and fee/nonce reads now take wallet IDs. walletOperationNonces(owner, walletId, signerAccount) returns the last consumed nonce; use that value plus one.",
+			"Wallet ID 0 keeps the original address and legacy nonce stream. Positive IDs use separate wallet addresses and nonces.",
+			"Update event consumers for GaslessWalletDeployed, WalletDepositSettled and WalletNonCollateralTokenRecovered using the attached ABI.",
+			"Use the new InstantLayer address/domain and grant fresh user delegations; old InstantLayer delegations and replay state are not migrated.",
+			"GaslessGateway wallet signatures continue to use the existing Gasless proxy domain and signed wallet target.",
+		],
+	}
+}
+
 export const accountInstantUpgradeTask = task(
 	"internal:account-instant-upgrade",
 	"Configuration-preserving AccountLayer and InstantLayer upgrade adapter",
@@ -739,6 +766,12 @@ export const accountInstantUpgradeTask = task(
 					return
 				}
 				await assertUpgradeDeployments(hre, ethers, input, report, true)
+				if (phase === "client-handoff") {
+					const handoff = await buildUpgradeClientHandoff(hre, input, report)
+					write(path.join(path.dirname(output), "client-upgrade.json"), handoff)
+					report.clientHandoffDigest = digest(handoff)
+					return
+				}
 				const cut = await accountUpgradeCut(ethers, input, snapshot, report)
 				if (phase === "plan-account-cut") {
 					report.actions = cut
