@@ -322,6 +322,30 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 		emit WalletDepositSettled(owner, walletIndex, subAccount, netDeposit, collectedDepositFee);
 	}
 
+	/// @notice Withdraw funds from the caller's selected wallet without a relayer or SYMMIO account.
+	/// @dev The owner pays transaction gas. First deployment charges walletCreationFee from wallet collateral;
+	///      no deposit fee, operational fee or allowance applies. Use executeWithFeeLimit to cap the creation fee.
+	/// @param walletId Wallet index; zero selects the original wallet.
+	/// @param token ERC20 to withdraw, or address(0) for native funds.
+	/// @param recipient Nonzero address chosen by the owner to receive the funds.
+	/// @param amount Token base units or wei. type(uint256).max withdraws the full balance after any creation fee.
+	/// @return withdrawnAmount Amount sent to recipient.
+	function withdrawWalletFunds(
+		uint256 walletId,
+		address token,
+		address recipient,
+		uint256 amount
+	) external nonReentrant returns (uint256 withdrawnAmount) {
+		if (recipient == address(0)) revert ZeroAddress();
+		if (amount == 0) revert WalletWithdrawalAmountZero();
+		GaslessWallet wallet = _getWalletAndCollectCreationFee(msg.sender, walletId);
+		withdrawnAmount = amount;
+		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? address(wallet).balance : IERC20(token).balanceOf(address(wallet));
+		if (withdrawnAmount == 0) revert WalletWithdrawalAmountZero();
+		wallet.transfer(token, recipient, withdrawnAmount);
+		emit WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
+	}
+
 	// ═══════════════════════ Wallet Views ════════════════════════
 
 	/// @notice Preview GaslessLayer charges for encoded action calldata without signatures or state changes.
@@ -333,7 +357,7 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 
 	/// @notice Simulate the complete call, including signatures, roles and fee collection, through eth_call.
 	/// @dev ALWAYS reverts: FeeQuoteResult contains the exact quote; FeeQuoteExecutionFailed contains the original failure.
-	///      Use the real relayer/admin as `from` and the intended native `value`. No changes can persist, even if sent as a transaction.
+	///      Use the submitting relayer/admin/owner as `from` and the intended native `value`. No changes can persist, even if sent as a transaction.
 	function simulateFeeQuote(bytes calldata callData) external payable {
 		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
 		GaslessFeeQuoteLib.execute(callData, true, 0);
@@ -532,15 +556,21 @@ contract GaslessLayer is IGaslessLayer, IGaslessLayerActions, Initializable, Acc
 	) external onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
 		if (token == collateralToken) revert CollateralRecoveryDisabled();
 		if (recipient == address(0)) revert ZeroAddress();
+		GaslessWallet qWallet = _getWalletAndCollectCreationFee(owner, walletId);
+		amount = qWallet.sweepTokenBalance(token, recipient);
+		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
+	}
+
+	/// @dev Owner withdrawals and admin recovery pay first-deployment fees from the wallet's collateral.
+	function _getWalletAndCollectCreationFee(address owner, uint256 walletId) internal returns (GaslessWallet) {
 		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		uint256 creationFee = deployed ? walletCreationFee : 0;
-		if (deployed && walletCreationFee > 0) {
+		if (creationFee > 0) {
 			qWallet.transfer(collateralToken, treasury, creationFee);
 			emit WalletCreationFeeCollected(address(qWallet), address(qWallet), creationFee);
 		}
 		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(qWallet), 0, creationFee);
-		amount = qWallet.sweepTokenBalance(token, recipient);
-		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
+		return qWallet;
 	}
 
 	// ═══════════════════════ Internal: Deposits ═══════════════════════

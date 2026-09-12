@@ -29,7 +29,7 @@ export type GaslessFeeQuoteOutcome =
 	| { status: "quoted"; quote: GaslessFeeQuote }
 	| { status: "reverted"; data: string; errorName?: string; errorArgs?: readonly unknown[] }
 
-/** The same encoded action goes into preview, exact simulation, and submission. Never send simulateFeeQuote as a transaction. */
+/** Use the same encoded action for quoting and submission. Owner withdrawals require from in both modes. Never submit simulateFeeQuote. */
 export async function quoteGaslessFee({
 	gateway,
 	callData,
@@ -47,7 +47,9 @@ export async function quoteGaslessFee({
 }): Promise<GaslessFeeQuoteOutcome> {
 	const provider = gateway.runner?.provider
 	if (!provider) throw new Error("A provider is required to quote GaslessLayer fees")
-	if (mode === "exact" && !from) throw new Error("Exact simulation requires the submitting relayer/admin address as from")
+	if (mode === "exact" && !from) throw new Error("Exact simulation requires the submitting account address as from")
+	if (!from && callData.slice(0, 10).toLowerCase() === gateway.interface.getFunction("withdrawWalletFunds")?.selector)
+		throw new Error("Owner withdrawal quotes require the owner's address as from")
 	const method = mode === "preview" ? "previewFeeQuote" : "simulateFeeQuote"
 	const data = gateway.interface.encodeFunctionData(method, mode === "preview" ? [callData, value] : [callData])
 	try {

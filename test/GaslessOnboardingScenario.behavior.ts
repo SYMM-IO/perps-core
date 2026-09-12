@@ -278,6 +278,70 @@ describe("GaslessLayer onboarding scenario", function () {
 		expect(allowance).to.equal(FEE_ALLOWANCE - totalFee)
 		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, totalFee)
 	})
+	it("lets the owner recover a real Core withdrawal with all relayers disabled and no remaining fee allowance", async function () {
+		const subAccount = await settleFundedAccount()
+		const walletId = 22n
+		const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
+		const withdrawalAmount = decimal(20n)
+		const creationFee = decimal(3n)
+		await gateway.connect(context.signers.admin).setWalletCreationFee(creationFee)
+		await context.controlFacet.connect(context.signers.admin).setMaxWithdrawParts(1)
+		const approveOp = createSignedOperation(
+			user.address,
+			symmioAddress,
+			context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [OP_FEE * 2n]]),
+			subAccount,
+		)
+		const withdrawOp = createSignedOperation(
+			user.address,
+			symmioAddress,
+			context.withdrawFacet.interface.encodeFunctionData("initiateWithdraw", [
+				[
+					{
+						id: 0,
+						amount: withdrawalAmount,
+						chainId: (await ethers.provider.getNetwork()).chainId,
+						receiver: wallet,
+						virtualProvider: ethers.ZeroAddress,
+						expressProvider: ethers.ZeroAddress,
+					},
+				],
+				false,
+				"0x",
+			]),
+			subAccount,
+		)
+		await gateway
+			.connect(relayer)
+			.relayInstantBatch(
+				[approveOp, withdrawOp],
+				[await user.signTypedData(domain, types, approveOp), await user.signTypedData(domain, types, withdrawOp)],
+				[[], []],
+				[[], []],
+				[0, 0],
+			)
+		await context.withdrawFacet.finalizeWithdrawRequest(subAccount, 1n)
+		expect(await context.collateral.balanceOf(wallet)).to.equal(withdrawalAmount)
+		expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+		expect((await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr))[0]).to.equal(0n)
+		await gateway.connect(context.signers.admin).revokeRole(await gateway.RELAYER_ROLE(), relayer.address)
+		await gateway.connect(context.signers.admin).revokeRole(await gateway.RELAYER_ROLE(), context.signers.admin.address)
+		const coreBefore = await context.viewFacet.balanceOf(subAccount)
+		const userBefore = await context.collateral.balanceOf(user.address)
+		const treasuryBefore = await context.collateral.balanceOf(treasury.address)
+		const data = gateway.interface.encodeFunctionData("withdrawWalletFunds", [walletId, context.collateral.target, user.address, ethers.MaxUint256])
+		const quote = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
+		expect(quote.status).to.equal("quoted")
+		if (quote.status !== "quoted") throw new Error(quote.data)
+		expect(quote.quote.totalFee).to.equal(creationFee)
+		await gateway.connect(user).executeWithFeeLimit(data, quote.quote.totalDebit)
+		expect(await context.collateral.balanceOf(user.address)).to.equal(userBefore + withdrawalAmount - creationFee)
+		expect(await context.collateral.balanceOf(treasury.address)).to.equal(treasuryBefore + creationFee)
+		expect(await context.collateral.balanceOf(wallet)).to.equal(0n)
+		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(coreBefore)
+		expect((await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr))[0]).to.equal(0n)
+	})
+
 	it("keeps a real Core withdrawal available while another indexed deposit settles, then resumes through the wallet", async function () {
 		const creationFee = decimal(3n)
 		await gateway.connect(context.signers.admin).setWalletCreationFee(creationFee)

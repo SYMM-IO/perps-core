@@ -280,7 +280,15 @@ library GaslessFeeQuoteLib {
 		address owner;
 		uint256 walletId;
 		bool recovery = selector == IGaslessLayerActions.recoverNonCollateralToken.selector;
-		if (recovery) {
+		bool withdrawal = selector == IGaslessLayerActions.withdrawWalletFunds.selector;
+		if (withdrawal) {
+			address recipient;
+			uint256 amount;
+			(walletId, , recipient, amount) = abi.decode(data[4:], (uint256, address, address, uint256));
+			if (recipient == address(0)) revert IGaslessLayer.ZeroAddress();
+			if (amount == 0) revert IGaslessLayer.WalletWithdrawalAmountZero();
+			owner = msg.sender;
+		} else if (recovery) {
 			address token;
 			address recipient;
 			(owner, walletId, token, recipient) = abi.decode(data[4:], (address, uint256, address, address));
@@ -298,7 +306,7 @@ library GaslessFeeQuoteLib {
 		if (!recovery && owner == address(0)) revert IGaslessLayer.ZeroAddress();
 		address wallet = config.getGaslessWalletAddress(owner, walletId);
 		uint256 creation = config.getWalletCreationFee(owner, walletId);
-		uint256 deposit = recovery ? 0 : config.depositFee();
+		uint256 deposit = recovery || withdrawal ? 0 : config.depositFee();
 		q.payments = new IGaslessLayer.FeePayment[](1);
 		uint256 scale = 10 ** (18 - q.collateralDecimals);
 		q.payments[0] = IGaslessLayer.FeePayment(
@@ -322,7 +330,8 @@ library GaslessFeeQuoteLib {
 			selector != IGaslessLayerActions.relayNativeGasTopUp.selector &&
 			selector != IGaslessLayerActions.settleDepositToNewAccount.selector &&
 			selector != IGaslessLayerActions.settleDepositToExistingAccount.selector &&
-			selector != IGaslessLayerActions.recoverNonCollateralToken.selector
+			selector != IGaslessLayerActions.recoverNonCollateralToken.selector &&
+			selector != IGaslessLayerActions.withdrawWalletFunds.selector
 		) revert IGaslessLayer.UnsupportedFeeQuoteCall(selector);
 	}
 }

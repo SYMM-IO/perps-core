@@ -1,5 +1,6 @@
 import { expect } from "chai"
 import { network } from "hardhat"
+import { rejects } from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
 import { gaslessFeeLimitSalt, quoteGaslessFee, signCappedNativeGasTopUp } from "../scripts/gaslessLayer/fee-quote.js"
@@ -268,6 +269,205 @@ describe("GaslessLayer", () => {
 		await writeSlot(mappingSlot(user.address, mappingSlot(stranger.address, 19n)), 2n)
 		expect(await gateway.walletNonces(stranger.address, user.address)).to.equal(2n)
 		expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(42n)
+	})
+
+	describe("owner wallet withdrawals", () => {
+		const encodeWithdrawal = (walletId: bigint, token: string, recipient: string, amount: bigint) =>
+			gateway.interface.encodeFunctionData("withdrawWalletFunds", [walletId, token, recipient, amount])
+
+		for (const walletId of [0n, 23n]) {
+			it(`withdraws from funded undeployed wallet ${walletId} with all relayers disabled and no billing account`, async () => {
+				await gateway.setWalletCreationFee(u("3"))
+				await gateway.setDefaultSelectorFee(ethers.parseEther("100"))
+				await gateway.setRevertWhenFreeQuotaExhausted(true)
+				await instant.setForceExecutionFailure(true)
+				await gateway.revokeRole(await gateway.RELAYER_ROLE(), relayer.address)
+				await gateway.revokeRole(await gateway.RELAYER_ROLE(), admin.address)
+				const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
+				const otherWallet = await gateway.getGaslessWalletAddress(user.address, walletId + 1n)
+				await collateral.mint(wallet, u("20"))
+				await collateral.mint(otherWallet, u("40"))
+				const tx = gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, user.address, ethers.MaxUint256)
+				await expect(tx).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, walletId, wallet)
+				await expect(tx).to.emit(gateway, "WalletCreationFeeCollected").withArgs(wallet, wallet, u("3"))
+				await expect(tx).to.emit(gateway, "WalletFundsWithdrawn").withArgs(user.address, walletId, collateral.target, user.address, u("17"))
+				expect(await collateral.balanceOf(user.address)).to.equal(u("17"))
+				expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+				expect(await collateral.balanceOf(wallet)).to.equal(0n)
+				expect(await collateral.balanceOf(otherWallet)).to.equal(u("40"))
+				expect(await ethers.provider.getCode(otherWallet)).to.equal("0x")
+				expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+				expect(await gateway.walletOperationNonces(user.address, walletId, user.address)).to.equal(0n)
+				// Subsequent owner withdrawals can be partial and never charge creation again.
+				await gateway.setWalletCreationFee(u("9"))
+				await collateral.mint(wallet, u("4"))
+				await expect(gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, stranger.address, u("1"))).not.to.emit(
+					gateway,
+					"WalletCreationFeeCollected",
+				)
+				expect(await collateral.balanceOf(stranger.address)).to.equal(u("1"))
+				expect(await collateral.balanceOf(wallet)).to.equal(u("3"))
+			})
+		}
+
+		it("withdraws another ERC20 while paying first deployment from wallet collateral", async () => {
+			const other = await (await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")).deploy("Other", "OTHER", 18)
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 2n)
+			await collateral.mint(wallet, u("3"))
+			await other.mint(wallet, ethers.parseEther("7"))
+			await gateway.connect(user).withdrawWalletFunds(2n, other.target, user.address, ethers.MaxUint256)
+			expect(await other.balanceOf(user.address)).to.equal(ethers.parseEther("7"))
+			expect(await other.balanceOf(wallet)).to.equal(0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+		})
+
+		it("withdraws native funds partially and in full with no collateral when creation fees are zero", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 5n)
+			const value = ethers.parseEther("0.2")
+			await user.sendTransaction({ to: wallet, value })
+			const before = await ethers.provider.getBalance(stranger.address)
+			await gateway.connect(user).withdrawWalletFunds(5n, ethers.ZeroAddress, stranger.address, value / 4n)
+			await gateway.setWalletCreationFee(u("3"))
+			await gateway.connect(user).withdrawWalletFunds(5n, ethers.ZeroAddress, stranger.address, ethers.MaxUint256)
+			expect(await ethers.provider.getBalance(stranger.address)).to.equal(before + value)
+			expect(await ethers.provider.getBalance(wallet)).to.equal(0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+		})
+
+		it("keeps each caller confined to its own wallet, including through the fee-limit wrapper", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 2n)
+			await collateral.mint(wallet, u("10"))
+			const data = encodeWithdrawal(2n, collateral.target, stranger.address, u("1"))
+			for (const caller of [stranger, admin, relayer]) {
+				await expect(gateway.connect(caller).withdrawWalletFunds(2n, collateral.target, caller.address, u("1"))).to.be.reverted
+				await expect(gateway.connect(caller).executeWithFeeLimit(data, 0n)).to.be.reverted
+			}
+			expect(await collateral.balanceOf(wallet)).to.equal(u("10"))
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+		})
+
+		it("rejects a zero recipient, zero amount and empty full-balance withdrawal without deploying", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 0n)
+			await expect(gateway.connect(user).withdrawWalletFunds(0n, collateral.target, ethers.ZeroAddress, 1n)).to.be.revertedWithCustomError(
+				gateway,
+				"ZeroAddress",
+			)
+			for (const amount of [0n, ethers.MaxUint256]) {
+				await expect(gateway.connect(user).withdrawWalletFunds(0n, collateral.target, user.address, amount)).to.be.revertedWithCustomError(
+					gateway,
+					"WalletWithdrawalAmountZero",
+				)
+			}
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+		})
+
+		it("rolls back deployment and fees when the wallet cannot cover creation or the requested amount", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			for (const [walletId, funded, amount] of [
+				[1n, "2", ethers.MaxUint256],
+				[2n, "5", u("5")],
+				[3n, "3", ethers.MaxUint256],
+			] as const) {
+				const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
+				await collateral.mint(wallet, u(funded))
+				await expect(gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, user.address, amount)).to.be.reverted
+				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+				expect(await collateral.balanceOf(wallet)).to.equal(u(funded))
+			}
+			expect(await collateral.balanceOf(user.address)).to.equal(0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+		})
+
+		it("rolls back a failed native withdrawal and requires collateral for nonzero creation fees", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 1n)
+			const value = ethers.parseEther("0.1")
+			await user.sendTransaction({ to: wallet, value })
+			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, user.address, ethers.MaxUint256)).to.be.reverted
+			await collateral.mint(wallet, u("3"))
+			const reject = await (await ethers.getContractFactory("RejectNativeReceiver")).deploy()
+			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, reject.target, ethers.MaxUint256)).to.be.revertedWithCustomError(
+				await ethers.getContractAt("GaslessWallet", wallet),
+				"NativeTransferFailed",
+			)
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await ethers.provider.getBalance(wallet)).to.equal(value)
+			expect(await collateral.balanceOf(wallet)).to.equal(u("3"))
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+		})
+
+		it("quotes owner withdrawal fees exactly and rolls back all transfers if the caller's fee cap is exceeded", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 8n)
+			await collateral.mint(wallet, u("10"))
+			const data = encodeWithdrawal(8n, collateral.target, stranger.address, ethers.MaxUint256)
+			const fee = ethers.parseEther("3")
+			for (const mode of ["preview", "exact"] as const) {
+				const result = await quoteGaslessFee({ gateway, callData: data, mode, from: user.address })
+				expect(result.status).to.equal("quoted")
+				if (result.status !== "quoted") throw new Error(result.data)
+				expect(result.quote.totalFee).to.equal(fee)
+				expect(result.quote.totalDebit).to.equal(fee)
+				expect(result.quote.payments).to.deep.equal([
+					{
+						account: wallet,
+						payer: wallet,
+						source: 1,
+						operationalFee: 0n,
+						depositFee: 0n,
+						walletCreationFee: fee,
+						nativeTopUpFee: 0n,
+						nativeGasCollateral: 0n,
+					},
+				])
+				expect(result.quote.exact).to.equal(mode === "exact")
+			}
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await collateral.balanceOf(wallet)).to.equal(u("10"))
+			await gateway.setWalletCreationFee(u("4"))
+			await expect(gateway.connect(user).executeWithFeeLimit(data, fee)).to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(0n)
+			await gateway.setWalletCreationFee(u("3"))
+			const returned = await gateway.connect(user).executeWithFeeLimit.staticCall(data, fee)
+			expect(gateway.interface.decodeFunctionResult("withdrawWalletFunds", returned)[0]).to.equal(u("7"))
+			await gateway.connect(user).executeWithFeeLimit(data, fee)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("7"))
+			await collateral.mint(wallet, u("2"))
+			const next = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
+			expect(next.status === "quoted" && next.quote.totalFee).to.equal(0n)
+			await gateway.connect(user).executeWithFeeLimit(data, 0n)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("9"))
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+		})
+
+		it("requires the owner as from for preview and preserves actual withdrawal failures in exact quotes", async () => {
+			const data = encodeWithdrawal(3n, collateral.target, user.address, ethers.MaxUint256)
+			await rejects(quoteGaslessFee({ gateway, callData: data, mode: "preview" }), /owner's address as from/)
+			const result = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
+			expect(result.status).to.equal("reverted")
+			if (result.status === "reverted") expect(result.errorName).to.equal("WalletWithdrawalAmountZero")
+		})
+
+		for (const wrapper of [false, true]) {
+			it(`allows contract owners and rejects a nested withdrawal${wrapper ? " through the fee wrapper" : ""}`, async () => {
+				const owner = await (await ethers.getContractFactory("MockWalletOwner")).deploy(gatewayAddr)
+				const wallet = await gateway.getGaslessWalletAddress(owner.target, 4n)
+				const value = ethers.parseEther("0.1")
+				await user.sendTransaction({ to: wallet, value })
+				const data = encodeWithdrawal(4n, ethers.ZeroAddress, owner.target, ethers.MaxUint256)
+				await owner.setCallback(wrapper ? gateway.interface.encodeFunctionData("executeWithFeeLimit", [data, 0n]) : data)
+				await owner.callGateway(data)
+				expect(await owner.callbackSucceeded()).to.equal(false)
+				expect(gateway.interface.parseError(await owner.callbackResult())?.name).to.equal(
+					wrapper ? "FeeQuoteContextActive" : "ReentrancyGuardReentrantCall",
+				)
+				expect(await ethers.provider.getBalance(owner.target)).to.equal(value)
+				expect(await ethers.provider.getBalance(wallet)).to.equal(0n)
+			})
+		}
 	})
 
 	// Wallets share their owner's authority and billing, but never their balances.
