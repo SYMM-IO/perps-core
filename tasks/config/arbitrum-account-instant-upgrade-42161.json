@@ -14,6 +14,9 @@
 		}
 	},
 	"gaslessBaselineCommit": "95f44c983480084eb097eddd2ad3574de3ea12e3",
+	"execution": {
+		"requireForkRehearsal": false
+	},
 	"policy": {
 		"preserveConfiguration": true,
 		"preserveGaslessProxy": true,
