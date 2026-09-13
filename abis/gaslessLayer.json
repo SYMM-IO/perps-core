@@ -161,12 +161,12 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "actual",
+                "name": "actual18",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "maximum",
+                "name": "maximum18",
                 "type": "uint256"
             }
         ],
@@ -237,27 +237,27 @@
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "operationalFee",
+                                "name": "operationalFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "depositFee",
+                                "name": "depositFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "walletCreationFee",
+                                "name": "walletCreationFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "nativeTopUpFee",
+                                "name": "nativeTopUpFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "nativeGasCollateral",
+                                "name": "nativeGasCollateral18",
                                 "type": "uint256"
                             }
                         ],
@@ -267,12 +267,12 @@
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalFee",
+                        "name": "totalFee18",
                         "type": "uint256"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalDebit",
+                        "name": "totalDebit18",
                         "type": "uint256"
                     },
                     {
@@ -598,6 +598,11 @@
     },
     {
         "inputs": [],
+        "name": "WalletWithdrawalAmountZero",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "ZeroAddress",
         "type": "error"
     },
@@ -725,7 +730,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "fee",
+                "name": "fee18",
                 "type": "uint256"
             }
         ],
@@ -738,7 +743,7 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "wallet",
+                "name": "owner",
                 "type": "address"
             },
             {
@@ -845,7 +850,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "totalFee",
+                "name": "totalFee18",
                 "type": "uint256"
             }
         ],
@@ -889,7 +894,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "totalFee",
+                "name": "totalFee18",
                 "type": "uint256"
             }
         ],
@@ -1008,7 +1013,7 @@
             {
                 "indexed": false,
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "amount18",
                 "type": "uint256"
             }
         ],
@@ -1211,9 +1216,52 @@
                 "internalType": "uint256",
                 "name": "depositFee",
                 "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum IGaslessLayer.DepositDestination",
+                "name": "destination",
+                "type": "uint8"
             }
         ],
         "name": "WalletDepositSettled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "owner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "WalletFundsWithdrawn",
         "type": "event"
     },
     {
@@ -1536,7 +1584,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "maxTotalDebit",
+                "name": "maxTotalDebit18",
                 "type": "uint256"
             }
         ],
@@ -1656,7 +1704,7 @@
         "outputs": [
             {
                 "internalType": "uint256",
-                "name": "amountDue",
+                "name": "amountDue18",
                 "type": "uint256"
             },
             {
@@ -1685,7 +1733,7 @@
         "outputs": [
             {
                 "internalType": "uint256",
-                "name": "",
+                "name": "amount18",
                 "type": "uint256"
             }
         ],
@@ -1720,7 +1768,7 @@
         "inputs": [
             {
                 "internalType": "uint256",
-                "name": "collateralAmount",
+                "name": "collateralAmount18",
                 "type": "uint256"
             }
         ],
@@ -1728,12 +1776,12 @@
         "outputs": [
             {
                 "internalType": "uint256",
-                "name": "feeAmount",
+                "name": "feeAmount18",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "totalCollateralCharge",
+                "name": "totalCollateralCharge18",
                 "type": "uint256"
             }
         ],
@@ -1776,7 +1824,7 @@
         "outputs": [
             {
                 "internalType": "uint256",
-                "name": "",
+                "name": "feeTokenUnits",
                 "type": "uint256"
             }
         ],
@@ -1957,6 +2005,11 @@
             {
                 "internalType": "uint256",
                 "name": "depositFee_",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "walletCreationFee_",
                 "type": "uint256"
             },
             {
@@ -2190,27 +2243,27 @@
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "operationalFee",
+                                "name": "operationalFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "depositFee",
+                                "name": "depositFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "walletCreationFee",
+                                "name": "walletCreationFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "nativeTopUpFee",
+                                "name": "nativeTopUpFee18",
                                 "type": "uint256"
                             },
                             {
                                 "internalType": "uint256",
-                                "name": "nativeGasCollateral",
+                                "name": "nativeGasCollateral18",
                                 "type": "uint256"
                             }
                         ],
@@ -2220,12 +2273,12 @@
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalFee",
+                        "name": "totalFee18",
                         "type": "uint256"
                     },
                     {
                         "internalType": "uint256",
-                        "name": "totalDebit",
+                        "name": "totalDebit18",
                         "type": "uint256"
                     },
                     {
@@ -2927,7 +2980,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "walletIndex",
+                "name": "walletId",
                 "type": "uint256"
             },
             {
@@ -2950,7 +3003,7 @@
             },
             {
                 "internalType": "uint256",
-                "name": "walletIndex",
+                "name": "walletId",
                 "type": "uint256"
             },
             {
@@ -3101,30 +3154,6 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "",
-                "type": "address"
-            },
-            {
-                "internalType": "address",
-                "name": "",
-                "type": "address"
-            }
-        ],
-        "name": "walletNonces",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
                 "name": "owner",
                 "type": "address"
             },
@@ -3148,6 +3177,40 @@
             }
         ],
         "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "walletId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "withdrawWalletFunds",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "withdrawnAmount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "nonpayable",
         "type": "function"
     }
 ]

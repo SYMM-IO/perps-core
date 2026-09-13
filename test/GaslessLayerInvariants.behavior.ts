@@ -44,14 +44,15 @@ describe("GaslessLayer wallet API", () => {
 			"recoverWalletNonCollateralToken",
 			"getAccountOperationalFeeForWallets",
 			"getWalletOperationNonce",
+			"walletNonces",
 		]) {
 			expect(abi.getFunction(name), name).to.equal(null)
 		}
 		const expectedInputs: Record<string, string[]> = {
 			relayInstantBatch: ["signedOps", "signatures", "fills", "flexFillerSignatures", "walletIds"],
 			getGaslessWalletAddress: ["owner", "walletId"],
-			settleDepositToNewAccount: ["owner", "walletIndex", "affiliate", "accountData"],
-			settleDepositToExistingAccount: ["owner", "walletIndex", "subAccount"],
+			settleDepositToNewAccount: ["owner", "walletId", "affiliate", "accountData"],
+			settleDepositToExistingAccount: ["owner", "walletId", "subAccount"],
 			recoverNonCollateralToken: ["owner", "walletId", "token", "recipient"],
 			getAccountOperationalFee: ["account", "signedOps", "walletIds"],
 			walletOperationNonces: ["owner", "walletId", "signerAccount"],
@@ -64,5 +65,24 @@ describe("GaslessLayer wallet API", () => {
 		}
 		const functions = artifact.abi.filter((fragment: any) => fragment.type === "function")
 		expect(new Set(functions.map((fragment: any) => fragment.name)).size).to.equal(functions.length)
+		expect(abi.getFunction("initialize")!.inputs.map(input => input.name)).to.deep.equal([
+			"admin",
+			"core_",
+			"accountLayer_",
+			"instantLayer_",
+			"treasury_",
+			"depositFee_",
+			"walletCreationFee_",
+			"minimumDeposit_",
+		])
+		expect(abi.getFunction("previewFeeQuote")!.outputs[0].components!.map(output => output.name)).to.include.members(["totalFee18", "totalDebit18"])
+		expect(abi.getEvent("WalletDepositSettled")!.inputs.map(input => input.name)).to.deep.equal([
+			"owner",
+			"walletId",
+			"subAccount",
+			"netDeposit",
+			"depositFee",
+			"destination",
+		])
 	})
 })

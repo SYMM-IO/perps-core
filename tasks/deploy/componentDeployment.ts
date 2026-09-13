@@ -801,6 +801,7 @@ export async function deployAndConfigureGaslessLayer(
 		instantLayer: resolved.instantLayer,
 		treasury: resolved.treasury,
 		depositFee: resolved.depositFee,
+		walletCreationFee: resolved.walletCreationFee,
 		minimumDeposit: resolved.minimumDeposit,
 		checkpoint,
 		vanity,
@@ -813,9 +814,6 @@ export async function deployAndConfigureGaslessLayer(
 		contract.RELAYER_ROLE(),
 	])
 
-	if ((await contract.walletCreationFee()).toString() !== resolved.walletCreationFee) {
-		await send(connected.setWalletCreationFee(resolved.walletCreationFee), "set GaslessLayer wallet creation fee")
-	}
 	if ((await contract.defaultSelectorFee()).toString() !== resolved.defaultSelectorFee) {
 		await send(connected.setDefaultSelectorFee(resolved.defaultSelectorFee), "set GaslessLayer default selector fee")
 	}
