@@ -2,7 +2,7 @@ import { expect } from "chai"
 
 import { calculateGroupFunding } from "../scripts/utils/aggregateFundingResync.js"
 import { initializeFixture } from "./Initialize.fixture.js"
-import { ethers } from "./helpers/hardhat-connection.js"
+import { scalarGetterSlot, setSignedStorage } from "./helpers/diamond-storage.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
@@ -19,19 +19,6 @@ const EPOCH = 500n
 const RATE = 10_000_000_000_000_001n
 const QUANTITY = decimal(100n) + 100n
 const OPEN_PRICE = decimal(10n)
-const AGGREGATED_DATA_STORAGE_SLOT = BigInt(ethers.keccak256(ethers.toUtf8Bytes("diamond.standard.storage.aggregateddata")))
-
-const nestedMappingSlot = (baseSlot: bigint, keys: Array<{ type: string; value: string | bigint | number }>): bigint => {
-	let slot = baseSlot
-	for (const key of keys) {
-		slot = BigInt(ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode([key.type, "uint256"], [key.value, slot])))
-	}
-	return slot
-}
-
-const setSignedStorage = async (contractAddress: string, slot: bigint, value: bigint) => {
-	await ethers.provider.send("hardhat_setStorageAt", [contractAddress, ethers.toBeHex(slot, 32), ethers.toBeHex(ethers.toTwos(value, 256), 32)])
-}
 
 export function shouldBehaveLikeAggregateFundingRounding(): void {
 	let context: RunContext
@@ -55,27 +42,11 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		globalPartyB: await context.viewFacetAggregate.getPartyBAggregatedFunding(partyB, 1n, PositionType.LONG),
 	})
 
-	const fundingSlots = (owner: string) => {
-		const commonKeys = [
-			{ type: "address", value: partyB },
-			{ type: "address", value: owner },
-			{ type: "uint256", value: 1n },
-			{ type: "uint256", value: PositionType.LONG },
-		]
-		const partyAKeys = [
-			{ type: "address", value: owner },
-			{ type: "address", value: partyB },
-			{ type: "uint256", value: 1n },
-			{ type: "uint256", value: PositionType.LONG },
-		]
-		const globalPartyBKeys = [
-			{ type: "address", value: partyB },
-			{ type: "uint256", value: 1n },
-			{ type: "uint256", value: PositionType.LONG },
-		]
-		const partyASlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 10n, partyAKeys)
-		const partyBSlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 11n, commonKeys)
-		const globalPartyBSlot = nestedMappingSlot(AGGREGATED_DATA_STORAGE_SLOT + 9n, globalPartyBKeys)
+	const fundingSlots = async (owner: string) => {
+		const view = context.viewFacetAggregate
+		const partyASlot = await scalarGetterSlot(view, "getPartyAAggregatedFundingPerPartyB", [owner, partyB, 1n, PositionType.LONG])
+		const partyBSlot = await scalarGetterSlot(view, "getPartyBAggregatedFundingPerPartyA", [partyB, owner, 1n, PositionType.LONG])
+		const globalPartyBSlot = await scalarGetterSlot(view, "getPartyBAggregatedFunding", [partyB, 1n, PositionType.LONG])
 		return { partyASlot, partyBSlot, globalPartyBSlot }
 	}
 
@@ -110,41 +81,52 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		await context.controlFacet.setMuonConfig(1000n, 1000n)
 	})
 
-	it("keeps the stored contribution exact through a 60%/40% partial close and clears an empty group", async function () {
-		const quoteId = await openLong()
-		const closedAmount = (QUANTITY * 60n) / 100n
-		const remainingAmount = QUANTITY - closedAmount
+	for (const sign of [1n, -1n]) {
+		it(`keeps ${sign > 0n ? "positive" : "negative"} funding exact through a 60%/40% close, empty group, and reopen`, async function () {
+			if (sign < 0n) {
+				await context.fundingRateFacet.connect(hedger.signer).setFundingFee([1n], [-RATE], [0n], [decimal(1n)])
+				await time.setNextBlockTimestamp((BigInt(await time.latest()) / EPOCH + 2n) * EPOCH + 100n)
+				await context.controlFacet.setMuonConfig(1000n, 1000n)
+			}
+			const quoteId = await openLong()
+			expect((await context.viewFacetQuote.getQuote(quoteId)).accumulatedPaidFunding * sign).to.be.greaterThan(0n)
+			const closedAmount = (QUANTITY * 60n) / 100n
+			const remainingAmount = QUANTITY - closedAmount
 
-		await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(QUANTITY).closePrice(OPEN_PRICE).price(OPEN_PRICE).build())
-		await hedger.fillCloseRequest(
-			quoteId,
-			limitFillCloseRequestBuilder().filledAmount(closedAmount).closedPrice(OPEN_PRICE).price(OPEN_PRICE).build(),
-		)
+			await user.requestToClosePosition(
+				quoteId,
+				limitCloseRequestBuilder().quantityToClose(QUANTITY).closePrice(OPEN_PRICE).price(OPEN_PRICE).build(),
+			)
+			await hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(closedAmount).closedPrice(OPEN_PRICE).price(OPEN_PRICE).build(),
+			)
 
-		const quoteAfterPartialClose = await context.viewFacetQuote.getQuote(quoteId)
-		const expectedRemaining = (remainingAmount * quoteAfterPartialClose.accumulatedPaidFunding) / FIXED_POINT_SCALE
-		const afterPartialClose = await aggregateValues()
-		expect(afterPartialClose.partyA).to.equal(expectedRemaining)
-		expect(afterPartialClose.partyB).to.equal(expectedRemaining)
-		expect(afterPartialClose.globalPartyB).to.equal(expectedRemaining)
+			const quoteAfterPartialClose = await context.viewFacetQuote.getQuote(quoteId)
+			const expectedRemaining = (remainingAmount * quoteAfterPartialClose.accumulatedPaidFunding) / FIXED_POINT_SCALE
+			const afterPartialClose = await aggregateValues()
+			expect(afterPartialClose.partyA).to.equal(expectedRemaining)
+			expect(afterPartialClose.partyB).to.equal(expectedRemaining)
+			expect(afterPartialClose.globalPartyB).to.equal(expectedRemaining)
 
-		await hedger.fillCloseRequest(
-			quoteId,
-			limitFillCloseRequestBuilder().filledAmount(remainingAmount).closedPrice(OPEN_PRICE).price(OPEN_PRICE).build(),
-		)
-		const afterFullClose = await aggregateValues()
-		expect(afterFullClose.partyA).to.equal(0n)
-		expect(afterFullClose.partyB).to.equal(0n)
-		expect(afterFullClose.globalPartyB).to.equal(0n)
+			await hedger.fillCloseRequest(
+				quoteId,
+				limitFillCloseRequestBuilder().filledAmount(remainingAmount).closedPrice(OPEN_PRICE).price(OPEN_PRICE).build(),
+			)
+			const afterFullClose = await aggregateValues()
+			expect(afterFullClose.partyA).to.equal(0n)
+			expect(afterFullClose.partyB).to.equal(0n)
+			expect(afterFullClose.globalPartyB).to.equal(0n)
 
-		const reopenedQuoteId = await openLong()
-		const reopenedQuote = await context.viewFacetQuote.getQuote(reopenedQuoteId)
-		const expectedReopened = (QUANTITY * reopenedQuote.accumulatedPaidFunding) / FIXED_POINT_SCALE
-		const afterReopen = await aggregateValues()
-		expect(afterReopen.partyA).to.equal(expectedReopened)
-		expect(afterReopen.partyB).to.equal(expectedReopened)
-		expect(afterReopen.globalPartyB).to.equal(expectedReopened)
-	})
+			const reopenedQuoteId = await openLong()
+			const reopenedQuote = await context.viewFacetQuote.getQuote(reopenedQuoteId)
+			const expectedReopened = (QUANTITY * reopenedQuote.accumulatedPaidFunding) / FIXED_POINT_SCALE
+			const afterReopen = await aggregateValues()
+			expect(afterReopen.partyA).to.equal(expectedReopened)
+			expect(afterReopen.partyB).to.equal(expectedReopened)
+			expect(afterReopen.globalPartyB).to.equal(expectedReopened)
+		})
+	}
 
 	it("returns bounded open-position pages for the off-chain repair calculation", async function () {
 		const quoteIds = [await openLong(), await openLong(), await openLong()]
@@ -169,7 +151,7 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		const quoteId = await openLong()
 		const quote = await context.viewFacetQuote.getQuote(quoteId)
 		const expected = (QUANTITY * quote.accumulatedPaidFunding) / FIXED_POINT_SCALE
-		const { partyASlot, partyBSlot, globalPartyBSlot } = fundingSlots(partyA)
+		const { partyASlot, partyBSlot, globalPartyBSlot } = await fundingSlots(partyA)
 		const diamond = await context.viewFacet.getAddress()
 		await setSignedStorage(diamond, partyASlot, expected + 2n)
 		await setSignedStorage(diamond, partyBSlot, expected + 1n)
@@ -227,8 +209,8 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		)
 		const total = expected[0] + expected[1]
 		const diamond = await context.viewFacet.getAddress()
-		const first = fundingSlots(partyA)
-		const second = fundingSlots(secondPartyA)
+		const first = await fundingSlots(partyA)
+		const second = await fundingSlots(secondPartyA)
 		await setSignedStorage(diamond, first.partyASlot, expected[0] + 1n)
 		await setSignedStorage(diamond, first.partyBSlot, expected[0] + 1n)
 		await setSignedStorage(diamond, second.partyASlot, expected[1] + 2n)
@@ -268,15 +250,10 @@ export function shouldBehaveLikeAggregateFundingRounding(): void {
 		const quote = await context.viewFacetQuote.getQuote(await openLong())
 		const expected = (QUANTITY * quote.accumulatedPaidFunding) / FIXED_POINT_SCALE
 		const diamond = await context.viewFacet.getAddress()
-		const slots = fundingSlots(partyA)
+		const slots = await fundingSlots(partyA)
 		for (const slot of Object.values(slots)) await setSignedStorage(diamond, slot, expected + 1n)
 		const secondPartyA = context.signers.user2.address
-		// MAStorage slot 10 is the PartyB => PartyA liquidation-status mapping.
-		const maSlot = BigInt(ethers.keccak256(ethers.toUtf8Bytes("diamond.standard.storage.masteragreement")))
-		const liquidationSlot = nestedMappingSlot(maSlot + 10n, [
-			{ type: "address", value: partyB },
-			{ type: "address", value: secondPartyA },
-		])
+		const liquidationSlot = await scalarGetterSlot(context.viewFacet, "isPartyBLiquidated", [partyB, secondPartyA])
 		await setSignedStorage(diamond, liquidationSlot, 1n)
 		expect(await context.viewFacet.isPartyBLiquidated(partyB, secondPartyA)).to.equal(true)
 		const partyACounter = await context.viewFacet.upnlCounterOfPartyA(partyA)

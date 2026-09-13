@@ -3960,47 +3960,135 @@ export function shouldBehaveLikeAggregateViews(): void {
 		})
 
 		describe("exact-notional UPNL data", function () {
-			it("returns the stored notional for partyA, partyB, and global partyB views", async function () {
-				const firstAmount = decimal(100n)
-				const secondAmount = decimal(200n)
-				const firstPrice = decimal(1n)
-				const secondPrice = decimal(2n)
+			for (const positionType of [PositionType.LONG, PositionType.SHORT]) {
+				it(`returns exact ${PositionType[positionType]} notional and funding signs for all three views`, async function () {
+					const firstAmount = decimal(100n)
+					const secondAmount = decimal(200n)
+					const firstPrice = decimal(1n)
+					const secondPrice = decimal(2n)
 
-				const firstQuoteId = await user.sendQuote(
-					limitQuoteRequestBuilder().positionType(PositionType.LONG).quantity(firstAmount).price(firstPrice).maxFundingRate(decimal(1n)).build(),
-				)
-				await hedger.lockQuote(firstQuoteId)
-				await hedger.openPosition(firstQuoteId, limitOpenRequestBuilder().filledAmount(firstAmount).openPrice(firstPrice).price(firstPrice).build())
+					const firstQuoteId = await user.sendQuote(
+						limitQuoteRequestBuilder().positionType(positionType).quantity(firstAmount).price(firstPrice).maxFundingRate(decimal(1n)).build(),
+					)
+					await hedger.lockQuote(firstQuoteId)
+					await hedger.openPosition(firstQuoteId, limitOpenRequestBuilder().filledAmount(firstAmount).openPrice(firstPrice).price(firstPrice).build())
 
-				const secondQuoteId = await user.sendQuote(
-					limitQuoteRequestBuilder().positionType(PositionType.LONG).quantity(secondAmount).price(secondPrice).maxFundingRate(decimal(1n)).build(),
-				)
-				await hedger.lockQuote(secondQuoteId)
-				await hedger.openPosition(
-					secondQuoteId,
-					limitOpenRequestBuilder().filledAmount(secondAmount).openPrice(secondPrice).price(secondPrice).build(),
-				)
+					const secondQuoteId = await user.sendQuote(
+						limitQuoteRequestBuilder().positionType(positionType).quantity(secondAmount).price(secondPrice).maxFundingRate(decimal(1n)).build(),
+					)
+					await hedger.lockQuote(secondQuoteId)
+					await hedger.openPosition(
+						secondQuoteId,
+						limitOpenRequestBuilder().filledAmount(secondAmount).openPrice(secondPrice).price(secondPrice).build(),
+					)
 
-				const expectedAmount = firstAmount + secondAmount
-				const expectedNotional = firstAmount * firstPrice + secondAmount * secondPrice
+					const expectedAmount = firstAmount + secondAmount
+					const expectedNotional = firstAmount * firstPrice + secondAmount * secondPrice
+					const partyA = await user.getAddress()
+					const partyB = await hedger.getAddress()
+					await time.increase(EightHourInSec * 2)
+					const [legacy, partyAData, partyBData, partyBGlobalData] = await Promise.all([
+						context.viewFacetAggregate.getPartyAUpnlData(partyA, partyB, 0, 1),
+						context.viewFacetAggregate.getPartyAExactNotionalUpnlData(partyA, partyB, 0, 1),
+						context.viewFacetAggregate.getPartyBExactNotionalUpnlData(partyB, partyA, 0, 1),
+						context.viewFacetAggregate.getPartyBGlobalExactNotionalUpnlData(partyB, 0, 1),
+					])
+
+					for (const [row] of [partyAData, partyBData, partyBGlobalData]) {
+						expect(row.symbolId).to.equal(1n)
+						expect(row.positionType).to.equal(positionType)
+						expect(row.aggregatedAmount).to.equal(expectedAmount)
+						expect(row.aggregatedNotional).to.equal(expectedNotional)
+					}
+
+					// The old average-price view loses the remainder; the exact-notional view preserves it.
+					expect(legacy[0].avgOpenPrice * legacy[0].aggregatedAmount).to.not.equal(expectedNotional)
+					const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([firstQuoteId, secondQuoteId])
+					expect(fundingDebt).to.not.equal(0n)
+					expect(partyAData[0].fundingDebt).to.equal(fundingDebt)
+					expect(partyBData[0].fundingDebt).to.equal(-fundingDebt)
+					expect(partyBGlobalData[0].fundingDebt).to.equal(-fundingDebt)
+					const pricePnl = (decimal(3n) * partyAData[0].aggregatedAmount - partyAData[0].aggregatedNotional) / decimal(1n)
+					expect(positionType === PositionType.LONG ? pricePnl : -pricePnl).to.equal(
+						positionType === PositionType.LONG ? decimal(400n) : -decimal(400n),
+					)
+				})
+			}
+
+			it("keeps SHORT notional exact through a partial close and combines distinct PartyAs globally", async function () {
+				const user2 = new User(context, context.signers.user2)
+				await user2.setup()
+				await user2.setBalances(decimal(5000n), decimal(5000n), decimal(5000n))
 				const partyA = await user.getAddress()
 				const partyB = await hedger.getAddress()
-				const [legacy, partyAData, partyBData, partyBGlobalData] = await Promise.all([
-					context.viewFacetAggregate.getPartyAUpnlData(partyA, partyB, 0, 1),
+				const quantities = [decimal(100n), decimal(200n)]
+				const prices = [decimal(1n), decimal(2n)]
+				const quotes: bigint[] = []
+				for (const [index, owner] of [user, user2].entries()) {
+					const quote = await owner.sendQuote(
+						limitQuoteRequestBuilder()
+							.positionType(PositionType.SHORT)
+							.quantity(quantities[index])
+							.price(prices[index])
+							.maxFundingRate(decimal(1n))
+							.build(),
+					)
+					await hedger.lockQuote(quote)
+					await hedger.openPosition(
+						quote,
+						limitOpenRequestBuilder().filledAmount(quantities[index]).openPrice(prices[index]).price(prices[index]).build(),
+					)
+					quotes.push(quote)
+				}
+				await time.increase(EightHourInSec * 2)
+				await user.requestToClosePosition(
+					quotes[0],
+					limitCloseRequestBuilder().quantityToClose(decimal(60n)).closePrice(prices[0]).price(prices[0]).build(),
+				)
+				await hedger.fillCloseRequest(
+					quotes[0],
+					limitFillCloseRequestBuilder().filledAmount(decimal(60n)).closedPrice(prices[0]).price(prices[0]).build(),
+				)
+				const [partyAData, partyBData, globalData] = await Promise.all([
 					context.viewFacetAggregate.getPartyAExactNotionalUpnlData(partyA, partyB, 0, 1),
 					context.viewFacetAggregate.getPartyBExactNotionalUpnlData(partyB, partyA, 0, 1),
 					context.viewFacetAggregate.getPartyBGlobalExactNotionalUpnlData(partyB, 0, 1),
 				])
-
-				for (const [row] of [partyAData, partyBData, partyBGlobalData]) {
-					expect(row.symbolId).to.equal(1n)
-					expect(row.positionType).to.equal(PositionType.LONG)
-					expect(row.aggregatedAmount).to.equal(expectedAmount)
-					expect(row.aggregatedNotional).to.equal(expectedNotional)
+				for (const [row] of [partyAData, partyBData]) {
+					expect(row.positionType).to.equal(PositionType.SHORT)
+					expect(row.aggregatedAmount).to.equal(decimal(40n))
+					expect(row.aggregatedNotional).to.equal(decimal(40n) * prices[0])
 				}
+				expect(globalData[0].positionType).to.equal(PositionType.SHORT)
+				expect(globalData[0].aggregatedAmount).to.equal(decimal(240n))
+				expect(globalData[0].aggregatedNotional).to.equal(decimal(40n) * prices[0] + quantities[1] * prices[1])
+				expect(globalData[0].fundingDebt).to.equal(-(await context.viewFacetQuote.getSumQuoteFundingDebts(quotes)))
+				expect(partyAData[0].fundingDebt).to.equal(-partyBData[0].fundingDebt)
+			})
 
-				// The old average-price view loses the remainder; the exact-notional view preserves it.
-				expect(legacy[0].avgOpenPrice * legacy[0].aggregatedAmount).to.not.equal(expectedNotional)
+			it("paginates symbols while retaining both directions and returns empty pages at the boundaries", async function () {
+				await createSymbols(1)
+				await openPosition(1, PositionType.LONG)
+				await openPosition(1, PositionType.SHORT)
+				await openPosition(2, PositionType.SHORT)
+				const partyA = await user.getAddress()
+				const partyB = await hedger.getAddress()
+				const views = [
+					(start: number, size: number) => context.viewFacetAggregate.getPartyAExactNotionalUpnlData(partyA, partyB, start, size),
+					(start: number, size: number) => context.viewFacetAggregate.getPartyBExactNotionalUpnlData(partyB, partyA, start, size),
+					(start: number, size: number) => context.viewFacetAggregate.getPartyBGlobalExactNotionalUpnlData(partyB, start, size),
+				]
+				for (const view of views) {
+					const first = await view(0, 1)
+					expect(first.map(row => [row.symbolId, row.positionType])).to.deep.equal([
+						[1n, BigInt(PositionType.LONG)],
+						[1n, BigInt(PositionType.SHORT)],
+					])
+					const second = await view(1, 5)
+					expect(second.map(row => [row.symbolId, row.positionType])).to.deep.equal([[2n, BigInt(PositionType.SHORT)]])
+					expect(await view(0, 0)).to.be.empty
+					expect(await view(2, 1)).to.be.empty
+				}
 			})
 		})
 	})
