@@ -76,29 +76,6 @@
 					</div>
 				</header>
 
-				<nav class="reader-map" aria-label="Gasless Layer reading map">
-					<a href="#signed-operations">
-						<span>Frontend path</span>
-						<strong>Build signed operations</strong>
-						<small>Choose an InstantLayer, delegation, or deterministic-wallet route.</small>
-					</a>
-					<a href="#fees">
-						<span>Fee path</span>
-						<strong>Resolve the real payer</strong>
-						<small>Selector prices, daily quota, multipliers, and Virtual Account fallback determine the charge.</small>
-					</a>
-					<a href="#deployment">
-						<span>Operator path</span>
-						<strong>Wire all three dependencies</strong>
-						<small>Core, AccountLayer, and InstantLayer each provide a required permission or state source.</small>
-					</a>
-					<a href="#boundaries">
-						<span>Review path</span>
-						<strong>Separate signatures from service trust</strong>
-						<small>Some outcomes are signed by the user. New-account settings are supplied by the relayer.</small>
-					</a>
-				</nav>
-
 				<article class="doc-article" id="full-document" tabindex="-1">
 					<h2 id="summary">Summary</h2>
 					<p>
@@ -130,7 +107,7 @@
 								</tr>
 								<tr>
 									<td>Delegation setup</td>
-									<td><code>relayGrantBatchDelegationBySig</code></td>
+									<td><code>relayInstantBatch</code> / <code>relayInstantTemplate</code></td>
 									<td>InstantLayer</td>
 								</tr>
 								<tr>
@@ -182,16 +159,22 @@
 						chaining, signature checks, flex-field checks, nonces, and deadlines. Templates cannot contain GaslessWallet operations.
 					</p>
 
-					<h3 id="delegation-relay">Delegation relay</h3>
+					<h3 id="delegation-relay">Delegation through signed operations</h3>
 					<p>
-						<code>relayGrantBatchDelegationBySig</code> forwards the InstantLayer's standalone <code>SignedDelegation</code> form. The
-						signed payload fixes the account, delegated signer, selectors, expiry, nonce, deadline, and salt. One relay call consumes one
-						free daily operation or one configured delegation fee, regardless of how many selectors the delegation grants.
+						The owner signs a regular <code>SignedOperation</code> targeting InstantLayer with <code>grantDelegation</code> or
+						<code>grantDelegations</code> calldata. Submit it through <code>relayInstantBatch</code> with wallet ID <code>0</code>, or
+						through a registered InstantLayer template. Later operations in the same batch can use the granted permissions.
+					</p>
+					<p>
+						Each grant operation consumes one free daily operation or pays its selector-configured fee, regardless of the number of
+						selectors or delegates granted inside that operation. The grant must be owner-signed, have <code>maxUses = 1</code>, and
+						contain no flex fields. Normal batch quoting and signed fee limits apply.
 					</p>
 					<aside class="callout callout-note">
-						<strong>Two delegation forms</strong> A delegation may use this dedicated entrypoint or travel as a regular signed operation
-						inside a batch or template. See <a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a> for
-						the in-batch form.
+						<strong>Client migration</strong> Gasless Layer no longer exposes the standalone delegation relay. Clients must sign a new
+						operation using InstantLayer's operation replay rules; old delegation signatures cannot be reused. Configure fees for the
+						grant selectors and consume the normal batch and fee-routing events. See
+						<a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a> for the request format.
 					</aside>
 
 					<h3 id="wallet-operations">GaslessWallet operations</h3>
@@ -478,106 +461,276 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						quota write, nonce change, and fee charge rolls back. The relayer still spends gas on the failed transaction, and an earlier
 						operation that consumes balance or changes account status can cause the final fee charge to fail.
 					</p>
-					<p>
-						The dedicated delegation relay computes its fee or quota use before forwarding the delegation. A later InstantLayer failure
-						still rolls that state back in the same transaction.
-					</p>
 
 					<h2 id="frontend-fee-quotes">Frontend fee quotes</h2>
 					<p>
-						Encode the exact GaslessLayer action you intend to submit. Both quote methods accept that calldata and cover InstantLayer
-						batches, templates, wallet execution, delegation relays, native gas top-ups, both deposit settlement methods, and admin token
-						recovery, as well as direct owner withdrawals. They include GaslessLayer charges only. Core trading charges, external bridge
-						fees, and transaction gas are outside this quote.
+						A user wants to deposit <strong>100 USDC</strong> into their SYMMIO account. Their GaslessWallet is still empty and has not
+						been deployed. Suppose the configured deposit fee is 2 USDC and wallet creation costs 3 USDC. The frontend needs to show the
+						cost before the user sends money.
 					</p>
+
+					<h3 id="preview-versus-simulation">Before the money arrives: show the price</h3>
+					<p>
+						Encode <code>settleDepositToExistingAccount(owner, walletId, subAccount)</code> and pass that calldata to
+						<code>previewFeeQuote(callData, 0)</code>. It reads the fee settings and checks whether the wallet is already deployed. It can
+						return <strong>5 USDC in fees, taken from the selected GaslessWallet</strong>, even though that wallet is empty. The frontend
+						can show: “Deposit 100 USDC. Fees: 5 USDC. Your SYMMIO account will receive 95 USDC.”
+					</p>
+					<p>
+						Preview has calculated a price; it has not attempted the deposit. If you call <code>simulateFeeQuote</code> now, the
+						settlement fails because the wallet has no funds to sweep. The same planned action can therefore have a valid preview price
+						and still fail simulation.
+					</p>
+
+					<h3 id="quote-funded-simulation">The money has arrived: try the settlement without committing it</h3>
+					<p>
+						The wallet now holds exactly 100 USDC. Call <code>simulateFeeQuote(callData)</code> through <code>eth_call</code>, using the
+						relayer's address as <code>from</code>.
+						<strong><code>eth_call</code> asks the RPC node to run the call without submitting a blockchain transaction.</strong>
+						The user pays no transaction fee for this check.
+					</p>
+					<p>
+						Assuming the destination, relayer permissions, minimum deposit, and other checks are satisfied, simulation actually runs the
+						settlement: it deploys the wallet, collects 5 USDC for treasury, and credits 95 USDC to the account. It records the fees it
+						observed, then <strong>rolls all of those changes back</strong>.
+					</p>
+					<p>
+						The result is a 5-USDC quote. On-chain, the wallet still holds the original 100 USDC and is still undeployed. Treasury has
+						received nothing, and the SYMMIO account has received no deposit. If a check fails instead, simulation returns that failure
+						rather than a successful quote. The helper below handles the result decoding.
+					</p>
+
+					<h3 id="quote-submit-deposit">The relayer submits the real deposit</h3>
+					<p>
+						Submit the actual <code>settleDepositToExistingAccount</code> call. If the conditions are unchanged, this transaction really
+						deploys the wallet, collects 5 USDC, and deposits 95 USDC.
+						<strong>Neither quote call submitted the deposit for the user.</strong> A later transaction can encounter different fees or
+						balances, so use the applicable <a href="#fee-limits">fee limit</a> to enforce the accepted maximum.
+					</p>
+					<p id="frontend-quote-flow">
+						The frontend flow is:
+						<strong
+							>preview to show the price → prepare the funds and any required signatures → simulate the completed request → submit the
+							real action.</strong
+						>
+						Set signed fee limits before collecting signatures. For simulation, use the actual submitting address, completed signatures
+						and fills where required, and intended native value. This deposit route does not require an extra user-signed operation;
+						relayed batches do.
+					</p>
+					<p>
+						Both methods receive the action calldata independently. Simulation does not call preview or take its quote as input, and you
+						can use either method on its own. Preview reads current state; simulation also sees changes made inside the action, such as an
+						approval that changes the final fee or payer. That is why simulation runs state-changing code through <code>eth_call</code>,
+						while preview is a Solidity <code>view</code> method.
+					</p>
+					<p>
+						These amounts are examples, assuming USDC is collateral. Settlement sweeps the wallet's whole collateral balance, so the
+						example assumes exactly 100 USDC arrives and no other USDC is present. Quotes cover GaslessLayer charges; add transaction gas,
+						bridge fees, and Core trading fees separately when displaying the full cost.
+					</p>
+
+					<h3 id="quote-payment-source">Which balance needs the money?</h3>
+					<p>Each entry in <code>quote.payments</code> gives you a <code>payer</code> address and a <code>source</code>:</p>
+					<ul>
+						<li>
+							<strong><code>source = 0</code>:</strong> the fee is charged to <code>payer</code>'s balance in SYMMIO Core. This is not
+							the ERC20 balance in the user's browser wallet. The account also needs sufficient operational-fee allowance for
+							GaslessLayer.
+						</li>
+						<li>
+							<strong><code>source = 1</code>:</strong> the fee is taken from collateral tokens held by the GaslessWallet at
+							<code>payer</code>. The user needs those tokens at that wallet address.
+						</li>
+					</ul>
+					<p>
+						Use <code>payer</code> when telling the user where funds are needed. Do not assume it equals <code>account</code>: a Virtual
+						Account operation can be paid by its parent or by the Virtual Account itself. For a batch, inspect every payment row and group
+						amounts by payer and source if several accounts pay.
+					</p>
+					<p>
+						Display every quote amount with <code>formatUnits(amount, 18)</code>, including USDC fees. For example,
+						<code>5000000000000000000n</code> means 5 USDC when USDC is collateral. <code>collateralDecimals</code> describes the token's
+						raw transfer units; it does not change the quote's 18-decimal units.
+					</p>
+
+					<h3 id="quote-deposit-example">Code for the deposit preview</h3>
+					<p>
+						Encode <code>settleDepositToExistingAccount</code> and preview it. This tells the frontend how much will be deducted from the
+						selected wallet before the rest reaches the SYMMIO account. For a new account, encode
+						<code>settleDepositToNewAccount</code> instead; the fee source is the same.
+					</p>
+					<pre><code class="language-typescript">import { formatUnits, MaxUint256 } from "ethers"
+import { quoteGaslessFee } from "./fee-quote"
+
+// gateway is an Ethers Contract using abis/gaslessLayer.json and a provider.
+// Copy the helper from scripts/gaslessLayer/fee-quote.ts into your client.
+const depositData = gateway.interface.encodeFunctionData("settleDepositToExistingAccount", [
+  ownerAddress, walletId, subAccountAddress,
+])
+const depositResult = await quoteGaslessFee({
+  gateway, callData: depositData, mode: "preview", from: relayerAddress,
+}) // Calls previewFeeQuote(depositData, 0).
+if (depositResult.status !== "quoted") {
+  throw new Error(depositResult.errorName ?? depositResult.data)
+}
+const depositQuote = depositResult.quote
+console.log("Deposit fee:", formatUnits(depositQuote.payments[0].depositFee18, 18))
+console.log("Wallet creation:", formatUnits(depositQuote.payments[0].walletCreationFee18, 18))
+console.log("Total fee:", formatUnits(depositQuote.totalFee18, 18))
+console.log("Taken from GaslessWallet:", depositQuote.payments[0].payer)</code></pre>
+					<p>
+						<strong>Example result:</strong> deposit fee = 2 USDC, wallet creation = 3 USDC, <code>totalFee18</code> = 5 USDC, and
+						<code>source</code> = 1. If the selected wallet holds exactly 100 USDC when settlement executes, 5 USDC goes to treasury and
+						95 USDC is deposited into the account. If the wallet is already deployed, creation costs zero, so the same deposit fee leaves
+						98 USDC for the account.
+					</p>
+					<h3 id="quote-withdrawal-example">The user wants to withdraw everything from a GaslessWallet</h3>
+					<p>
+						Encode <code>withdrawWalletFunds</code> and preview it <strong>with the owner's address as <code>from</code></strong
+						>. The function selects the wallet belonging to the caller, so the caller address matters even for the preview.
+					</p>
+					<pre><code class="language-typescript">const withdrawalData = gateway.interface.encodeFunctionData("withdrawWalletFunds", [
+  walletId, collateralTokenAddress, recipientAddress, MaxUint256,
+])
+const withdrawalResult = await quoteGaslessFee({
+  gateway, callData: withdrawalData, mode: "preview", from: ownerAddress,
+})
+if (withdrawalResult.status !== "quoted") {
+  throw new Error(withdrawalResult.errorName ?? withdrawalResult.data)
+}
+console.log("Withdrawal fee:", formatUnits(withdrawalResult.quote.totalFee18, 18))
+console.log("Taken from GaslessWallet:", withdrawalResult.quote.payments[0].payer)</code></pre>
+					<p>
+						<strong>Example result:</strong> the undeployed wallet holds 50 USDC and creation costs 3 USDC. The quote reports 3 USDC, paid
+						from that wallet with <code>source = 1</code>. Withdrawing the full balance sends 47 USDC to the recipient after paying the
+						creation fee. An already deployed wallet has no GaslessLayer withdrawal fee. The owner still pays transaction gas from their
+						calling account.
+					</p>
+					<p>
+						The quote reports the fee; it does not return the withdrawal proceeds. If withdrawing a different token, any creation fee
+						still needs to be paid in the configured collateral token. See <a href="#owner-withdrawals">Withdraw without a relayer</a> for
+						that case.
+					</p>
+
+					<h3 id="quote-relay-example">The user wants to trade, grant delegation, or execute wallet calls</h3>
+					<p>
+						Encode <code>relayInstantBatch</code> with the planned operations and preview that call. Before signing, supply an empty
+						signature for each operation. For an ordinary InstantLayer operation, including a delegation grant, use wallet ID
+						<code>0</code>. For a wallet operation, use the ID matching its signed target. The following example prices one operation with
+						no fills or flexible fields:
+					</p>
+					<pre><code class="language-typescript">const batchData = gateway.interface.encodeFunctionData("relayInstantBatch", [
+  [operation], ["0x"], [[]], [[]], [walletId],
+])
+const batchResult = await quoteGaslessFee({
+  gateway, callData: batchData, mode: "preview", from: relayerAddress,
+})
+if (batchResult.status !== "quoted") {
+  throw new Error(batchResult.errorName ?? batchResult.data)
+}
+for (const payment of batchResult.quote.payments) {
+  console.log("Charged to SYMMIO account:", payment.payer)
+  console.log("Operational fee:", formatUnits(payment.operationalFee18, 18))
+  console.log("Wallet creation:", formatUnits(payment.walletCreationFee18, 18))
+}</code></pre>
+					<p>
+						<strong>Example result:</strong> one wallet operation costs 2 USDC in operational fees and 3 USDC to create its wallet. The
+						payment row says <code>source = 0</code> and <code>payer = subAccountAddress</code>. Tell the user:
+						<strong>“5 USDC will be charged to your SYMMIO sub-account.”</strong>
+						This fee comes from the SYMMIO account even though the operation executes through a GaslessWallet. If free quota covers the
+						operation, the operational part becomes zero, but the 3-USDC creation charge remains.
+					</p>
+					<p>
+						For a registered template, encode <code>relayInstantTemplate</code> and preview that calldata instead. A preview uses current
+						balances and allowances. An approval or transfer inside the batch can change both the final fee and its payer, which is why
+						the completed request needs the next check.
+					</p>
+
+					<h3 id="quote-before-submit">The request is ready: simulate it before sending</h3>
+					<p>
+						Re-encode the action with any required real signatures and fills, then call the helper with <code>mode: "exact"</code>. Use
+						the address that will actually submit the transaction: the relayer for a batch or deposit, the owner for a direct withdrawal,
+						or the config admin for recovery.
+					</p>
+					<pre><code class="language-typescript">// completedCallData contains the actual action and all required signatures.
+const checked = await quoteGaslessFee({
+  gateway, callData: completedCallData, mode: "exact", from: submittingAddress,
+  value: 0n, // For a native top-up, use the native wei the relayer will send.
+})
+if (checked.status !== "quoted") {
+  throw new Error(checked.errorName ?? checked.data) // Fix the request before sending it.
+}
+console.log("Fee for this completed request:", formatUnits(checked.quote.totalFee18, 18))
+console.log("Actual payers in this simulation:", checked.quote.payments)</code></pre>
+					<p>
+						The helper calls <code>simulateFeeQuote</code> through <code>eth_call</code>. It runs the action and reads its actual charges,
+						then rolls everything back. It does not send a transaction. A successful simulation comes back as
+						<code>FeeQuoteResult</code> error data; the helper decodes that into <code>status: "quoted"</code>. Failed actions return
+						<code>status: "reverted"</code>; RPC failures are thrown. Never send <code>simulateFeeQuote</code> as a transaction.
+					</p>
+					<p>
+						Show the returned fees and payers on the confirmation screen. If they exceed what the user accepted, request approval and new
+						signatures where needed. The result describes the simulated block, not a reserved future price. Set the
+						<a href="#fee-limits">signed fee limits</a> before signing to enforce the user's maximum when the relayer submits. For a
+						direct owner withdrawal, the owner can submit the inner calldata through
+						<code>executeWithFeeLimit(callData, maxTotalDebit18)</code> to enforce their accepted maximum.
+					</p>
+
+					<h3 id="quote-other-questions">Other fee questions</h3>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Method</th>
-									<th>Use</th>
-									<th>Result</th>
+									<th>The frontend needs to know…</th>
+									<th>Call or read…</th>
+									<th>What to show</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td><code>previewFeeQuote(callData, nativeAmount)</code></td>
-									<td>Before signing. Empty signatures are allowed.</td>
+									<td>How much collateral a native gas top-up will debit</td>
 									<td>
-										Prices the planned action using current configuration, wallet deployment state, quotas, balances and
-										allowances. Does not execute the action. Deposits can be priced before funds arrive.
+										Preview <code>relayNativeGasTopUp</code> calldata. Pass the proposed native wei as the helper's
+										<code>value</code>; it becomes <code>previewFeeQuote</code>'s second argument.
+									</td>
+									<td>
+										Use <code>totalDebit18</code>. Buying native gas for 10 USDC with a 0.1-USDC fee means a 10.1-USDC debit, even
+										though <code>totalFee18</code> is only 0.1 USDC. The payer's SYMMIO balance covers it. A sponsored top-up has
+										zero collateral debit; inspect <code>nativeSponsored</code>.
 									</td>
 								</tr>
 								<tr>
-									<td><code>simulateFeeQuote(callData)</code></td>
+									<td>Only the cost to deploy a particular wallet</td>
+									<td><code>getWalletCreationFee(ownerAddress, walletId)</code></td>
 									<td>
-										With the completed action, through <code>eth_call</code>, using the submitting relayer/admin/owner as
-										<code>from</code> and the actual native <code>value</code>.
+										The raw collateral-token amount, or zero if deployed. Format this getter with the token's decimals—for USDC,
+										normally 6. It is only the creation component, not a whole-action quote.
 									</td>
+								</tr>
+								<tr>
+									<td>The combined operational and wallet-creation charge for one billing account in a batch</td>
+									<td><code>getAccountOperationalFee(account, signedOps, walletIds)</code></td>
 									<td>
-										Runs the complete action, including signatures, roles and fee collection. Always reverts to roll back all
-										changes. <code>FeeQuoteResult(quote)</code> means success;
-										<code>FeeQuoteExecutionFailed(reason)</code> carries the original failure.
+										<code>amountDue18</code> already includes applicable wallet-creation fees; do not add them again.
+										<code>freeOpsApplied</code> reports free quota used, and <code>wouldBlockOnQuota</code> reports a quota block.
+										Use the common action quote when the screen needs the fee breakdown, payer addresses, or payment sources.
+									</td>
+								</tr>
+								<tr>
+									<td>How much admin token recovery costs</td>
+									<td>Preview <code>recoverNonCollateralToken</code> calldata</td>
+									<td>
+										No GaslessLayer fee and an empty <code>payments</code> array, even if recovery deploys the wallet. The admin
+										still pays transaction gas.
 									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<p>
-						Both methods return the same <code>FeeQuote</code> structure. Every monetary field uses <strong>18 decimals</strong>,
-						including wallet creation and deposit fees. <code>collateralDecimals</code> describes the ERC20 token and does not change
-						quote units. These amounts remain denominated in the configured collateral token; normalizing to 18 decimals does not convert
-						them into dollars or another token. <code>totalFee18</code> sums operational, deposit, wallet creation and native top-up fees.
-						<code>totalDebit18</code> adds the collateral exchanged for native gas. It excludes deposited and withdrawn funds themselves.
-					</p>
-					<p>
-						<code>payments</code> has one row per operation, or one row for a deposit, recovery or top-up. Each row identifies the
-						initiating <code>account</code>, actual <code>payer</code>, and <code>source</code>: <code>0</code> is a SYMMIO account and
-						<code>1</code> is wallet collateral. Its fields are <code>operationalFee18</code>, <code>depositFee18</code>,
-						<code>walletCreationFee18</code>, <code>nativeTopUpFee18</code>, and <code>nativeGasCollateral18</code>. The suffix makes the
-						normalized unit explicit and distinguishes quote fields from token-unit configuration getters. Group rows by payer and source
-						for account-level totals. The quote also reports <code>freeOpsApplied</code>, <code>nativeSponsored</code>,
-						<code>blockNumber</code>, <code>timestamp</code>, and <code>exact</code>.
-					</p>
-					<p>
-						A preview is a pricing estimate, not an execution check. For example, an approval inside a batch can change the multiplier
-						used for its own fee, and a transfer can change which account pays. Exact simulation observes these changes. An exact quote
-						applies at its reported block; later configuration, quota or balance changes can affect submission. Signed limits below bound
-						what the user accepts. Legacy signatures remain valid and uncapped.
-					</p>
-					<p>
-						The Ethers helper in <code>scripts/gaslessLayer/fee-quote.ts</code> handles both modes and decodes the simulation result. It
-						uses Ethers only and can be copied into a frontend or relayer. A failed call returns <code>status: "reverted"</code>, its
-						original revert bytes, and an error name when recognized. RPC failures are thrown. Never send the simulation method as a
-						transaction.
-					</p>
-					<pre><code class="language-typescript">import { formatUnits } from "ethers"
-import { quoteGaslessFee, gaslessFeeLimitSalt } from "./fee-quote"
-
-// Preview the operation before requesting its existing EIP-712 signature.
-let callData = gateway.interface.encodeFunctionData("relayInstantBatch", [
-  [operation], ["0x"], [[]], [[]], [walletId],
-])
-const preview = await quoteGaslessFee({ gateway, callData, mode: "preview" })
-if (preview.status !== "quoted") throw new Error(preview.errorName ?? preview.data)
-const acceptedMaximum = preview.quote.totalFee18 // User-approved limit for this one operation.
-operation.replayAttackHeader.salt = gaslessFeeLimitSalt(acceptedMaximum)
-const signature = await user.signTypedData(domain, operationTypes, operation)
-
-callData = gateway.interface.encodeFunctionData("relayInstantBatch", [
-  [operation], [signature], [[]], [[]], [walletId],
-])
-const result = await quoteGaslessFee({
-  gateway, callData, mode: "exact", from: relayerAddress,
-})
-if (result.status !== "quoted") throw new Error(result.errorName ?? result.data)
-console.log("GaslessLayer fee:", formatUnits(result.quote.totalFee18, 18))
-console.log("Collateral debit:", formatUnits(result.quote.totalDebit18, 18))
-// Submit this same callData through the relayer.</code></pre>
 
 					<h3 id="fee-limits">Signed fee limits</h3>
 					<p>
-						For a batch operation, template operation or signed delegation, use <code>gaslessFeeLimitSalt(maxFee)</code> as
+						For a batch or template operation, including a delegation grant, use <code>gaslessFeeLimitSalt(maxFee)</code> as
 						<code>replayAttackHeader.salt</code> before signing. The existing EIP-712 type and relay arguments stay the same. The salt
 						contains the first eight bytes of <code>keccak256("SYMMIO_GASLESS_FEE_LIMIT_V1")</code>, a 16-byte unsigned fee limit, and
 						eight random bytes. The limit uses 18 decimals and includes the operation's wallet creation fee, regardless of quota or payer
@@ -691,7 +844,7 @@ console.log("Collateral debit:", formatUnits(result.quote.totalDebit18, 18))
 									<td>Signer, resolved payer, and fee for each operation</td>
 								</tr>
 								<tr>
-									<td><code>DelegationBySigRelayed</code>, <code>WalletOperationRelayed</code></td>
+									<td><code>WalletOperationRelayed</code></td>
 									<td>Accepted delegation and deterministic-wallet execution</td>
 								</tr>
 								<tr>

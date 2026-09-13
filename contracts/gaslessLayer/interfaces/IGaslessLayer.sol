@@ -80,8 +80,6 @@ interface IGaslessLayer {
 		bytes[][] calldata flexFillerSignatures
 	) external returns (bytes[] memory);
 
-	function relayGrantBatchDelegationBySig(IInstantLayer.SignedDelegation calldata signedDelegation, bytes calldata signature) external;
-
 	function relayNativeGasTopUp(NativeGasTopUpRequest calldata request, bytes calldata signature) external payable;
 
 	function settleDepositToNewAccount(
@@ -135,14 +133,6 @@ interface IGaslessLayer {
 	// Payers are read from the per-op OperationalFeeRouted events in the same receipt.
 	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 totalFee18);
 	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 totalFee18);
-	event DelegationBySigRelayed(
-		address indexed relayer,
-		address indexed delegatorAccount,
-		address indexed payer,
-		address delegate,
-		uint256 selectorCount,
-		uint256 fee18
-	);
 	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount18);
 	/// @notice Deposit fee in collateral-token units, attributed to the wallet owner.
 	event DepositFeeCollected(address indexed owner, address indexed treasury, uint256 amount);
