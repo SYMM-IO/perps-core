@@ -238,6 +238,8 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		const compatibility = await verifyGaslessCompatibility(hre, ethers, snapshot, baseline)
 		return {
 			token,
+			core,
+			treasury,
 			account,
 			legacyWallet,
 			deployer,
@@ -303,15 +305,22 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		expect(await ethers.provider.getTransactionCount(f.deployer.address)).to.equal(before + 13)
 		const handoff = await buildUpgradeClientHandoff(hre, f.input, report)
 		const clientInterface = new ethers.Interface(handoff.gaslessABI)
+		expect(handoff.apiVersion).to.equal("operations.symm.io/gasless-client-upgrade-v3")
 		expect(clientInterface.getFunction("relayInstantBatch")!.inputs.at(-1)!.type).to.equal("uint256[]")
 		expect(clientInterface.getFunction("getGaslessWalletAddress")!.inputs.map(i => i.type)).to.deep.equal(["address", "uint256"])
 		expect(clientInterface.getFunction("walletOperationNonces")!.inputs.map(i => i.type)).to.deep.equal(["address", "uint256", "address"])
+		expect(clientInterface.getFunction("walletNonces")).to.equal(null)
+		expect(clientInterface.getFunction("withdrawWalletFunds")!.inputs.map(i => i.type)).to.deep.equal(["uint256", "address", "address", "uint256"])
+		expect(clientInterface.getFunction("initialize")!.inputs).to.have.length(8)
 		expect(handoff.walletCreationFeePolicy).to.deep.equal({ requiredValue: "0", unit: "collateral token decimals", setDuringUpgrade: false })
 		for (const name of ["previewFeeQuote", "simulateFeeQuote", "executeWithFeeLimit", "walletCreationFee", "getWalletCreationFee"])
 			expect(clientInterface.getFunction(name)).not.to.equal(null)
 		expect(clientInterface.getError("FeeQuoteResult")).not.to.equal(null)
 		expect(clientInterface.getEvent("WalletCreationFeeCollected")).not.to.equal(null)
-		expect(clientInterface.getEvent("WalletDepositSettled")).not.to.equal(null)
+		expect(clientInterface.getEvent("WalletDepositSettled")!.topicHash).to.equal(
+			ethers.id("WalletDepositSettled(address,uint256,address,uint256,uint256,uint8)"),
+		)
+		expect(clientInterface.getEvent("WalletFundsWithdrawn")).not.to.equal(null)
 		expect(clientInterface.getEvent("WalletNonCollateralTokenRecovered")).not.to.equal(null)
 		expect(clientInterface.getEvent("DepositSettledToNewAccount")).to.equal(null)
 		expect(handoff.gaslessLayer).to.equal(f.input.config.target.gaslessLayer)
@@ -383,7 +392,6 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 			coder.encode(["address", "bytes32"], [f.relayer.address, ethers.keccak256(coder.encode(["address", "uint256"], [indexedWallet, 19]))]),
 		)
 		await ethers.provider.send("hardhat_setStorageAt", [String(f.gasless.target), indexedNonceSlot, ethers.toBeHex(9, 32)])
-		expect(await f.gasless.walletNonces(indexedWallet, f.relayer.address)).to.equal(9)
 		expect(await f.gasless.walletOperationNonces(f.admin.address, 1, f.relayer.address)).to.equal(9)
 		expect(await f.gasless.walletOperationNonces(f.admin.address, 0, f.relayer.address)).to.equal(37)
 		const after = await readGaslessConfiguration(ethers, String(f.gasless.target), await ethers.provider.getBlockNumber())
@@ -401,19 +409,57 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 		const callData = f.gasless.interface.encodeFunctionData("settleDepositToExistingAccount", [f.admin.address, 0, f.relayer.address])
 		const preview = await f.gasless.previewFeeQuote(callData, 0)
 		expect(preview.exact).to.equal(false)
-		expect(preview.totalFee).to.equal(30000n * 10n ** 12n)
-		expect(preview.payments[0].walletCreationFee).to.equal(0)
+		expect(preview.totalFee18).to.equal(30000n * 10n ** 12n)
+		expect(preview.payments[0].walletCreationFee18).to.equal(0)
 		const exact = await quoteGaslessFee({ gateway: f.gasless as any, callData, mode: "exact", from: f.admin.address })
 		expect(exact.status).to.equal("quoted")
 		if (exact.status !== "quoted") throw new Error("Expected exact quote")
-		expect(exact.quote.totalDebit).to.equal(preview.totalDebit)
+		expect(exact.quote.totalDebit18).to.equal(preview.totalDebit18)
 		expect(exact.quote.exact).to.equal(true)
 		expect(await f.token.balanceOf(f.legacyWallet)).to.equal(100000)
 		expect(await ethers.provider.getCode(f.legacyWallet)).to.equal("0x")
-		await expect(f.gasless.executeWithFeeLimit(callData, preview.totalDebit - 1n)).to.be.revertedWithCustomError(f.gasless, "FeeLimitExceeded")
+		await expect(f.gasless.executeWithFeeLimit(callData, preview.totalDebit18 - 1n)).to.be.revertedWithCustomError(f.gasless, "FeeLimitExceeded")
 		expect(await f.token.balanceOf(f.legacyWallet)).to.equal(100000)
-		await f.gasless.executeWithFeeLimit(callData, preview.totalDebit)
+		await expect(f.gasless.executeWithFeeLimit(callData, preview.totalDebit18))
+			.to.emit(f.gasless, "WalletDepositSettled")
+			.withArgs(f.admin.address, 0, f.relayer.address, 70000, 30000, 1)
 		expect(await f.token.balanceOf(f.legacyWallet)).to.equal(0)
+		// The new eight-argument initializer is for fresh proxies, never this upgrade.
+		await expect(
+			f.gasless.initialize(f.admin.address, f.core.target, f.account.target, replacement.target, f.treasury.address, 30000, 999, 50000),
+		).to.be.revertedWithCustomError(f.gasless, "InvalidInitialization")
+		// Owners without protocol accounts or gateway roles can exit both original and indexed wallets.
+		const owner = f.deployer
+		for (const role of [ethers.ZeroHash, ethers.id("CONFIG_ADMIN_ROLE"), ethers.id("RELAYER_ROLE")])
+			expect(await f.gasless.hasRole(role, owner.address)).to.equal(false)
+		for (const walletId of [0, 2]) {
+			const wallet = await f.gasless.getGaslessWalletAddress(owner.address, walletId)
+			await f.token.mint(wallet, 12345)
+			const withdrawal = f.gasless.interface.encodeFunctionData("withdrawWalletFunds", [
+				walletId,
+				f.token.target,
+				f.treasury.address,
+				ethers.MaxUint256,
+			])
+			await expectFailure(() => quoteGaslessFee({ gateway: f.gasless as any, callData: withdrawal, mode: "preview" }), /owner.*from/)
+			for (const mode of ["preview", "exact"] as const) {
+				const quote = await quoteGaslessFee({ gateway: f.gasless as any, callData: withdrawal, mode, from: owner.address })
+				if (quote.status !== "quoted") throw new Error(`Expected ${mode} owner withdrawal quote`)
+				expect(quote.quote.totalFee18).to.equal(0)
+				expect(quote.quote.totalDebit18).to.equal(0) // Withdrawn principal is excluded.
+			}
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await f.token.balanceOf(wallet)).to.equal(12345)
+			const beforeRecipient = await f.token.balanceOf(f.treasury.address)
+			await expect(f.gasless.connect(owner).executeWithFeeLimit(withdrawal, 0))
+				.to.emit(f.gasless, "WalletFundsWithdrawn")
+				.withArgs(owner.address, walletId, f.token.target, f.treasury.address, 12345)
+			expect(await f.token.balanceOf(wallet)).to.equal(0)
+			expect(await f.token.balanceOf(f.treasury.address)).to.equal(beforeRecipient + 12345n)
+			expect(await f.gasless.walletOperationNonces(owner.address, walletId, owner.address)).to.equal(0)
+		}
+		expect(await f.gasless.walletOperationNonces(f.admin.address, 0, f.relayer.address)).to.equal(37)
+		expect(await f.gasless.walletOperationNonces(f.admin.address, 1, f.relayer.address)).to.equal(9)
 		expect(await f.gasless.walletCreationFee()).to.equal(0)
 		assertConfigurationParity(after, await readGaslessConfiguration(ethers, String(f.gasless.target), await ethers.provider.getBlockNumber()))
 		await replacement.connect(f.admin).setTemplateActive(0, true)
