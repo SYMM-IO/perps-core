@@ -55,6 +55,8 @@ library ClearingHouseFacetImpl {
 		require(maLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 
 		require(LibAccount.partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0, "ClearingHouseFacet: partyB is solvent");
+		maLayout.liquidationStartNonce += 1;
+		emit SharedEvents.LiquidationStartNonceIncremented(maLayout.liquidationStartNonce);
 		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = timestamp;
 		chLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
 			liquidationId: liquidationId,
@@ -178,7 +180,8 @@ library ClearingHouseFacetImpl {
 	/// @notice Liquidates open positions during clearing house liquidation
 	/// @param subject The party being liquidated (partyB for cross, partyA for takeover)
 	/// @param quoteIds The quote IDs to liquidate
-	/// @param prices The prices to use for liquidation
+	/// @param prices The prices to use for liquidation. During an open restatement, these trusted inputs are in venue units
+	///               and Core converts each one to the corresponding quote's stored basis.
 	function liquidatePositionsForClearingHouse(
 		address subject,
 		uint256[] memory quoteIds,
@@ -201,7 +204,7 @@ library ClearingHouseFacetImpl {
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+			LibSymbolAdjustment.requireLiquidationAllowed(quote.symbolId);
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
@@ -216,7 +219,7 @@ library ClearingHouseFacetImpl {
 				partyB.requireNotLiquidating(partyA);
 			}
 
-			uint256 liquidationPrice = prices[i];
+			uint256 liquidationPrice = LibSymbolAdjustment.liquidationPriceInStoredUnits(quote, prices[i]);
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 
 			closeIds[i] = quoteLayout.closeIds[quote.id];

@@ -8,6 +8,7 @@ import { Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/AggregatedDataStorage.sol";
 import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
 import { LibFundingRate } from "./LibFundingRate.sol";
+import { LibSymbolAdjustmentFunding } from "./LibSymbolAdjustmentFunding.sol";
 
 /// @title LibAggregateFunding
 /// @notice Library for managing aggregate funding tracking across positions
@@ -36,9 +37,8 @@ library LibAggregateFunding {
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
 		// Update per-partyB storage (required for accurate funding calculations with multiple hedgers)
-		aggregatedLayout
-			.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += contribution;
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			contribution;
 	}
 
 	/// @notice Adds to partyB aggregate funding when a position is opened
@@ -54,9 +54,8 @@ library LibAggregateFunding {
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += contribution;
 
 		// Update per-partyA funding
-		aggregatedLayout
-			.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += contribution;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			contribution;
 	}
 
 	/// @notice Adds to both parties' aggregate funding when a position is opened
@@ -79,9 +78,8 @@ library LibAggregateFunding {
 		int256 contribution = (int256(amount) * quote.accumulatedPaidFunding) / 1e18;
 
 		// Update per-partyB storage (required for accurate funding calculations with multiple hedgers)
-		aggregatedLayout
-			.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType]
-			.weightedPaidFunding -= contribution;
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -=
+			contribution;
 	}
 
 	/// @notice Subtracts from partyB aggregate funding when a position is closed
@@ -97,9 +95,8 @@ library LibAggregateFunding {
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -= contribution;
 
 		// Update per-partyA funding
-		aggregatedLayout
-			.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType]
-			.weightedPaidFunding -= contribution;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding -=
+			contribution;
 	}
 
 	/// @notice Subtracts from both parties' aggregate funding when a position is closed
@@ -126,17 +123,15 @@ library LibAggregateFunding {
 		int256 delta = newContribution - oldContribution;
 
 		// Update partyA aggregate (per-partyB storage for accurate multi-hedger calculations)
-		aggregatedLayout
-			.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += delta;
+		aggregatedLayout.partyAAggregatedFundingPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			delta;
 
 		// Update global partyB funding (for cross partyB mode)
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding += delta;
 
 		// Update partyB aggregate per partyA
-		aggregatedLayout
-			.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType]
-			.weightedPaidFunding += delta;
+		aggregatedLayout.partyBAggregatedFundingPerPartyA[quote.partyB][quote.partyA][quote.symbolId][quote.positionType].weightedPaidFunding +=
+			delta;
 	}
 
 	/// @notice Calculates the aggregate funding debt for partyA for a specific symbol and position type
@@ -163,7 +158,7 @@ library LibAggregateFunding {
 		if (fundingFee.epochDuration == 0) return 0;
 
 		// Get current accumulated fee (same logic as in getAccumulatedFundingFee)
-		int256 currentFee = _calculateCurrentFee(fundingFee, positionType);
+		int256 currentFee = _calculateCurrentFee(symbolId, partyB, positionType);
 
 		// Use per-partyB weighted paid funding
 		int256 weightedPaid = aggregatedLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
@@ -194,7 +189,7 @@ library LibAggregateFunding {
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolId][partyB];
 		if (fundingFee.epochDuration == 0) return 0;
 
-		int256 currentFee = _calculateCurrentFee(fundingFee, positionType);
+		int256 currentFee = _calculateCurrentFee(symbolId, partyB, positionType);
 
 		int256 weightedPaid = aggregatedLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
 
@@ -220,7 +215,7 @@ library LibAggregateFunding {
 		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolId][partyB];
 		if (fundingFee.epochDuration == 0) return 0;
 
-		int256 currentFee = _calculateCurrentFee(fundingFee, positionType);
+		int256 currentFee = _calculateCurrentFee(symbolId, partyB, positionType);
 
 		// Use global partyB weighted paid funding
 		int256 weightedPaid = aggregatedLayout.partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
@@ -231,18 +226,17 @@ library LibAggregateFunding {
 	}
 
 	/// @notice Internal function to calculate the current accumulated funding fee
-	/// @param fundingFee The funding fee structure
+	/// @param symbolId The symbol whose funding state is being read
+	/// @param partyB The PartyB whose funding state is being read
 	/// @param positionType The position type
-	/// @return The weighted sum of (accumulatedRate * epochsBeforeLastUpdate) + (currentRate * epochsSinceLastUpdate)
-	function _calculateCurrentFee(FundingFee storage fundingFee, PositionType positionType) internal view returns (int256) {
-		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
-		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
-
-		int256 accumulatedRate = positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
-		int256 currentRate = positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
-		int256 snapshot = positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
-
-		// Calculate current fee = snapshot + weighted average rate × total epochs
-		return snapshot + (accumulatedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
+	/// @return The exact cumulative per-unit fee at the restatement-aware effective timestamp
+	function _calculateCurrentFee(uint256 symbolId, address partyB, PositionType positionType) internal view returns (int256) {
+		(FundingFee memory fundingFee, uint256 effectiveTimestamp) = LibSymbolAdjustmentFunding.effectiveFundingFeeAt(
+			symbolId,
+			partyB,
+			block.timestamp
+		);
+		(int256 cumulativeLongFee, int256 cumulativeShortFee) = LibFundingRate.cumulativeRatesAt(fundingFee, effectiveTimestamp);
+		return positionType == PositionType.LONG ? cumulativeLongFee : cumulativeShortFee;
 	}
 }
