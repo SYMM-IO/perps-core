@@ -64,8 +64,8 @@
 					<h2 id="summary">Summary</h2>
 					<p>
 						Muon calculates one total from position groups. Liquidation settles the same account quote by quote. Integer division can make
-						those two correct paths differ by a few raw accounting units. The contract now records how many positions existed when
-						liquidation started and accepts up to three raw accounting units per starting position.
+						those two correct paths differ by a few raw accounting units. The contract records how many positions existed when liquidation
+						started and accepts up to three raw accounting units per starting position.
 					</p>
 					<p>
 						The allowance is fixed at <code>3</code> raw units per starting position and always applies. A larger mismatch still opens a
@@ -181,20 +181,54 @@ npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;net
 					</p>
 
 					<h2 id="rollout">Safe rollout</h2>
+					<p>
+						Treat this as an update to the target diamond's actual deployed state. Deployments already running the v0.8.6 rounding release
+						have the three-unit allowance and liquidation-start position count; this update does not introduce or enable them.
+					</p>
+					<p>
+						The deployment scope includes <code>MigrationFacet</code>, <code>ViewFacetAggregate</code>, and <code>ViewFacetQuote</code>,
+						plus the funding and liquidation changes in <code>PartyBBatchActionsFacet</code>, <code>PartyBLiquidationFacet</code>,
+						<code>PartyBPositionActionsFacetImpl</code>, <code>SymbolAdjustmentFacet</code>, <code>ClearingHouseFacetImpl</code>,
+						<code>LibQuoteClose</code>, <code>LibForceActions</code>, and <code>LibPartyALiquidationProcess</code>. Changes to internal
+						funding helpers are compiled into their callers, so a source-file list alone is not a complete deployment list.
+					</p>
+					<p>
+						Build the final deployment list from the compiled bytecode and artifact <code>linkReferences</code>. If a linked library gets
+						a new address, relink and redeploy every caller, including callers of those callers. This includes
+						<code>ClearingHouseFacet</code>, <code>ForceActionsFacet</code>, <code>ForceCloseStepsFacet</code>, <code>PartyAFacet</code>,
+						both PartyA liquidation facets, <code>PartyBEmergencyActionsFacet</code>, <code>PartyBExecutionFacet</code>,
+						<code>PartyBPositionActionsFacet</code>, and <code>PartyBQuoteActionsFacet</code>. Deploy library dependencies before their
+						callers, then update the diamond's facet mappings.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Check selectors before building the cut.</strong> Query <code>facetAddress(bytes4)</code> through the diamond loupe
+						for each function signature. Use <code>Add</code> for an absent selector and <code>Replace</code> for an existing selector
+						that must point to an updated facet. Only use <code>Remove</code> for a deployed selector that is intentionally retired.
+						Removing an absent selector reverts the whole cut. The four-field repair variant was an intermediate development version; its
+						presence in Git is not evidence that it was deployed. Do not include its removal unless the target loupe confirms it exists
+						and the upgrade retires it.
+					</aside>
+					<p>The seven-field repair function has this canonical ABI signature; the position-type enum is encoded as <code>uint8</code>:</p>
+					<pre><code>resyncAggregateFunding((address,address,uint256,uint8,int256,int256,int256)[])</code></pre>
 					<ol>
 						<li>
-							Globally pause the protocol before deploying the contract changes. The three-unit allowance applies immediately after
-							upgrade.
+							Record the target chain, diamond address, deployed facets, and library addresses. Prepare the complete deployment and
+							selector plan above, then rehearse the upgrade and repair against a recent fork of that deployment.
 						</li>
 						<li>
-							Deploy the updated <code>MigrationFacet</code> and the truly paginated <code>ViewFacetQuote</code> getter. Because the
-							repair tuple now carries three funding values, the diamond cut must remove the old four-field
-							<code>resyncAggregateFunding</code> selector and add the new seven-field selector.
+							List the affected funding groups in the JSON input file and finish active PartyA and PartyB liquidations involving them
+							before the global pause. The repair rejects liquidating parties, and a global pause also blocks liquidation settlement. If
+							a liquidation cannot finish, resolve it through the existing dispute or Clearing House flow before repairing its groups.
 						</li>
-						<li>List the affected funding groups in the JSON input file.</li>
+						<li>
+							Globally pause the protocol and confirm that the affected accounts are no longer liquidating. Deploy the updated libraries
+							and dependent facets, refresh the target's selector inventory, and apply the reviewed diamond cut. Verify its facet
+							mappings, the seven-field repair selector, and the exact-notional getters before calculating repairs.
+						</li>
 						<li>
 							Run <code>scripts/resyncAggregateFunding.ts</code> without <code>EXECUTE</code>. Review the fixed block, every old and new
-							raw value, and the generated calldata.
+							raw value, and the generated calldata. Keep the global pause in place and avoid other state-changing migrations throughout
+							the calculation and repair.
 						</li>
 						<li>Execute the reviewed batches, then verify each event and the script's pair and global post-checks before unpausing.</li>
 						<li>
