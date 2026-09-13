@@ -5,13 +5,15 @@
 pragma solidity >=0.8.18;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState } from "../storages/SymbolAdjustmentStorage.sol";
-import { Quote } from "../storages/QuoteStorage.sol";
+import { SymbolAdjustmentStorage, SymbolAdjustment, AdjustmentState, RestatementPhase } from "../storages/SymbolAdjustmentStorage.sol";
+import { Quote, QuoteStatus } from "../storages/QuoteStorage.sol";
 import { LibQuoteAdjustment } from "./LibQuoteAdjustment.sol";
 
 /// @title LibSymbolAdjustment
 /// @notice Freeze checks and factor helpers for the corporate-action adjustment system
 library LibSymbolAdjustment {
+	error PendingQuoteIsStale();
+
 	/// @notice A symbol is frozen iff its adjustment is SCHEDULED and past its effective time, or a restatement window is open
 	function isFrozen(uint256 symbolId) internal view returns (bool) {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
@@ -21,6 +23,40 @@ library LibSymbolAdjustment {
 
 	function requireNotFrozen(uint256 symbolId) internal view {
 		require(!isFrozen(symbolId), "LibSymbolAdjustment: Symbol is frozen");
+	}
+
+	/// @notice Allows a liquidation close through the symbol freeze only while a physical restatement window is open.
+	/// @dev An effective SCHEDULED adjustment without an open restatement remains blocked. This keeps the ordinary
+	///      freeze intact while letting liquidation remove inventory that the restatement counters already track.
+	function requireLiquidationAllowed(uint256 symbolId) internal view {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		require(!isFrozen(symbolId) || adjustment.restating, "LibSymbolAdjustment: Symbol is frozen");
+	}
+
+	/// @notice Requires liquidation price payloads to postdate any currently open window.
+	/// @dev After abort, LibMuonLiquidation's price-basis commitment prevents replay while allowing replacement snapshots
+	///      to retain the started liquidation's original timestamp.
+	function requireCurrentLiquidationSignature(uint256 symbolId, uint256 signatureTimestamp) internal view {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		requireLiquidationAllowed(symbolId);
+		if (adjustment.restating) {
+			require(signatureTimestamp > adjustment.restatementStartedAt, "LibSymbolAdjustment: Liquidation signature predates restatement");
+		}
+	}
+
+	/// @notice Converts a venue-basis liquidation price into the quote's current stored price basis.
+	/// @dev Liquidation price payloads use venue units during an open restatement. Quotes already rewritten in the
+	///      current epoch also use venue units and need no conversion. For an old-basis quote, the conversion uses the
+	///      same conservation-preserving open-plus-closed quantity as physical restatement so current-price notional
+	///      follows the normalized quote. If that total quantity rounds to zero, the direct factor is the deterministic dust fallback.
+	function liquidationPriceInStoredUnits(Quote storage quote, uint256 venuePrice) internal view returns (uint256) {
+		SymbolAdjustmentStorage.Layout storage layout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = layout.adjustments[quote.symbolId];
+		if (!adjustment.restating || layout.quoteRestatedEpoch[quote.id] >= adjustment.restatementEpoch) return venuePrice;
+
+		(, , uint256 adjustedQuantity) = LibQuoteAdjustment.scalePositionAmounts(quote.quantity, quote.closedAmount, adjustment.restatementFactor);
+		if (adjustedQuantity == 0) return Math.mulDiv(venuePrice, adjustment.restatementFactor, 1e18);
+		return Math.mulDiv(adjustedQuantity, venuePrice, quote.quantity);
 	}
 
 	/// @notice True if the symbol has a SCHEDULED (not yet confirmed/cancelled) adjustment, effective or not
@@ -37,6 +73,22 @@ library LibSymbolAdjustment {
 	/// @notice Current physical price/quantity basis version for a symbol.
 	function basisVersion(uint256 symbolId) internal view returns (uint256) {
 		return SymbolAdjustmentStorage.layout().adjustments[symbolId].basisVersion;
+	}
+
+	/// @notice Highest quote ID that belongs to an older physical basis for a symbol.
+	function pendingQuoteIdCutoff(uint256 symbolId) internal view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().adjustments[symbolId].pendingQuoteIdCutoff;
+	}
+
+	/// @notice True when a pending quote predates the symbol's latest completed physical restatement.
+	function isPendingQuoteStale(Quote storage quote) internal view returns (bool) {
+		// The three pending states are contiguous and precede CANCELED in QuoteStatus.
+		if (quote.quoteStatus > QuoteStatus.CANCEL_PENDING) return false;
+		return quote.id != 0 && quote.id <= pendingQuoteIdCutoff(quote.symbolId);
+	}
+
+	function requirePendingQuoteCurrent(Quote storage quote) internal view {
+		if (isPendingQuoteStale(quote)) revert PendingQuoteIsStale();
 	}
 
 	/// @notice True when the applicable physical-restatement factor cannot preserve every nonzero amount on an unrestated quote.
@@ -60,11 +112,14 @@ library LibSymbolAdjustment {
 		return LibQuoteAdjustment.hasAmountUnderflow(quoteSnapshot, factor);
 	}
 
-	/// @notice Marks that a quote mutation occurred during the current restatement window.
-	/// @dev Used to prevent aborting after either a physical quote rewrite or a pending-inventory removal.
+	/// @notice Marks that a basis-dependent mutation occurred during the current restatement window.
+	/// @dev Used to prevent aborting after a physical quote rewrite or after a multi-step liquidation stores a
+	///      venue-basis price that would be reinterpreted incorrectly if the window returned to the old basis.
+	///      Once abort restoration starts, reject these mutations so every remaining batch can safely complete.
 	function recordRestatementMutation(uint256 symbolId) internal {
 		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
 		if (!adjustment.restating) return;
+		require(adjustment.restatementPhase != RestatementPhase.ABORT_FUNDING_RESTORATION, "LibSymbolAdjustment: Restatement abort in progress");
 		adjustment.restatementMutated = true;
 	}
 }

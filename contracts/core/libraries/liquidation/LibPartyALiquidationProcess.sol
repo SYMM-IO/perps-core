@@ -13,6 +13,7 @@ import { LibPartyBState } from "../extensions/LibPartyBState.sol";
 import { LibQuote } from "../LibQuote.sol";
 import { LibQuoteState } from "../extensions/LibQuoteState.sol";
 import { LibQuoteFunding } from "../LibQuoteFunding.sol";
+import { LibSymbolAdjustment } from "../LibSymbolAdjustment.sol";
 import { LibUtils } from "../LibUtils.sol";
 import { SharedEvents } from "../SharedEvents.sol";
 import { LockedValuesOps } from "../LibLockedValues.sol";
@@ -89,7 +90,9 @@ library LibPartyALiquidationProcess {
 		accountLayout.pendingLockedBalances[partyA].makeZero();
 	}
 
-	/// @notice Liquidates open positions of Party A, settles PnL per Party B, and detects disputes
+	/// @notice Liquidates open positions of Party A, settles PnL per Party B, and detects disputes.
+	/// @dev During restatement, stored venue-basis liquidation prices are converted independently for each quote so mixed
+	///      old- and new-basis positions settle against their own storage basis.
 	function liquidatePositionsPartyA(
 		address partyA,
 		uint256[] memory quoteIds
@@ -493,7 +496,7 @@ library LibPartyALiquidationProcess {
 			// Legacy flow uses per-symbol prices stored during the price setup step.
 			Price storage price = accountLayout.symbolsPrices[partyA][quote.symbolId];
 			require(price.timestamp == liquidationDetail.timestamp, "LiquidationFacet: Price should be set");
-			return (price.price, LibQuoteFunding.getAccumulatedFundingFee(quote.id));
+			return (LibSymbolAdjustment.liquidationPriceInStoredUnits(quote, price.price), LibQuoteFunding.getAccumulatedFundingFee(quote.id));
 		}
 
 		// Snapshot flow uses Muon-signed PartyB-symbol state captured at liquidation time.
@@ -502,7 +505,7 @@ library LibPartyALiquidationProcess {
 		][quote.symbolId];
 		require(snapshot.isSet, "LiquidationFacet: Missing signed state");
 		return (
-			snapshot.price,
+			LibSymbolAdjustment.liquidationPriceInStoredUnits(quote, snapshot.price),
 			LibQuoteFunding.getAccumulatedFundingFeeFromSnapshot(
 				quote.id,
 				snapshot.cumulativeLongFee,

@@ -8,6 +8,9 @@ import { PositionType } from "../../storages/QuoteStorage.sol";
 import { RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
 
 interface ISymbolAdjustmentFacet {
+	error PendingQuoteIsStale();
+	error LiquidationStartNonceMismatch(uint256 expected, uint256 actual);
+
 	struct QuoteAdjustmentPreview {
 		uint256 factor;
 		uint256 quantity;
@@ -81,7 +84,11 @@ interface ISymbolAdjustmentFacet {
 		uint256 newOpenedPrice
 	);
 	event PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId);
+	event PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId);
+	event StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId);
 	event RestatementFinalized(uint256 indexed symbolId, uint256 epoch);
+	/// @notice Also emitted by every liquidation-start route on the shared Diamond address.
+	event LiquidationStartNonceIncremented(uint256 indexed nonce);
 
 	function scheduleAdjustment(uint256 symbolId, uint256 factor, uint256 effectiveTimestamp) external;
 
@@ -89,8 +96,8 @@ interface ISymbolAdjustmentFacet {
 
 	function confirmPriceAdjusted(uint256 symbolId) external;
 
-	/// @notice Starts a frozen restatement and initializes bounded funding preparation.
-	function startRestatement(uint256 symbolId) external;
+	/// @notice Starts a frozen restatement if no liquidation has started since Operations took its off-chain snapshot.
+	function startRestatement(uint256 symbolId, uint256 expectedLiquidationStartNonce) external;
 
 	/// @notice Processes only the operator-supplied PartyBs for funding preparation or restoration.
 	function processRestatementFunding(uint256 symbolId, address[] calldata partyBs) external;
@@ -98,11 +105,15 @@ interface ISymbolAdjustmentFacet {
 	/// @notice Attests that Operations supplied every PartyB and starts the funding-only pass when accumulated funding is active.
 	function completeRestatementFundingPreparation(uint256 symbolId) external;
 
+	/// @notice Starts original-rate restoration after Operations has sealed a complete PartyB manifest and before a basis mutation.
 	function abortRestatement(uint256 symbolId) external;
 
 	function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external;
 
 	function cancelPendingQuotes(uint256[] calldata quoteIds) external;
+
+	/// @notice Permissionlessly cancels pending quotes invalidated by a completed physical restatement.
+	function cancelStalePendingQuotes(uint256[] calldata quoteIds) external;
 
 	function finalizeRestatement(uint256 symbolId) external;
 }

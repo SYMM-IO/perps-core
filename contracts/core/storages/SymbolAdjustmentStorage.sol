@@ -26,7 +26,7 @@ enum RestatementPhase {
 /// @notice A symbol's corporate-action adjustment state. Only the latest adjustment is stored;
 ///         full history is reconstructed from events (AdjustmentScheduled / AdjustmentCancelled /
 ///         PriceAdjustmentConfirmed / RestatementStarted / funding progress / RestatementAborted /
-///         QuoteAdjusted / PendingQuoteCancelledByAdjustment / RestatementFinalized), matching how
+///         QuoteAdjusted / pending-quote cutoff events / RestatementFinalized), matching how
 ///         accumulated-funding history lives in events rather than storage.
 struct SymbolAdjustment {
 	/// @notice Latest scheduled adjustment's 1e18-scaled units multiplier: 4:1 split -> 4e18, 1:10 reverse split -> 0.1e18.
@@ -47,14 +47,15 @@ struct SymbolAdjustment {
 	uint256 cumulativeFactor;
 	/// @notice Monotonically increasing identifier of the latest restatement window.
 	/// @dev Stamped into `quoteRestatedEpoch` so the same quote cannot be rewritten twice in one window while still allowing a later window
-	///      to rewrite it.
+	///      to rewrite it. Liquidation price hashes also bind this epoch and `restating` to prevent cross-window replay.
 	uint256 restatementEpoch;
 	/// @notice Whether a restatement maintenance window is currently open.
 	/// @dev Freezes the symbol and gates quote rewrites, abort, and finalization to an explicitly opened window.
 	bool restating;
-	/// @notice Whether any quote rewrite occurred in the current restatement window.
-	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory.
-	///      This is a mutation-safety flag, not the open-position completeness check enforced by the inventory checkpoints below.
+	/// @notice Whether a basis-dependent mutation occurred in the current restatement window.
+	/// @dev Used only by `abortRestatement`: once true, abort is forbidden because reopening trading would expose partially restated inventory
+	///      or reinterpret venue-basis prices stored by a multi-step liquidation. This is a mutation-safety flag, not the open-position
+	///      completeness check enforced by the inventory checkpoints below.
 	bool restatementMutated;
 	/// @notice 1e18-scaled factor selected for the current restatement window; 0 when no window is open.
 	/// @dev Lets operations restate directly from SCHEDULED without activating `cumulativeFactor` for Muon or normal trading. Quote rewrites and
@@ -62,26 +63,28 @@ struct SymbolAdjustment {
 	uint256 restatementFactor;
 	/// @notice Monotonically increasing identifier of the symbol's physical price/quantity basis.
 	/// @dev Advances only after a restatement finalizes. Deferred multi-transaction workflows bind to this value so values from the
-	///      previous basis cannot be executed after quote storage has been rewritten. Muon payloads deliberately do NOT carry it:
-	///      signatures stay backward compatible, and the equivalent guarantee comes from the minimum restatement window enforced
-	///      in finalizeRestatement (see `restatementStartedAt`).
+	///      previous basis cannot be executed after quote storage has been rewritten. Ordinary Muon payloads do not carry it;
+	///      their expiry is guarded by the minimum restatement window (see `restatementStartedAt`). Liquidation price hashes
+	///      separately commit to `restatementEpoch` and `restating` so abort also invalidates them without relying on expiry.
 	uint256 basisVersion;
-	/// @notice Timestamp from which the symbol has been continuously frozen for the current restatement window.
-	/// @dev Set when the window opens. On the direct route, it is the later of the venue effective time and the on-chain scheduling
-	///      time. finalizeRestatement refuses to advance `basisVersion` until signatures minted under the current validity
-	///      configuration have expired.
+	/// @notice Highest global quote ID that existed when the symbol's latest physical restatement finalized.
+	/// @dev Pending quotes at or below this cutoff were created in an older storage basis and cannot be locked or opened.
+	uint256 pendingQuoteIdCutoff;
+	/// @notice Block timestamp at which the current restatement window opened.
+	/// @dev Liquidation price signatures must strictly postdate this boundary, even if the symbol was already frozen.
+	///      finalizeRestatement waits a full maximum UPNL validity period from this timestamp before advancing `basisVersion`.
 	uint256 restatementStartedAt;
 	/// @notice Current preparation and funding-restoration phase for the open restatement window.
 	/// @dev Inventory and funding preparation share the first phase. Quote mutation is allowed only in QUOTE_PROCESSING.
 	///      Abort and finalization stay frozen until saved rates are restored.
 	RestatementPhase restatementPhase;
 	/// @notice Shared funding cutoff selected when the restatement window opens.
-	/// @dev Every operator-supplied PartyB batch rolls its rates to this timestamp, regardless of the batch transaction time.
+	/// @dev Economic reads stop here immediately; every operator-supplied PartyB batch later crystallizes its exact cumulative fee at this timestamp.
 	uint256 fundingCutoffTimestamp;
 	/// @notice Number of PartyB funding checkpoints that still need restoration for this window.
-	/// @dev Incremented only for nonzero pairs explicitly supplied by Operations or encountered through quote processing.
+	/// @dev Incremented for each nonzero-epoch-duration pair explicitly supplied by Operations or encountered through quote processing.
 	uint256 pendingFundingPartyBCount;
-	/// @notice Shared rate-resumption timestamp selected when finalization begins.
+	/// @notice Shared fresh-epoch timestamp selected when abort or finalization begins.
 	/// @dev Batched restoration uses this timestamp so every PartyB resumes funding at one economic boundary.
 	uint256 fundingRestorationTimestamp;
 	/// @notice Whether the open window settles old-basis funding before quote rewrites.
@@ -90,13 +93,17 @@ struct SymbolAdjustment {
 	bool fundingSettlementRequired;
 }
 
-/// @notice Funding rates saved while a symbol is physically restated.
-/// @dev Rates are shared by all quotes for one symbol/PartyB pair. Core pauses them once per
-///      restatement window, then restores them on abort or rebases them on finalization.
+/// @notice Original and restated-basis funding rates saved while a symbol is physically restated.
+/// @dev Rates are shared by all quotes for one symbol/PartyB pair. Core crystallizes and pauses them once per
+///      restatement window, then starts a fresh original-rate epoch on abort or restated-rate epoch on finalization.
 struct FundingRateCheckpoint {
 	int256 currentLongRate;
 	int256 currentShortRate;
 	uint256 restatementEpoch;
+	/// @notice Long rate converted to the restated quantity basis and ready for a fresh epoch on finalization.
+	int256 restatedLongRate;
+	/// @notice Short rate converted to the restated quantity basis and ready for a fresh epoch on finalization.
+	int256 restatedShortRate;
 }
 
 /// @notice Old-basis open quantity that still has to be restated or removed for one symbol/PartyB pair.

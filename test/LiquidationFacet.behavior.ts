@@ -11,6 +11,7 @@ import type { BalanceInfo } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getPriceFetcher, getTotalLockedValuesForQuoteIds, getTradingFeeForQuotes, unDecimal } from "./utils/Common.js"
+import { bindLiquidationPriceBasis } from "./utils/LiquidationPriceBasis.js"
 import {
 	getDummyLiquidationSig,
 	getDummyPairUpnlSig,
@@ -466,7 +467,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			),
 		)
 		const chainId = (await ethers.provider.getNetwork()).chainId
-		return ethers.solidityPackedKeccak256(
+		const payloadHash = ethers.solidityPackedKeccak256(
 			[
 				"uint256",
 				"bytes",
@@ -501,6 +502,11 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 				liquidationSig.liquidationAllocatedBalance,
 				chainId,
 			],
+		)
+		return bindLiquidationPriceBasis(
+			context,
+			payloadHash,
+			states.map(state => state.symbolId),
 		)
 	}
 
