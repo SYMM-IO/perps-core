@@ -57,15 +57,13 @@ if grep -q '\.sol$' "$STAGED_LIST"; then
         exit 1
     fi
 
-    # Generate ABIs with the first available working runtime.
+    # Generate ABIs with Python, preferring python3 over python.
     if command -v python3 >/dev/null 2>&1 && python3 ./utils/make_abi.py; then
         :
     elif command -v python >/dev/null 2>&1 && python ./utils/make_abi.py; then
         :
-    elif command -v node >/dev/null 2>&1 && node ./utils/make_abi.mjs; then
-        :
     else
-        echo "ABI generation failed. Aborting commit."
+        echo "ABI generation failed. A working Python 3 installation (python3 or python) is required. Aborting commit."
         exit 1
     fi
 
