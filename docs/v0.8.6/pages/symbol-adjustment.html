@@ -646,10 +646,10 @@ funding amount = 1 * 8 = 8</code></pre>
 						behind. Operations must still reconcile the book before aborting. An aborted window's epoch is not reused.
 					</p>
 					<p>
-						Abort completion also records <code>lastRestatementAbortedAt</code>. With funding checkpoints, this is the final restoration
-						batch's block timestamp, not the earlier abort-start timestamp. Liquidation price signatures at or before this cutoff are
-						rejected even after the symbol becomes live again, preventing a venue-basis signature from being replayed against unchanged
-						old-basis quotes. Scheduling, confirmation, cancellation, and later restatement windows do not clear this cutoff.
+						Abort completion sets <code>restating = false</code>, changing the signed price-basis commitment. With funding checkpoints,
+						this happens in the final restoration batch. Signatures from the open window then fail verification, including future-dated
+						payloads. Muon can issue replacement prices in the restored basis using an existing liquidation's original timestamp and ID.
+						There is no abort-completion timestamp cutoff; replay protection comes from the signed epoch and window state.
 					</p>
 					<aside class="callout callout-important">
 						<strong>Abort requires completed funding preparation.</strong>
@@ -1090,9 +1090,8 @@ else:
 					<aside class="callout callout-important">
 						<strong>Liquidation price signatures commit to the current restatement state and have a strict timestamp boundary.</strong>
 						For PartyA legacy/deferred symbol prices, PartyA snapshot states, and isolated PartyB quote prices, the signed timestamp must
-						be strictly greater than <code>restatementStartedAt</code> while a window is open. If a restatement was aborted, the timestamp
-						must also strictly exceed <code>lastRestatementAbortedAt</code>, including outside a window. Equality is rejected to remove
-						same-block ordering ambiguity. The signed hash additionally binds each priced symbol's <code>restatementEpoch</code> and
+						be strictly greater than <code>restatementStartedAt</code> while a window is open. This opening-time guard applies only during
+						the window. The signed hash additionally binds each priced symbol's <code>restatementEpoch</code> and
 						<code>restating</code> flag, so even future-dated signatures become invalid when abort completes. Muon must value UPNL from
 						the normalized mixed book and issue the price payload after the window opens. Snapshot cumulative funding fields are not
 						prices: they must continue to reproduce Core's cumulative funding state. Clearing House prices are trusted role inputs rather
@@ -1156,13 +1155,13 @@ signedHash = keccak256(abi.encode(domain, payloadHash, priceBases)); // bytes32,
 						<code>restatementMutated</code> immediately. This prevents an abort from returning to the old basis and then reinterpreting
 						that stored price. During <code>ABORT_FUNDING_RESTORATION</code>, legacy, deferred, and snapshot PartyA price setup for the
 						affected symbol reverts, including between funding-restoration batches. After completion, the price-basis commitment rejects
-						signatures from the aborted window, even if they already started a liquidation or have a future timestamp. The persistent
-						timestamp cutoff also requires fresh timestamps. A snapshot liquidation bound to an invalidated timestamp cannot reuse that
-						snapshot; Operations must use the existing Clearing House takeover and settlement flow to resolve it. Atomic isolated-PartyB
-						and Clearing House closes remain available under their existing guards. There is no governance function that zeros inventory
-						or forces finalization past nonzero counters. The emergency governance route is the existing
-						<code>CLEARING_HOUSE_ROLE</code> takeover of an active PartyA liquidation, or cross-PartyB liquidation, followed by explicit
-						quote-ID batches and normal settlement. It cannot fabricate completion and it does not bypass financial accounting.
+						signatures from the aborted window, even if they already started a liquidation or have a future timestamp. A snapshot
+						liquidation can resume with replacement prices signed for the restored basis while preserving its original timestamp,
+						liquidation ID, and historical fields. Abort does not require Clearing House takeover. Atomic isolated-PartyB and Clearing
+						House closes remain available under their existing guards. There is no governance function that zeros inventory or forces
+						finalization past nonzero counters. The emergency governance route is the existing <code>CLEARING_HOUSE_ROLE</code> takeover
+						of an active PartyA liquidation, or cross-PartyB liquidation, followed by explicit quote-ID batches and normal settlement. It
+						cannot fabricate completion and it does not bypass financial accounting.
 					</p>
 					<aside class="callout callout-invariant">
 						<strong>Gas is bounded by caller-supplied liquidation batches.</strong>
@@ -1940,9 +1939,9 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 										<code>restatementEpoch</code> increments on every successful start and survives abort and finalization.
 										<code>restating</code> is the open-window flag. <code>restatementMutated</code> resets to false at start,
 										becomes true on a quote rewrite or PartyA liquidation price snapshot, and is not cleared by finalization.
-										<code>restatementFactor</code> and <code>restatementStartedAt</code> are zero outside a window.
-										<code>lastRestatementAbortedAt</code> retains the latest abort-completion timestamp; zero means no abort.
-										Liquidation price signatures must strictly postdate it, including after later windows and schedule changes.
+										<code>restatementFactor</code> and <code>restatementStartedAt</code> are zero outside a window. Liquidation
+										price hashes commit to <code>restatementEpoch</code> and <code>restating</code>, so completing abort
+										invalidates open-window signatures without restricting a replacement snapshot's original timestamp.
 									</td>
 								</tr>
 								<tr>

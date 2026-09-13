@@ -91,10 +91,6 @@ struct SymbolAdjustment {
 	/// @dev Snapshotted from the global accumulated-funding switch when the PartyB manifest is sealed, so a switch flipped
 	///      mid-window cannot change what a rewrite requires after quotes have already been rewritten.
 	bool fundingSettlementRequired;
-	/// @notice Completion timestamp of the latest aborted restatement; 0 means no window has been aborted.
-	/// @dev Persists across scheduling, confirmation, cancellation, and later windows. Liquidation price signatures must
-	///      strictly postdate this cutoff so venue-basis payloads from an aborted window cannot be reused in the old basis.
-	uint256 lastRestatementAbortedAt;
 }
 
 /// @notice Original and restated-basis funding rates saved while a symbol is physically restated.
