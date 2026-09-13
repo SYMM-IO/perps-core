@@ -631,7 +631,7 @@ export async function buildUpgradeClientHandoff(hre: any, input: any, report: an
 	const gasless = await hre.artifacts.readArtifact("GaslessLayer")
 	const instant = await hre.artifacts.readArtifact("InstantLayer")
 	return {
-		apiVersion: "operations.symm.io/gasless-client-upgrade-v2",
+		apiVersion: "operations.symm.io/gasless-client-upgrade-v3",
 		chainId: 42161,
 		inputDigest: digest(input),
 		snapshotDigest: report.snapshotDigest,
@@ -645,12 +645,14 @@ export async function buildUpgradeClientHandoff(hre: any, input: any, report: an
 		instructions: [
 			"Stage the indexed-wallet ABI before the Gasless Safe cutover; activate it when that upgrade executes.",
 			"relayInstantBatch requires walletIds with one entry per signed operation. Use 0 for InstantLayer operations and the original wallet.",
-			"Wallet address, deposit settlement, recovery and fee/nonce reads now take wallet IDs. walletOperationNonces(owner, walletId, signerAccount) returns the last consumed nonce; use that value plus one.",
+			"Wallet address, deposit settlement, recovery and fee/nonce reads now take wallet IDs. Use walletOperationNonces(owner, walletId, signerAccount), not the removed walletNonces getter; it returns the last consumed nonce, so use that value plus one.",
 			"Wallet ID 0 keeps the original address and legacy nonce stream. Positive IDs use separate wallet addresses and nonces.",
-			"Update event consumers for GaslessWalletDeployed, WalletDepositSettled, WalletNonCollateralTokenRecovered, WalletCreationFeeUpdated and WalletCreationFeeCollected using the attached ABI.",
-			"Wallet creation fees remain disabled: the upgrade verifies slot 20 is zero and does not call setWalletCreationFee. The standalone deployment recipe's fee does not apply to this upgrade.",
-			"previewFeeQuote is an estimate. Use quoteGaslessFee from scripts/gaslessLayer/fee-quote.ts in exact mode with the submitting relayer/admin as from and the intended native value; simulation returns FeeQuoteResult through a revert and must use eth_call.",
-			"FeeQuote monetary fields and executeWithFeeLimit maxTotalDebit use 18 decimals. WalletCreationFeeUpdated/Collected and walletCreationFee use collateral token decimals. totalDebit includes collateral exchanged for native gas; totalFee excludes that exchanged principal.",
+			"Update event consumers using the attached ABI, including WalletFundsWithdrawn. WalletDepositSettled has a new topic and final uint8 destination: 0 = NEW_ACCOUNT, 1 = EXISTING_ACCOUNT. Update named decoding for InstantBatchRelayed.totalFee18, InstantTemplateRelayed.totalFee18, DelegationBySigRelayed.fee18 and OperationalFeeRouted.amount18; DepositFeeCollected identifies owner.",
+			"withdrawWalletFunds(walletId, token, recipient, amount) is sent by the wallet owner without relayer/admin roles or a SYMMIO account. token = zero address selects native funds; amount = MaxUint256 withdraws the full balance after any creation fee. The owner pays transaction gas.",
+			"Admin recoverNonCollateralToken remains restricted to CONFIG_ADMIN_ROLE, rejects collateral and zero recipients, and deploys wallets without charging creation fees or moving their collateral.",
+			"Wallet creation fees remain disabled: the upgrade verifies slot 20 is zero and calls neither initialize nor setWalletCreationFee. The eight-argument initializer and standalone deployment recipe's fee apply only to new proxies.",
+			"previewFeeQuote is an estimate. Use quoteGaslessFee from scripts/gaslessLayer/fee-quote.ts in exact mode with the submitting relayer/admin/owner as from and the intended native value; simulation returns FeeQuoteResult through a revert and must use eth_call. Owner withdrawals require the owner's from address in preview mode too.",
+			"FeeQuote uses totalFee18, totalDebit18 and payment fields operationalFee18, depositFee18, walletCreationFee18, nativeTopUpFee18 and nativeGasCollateral18. These amounts and executeWithFeeLimit maxTotalDebit18 use 18 decimals; walletCreationFee/getWalletCreationFee and creation-fee events use collateral token decimals. totalDebit18 includes collateral exchanged for native gas; totalFee18 excludes that exchanged principal. Both exclude deposited/withdrawn principal.",
 			"Fee quotes cover Gasless charges, excluding Core trading fees, bridge fees and transaction gas. Execute the same encoded action directly or through executeWithFeeLimit; the wrapper retains the underlying roles.",
 			"Optional signed caps: set gaslessFeeLimitSalt before signing operation/delegation typed data; use signCappedNativeGasTopUp for capped top-ups. Existing untagged salts and legacy top-up signatures remain supported.",
 			"Use the new InstantLayer address/domain and grant fresh user delegations; old InstantLayer delegations and replay state are not migrated.",

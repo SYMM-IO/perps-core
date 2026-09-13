@@ -184,7 +184,7 @@ export async function reconcileAccountInstantUpgrade(ctx, input) {
 export function createAccountInstantUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-account-instant-upgrade",
-		version: 7,
+		version: 8,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum AccountLayer and InstantLayer upgrade — preserve current values",
@@ -300,7 +300,7 @@ export function createAccountInstantUpgradeTask(common) {
 				);
 				const ready = await ctx.ui.confirm({
 					message:
-						"Are relayer/client ABI, signing-domain, fee-quote/limit and event-consumer changes staged for activation with the Gasless Safe upgrade?",
+						"Are relayer/client ABI, signing-domain, owner-withdrawal, fee-quote/limit and event-consumer changes staged for activation with the Gasless Safe upgrade?",
 					initialValue: false,
 				});
 				if (!ready)
