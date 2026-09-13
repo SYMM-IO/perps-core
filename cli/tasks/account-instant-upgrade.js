@@ -1,4 +1,11 @@
-import { UPGRADE_DEPLOYMENTS, digest, validateUpgradeConfig } from "../../deployment-tooling/account-instant-upgrade.js";
+import {
+	UPGRADE_DEPLOYMENTS,
+	digest,
+	validateUpgradeConfig,
+	upgradeRequiresForkRehearsal,
+	createUpgradeRehearsalWaiver,
+	assertUpgradeRehearsal,
+} from "../../deployment-tooling/account-instant-upgrade.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
 import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, validateSignerSelection } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
@@ -10,7 +17,7 @@ import path from "node:path";
 export const ACCOUNT_INSTANT_PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile the reviewed upgrade contracts" },
 	{ id: "inspect", phase: "prepare", title: "Read current values and the supplied flow permissions" },
-	{ id: "rehearse", phase: "rehearsal", title: "Rehearse the full upgrade on the exact snapshot fork" },
+	{ id: "rehearse", phase: "rehearsal", title: "Rehearse on the snapshot fork or record the configured waiver" },
 	{ id: "authorize", phase: "authorization", title: "Review current values and authorize the upgrade" },
 	{
 		id: "deploy",
@@ -184,7 +191,7 @@ export async function reconcileAccountInstantUpgrade(ctx, input) {
 export function createAccountInstantUpgradeTask(common) {
 	return common({
 		id: "maintenance.arbitrum-account-instant-upgrade",
-		version: 8,
+		version: 9,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum AccountLayer and InstantLayer upgrade — preserve current values",
@@ -199,7 +206,7 @@ export function createAccountInstantUpgradeTask(common) {
 		],
 		artifacts: [
 			"pinned configuration-input.json",
-			"fork rehearsal evidence",
+			"fork rehearsal evidence or explicit input-bound waiver",
 			"thirteen contract deployments and publication evidence",
 			"transaction journal",
 			"Safe batches",
@@ -216,6 +223,7 @@ export function createAccountInstantUpgradeTask(common) {
 		validateResume: (ctx, input) => {
 			validateAccountInstantInput(input);
 			if (ctx.state.configurationDigest) reviewedConfiguration(ctx, input);
+			if (ctx.state.completedSteps?.includes("rehearse")) assertUpgradeRehearsal(read(input.input), readReport(input));
 			verifyClientHandoff(ctx, input);
 		},
 		reconcile: reconcileAccountInstantUpgrade,
@@ -238,6 +246,19 @@ export function createAccountInstantUpgradeTask(common) {
 			});
 			await step("rehearse", async () => {
 				const snapshot = reviewedConfiguration(ctx, input);
+				const standard = read(input.input);
+				if (!upgradeRequiresForkRehearsal(standard.config)) {
+					const report = readReport(input);
+					report.rehearsal = createUpgradeRehearsalWaiver(standard, snapshot);
+					assertUpgradeRehearsal(standard, report);
+					atomicWrite(input.output, report);
+					ctx.emit("upgrade.rehearsal-skipped", report.rehearsal);
+					ctx.ui.note(
+						"Fork rehearsal is skipped by the pinned upgrade input. Live inspection and all Safe and configuration checks still apply.",
+						"Fork rehearsal skipped",
+					);
+					return;
+				}
 				const report = await runPhase(ctx, input, "rehearse", {
 					fork: true,
 					env: {
@@ -247,8 +268,7 @@ export function createAccountInstantUpgradeTask(common) {
 						SYMMIO_RECIPE_READ_ONLY: "false",
 					},
 				});
-				if (report.rehearsal?.status !== "complete" || report.rehearsal.snapshotDigest !== ctx.state.configurationDigest)
-					throw new Error("Matching fork rehearsal is incomplete");
+				assertUpgradeRehearsal(standard, report);
 			});
 			await step("authorize", async () => {
 				const snapshot = reviewedConfiguration(ctx, input);
@@ -256,6 +276,7 @@ export function createAccountInstantUpgradeTask(common) {
 					JSON.stringify(
 						{
 							blockNumber: snapshot.blockNumber,
+							forkRehearsal: readReport(input).rehearsal,
 							gasless: snapshot.gasless,
 							instant: snapshot.instant,
 							partyBAdmins: snapshot.partyBAdmins,

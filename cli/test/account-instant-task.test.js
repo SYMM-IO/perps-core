@@ -1,4 +1,9 @@
-import { digest, UPGRADE_DEPLOYMENTS } from "../../deployment-tooling/account-instant-upgrade.js";
+import {
+	digest,
+	UPGRADE_DEPLOYMENTS,
+	assertUpgradeRehearsal,
+	createUpgradeRehearsalWaiver,
+} from "../../deployment-tooling/account-instant-upgrade.js";
 import { loadRecipeContext } from "../lib/recipe-context.js";
 import { SIGNER_MODES } from "../signer/index.js";
 import { createTaskRunner } from "../task-runner.js";
@@ -18,7 +23,7 @@ import test from "node:test";
 const definition = TASK_DEFINITIONS.find(task => task.id === "maintenance.arbitrum-account-instant-upgrade");
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
 const read = file => JSON.parse(fs.readFileSync(file));
-function fixture() {
+function fixture(requireForkRehearsal = true) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-account-instant-"));
 	fs.mkdirSync(path.join(root, "cli"));
 	fs.writeFileSync(path.join(root, "cli/source.js"), "// pinned test source\n");
@@ -35,6 +40,7 @@ function fixture() {
 		recipeDigest: loadRecipeContext(config, { plan: false }).digest,
 		forkRecipeDigest: loadRecipeContext(forkConfig, { plan: false }).digest,
 	};
+	standard.config.execution = { requireForkRehearsal };
 	const input = {
 		config,
 		forkConfig,
@@ -120,10 +126,11 @@ test("resume refuses changes to the acknowledged client handoff", t => {
 	assert.throws(() => definition.validateResume(ctx, f.input), /Reviewed client handoff changed/);
 });
 
-test("runner exports PartyB wiring and retirement for the Safe and verifies them before cutover and completion", async t => {
-	const f = fixture();
+async function verifySafeFlow(t, requireForkRehearsal) {
+	const f = fixture(requireForkRehearsal);
 	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
 	const flags = {
+		authorizations: 0,
 		configured: false,
 		cut: false,
 		wired: false,
@@ -167,6 +174,8 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 					}
 					assert.equal(phase.startsWith("execute-"), false, "PartyB execution must remain external");
 					if (phase === "deploy") {
+						assert.equal(flags.authorizations, 1);
+						assertUpgradeRehearsal(f.standard, report);
 						assert.equal(options.env.SYMMIO_ACCOUNT_UPGRADE_EXECUTE, "true");
 						assert.equal(options.env.CONFIRM_CHAIN_ID, "42161");
 					}
@@ -204,7 +213,11 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 		select: async () => assert.fail("No PartyB signer should be requested"),
 		text: async ({ message }) => {
 			assert.doesNotMatch(message, /Ledger address|PartyB administrator/);
-			return message.includes("Type 42161") ? "42161" : flags.canary;
+			if (message.includes("Type 42161")) {
+				flags.authorizations++;
+				return "42161";
+			}
+			return flags.canary;
 		},
 	};
 	const runtime = { ui, onEvent: e => events.push(e) };
@@ -213,6 +226,12 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 	assert.equal(state.completedSteps.includes("account-cut"), false);
 	assert.match(state.waitingFor, /Execute .* through Safe/);
 	assert.equal(phases.filter(p => p === "deploy").length, 1);
+	assert.equal(phases.includes("rehearse"), requireForkRehearsal);
+	assert.equal(read(f.input.output).rehearsal.status, requireForkRehearsal ? "complete" : "skipped");
+	assert.equal(
+		events.some(e => e.type === "upgrade.rehearsal-skipped"),
+		!requireForkRehearsal,
+	);
 	flags.cut = true;
 	state = await runner.resumeActive(runtime);
 	assert.equal(state.status, "waiting_external", state.lastError);
@@ -277,4 +296,26 @@ test("runner exports PartyB wiring and retirement for the Safe and verifies them
 	assert.equal(phases.filter(p => p === "deploy").length, 1);
 	assert.equal(new Set(events.filter(e => e.type === "safe.exported").map(e => e.safe.stateKey)).size, 6);
 	assert.equal(state.transactions.length, 0, "fork rehearsal transactions must not enter the live journal");
+}
+
+for (const required of [true, false])
+	test(`runner retains all Safe pauses and the canary with fork rehearsal ${required ? "required" : "waived"}`, t => verifySafeFlow(t, required));
+
+test("resume rejects a changed waiver and an edited rehearsal policy", t => {
+	const f = fixture(false);
+	t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+	const report = read(f.input.output);
+	report.snapshotDigest = digest(f.snapshot);
+	report.snapshotBlock = f.snapshot.blockNumber;
+	report.rehearsal = createUpgradeRehearsalWaiver(f.standard, f.snapshot);
+	write(f.input.output, report);
+	write(path.join(f.directory, "configuration-input.json"), f.snapshot);
+	const ctx = { state: { configurationDigest: report.snapshotDigest, completedSteps: ["compile", "inspect", "rehearse"] } };
+	assert.doesNotThrow(() => definition.validateResume(ctx, f.input));
+	report.rehearsal.inputDigest = "different";
+	write(f.input.output, report);
+	assert.throws(() => definition.validateResume(ctx, f.input), /rehearsal/);
+	f.standard.config.execution.requireForkRehearsal = true;
+	write(f.input.input, f.standard);
+	assert.throws(() => definition.validateResume(ctx, f.input), /input\/source binding changed/);
 });

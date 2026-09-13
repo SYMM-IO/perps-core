@@ -109,9 +109,13 @@ function keys(value, allowed, label) {
 	for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unknown ${label}.${key}`);
 }
 export function validateUpgradeConfig(value) {
-	keys(value, ["apiVersion", "chainId", "target", "gaslessBaselineCommit", "policy", "discovery"], "config");
+	keys(value, ["apiVersion", "chainId", "target", "gaslessBaselineCommit", "policy", "discovery", "execution"], "config");
 	if (value.apiVersion !== "operations.symm.io/account-instant-upgrade-v1" || value.chainId !== 42161)
 		throw new Error("Expected the Arbitrum account/instant upgrade v1 config");
+	if (value.execution !== undefined) {
+		keys(value.execution, ["requireForkRehearsal"], "execution");
+		if (typeof value.execution.requireForkRehearsal !== "boolean") throw new Error("execution.requireForkRehearsal must be a boolean");
+	}
 	if (digest(value.policy) !== digest(POLICY))
 		throw new Error(
 			"Upgrade policy must preserve configuration and GaslessLayer proxy, use Safe PartyB execution, and exclude InstantLayer user state, template repairs and global timelock setters",
@@ -145,6 +149,49 @@ export function validateUpgradeConfig(value) {
 		if (!Object.keys(value.target.partyBAdmins).some(address => address.toLowerCase() === partyB.toLowerCase()))
 			throw new Error(`Missing target.partyBAdmins[${partyB}]`);
 	return structuredClone(value);
+}
+
+export function upgradeRequiresForkRehearsal(config) {
+	return validateUpgradeConfig(config).execution?.requireForkRehearsal !== false;
+}
+
+const REHEARSAL_WAIVER_REASON = "Explicit operator waiver bound in the upgrade input";
+
+export function createUpgradeRehearsalWaiver(input, snapshot, skippedAt = new Date().toISOString()) {
+	if (upgradeRequiresForkRehearsal(input.config)) throw new Error("The upgrade input requires fork rehearsal");
+	if (!Number.isSafeInteger(snapshot.blockNumber) || snapshot.blockNumber < 1) throw new Error("Live inspection did not record a snapshot block");
+	return {
+		status: "skipped",
+		reason: REHEARSAL_WAIVER_REASON,
+		snapshotDigest: digest(snapshot),
+		snapshotBlock: snapshot.blockNumber,
+		inputDigest: digest(input),
+		sourceCommit: input.sourceCommit,
+		skippedAt,
+	};
+}
+
+/** A waiver is valid only for the explicit input, source and inspected snapshot that requested it. */
+export function assertUpgradeRehearsal(input, report) {
+	const required = upgradeRequiresForkRehearsal(input.config);
+	const rehearsal = report.rehearsal;
+	if (!report.snapshotDigest || rehearsal?.snapshotDigest !== report.snapshotDigest)
+		throw new Error("Matching fork rehearsal or explicit waiver is not bound to the configuration snapshot");
+	if (rehearsal.status === "complete") return;
+	if (
+		!required &&
+		rehearsal.status === "skipped" &&
+		rehearsal.reason === REHEARSAL_WAIVER_REASON &&
+		rehearsal.inputDigest === digest(input) &&
+		rehearsal.sourceCommit === input.sourceCommit &&
+		Number.isSafeInteger(rehearsal.snapshotBlock) &&
+		rehearsal.snapshotBlock > 0 &&
+		rehearsal.snapshotBlock === report.snapshotBlock &&
+		typeof rehearsal.skippedAt === "string" &&
+		Number.isFinite(Date.parse(rehearsal.skippedAt))
+	)
+		return;
+	throw new Error("Matching fork rehearsal or an explicit input-bound waiver is required before live deployment");
 }
 
 /** Candidates to check, not a claim that unrelated role holders or mapping keys do not exist. */

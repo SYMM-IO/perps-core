@@ -15,6 +15,9 @@ export const GASLESS_BOOLS: readonly string[]
 export function digest(value: any): string
 export function assertConfigurationParity(expected: any, actual: any): void
 export function validateUpgradeConfig(value: any): any
+export function upgradeRequiresForkRehearsal(config: any): boolean
+export function createUpgradeRehearsalWaiver(input: any, snapshot: any, skippedAt?: string): any
+export function assertUpgradeRehearsal(input: any, report: any): void
 export function flowDiscovery(config: any): any
 export function planAccountCut(
 	baseline: Record<string, string>,
