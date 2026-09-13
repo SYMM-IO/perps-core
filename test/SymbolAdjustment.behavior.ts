@@ -699,12 +699,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				fundingBefore.currentLongRate,
 			)
 
-			const abortCutoff = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt
-			expect(abortCutoff).to.be.greaterThan(0n)
+			const abortedEpoch = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementEpoch
 			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
-			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt).to.equal(abortCutoff)
+			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementEpoch).to.equal(abortedEpoch + 1n)
 			await finalizeRestatementAfterWindow(SYMBOL_ID, [context.signers.hedger.address])
-			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt).to.equal(abortCutoff)
+			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementEpoch).to.equal(abortedEpoch + 1n)
 		})
 
 		it("should refuse scheduling while restating", async function () {
@@ -1906,9 +1905,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 		for (const confirmed of [false, true]) {
 			for (const path of ["legacy", "deferred", "snapshot"] as const) {
-				it(`blocks ${path} price storage throughout batched abort and rejects replay after completion on the ${confirmed ? "confirmed" : "direct"} route`, async function () {
+				it(`resumes ${path} liquidation with its original timestamp after batched abort on the ${confirmed ? "confirmed" : "direct"} route`, async function () {
 					const quoteId = await startBatchedAbort(confirmed)
 					const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+					const sign = await enableSignedLiquidationPrices()
 					const liquidationSig = await getDummyLiquidationSig(
 						"0x24",
 						-decimal(1_000_000n),
@@ -1919,23 +1919,31 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					)
 					const legacyFacet = context.partyALiquidationFacet.connect(context.signers.liquidator)
 					const snapshotFacet = context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator)
-					let setPrice: () => Promise<unknown>
-					if (path === "legacy") {
-						await legacyFacet.liquidatePartyA(user.address, liquidationSig)
-						setPrice = () => legacyFacet.setSymbolsPrice(user.address, liquidationSig)
-					} else if (path === "deferred") {
-						await legacyFacet.deferredLiquidatePartyA(user.address, liquidationSig)
-						setPrice = () => legacyFacet.deferredSetSymbolsPrice(user.address, liquidationSig)
-					} else {
-						const snapshotSig = {
-							...liquidationSig,
-							states: [
-								{ partyB: quoteBefore.partyB, symbolId: BigInt(SYMBOL_ID), price: decimal(2n, 17), cumulativeLongFee: 0n, cumulativeShortFee: 0n },
-							],
-						}
-						await snapshotFacet.liquidatePartyAWithSnapshot(user.address, { ...snapshotSig, states: [] })
-						setPrice = () => snapshotFacet.setSymbolsPriceWithSnapshot(user.address, snapshotSig)
+					const sig = {
+						...liquidationSig,
+						states: [
+							{ partyB: quoteBefore.partyB, symbolId: BigInt(SYMBOL_ID), price: decimal(2n, 17), cumulativeLongFee: 0n, cumulativeShortFee: 0n },
+						],
 					}
+					const signedSig = { ...sig, ...(await sign(await partyALiquidationHash(context, user.address, path, sig))) }
+					if (path === "legacy") {
+						await legacyFacet.liquidatePartyA(user.address, signedSig)
+					} else if (path === "deferred") {
+						await legacyFacet.deferredLiquidatePartyA(user.address, signedSig)
+					} else {
+						const startSig = { ...sig, states: [] }
+						await snapshotFacet.liquidatePartyAWithSnapshot(user.address, {
+							...startSig,
+							...(await sign(await partyALiquidationHash(context, user.address, path, startSig))),
+						})
+					}
+					const setPrice = (payload = signedSig) =>
+						path === "snapshot"
+							? snapshotFacet.setSymbolsPriceWithSnapshot(user.address, payload)
+							: path === "deferred"
+								? legacyFacet.deferredSetSymbolsPrice(user.address, payload)
+								: legacyFacet.setSymbolsPrice(user.address, payload)
+					expect(sig.timestamp).to.be.lessThanOrEqual(BigInt(await time.latest()))
 
 					const liquidationNonce = await context.viewFacetSymbol.getLiquidationStartNonce()
 					await expect(setPrice()).to.be.revertedWith("LibSymbolAdjustment: Restatement abort in progress")
@@ -1969,18 +1977,18 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 					// The signature still contains venue price 0.2, but the unchanged quote now needs stored-unit price 0.8.
 					if (!confirmed) await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-					await expect(setPrice()).to.be.revertedWith("LibSymbolAdjustment: Liquidation signature predates abort completion")
+					expect(sig.timestamp).to.be.lessThan(BigInt(await time.latest()))
+					await expect(setPrice()).to.be.revertedWith("MuonSignatureVerifier: TSS not verified")
 					expect(await context.viewFacetQuote.getQuote(quoteId)).to.deep.equal(quoteBefore)
+					// Re-sign in the restored basis while retaining all timestamps and the liquidation ID.
+					const freshSig = { ...sig, prices: [decimal(8n, 17)], states: sig.states.map(state => ({ ...state, price: decimal(8n, 17) })) }
+					await setPrice({ ...freshSig, ...(await sign(await partyALiquidationHash(context, user.address, path, freshSig))) })
 					if (path === "snapshot") {
-						// A snapshot liquidation is bound to its original timestamp; the existing takeover path can resolve it.
-						await context.controlFacet
-							.connect(context.signers.admin)
-							.grantRole(context.signers.liquidator.address, ethers.keccak256(ethers.toUtf8Bytes("CLEARING_HOUSE_ROLE")))
-						const clearingHouse = context.clearingHouseFacet.connect(context.signers.liquidator)
-						await clearingHouse.takeoverPartyALiquidation(user.address)
-						await clearingHouse.liquidatePositionsForClearingHouse(user.address, [quoteId], [decimal(8n, 17)])
-						expect((await context.viewFacetQuote.getQuote(quoteId)).avgClosedPrice).to.equal(decimal(8n, 17))
-					}
+						await snapshotFacet.liquidatePositionsPartyAWithSnapshot(user.address, [quoteId])
+					} else await legacyFacet.liquidatePositionsPartyA(user.address, [quoteId])
+					const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+					expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
+					expect(quoteAfter.avgClosedPrice).to.equal(decimal(8n, 17))
 				})
 			}
 
@@ -2056,8 +2064,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 					await expect(setPrice()).to.be.revertedWith("LibSymbolAdjustment: Restatement abort in progress")
 					await completeFundingRestoration(SYMBOL_ID, [hedger.address])
 					if (!confirmed) await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-					const adjustment = await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)
-					expect(sig.timestamp).to.be.greaterThan(adjustment.lastRestatementAbortedAt)
+					expect(sig.timestamp).to.be.greaterThan(BigInt(await time.latest()))
 					expect(await context.viewFacet.nonceOfPartyA(user.address)).to.equal(nonce)
 					await expect(setPrice()).to.be.revertedWith("MuonSignatureVerifier: TSS not verified")
 					// Waiting until the signed time cannot make the aborted-window signature valid again.
@@ -2082,7 +2089,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				await liquidation.liquidatePositionsPartyB.staticCall(hedger.address, user.address, signedSig)
 				await completeFundingRestoration(SYMBOL_ID, [context.signers.hedger2.address, hedger.address])
 				if (!confirmed) await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-				expect(timestamp).to.be.greaterThan((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt)
+				expect(timestamp).to.be.greaterThan(BigInt(await time.latest()))
 				await expect(liquidation.liquidatePositionsPartyB(hedger.address, user.address, signedSig)).to.be.revertedWith(
 					"MuonSignatureVerifier: TSS not verified",
 				)
@@ -2123,7 +2130,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			const epoch = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementEpoch
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
-			expect(sig.timestamp).to.be.greaterThan((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt)
+			expect(sig.timestamp).to.be.greaterThan(BigInt(await time.latest()))
 			await expect(liquidation.setSymbolsPrice(user.address, signedSig)).to.be.revertedWith("MuonSignatureVerifier: TSS not verified")
 			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
 			await completeFundingPreparation(SYMBOL_ID, [hedger.address])
@@ -2159,6 +2166,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		it("rejects replay after an immediate abort of a signature issued before abort began", async function () {
 			const quoteId = await openPosition()
 			await startRestatement()
+			const sign = await enableSignedLiquidationPrices()
 			const liquidationSig = await getDummyLiquidationSig(
 				"0x25",
 				-decimal(1_000_000n),
@@ -2167,6 +2175,7 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 				-decimal(1_000_000n),
 				(await user.getBalanceInfo()).allocatedBalances,
 			)
+			Object.assign(liquidationSig, await sign(await partyALiquidationHash(context, user.address, "legacy", liquidationSig)))
 			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig)
 			const abortTx = await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
 			const abortReceipt = await abortTx.wait()
@@ -2174,8 +2183,8 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).confirmPriceAdjusted(SYMBOL_ID)
 			await expect(
 				context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user.address, liquidationSig),
-			).to.be.revertedWith("LibSymbolAdjustment: Liquidation signature predates abort completion")
-			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt).to.equal(BigInt(abortBlock!.timestamp))
+			).to.be.revertedWith("MuonSignatureVerifier: TSS not verified")
+			expect(liquidationSig.timestamp).to.be.lessThan(BigInt(abortBlock!.timestamp))
 			expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.OPENED)
 			await context.symbolAdjustmentFacet
 				.connect(context.signers.admin)
@@ -2183,7 +2192,15 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).cancelAdjustment(SYMBOL_ID)
 			await expect(
 				context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user.address, liquidationSig),
-			).to.be.revertedWith("LibSymbolAdjustment: Liquidation signature predates abort completion")
+			).to.be.revertedWith("MuonSignatureVerifier: TSS not verified")
+			const freshSig = { ...liquidationSig, prices: [decimal(8n, 17)] }
+			const liquidation = context.partyALiquidationFacet.connect(context.signers.liquidator)
+			await liquidation.setSymbolsPrice(user.address, {
+				...freshSig,
+				...(await sign(await partyALiquidationHash(context, user.address, "legacy", freshSig))),
+			})
+			await liquidation.liquidatePositionsPartyA(user.address, [quoteId])
+			expect((await context.viewFacetQuote.getQuote(quoteId)).avgClosedPrice).to.equal(decimal(8n, 17))
 		})
 
 		it("rejects PartyB price replay after abort completion and accepts a fresh stored-basis price", async function () {
@@ -2193,8 +2210,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			upnlSig.timestamp = await getBlockTimestamp()
 			await context.partyBLiquidationFacet.connect(context.signers.liquidator).liquidatePartyB(hedger.address, user.address, upnlSig)
 			const liquidationTimestamp = await context.viewFacet.partyBLiquidationTimestamp(hedger.address, user.address)
+			const sign = await enableSignedLiquidationPrices()
 			const priceSig = await getDummyPriceSig([quoteId], [decimal(2n, 17)])
 			priceSig.timestamp = liquidationTimestamp
+			Object.assign(priceSig, await sign(await partyBLiquidationPriceHash(context, priceSig)))
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).processRestatementFunding(SYMBOL_ID, [context.signers.hedger2.address])
 			await time.increase(10)
 			const abortTx = await context.symbolAdjustmentFacet
@@ -2206,15 +2225,13 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(priceSig.timestamp).to.be.lessThan(abortTimestamp)
 			const liquidationFacet = context.partyBLiquidationFacet.connect(context.signers.liquidator)
 			await expect(liquidationFacet.liquidatePositionsPartyB(hedger.address, user.address, priceSig)).to.be.revertedWith(
-				"LibSymbolAdjustment: Liquidation signature predates abort completion",
+				"MuonSignatureVerifier: TSS not verified",
 			)
-			await expect(
-				liquidationFacet.liquidatePositionsPartyB(hedger.address, user.address, { ...priceSig, timestamp: abortTimestamp }),
-			).to.be.revertedWith("LibSymbolAdjustment: Liquidation signature predates abort completion")
-			expect((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).lastRestatementAbortedAt).to.equal(abortTimestamp)
-			await time.increase(1)
-			const freshSig = await getDummyPriceSig([quoteId], [decimal(8n, 17)])
-			await liquidationFacet.liquidatePositionsPartyB(hedger.address, user.address, freshSig)
+			const freshSig = { ...priceSig, prices: [decimal(8n, 17)] }
+			await liquidationFacet.liquidatePositionsPartyB(hedger.address, user.address, {
+				...freshSig,
+				...(await sign(await partyBLiquidationPriceHash(context, freshSig))),
+			})
 			const quote = await context.viewFacetQuote.getQuote(quoteId)
 			expect(quote.quoteStatus).to.equal(QuoteStatus.LIQUIDATED)
 			expect(quote.avgClosedPrice).to.equal(decimal(8n, 17))
