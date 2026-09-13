@@ -63,18 +63,18 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Muon calculates one total from position groups. Liquidation settles the same account quote by quote. Integer division can make
-						those two correct paths differ by a few raw accounting units. The contract records how many positions existed when liquidation
-						started and accepts up to three raw accounting units per starting position.
+						Muon calculates one total from position groups. Liquidation settles the same account quote by quote. Integer division can
+						produce a small difference between these totals even when both calculations are correct. The contract uses the position count
+						recorded at liquidation start to bound that difference.
 					</p>
 					<p>
 						The allowance is fixed at <code>3</code> raw units per starting position and always applies. A larger mismatch still opens a
 						dispute.
 					</p>
 					<p>
-						When the difference is inside the limit, settlement uses the smaller same-direction amount supported by both Muon and the
-						quote calculation. If they disagree about which side won, the net payment is zero. Individual PartyB payments can still offset
-						each other. The removed part is never written to a balance or separate accounting field.
+						When the difference is within the limit, settlement uses the smaller same-direction amount supported by both Muon and the
+						quote calculation. If they disagree about which party owes the net payment, that payment is zero. Individual PartyB payments
+						can still offset each other. The discarded difference is never written to a balance or separate accounting field.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Rollout prerequisites.</strong> The bound assumes repaired funding aggregates and exact aggregate notional in Muon.
@@ -89,9 +89,9 @@
 					<pre><code>Quote-by-quote: cut(4.8) + cut(5.8) = 4 + 5 = 9
 Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 					<p>
-						Neither answer means the price or funding data is false. The difference comes from where the decimal part is removed. Price
-						PnL can lose less than one unit per quote, and funding can lose less than two. This gives a maximum of three raw units for
-						each position, provided the stored totals and Muon inputs are exact.
+						The difference comes from when each calculation truncates; it does not imply incorrect price or funding data. Price PnL can
+						lose less than one unit per quote, and funding can lose less than two. This gives a maximum of three raw units for each
+						position, provided the stored totals and Muon inputs are exact.
 					</p>
 					<p>
 						The position count is saved at liquidation start, so closing positions in several batches cannot shrink or grow the limit. The
@@ -101,9 +101,9 @@ Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 
 					<h2 id="funding">Why partial closes left dust</h2>
 					<p>
-						A funding group stores the sum of each open quote's contribution, truncated toward zero. The old close path truncated the
-						closed slice on its own. Because truncation does not always split cleanly, a 60% close followed by a 40% close could leave one
-						raw unit after the position reached zero.
+						A funding group stores the sum of each open quote's contribution, truncated toward zero. The old close path truncated each
+						closed slice independently. The truncated slices did not always add up to the original contribution: a 60% close followed by a
+						40% close could leave one raw unit after the position reached zero.
 					</p>
 					<pre><code>Old behavior: remove cut(closed amount × funding)
 New behavior: remove cut(old open amount × funding)
@@ -116,8 +116,8 @@ New behavior: remove cut(old open amount × funding)
 
 					<h2 id="exact-notional">Exact Muon PnL input</h2>
 					<p>
-						The original UPNL views return an average open price. Dividing notional by amount to make that average can drop a remainder.
-						Multiplying the truncated average by the amount later cannot restore it.
+						The original UPNL views return an average open price. Dividing notional by amount to calculate that average can drop a
+						remainder. Multiplying the truncated average by the amount later cannot restore it.
 					</p>
 					<pre><code>Old LONG price PnL: (price − truncated average) × amount / 1e18
 New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
@@ -128,8 +128,8 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 						addresses listed in <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
 					</p>
 					<p>
-						Muon must calculate each funded group once. That same result is added to total UPNL and, when negative, to total unrealized
-						loss. This prevents the two signed fields from disagreeing because they truncated the same group in different ways.
+						Muon must calculate each funded group once and add that result to total UPNL and, when negative, to total unrealized loss.
+						Using the same result prevents the two signed fields from disagreeing because of different truncation.
 					</p>
 					<aside class="callout callout-note">
 						<strong>OVERDUE safety.</strong> A rounding-sized mismatch can make a calculated loss reduction one unit larger than a quote's
@@ -140,8 +140,8 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					<h2 id="repair">Repairing existing groups</h2>
 					<p>
 						The one-time repair calculates the correct quote-level totals off chain. This avoids an unbounded on-chain loop when one
-						PartyA and PartyB pair has many open quotes. <code>scripts/resyncAggregateFunding.ts</code> reads the pair in real pages at
-						one fixed, globally paused block and calculates each quote independently:
+						PartyA and PartyB pair has many open quotes. <code>scripts/resyncAggregateFunding.ts</code> reads the pair page by page at a
+						fixed block where the protocol is globally paused. It calculates each quote independently:
 					</p>
 					<pre><code>open amount = quantity − closed amount
 quote contribution = (open amount × accumulated paid funding) / 1e18
@@ -160,10 +160,11 @@ new group funding = sum of the truncated quote contributions</code></pre>
 					</p>
 					<pre><code>new global PartyB funding = old global funding − old pair funding + new pair funding</code></pre>
 					<p>
-						Groups are applied atomically in input order. An empty batch does nothing, and repeating a completed repair is a no-op. A real
-						change raises both UPNL counters so old Muon signatures become invalid. <code>AggregateFundingResynced</code> records the old
-						and new values for every input group. The contract trusts <code>MIGRATION_ROLE</code> to submit the script-reviewed final
-						value; it does not scan quotes during the transaction.
+						The contract applies groups atomically in input order. An empty batch does nothing, and repeating a completed repair is a
+						no-op. A change to stored funding values increments both UPNL counters, invalidating old Muon signatures.
+						<code>AggregateFundingResynced</code> records the old and new values for every input group. The contract trusts
+						<code>MIGRATION_ROLE</code> to review the script's output and submit the final value; it does not scan quotes during the
+						transaction.
 					</p>
 					<p>The groups file is a JSON array. Use decimal strings for symbol IDs so JSON cannot round a large integer.</p>
 					<pre><code>[
@@ -185,8 +186,8 @@ npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;net
 
 					<h2 id="rollout">Safe rollout</h2>
 					<p>
-						Treat this as an update to the target diamond's actual deployed state. Deployments already running the v0.8.6 rounding release
-						have the three-unit allowance and liquidation-start position count; this update does not introduce or enable them.
+						Plan the upgrade against the target diamond's deployed state. Deployments already running the v0.8.6 rounding release have the
+						three-unit allowance and liquidation-start position count; this update does not introduce or enable them.
 					</p>
 					<p>
 						The deployment scope includes <code>MigrationFacet</code>, <code>ViewFacetAggregate</code>, and <code>ViewFacetQuote</code>,
