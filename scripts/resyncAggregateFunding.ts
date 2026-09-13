@@ -180,7 +180,7 @@ async function main(): Promise<void> {
 	if (!sourceBlock?.hash) throw new Error(`Source block ${blockTag} was not returned`)
 	if ((await ethers.provider.getCode(symmio, blockTag)) === "0x") throw new Error(`SYMMIO has no contract code at ${symmio}`)
 
-	const view = await ethers.getContractAt("ViewFacet", symmio)
+	const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", symmio)
 	const pauseState = await view.pauseState({ blockTag })
 	if (!pauseState.globalPaused) throw new Error(`Protocol was not globally paused at block ${blockTag}`)
 
