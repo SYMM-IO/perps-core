@@ -1,0 +1,35 @@
+{
+	"desktop": {
+		"ok": true,
+		"failures": [],
+		"sourceReferences": 33,
+		"diagrams": 8,
+		"chapters": 12,
+		"reducedMotion": false,
+		"pageOverflow": false
+	},
+	"mobile": {
+		"ok": true,
+		"failures": [],
+		"sourceReferences": 33,
+		"diagrams": 8,
+		"chapters": 12,
+		"reducedMotion": true,
+		"pageOverflow": false
+	},
+	"checked_at_utc": "2026-09-13T07:06:31.328541+00:00",
+	"pdf": {
+		"pages": 23,
+		"format": "A4",
+		"tagged": true,
+		"text_extracted": true,
+		"visually_checked_pages": [7, 10]
+	},
+	"artifacts": {
+		"chapters": 12,
+		"diagrams": 8,
+		"source_references": 33,
+		"html_external_scripts": 0
+	},
+	"scope": "Document controls, layout and pinned source references. No production transaction or current contract test run."
+}

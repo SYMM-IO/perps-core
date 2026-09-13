@@ -1,0 +1,159 @@
+{
+	"generated_at_utc": "2026-09-13T07:06:31.329387+00:00",
+	"contract_revision": "8611d92817047bffd65096408cc1d9f10e24d7b9",
+	"service_revision": "7a07c0c2f55b3f558a39e6f715149d7633df54f7",
+	"public_assets": [
+		{
+			"url": "https://app.vibe.trading/_next/static/immutable/chunks/0hxgr-icwjqqt.js",
+			"bytes": 40484,
+			"sha256": "28034d7489fac140ed79a857b478833de74da7f6ed3859ce3580d0d14c32785c"
+		},
+		{
+			"url": "https://app.vibe.trading/_next/static/immutable/chunks/1cet55mc7q5bs.js",
+			"bytes": 29183,
+			"sha256": "4e647cd602c8cfae9f42b115a5c5217d2091f8ba74f7956b0d483efc3b5cd60f"
+		},
+		{
+			"url": "https://app.vibe.trading/_next/static/immutable/chunks/30rrs35bigwub.js",
+			"bytes": 46552,
+			"sha256": "f0bd106a8cbc2071836825d2b7ce86edb4cd28dc8a24639293b2b03087c6b8a8"
+		},
+		{
+			"url": "https://app.vibe.trading/_next/static/immutable/chunks/3sa7q1lsq8r4x.js",
+			"bytes": 558344,
+			"sha256": "b73d772ed3b3ad846383bd6f031cf5c640f71e4e6ce296e42c14fe340b7b94f1"
+		},
+		{
+			"url": "https://app.vibe.trading/_next/static/immutable/chunks/3v4bnixzhlss2.js",
+			"bytes": 70047,
+			"sha256": "fc2e4da8092c4ef57739c2b3cffdb2f37cc9e937c6116c69b5ab0332b7d0cfd9"
+		},
+		{
+			"url": "https://app.vibe.trading/_next/static/immutable/chunks/4210gwrj0ffk-.js",
+			"bytes": 832317,
+			"sha256": "09f5631c061a6b0e01fed74b2b720c519578053029359b7d4777f88249e84acb"
+		}
+	],
+	"files": [
+		{
+			"path": "index.html",
+			"sha256": "2ab854d7bd1273d8ed8369ccb151878613392b0460787b46ddcc46f1fbef3250",
+			"bytes": 383676
+		},
+		{
+			"path": "Vibe-Gasless-Transaction-Flow.pdf",
+			"sha256": "8cde03254040d215b22737dd12a79dfbe68d0919f7d585add2ca0a19a6ca886d",
+			"bytes": 846833
+		},
+		{
+			"path": "flow-reference.md",
+			"sha256": "5a0a79cd3452570920b837e37174cab722988330429f253ae15b17af97f9e238",
+			"bytes": 51867
+		},
+		{
+			"path": "README.md",
+			"sha256": "0e757e53d0325fe8245b08d46897086fb6d6636fce8e62b0c51e196111b5d5dc",
+			"bytes": 1540
+		},
+		{
+			"path": "ARCHITECTURE_EVIDENCE.md",
+			"sha256": "07a2aa2119e75127194d9ad86852dfb7fc73570f99098de3bb7e43b315c5a774",
+			"bytes": 4940
+		},
+		{
+			"path": "architecture-model.json",
+			"sha256": "fe3392970213e7e0d6f964bc208c73c6b2384dca3053293852fcac9052d345d9",
+			"bytes": 27157
+		},
+		{
+			"path": "source-manifest.json",
+			"sha256": "b2c3f5df5ce370258f9eea4519ada4f06ceff1c35ae1776e95fae08c38f05c16",
+			"bytes": 95958
+		},
+		{
+			"path": "validation.json",
+			"sha256": "aec70e4c50b9246960b4ff996363f4993b279270a3370f603ca22cfb0c162c43",
+			"bytes": 815
+		},
+		{
+			"path": "figures/completion.png",
+			"sha256": "66fd302ae6bdc0981a331d88d0b95a0257f553edb900f60d4cedddec71d10e64",
+			"bytes": 128104
+		},
+		{
+			"path": "figures/completion.svg",
+			"sha256": "df857d99967c489c9e75b160afe359cdfc5b49b52582eea7181b335a440e7d70",
+			"bytes": 7703
+		},
+		{
+			"path": "figures/deposits.png",
+			"sha256": "b00fa09123b92bb129dfd774fdeb7640c7559dc5ea01b6b26a5d80e471ec3ee4",
+			"bytes": 212042
+		},
+		{
+			"path": "figures/deposits.svg",
+			"sha256": "c8518e07c80d9b7841dd6d6ffa6770d1c7da93f5d759ecf63d05848945f76f0e",
+			"bytes": 11464
+		},
+		{
+			"path": "figures/fees.png",
+			"sha256": "2477dae16b7f569e7f182a6a7b136a9820890354a339942883232b2232eb7c28",
+			"bytes": 193966
+		},
+		{
+			"path": "figures/fees.svg",
+			"sha256": "fe2af38f6dc7c87c9666ed5b53c7bed319c8a4747546678c2e1fb94b6a8f4222",
+			"bytes": 11258
+		},
+		{
+			"path": "figures/operations.png",
+			"sha256": "2427455391f73f391a6881382669cda5aa74625279f943a210de1561c230e20b",
+			"bytes": 261820
+		},
+		{
+			"path": "figures/operations.svg",
+			"sha256": "314aceee80e784b84f953178e012b690097f8b14fbfed57e208521eb5f4822ea",
+			"bytes": 14743
+		},
+		{
+			"path": "figures/overview.png",
+			"sha256": "b72ce6bae63b98b296936e484046fe65b0ed74bf734fe60afe10d5f454da0367",
+			"bytes": 170656
+		},
+		{
+			"path": "figures/overview.svg",
+			"sha256": "840b43153f8fe833b28162a812746f7ef4395fc94ce7535394c3fc7eb1055d0f",
+			"bytes": 9148
+		},
+		{
+			"path": "figures/runtime.png",
+			"sha256": "1944f19e9ab4f7a10dbb9dcc23ff85edafa8225911d0a614f46b82a8bec93999",
+			"bytes": 207903
+		},
+		{
+			"path": "figures/runtime.svg",
+			"sha256": "4fa02440d7ce68a5a77d0b300614baf80a14c03cdacf448fefc96af37a50796c",
+			"bytes": 13145
+		},
+		{
+			"path": "figures/trades.png",
+			"sha256": "8ca46be2587ccc4e034a8df396c65b946583d41bfca0ceeea7dcf3606d103712",
+			"bytes": 202474
+		},
+		{
+			"path": "figures/trades.svg",
+			"sha256": "1ab0944a88f8bc7993908801cbbcc2ab292bf809cbee41a74ac09ebce2baf903",
+			"bytes": 11231
+		},
+		{
+			"path": "figures/withdrawals.png",
+			"sha256": "f1ac11b05545a62de1712dd2ad7034b720320615a3eb7f2784aa6259799ac8b7",
+			"bytes": 133892
+		},
+		{
+			"path": "figures/withdrawals.svg",
+			"sha256": "78acb0b04edd12dcdf3020ff19ea14ecd42e0daa916499b40bf912bdd3addef8",
+			"bytes": 7772
+		}
+	]
+}
