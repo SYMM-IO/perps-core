@@ -61,7 +61,10 @@ library LibPartyALiquidationProcess {
 				quoteLayout.partyBPendingQuotes[quote.partyB][partyA].length > 0
 			) {
 				delete quoteLayout.partyBPendingQuotes[quote.partyB][partyA];
-				LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
+				// Keep pending settlement buckets discoverable until the final position batch.
+				if (!accountLayout.settlementStates[partyA][quote.partyB].pending || quoteLayout.partyAPositionsCount[partyA] == 0) {
+					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
+				}
 				// Subtract from cross bucket before zeroing per-partyA balances
 				accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].sub(
 					accountLayout.partyBPendingLockedBalances[quote.partyB][partyA]

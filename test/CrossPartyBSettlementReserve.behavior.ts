@@ -283,6 +283,44 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 		})
 	})
 
+	describe("PartyA takeover after a partial position batch", function () {
+		for (const direction of ["positive", "negative"] as const) {
+			it(`clears the retained connection and ${direction} settlement without disconnecting another PartyA`, async function () {
+				const userAddr = await user.getAddress()
+				const hedgerAddr = await hedger.getAddress()
+				const hedger2Addr = await hedger2.getAddress()
+				const firstQuote = direction === "positive" ? quoteB : quoteA
+				const remainingQuote = direction === "positive" ? quoteA : quoteB
+				const retainedPartyB = direction === "positive" ? hedgerAddr : hedger2Addr
+				const price = decimal(5n, 17)
+				const clearingHouse = context.clearingHouseFacet.connect(context.signers.liquidator)
+				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.id("CLEARING_HOUSE_ROLE"))
+				await user.liquidateAndSetSymbolPrices([1n], [price], [quoteA, quoteB])
+				await user.liquidatePositions([firstQuote])
+				expect(await context.viewFacetQuote.partyBPositionsCount(retainedPartyB, userAddr)).to.equal(0n)
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, retainedPartyB)).to.equal(true)
+
+				await clearingHouse.takeoverPartyALiquidation(userAddr)
+				await clearingHouse.liquidatePositionsForClearingHouse(userAddr, [remainingQuote], [price])
+				const reserveBefore = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
+				expect(reserveBefore).to.equal(direction === "positive" ? decimal(50n) : 0n)
+				await expect(clearingHouse.settlePartyATakeover(userAddr, [])).to.be.revertedWith("ClearingHouseFacet: Unsettled PartyB remaining")
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, retainedPartyB)).to.equal(true)
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(reserveBefore)
+
+				await clearingHouse.settlePartyATakeover(userAddr, [retainedPartyB])
+				expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedgerAddr)).to.equal(false)
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedger2Addr)).to.equal(false)
+				expect(await context.viewFacetSymbol.isConnectedPartyB(await user2.getAddress(), hedgerAddr)).to.equal(true)
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(0n)
+				expect((await context.viewFacet.getSettlementStates(userAddr, [retainedPartyB]))[0].pending).to.equal(false)
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+				expect((await context.viewFacet.getPartyATakeoverDetails(userAddr)).inProgress).to.equal(false)
+			})
+		}
+	})
+
 	describe("Mode switch after isolated liquidation settlement", function () {
 		async function setupIsolatedPositiveSettlement() {
 			const scenarioContext = await loadFixture(initializeFixture)
