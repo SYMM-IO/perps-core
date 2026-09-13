@@ -1,6 +1,6 @@
 {
-	"generated_at_utc": "2026-09-13T07:06:31.329387+00:00",
-	"contract_revision": "8611d92817047bffd65096408cc1d9f10e24d7b9",
+	"generated_at_utc": "2026-09-13T07:13:55.812224+00:00",
+	"contract_revision": "170ae4cfba1eac7453beeb9cd13c3007132c6510",
 	"service_revision": "7a07c0c2f55b3f558a39e6f715149d7633df54f7",
 	"public_assets": [
 		{
@@ -37,42 +37,42 @@
 	"files": [
 		{
 			"path": "index.html",
-			"sha256": "c83c8d04de0deedb9f6c5f3e2e034acbde2e7957853307ac6f13960a0027ae6c",
-			"bytes": 461899
+			"sha256": "ddda59664b9067a14b31d2e53edf2beb19b5a1a5a48a64fa6b2033773e81683e",
+			"bytes": 468900
 		},
 		{
 			"path": "Vibe-Gasless-Transaction-Flow.pdf",
-			"sha256": "8cde03254040d215b22737dd12a79dfbe68d0919f7d585add2ca0a19a6ca886d",
-			"bytes": 846833
+			"sha256": "e7fed4b17f1b08dbd98a51e306e2faa2aecbecd6008d982c02748cec78fc271c",
+			"bytes": 862538
 		},
 		{
 			"path": "flow-reference.md",
-			"sha256": "37408ff829c6d7909738967f536879e57ab702ef587e948a5a5aa69dc688bf3d",
-			"bytes": 60156
+			"sha256": "96cacd472fc00680c9d564d2de83677a37ada5e190744d6b5bbaafbdebb41384",
+			"bytes": 62016
 		},
 		{
 			"path": "README.md",
-			"sha256": "0e757e53d0325fe8245b08d46897086fb6d6636fce8e62b0c51e196111b5d5dc",
-			"bytes": 1540
+			"sha256": "7acbfde3c1393b653d3a844a092634ea876fb5365d39a09910a254cf2ebb3ea0",
+			"bytes": 1588
 		},
 		{
 			"path": "ARCHITECTURE_EVIDENCE.md",
-			"sha256": "63feb950aa1220f54cdde747fbbf814ec6e8650d178bd4375e756509ca099921",
-			"bytes": 6580
+			"sha256": "2e049f1162e9611d28752490369593d64ee3c22a46594c63a12f499ecd39221e",
+			"bytes": 6942
 		},
 		{
 			"path": "architecture-model.json",
-			"sha256": "bafdff58f854d56c7418bacfc0b29ff0862f6dfde6a08ce9d6a93614ec53e6ed",
-			"bytes": 20735
+			"sha256": "638d1a219158e5c33456392b8935e5bebcd01289f489d1fa78cb0b2604fc0e96",
+			"bytes": 20736
 		},
 		{
 			"path": "source-manifest.json",
-			"sha256": "dee032fbf5b65591e80509ddd729ec06ffa00600ebb94f3b7496e574565431d1",
-			"bytes": 95298
+			"sha256": "d1a3536296839604d4bf73771f12f3fb2576c85c2b1d35c9a49ab8c99098f718",
+			"bytes": 99531
 		},
 		{
 			"path": "validation.json",
-			"sha256": "19aada854bc7cb56649480f4c466bd2b42175b3de94b94f38598757403cff171",
+			"sha256": "daa8d2423d0adb3a878e82176755a1bca305c477c4ef6acbd365f440dd5cf1ac",
 			"bytes": 741
 		},
 		{
@@ -147,13 +147,13 @@
 		},
 		{
 			"path": "figures/withdrawals.png",
-			"sha256": "f1ac11b05545a62de1712dd2ad7034b720320615a3eb7f2784aa6259799ac8b7",
-			"bytes": 133892
+			"sha256": "32470aad0b6c111221792fdc524bf6119ee50f82945964d8d4f32cc60318e600",
+			"bytes": 134013
 		},
 		{
 			"path": "figures/withdrawals.svg",
-			"sha256": "78acb0b04edd12dcdf3020ff19ea14ecd42e0daa916499b40bf912bdd3addef8",
-			"bytes": 7772
+			"sha256": "83490ce6c36cbaa1bfdc8485369fd0b75a826e6d984229c34e74e65a914cdd6a",
+			"bytes": 7775
 		}
 	]
 }

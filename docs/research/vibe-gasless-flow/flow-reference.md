@@ -134,6 +134,8 @@ _Figure 5. Contract-supported direct withdrawal. The owner submits and pays gas;
 
 An owner can call `withdrawWalletFunds(walletId,token,recipient,amount)` directly on GaslessLayer, paying native transaction gas. The contract derives the wallet from `msg.sender`; no relayer, AccountLayer account, Core fee allowance or signed relay operation is required. `token=address(0)` selects native funds; `amount=type(uint256).max` sends the balance remaining after any creation fee. First deployment requires wallet collateral to cover `walletCreationFee`, even when withdrawing another token or native funds. An already deployed wallet has no creation fee. The contract emits `WalletFundsWithdrawn`; verify it and the recipient's resulting balance. This withdraws funds held by GaslessWallet, not deposited collateral or position margin held in Core. Frontend adoption is unverified. [\[C16\]](#source-C16)
 
+**Contract execution location.** `GaslessLayer.withdrawWalletFunds` validates the recipient/amount and derives or deploys the caller-owned wallet. It delegates to linked `GaslessFeeQuoteLib.withdrawWalletFunds`, which collects the creation fee, records fee-quote accounting, transfers from GaslessWallet and emits `WalletFundsWithdrawn`. The library runs in the GaslessLayer proxy context and preserves the caller identity; it is contract execution, not a separate service. [\[C16\]](#source-C16) [\[C18\]](#source-C18)
+
 Owner withdrawal preview and exact simulation must use the owner's address as `from`. `executeWithFeeLimit` can cap the creation fee through `maxTotalDebit18`; it does not cap the withdrawal principal, which is selected by `amount`. [\[C12\]](#source-C12) [\[C16\]](#source-C16)
 
 The separate `recoverNonCollateralToken` path is restricted to `CONFIG_ADMIN_ROLE`, rejects the collateral token and sends the full selected non-collateral token balance to a nonzero recipient. It can deploy the wallet but does not collect a creation fee or move wallet collateral. Its fee preview has no payment entries. This is distinct from owner withdrawal. [\[C17\]](#source-C17)
@@ -270,13 +272,13 @@ Operation/delegation caps reuse the existing bytes32 salt and signature shape, s
 
 **Deposit proof example.** A gross 100-token deposit with a 2-token deposit fee and 3-token first-deployment fee credits 95 tokens. The service calculation of 98 requires correction or reconciliation when that creation fee is enabled. Fee quotes use 18 decimals; wallet token amounts use collateral decimals. [\[S10\]](#source-S10) [\[C15\]](#source-C15)
 
-**Upgrade policy.** The Account/Instant upgrade tooling requires `walletCreationFee == 0`, deploys the complete five-library graph, and exports `gasless-client-upgrade-v2` integration details. The zero-fee policy leaves the creation-fee discrepancy dormant for that prescribed upgrade, but does not resolve the service ABI differences. This policy is verified in source, not as a live Vibe setting. [\[C14\]](#source-C14)
+**Upgrade policy.** Account/Instant upgrade workflow **v8** exports client handoff **v3** and requires `walletCreationFee == 0`, deploys the complete five-library graph, and exports `operations.symm.io/gasless-client-upgrade-v3` integration details. The handoff covers owner withdrawals, renamed fee fields, event decoding, and nonce getter migration. Wallet operation nonce reads must use `walletOperationNonces(owner,walletId,signerAccount)` and then add one; the raw `walletNonces` getter is removed. Wallet ID 0 preserves its original address and nonce stream. The zero-fee policy leaves the creation-fee discrepancy dormant for that prescribed upgrade, but does not resolve the service ABI differences. The upgrade does not call the eight-argument fresh-proxy initializer or set the creation fee. Client readiness includes owner-withdrawal support. These are source requirements, not evidence of an executed upgrade or live Vibe adoption. [\[C14\]](#source-C14) [\[C19\]](#source-C19)
 
 <a id="code"></a>
 
 ## 11. Code reference and evidence
 
-Each reference below identifies the repository or public frontend bundle, relevant lines and a code excerpt. Open a reference to inspect the source context. The HTML embeds these excerpts and links to the exact repository revision. Contract source is pinned to `8611d928` and service source to `7a07c0c`; subsequent working-tree edits are outside this edition.
+Each reference below identifies the repository or public frontend bundle, relevant lines and a code excerpt. Open a reference to inspect the source context. The HTML embeds these excerpts and links to the exact repository revision. Contract source is pinned to `170ae4cf` and service source to `7a07c0c`; all relevant committed source changes through this revision are included.
 
 <a id="source-F1"></a>
 
@@ -372,103 +374,115 @@ Each reference below identifies the repository or public frontend bundle, releva
 
 **C1 · Gasless relay/deposit dispatch, indexed wallet API and fees** — `perps-core/contracts/gaslessLayer/GaslessLayer.sol:152`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L152)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L152)
 
 <a id="source-C2"></a>
 
 **C2 · InstantLayer execution and authorization** — `perps-core/contracts/instantLayer/InstantLayer.sol:943`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/instantLayer/InstantLayer.sol#L943)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/instantLayer/InstantLayer.sol#L943)
 
 <a id="source-C3"></a>
 
 **C3 · AccountLayer routing** — `perps-core/contracts/accountLayer/facets/Core/CoreFacet.sol:282`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/accountLayer/facets/Core/CoreFacet.sol#L282)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/accountLayer/facets/Core/CoreFacet.sol#L282)
 
 <a id="source-C4"></a>
 
 **C4 · Core operational fee collection** — `perps-core/contracts/core/libraries/LibOperationalFee.sol:62`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/libraries/LibOperationalFee.sol#L62)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/libraries/LibOperationalFee.sol#L62)
 
 <a id="source-C5"></a>
 
 **C5 · Core collateral transfer and 18-decimal credit** — `perps-core/contracts/core/facets/Account/AccountFacetImpl.sol:23`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/facets/Account/AccountFacetImpl.sol#L23)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/facets/Account/AccountFacetImpl.sol#L23)
 
 <a id="source-C6"></a>
 
 **C6 · Core operational allowance getter** — `perps-core/contracts/core/facets/ViewFacet/ViewFacet.sol:264`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/facets/ViewFacet/ViewFacet.sol#L264)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/facets/ViewFacet/ViewFacet.sol#L264)
 
 <a id="source-C7"></a>
 
 **C7 · Current GaslessLayer events** — `perps-core/contracts/gaslessLayer/interfaces/IGaslessLayer.sol:17`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/interfaces/IGaslessLayer.sol#L17)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/interfaces/IGaslessLayer.sol#L17)
 
 <a id="source-C8"></a>
 
-**C8 · Creation fees and unified quote/cap entrypoints** — `perps-core/contracts/gaslessLayer/GaslessLayer.sol:356`
+**C8 · Creation fees and unified quote/cap entrypoints** — `perps-core/contracts/gaslessLayer/GaslessLayer.sol:352`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L356)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L352)
 
 <a id="source-C9"></a>
 
-**C9 · Quote dispatch, actual charge accounting and rollback result** — `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:175`
+**C9 · Quote dispatch, actual charge accounting and rollback result** — `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:200`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L175)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L200)
 
 <a id="source-C10"></a>
 
 **C10 · Signed salt fee-cap layout and enforcement** — `perps-core/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol:6`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol#L6)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol#L6)
 
 <a id="source-C11"></a>
 
 **C11 · Native top-up capped signature and charge enforcement** — `perps-core/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol:133`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol#L133)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol#L133)
 
 <a id="source-C12"></a>
 
 **C12 · TypeScript quote decoder and signing helpers** — `perps-core/scripts/gaslessLayer/fee-quote.ts:32`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/scripts/gaslessLayer/fee-quote.ts#L32)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/scripts/gaslessLayer/fee-quote.ts#L32)
 
 <a id="source-C13"></a>
 
 **C13 · library deployment graph** — `perps-core/scripts/gaslessLayer/layer-libraries.ts:49`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/scripts/gaslessLayer/layer-libraries.ts#L49)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/scripts/gaslessLayer/layer-libraries.ts#L49)
 
 <a id="source-C14"></a>
 
-**C14 · Upgrade zero-fee preservation and client handoff policy** — `perps-core/tasks/deploy/accountInstantUpgrade.ts:631`
+**C14 · Upgrade zero-fee preservation and client handoff policy** — `perps-core/tasks/deploy/accountInstantUpgrade.ts:630`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/tasks/deploy/accountInstantUpgrade.ts#L631)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/tasks/deploy/accountInstantUpgrade.ts#L630)
+
+<a id="source-C18"></a>
+
+**C18 · Withdrawal execution in the linked fee library** — `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:41`
+
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L41)
+
+<a id="source-C19"></a>
+
+**C19 · Upgrade workflow v8 and client readiness** — `perps-core/cli/tasks/account-instant-upgrade.js:184`
+
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/cli/tasks/account-instant-upgrade.js#L184)
 
 <a id="source-C16"></a>
 
 **C16 · Owner withdrawal and caller-bound wallet selection** — `perps-core/contracts/gaslessLayer/GaslessLayer.sol:330`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L330)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L330)
 
 <a id="source-C17"></a>
 
-**C17 · Administrative non-collateral recovery without fees** — `perps-core/contracts/gaslessLayer/GaslessLayer.sol:551`
+**C17 · Administrative non-collateral recovery without fees** — `perps-core/contracts/gaslessLayer/GaslessLayer.sol:547`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L551)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L547)
 
 <a id="source-C15"></a>
 
-**C15 · Deposit sweep and net-credit calculation** — `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:42`
+**C15 · Deposit sweep and net-credit calculation** — `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:67`
 
-[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L42)
+[Open source](https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L67)
 
 <a id="source-S12"></a>
 
@@ -501,21 +515,21 @@ Evidence: [\[F1\]](#source-F1).
 | Item                  | Recorded evidence                                                                                                                                                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Service revision      | `7a07c0c2f55b3f558a39e6f715149d7633df54f7`; clean checkout.                                                                                                                                                                                 |
-| Contract revision     | `8611d92817047bffd65096408cc1d9f10e24d7b9`, including the public-interface/recovery changes. Excerpts come from that commit. Concurrent uncommitted Solidity edits are excluded from this edition.                                          |
+| Contract revision     | `170ae4cfba1eac7453beeb9cd13c3007132c6510`, including the owner-withdrawal library refactor and upgrade workflow v8/client handoff v3. Excerpts come from that commit; the checkout was clean at review.                                    |
 | Frontend evidence     | Original 12 September inspection downloaded 94 of 97 referenced assets. The six cited immutable asset URLs were retrieved and formatted again on 13 September. Current entry-page selection and authenticated execution were not verified.  |
-| Contract tests        | 181 passing in the earlier GaslessLayer/onboarding run against the pre-recovery-change source. This is historical evidence, not a test result for revision 8611d928. No application/contract suite was rerun for this documentation change. |
+| Contract tests        | 181 passing in the earlier GaslessLayer/onboarding run against the pre-recovery-change source. This is historical evidence, not a test result for revision 170ae4cf. No application/contract suite was rerun for this documentation change. |
 | Source/artifact check | Seven Gasless artifact roots and 16 reachable local Solidity sources matched during that run.                                                                                                                                               |
 | Service checks        | Original HTTP-helper test and six isolated receipt-finalizer scenarios passed. Full Python service tests were unavailable.                                                                                                                  |
 | Deployment proof      | No successful live RPC wiring/ABI verification or production settlement receipt. The original RPC attempt timed out.                                                                                                                        |
 
-The document was refreshed against committed changes through `8611d928`, including owner withdrawal, fee-unit names and deposit destination events. Later working-tree changes remain outside this pinned reference. Production authority, effective settings and deployed code require independent verification.
+The document was refreshed against committed changes through `170ae4cf`, including owner withdrawal, fee-unit names and deposit destination events. The service remains unchanged at `7a07c0c`. The latest contract refactor moves withdrawal execution into the linked fee library without changing its owner-facing flow. Production authority, effective settings and deployed code require independent verification.
 
 ### Document revision record
 
 | Edition          | Scope                                                                                                                                 |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Source analysis  | Established Vibe submission routes and traced service/contract settlement behavior.                                                   |
-| Contract refresh | Incorporated creation fees, structured fee quotes, limits, owner withdrawal, event destination and upgrade policy through 8611d928.   |
+| Contract refresh | Incorporated creation fees, structured fee quotes, limits, owner withdrawal, event destination and upgrade policy through 170ae4cf.   |
 | Flow reference   | Reorganized into journeys, ownership diagrams, completion rules and source references; implementation history moved to this appendix. |
 
 ### Transaction-specific acceptance checklist
