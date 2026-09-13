@@ -39,6 +39,31 @@ interface IGaslessFeeConfig {
 library GaslessFeeQuoteLib {
 	using SafeERC20 for IERC20;
 
+	/// @notice Collect a first-deployment fee and withdraw funds in gateway proxy context.
+	/// @dev The gateway validates the request and derives the caller's wallet before this delegatecall.
+	function withdrawWalletFunds(
+		uint256 walletId,
+		address wallet,
+		address token,
+		address recipient,
+		uint256 amount,
+		uint256 creationFee
+	) external returns (uint256 withdrawnAmount) {
+		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
+		GaslessWallet qWallet = GaslessWallet(payable(wallet));
+		address collateral = config.collateralToken();
+		if (creationFee > 0) {
+			qWallet.transfer(collateral, config.treasury(), creationFee);
+			emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
+		}
+		_recordWalletPayment(collateral, wallet, 0, creationFee);
+		withdrawnAmount = amount;
+		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? wallet.balance : IERC20(token).balanceOf(wallet);
+		if (withdrawnAmount == 0) revert IGaslessLayer.WalletWithdrawalAmountZero();
+		qWallet.transfer(token, recipient, withdrawnAmount);
+		emit IGaslessLayer.WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
+	}
+
 	/// @notice Sweep wallet collateral and collect deposit/creation fees in gateway proxy context.
 	/// @dev The gateway deploys the wallet and determines its creation fee before calling this library.
 	function sweepDepositAndCollectFee(

@@ -343,12 +343,8 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	) external override nonReentrant returns (uint256 withdrawnAmount) {
 		if (recipient == address(0)) revert ZeroAddress();
 		if (amount == 0) revert WalletWithdrawalAmountZero();
-		GaslessWallet wallet = _getWalletAndCollectCreationFee(msg.sender, walletId);
-		withdrawnAmount = amount;
-		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? address(wallet).balance : IERC20(token).balanceOf(address(wallet));
-		if (withdrawnAmount == 0) revert WalletWithdrawalAmountZero();
-		wallet.transfer(token, recipient, withdrawnAmount);
-		emit WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
+		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(msg.sender, walletId);
+		return GaslessFeeQuoteLib.withdrawWalletFunds(walletId, address(wallet), token, recipient, amount, deployed ? walletCreationFee : 0);
 	}
 
 	// ═══════════════════════ Wallet Views ════════════════════════
@@ -569,18 +565,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		amount = qWallet.sweepTokenBalance(token, recipient);
 		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
-	}
-
-	/// @dev Owner withdrawals pay first-deployment fees from the wallet's collateral.
-	function _getWalletAndCollectCreationFee(address owner, uint256 walletId) internal returns (GaslessWallet) {
-		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
-		uint256 creationFee = deployed ? walletCreationFee : 0;
-		if (creationFee > 0) {
-			qWallet.transfer(collateralToken, treasury, creationFee);
-			emit WalletCreationFeeCollected(address(qWallet), address(qWallet), creationFee);
-		}
-		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(qWallet), 0, creationFee);
-		return qWallet;
 	}
 
 	// ═══════════════════════ Internal: Deposits ═══════════════════════
