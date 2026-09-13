@@ -61,6 +61,7 @@ describe("GaslessLayer onboarding scenario", function () {
 			instantLayerAddress,
 			treasury.address,
 			DEPOSIT_FEE,
+			0,
 			MIN_DEPOSIT,
 		])
 		const Proxy = await ethers.getContractFactory("contracts/gaslessLayer/mocks/LayerProxy.sol:LayerProxy")
@@ -138,7 +139,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const quoted = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
 		expect(quoted.status).to.equal("quoted")
 		if (quoted.status !== "quoted") throw new Error(quoted.data)
-		expect(quoted.quote.totalFee).to.equal(OP_FEE * 2n)
+		expect(quoted.quote.totalFee18).to.equal(OP_FEE * 2n)
 		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(before)
 		// The fee-bearing real Core approval and the InstantLayer replay state both roll back in a quote.
 		await gateway.connect(context.signers.admin).setDefaultSelectorFee(OP_FEE * 2n)
@@ -148,7 +149,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		await expect(gateway.connect(relayer).relayInstantBatch([changed], [signature], [[]], [[]], [0n])).to.be.revert(ethers)
 		await gateway.connect(context.signers.admin).setDefaultSelectorFee(OP_FEE)
 		await gateway.connect(relayer).relayInstantBatch(...args)
-		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(before - quoted.quote.totalFee)
+		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(before - quoted.quote.totalFee18)
 	})
 
 	it("onboards a user end to end: deposit address, account creation, then one user signature + session-key setup", async function () {
@@ -278,6 +279,70 @@ describe("GaslessLayer onboarding scenario", function () {
 		expect(allowance).to.equal(FEE_ALLOWANCE - totalFee)
 		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, totalFee)
 	})
+	it("lets the owner recover a real Core withdrawal with all relayers disabled and no remaining fee allowance", async function () {
+		const subAccount = await settleFundedAccount()
+		const walletId = 22n
+		const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
+		const withdrawalAmount = decimal(20n)
+		const creationFee = decimal(3n)
+		await gateway.connect(context.signers.admin).setWalletCreationFee(creationFee)
+		await context.controlFacet.connect(context.signers.admin).setMaxWithdrawParts(1)
+		const approveOp = createSignedOperation(
+			user.address,
+			symmioAddress,
+			context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [OP_FEE * 2n]]),
+			subAccount,
+		)
+		const withdrawOp = createSignedOperation(
+			user.address,
+			symmioAddress,
+			context.withdrawFacet.interface.encodeFunctionData("initiateWithdraw", [
+				[
+					{
+						id: 0,
+						amount: withdrawalAmount,
+						chainId: (await ethers.provider.getNetwork()).chainId,
+						receiver: wallet,
+						virtualProvider: ethers.ZeroAddress,
+						expressProvider: ethers.ZeroAddress,
+					},
+				],
+				false,
+				"0x",
+			]),
+			subAccount,
+		)
+		await gateway
+			.connect(relayer)
+			.relayInstantBatch(
+				[approveOp, withdrawOp],
+				[await user.signTypedData(domain, types, approveOp), await user.signTypedData(domain, types, withdrawOp)],
+				[[], []],
+				[[], []],
+				[0, 0],
+			)
+		await context.withdrawFacet.finalizeWithdrawRequest(subAccount, 1n)
+		expect(await context.collateral.balanceOf(wallet)).to.equal(withdrawalAmount)
+		expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+		expect((await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr))[0]).to.equal(0n)
+		await gateway.connect(context.signers.admin).revokeRole(await gateway.RELAYER_ROLE(), relayer.address)
+		await gateway.connect(context.signers.admin).revokeRole(await gateway.RELAYER_ROLE(), context.signers.admin.address)
+		const coreBefore = await context.viewFacet.balanceOf(subAccount)
+		const userBefore = await context.collateral.balanceOf(user.address)
+		const treasuryBefore = await context.collateral.balanceOf(treasury.address)
+		const data = gateway.interface.encodeFunctionData("withdrawWalletFunds", [walletId, context.collateral.target, user.address, ethers.MaxUint256])
+		const quote = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
+		expect(quote.status).to.equal("quoted")
+		if (quote.status !== "quoted") throw new Error(quote.data)
+		expect(quote.quote.totalFee18).to.equal(creationFee)
+		await gateway.connect(user).executeWithFeeLimit(data, quote.quote.totalDebit18)
+		expect(await context.collateral.balanceOf(user.address)).to.equal(userBefore + withdrawalAmount - creationFee)
+		expect(await context.collateral.balanceOf(treasury.address)).to.equal(treasuryBefore + creationFee)
+		expect(await context.collateral.balanceOf(wallet)).to.equal(0n)
+		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(coreBefore)
+		expect((await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr))[0]).to.equal(0n)
+	})
+
 	it("keeps a real Core withdrawal available while another indexed deposit settles, then resumes through the wallet", async function () {
 		const creationFee = decimal(3n)
 		await gateway.connect(context.signers.admin).setWalletCreationFee(creationFee)
@@ -374,7 +439,7 @@ describe("GaslessLayer onboarding scenario", function () {
 		const signature = await user.signTypedData({ ...domain, name: "GaslessGateway", verifyingContract: gatewayAddr }, walletTypes, bridgeOp)
 		const receiverBefore = await context.collateral.balanceOf(sessionKey.address)
 		const quote = await gateway.getAccountOperationalFee(subAccount, [bridgeOp], [withdrawalId])
-		expect(quote.amountDue).to.equal(OP_FEE * 2n + creationFee)
+		expect(quote.amountDue18).to.equal(OP_FEE * 2n + creationFee)
 		const exact = await quoteGaslessFee({
 			gateway,
 			mode: "exact",
@@ -383,8 +448,8 @@ describe("GaslessLayer onboarding scenario", function () {
 		})
 		expect(exact.status).to.equal("quoted")
 		if (exact.status === "quoted") {
-			expect(exact.quote.totalFee).to.equal(OP_FEE * 2n + creationFee)
-			expect(exact.quote.payments[0].walletCreationFee).to.equal(creationFee)
+			expect(exact.quote.totalFee18).to.equal(OP_FEE * 2n + creationFee)
+			expect(exact.quote.payments[0].walletCreationFee18).to.equal(creationFee)
 		}
 		expect(await ethers.provider.getCode(withdrawalWallet)).to.equal("0x")
 		expect(await context.collateral.balanceOf(sessionKey.address)).to.equal(receiverBefore)
@@ -393,7 +458,7 @@ describe("GaslessLayer onboarding scenario", function () {
 			.withArgs(withdrawalWallet, subAccount, creationFee)
 		expect(await context.collateral.balanceOf(sessionKey.address)).to.equal(receiverBefore + withdrawalAmount)
 		expect(await context.collateral.balanceOf(withdrawalWallet)).to.equal(0)
-		expect(await gateway.walletNonces(withdrawalWallet, subAccount)).to.equal(1)
+		expect(await gateway.walletOperationNonces(user.address, withdrawalId, subAccount)).to.equal(1)
 		expect(await context.viewFacet.balanceOf(subAccount)).to.equal(
 			(BRIDGED_AMOUNT - DEPOSIT_FEE - creationFee) * 2n - withdrawalAmount - OP_FEE * 4n - creationFee,
 		)

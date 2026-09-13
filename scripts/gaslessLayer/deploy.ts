@@ -28,6 +28,7 @@ async function main() {
 	const DEPOSIT_FEE = process.env.DEPOSIT_FEE || "2000000"
 	const WALLET_CREATION_FEE = process.env.WALLET_CREATION_FEE || "0"
 	const MINIMUM_DEPOSIT = process.env.MINIMUM_DEPOSIT || "5000000"
+	let gatewayAddress = ""
 
 	if (isHyperEVM) {
 		console.log(`Detected HyperEVM (chainId ${chainId}) - enabling big blocks before contract deployment...`)
@@ -55,15 +56,15 @@ async function main() {
 			INSTANT_LAYER,
 			TREASURY,
 			DEPOSIT_FEE,
+			WALLET_CREATION_FEE,
 			MINIMUM_DEPOSIT,
 		])
 
 		const Proxy = await ethers.getContractFactory("LayerProxy")
 		const proxy = await Proxy.deploy(await impl.getAddress(), initData)
 		await proxy.waitForDeployment()
-		console.log("GaslessLayer (proxy):", await proxy.getAddress())
-		const gateway = Gateway.attach(await proxy.getAddress())
-		await (await gateway.setWalletCreationFee(WALLET_CREATION_FEE)).wait()
+		gatewayAddress = await proxy.getAddress()
+		console.log("GaslessLayer (proxy):", gatewayAddress)
 	} finally {
 		if (isHyperEVM) {
 			console.log("")
@@ -79,9 +80,11 @@ async function main() {
 	}
 
 	console.log("\nPost-deploy wiring required:")
-	console.log("  1. InstantLayer admin: grant this gateway OPERATOR_ROLE (registers it as executor).")
-	console.log("  2. Symmio core: call registerOperationalFeeCharger(gatewayAddr) with FEE_ADMIN_ROLE (0.8.6+).")
-	console.log("  3. Gateway: grant RELAYER_ROLE to your off-chain bot keys.")
+	console.log(`  1. InstantLayer admin: grant OPERATOR_ROLE to ${gatewayAddress} (registers it as executor).`)
+	console.log(`  2. Symmio core: call registerOperationalFeeCharger(${gatewayAddress}) with FEE_ADMIN_ROLE (0.8.6+).`)
+	console.log(`  3. Symmio core: call setOperationalFeeReceiver(${gatewayAddress}, ${TREASURY}) after registration.`)
+	console.log("  4. Gateway: grant RELAYER_ROLE to your off-chain bot keys.")
+	console.log("  Do not enable relaying before steps 2 and 3 are complete; otherwise fees accrue to the gateway itself.")
 }
 
 main().catch(e => {
