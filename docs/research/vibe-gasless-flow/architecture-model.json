@@ -649,10 +649,10 @@
 					"confidence": "verified"
 				},
 				{
-					"component": "wallet",
-					"title": "4 \u00b7 Deploy and pay if needed",
-					"detail": "First deployment fee comes from wallet collateral.",
-					"evidence": ["C16"],
+					"component": "gasless",
+					"title": "4 \u00b7 Collect creation fee",
+					"detail": "Fee library charges wallet collateral if deployed now.",
+					"evidence": ["C18"],
 					"phase": "execute",
 					"confidence": "verified"
 				},

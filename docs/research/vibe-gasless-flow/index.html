@@ -4140,14 +4140,14 @@
 								</g>
 							</a>
 							<a
-								href="#source-C16"
+								href="#source-C18"
 								data-node="3"
 								data-model="withdrawals"
 								tabindex="0"
-								aria-label="4 · Deploy and pay if needed. First deployment fee comes from wallet collateral."
+								aria-label="4 · Collect creation fee. Fee library charges wallet collateral if deployed now."
 							>
 								<g>
-									<title>GaslessWallet: First deployment fee comes from wallet collateral. Sources: C16</title>
+									<title>GaslessLayer: Fee library charges wallet collateral if deployed now. Sources: C18</title>
 									<rect
 										class="node-bg"
 										x="800"
@@ -4173,12 +4173,12 @@
 										CONTRACT
 									</text>
 									<text x="815" y="328" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#182b45">
-										4 · Deploy and pay if needed
+										4 · Collect creation fee
 									</text>
 									<text x="815" y="352" font-family="Arial,sans-serif" font-size="13" fill="#45566b">
-										First deployment fee comes from wallet
+										Fee library charges wallet collateral if
 									</text>
-									<text x="815" y="368" font-family="Arial,sans-serif" font-size="13" fill="#45566b">collateral.</text>
+									<text x="815" y="368" font-family="Arial,sans-serif" font-size="13" fill="#45566b">deployed now.</text>
 								</g>
 							</a>
 							<a
@@ -4285,6 +4285,13 @@
 					wallet has no creation fee. The contract emits <code>WalletFundsWithdrawn</code>; verify it and the recipient's resulting balance.
 					This withdraws funds held by GaslessWallet, not deposited collateral or position margin held in Core. Frontend adoption is
 					unverified. <a href="#source-C16">[C16]</a>
+				</p>
+				<p>
+					<strong>Contract execution location.</strong> <code>GaslessLayer.withdrawWalletFunds</code> validates the recipient/amount and
+					derives or deploys the caller-owned wallet. It delegates to linked <code>GaslessFeeQuoteLib.withdrawWalletFunds</code>, which
+					collects the creation fee, records fee-quote accounting, transfers from GaslessWallet and emits <code>WalletFundsWithdrawn</code>.
+					The library runs in the GaslessLayer proxy context and preserves the caller identity; it is contract execution, not a separate
+					service. <a href="#source-C16">[C16]</a> <a href="#source-C18">[C18]</a>
 				</p>
 				<p>
 					Owner withdrawal preview and exact simulation must use the owner's address as <code>from</code>.
@@ -6083,10 +6090,16 @@
 					<a href="#source-C15">[C15]</a>
 				</p>
 				<p>
-					<strong>Upgrade policy.</strong> The Account/Instant upgrade tooling requires <code>walletCreationFee == 0</code>, deploys the
-					complete five-library graph, and exports <code>gasless-client-upgrade-v2</code> integration details. The zero-fee policy leaves
-					the creation-fee discrepancy dormant for that prescribed upgrade, but does not resolve the service ABI differences. This policy is
-					verified in source, not as a live Vibe setting. <a href="#source-C14">[C14]</a>
+					<strong>Upgrade policy.</strong> Account/Instant upgrade workflow <strong>v8</strong> exports client handoff
+					<strong>v3</strong> and requires <code>walletCreationFee == 0</code>, deploys the complete five-library graph, and exports
+					<code>operations.symm.io/gasless-client-upgrade-v3</code> integration details. The handoff covers owner withdrawals, renamed fee
+					fields, event decoding, and nonce getter migration. Wallet operation nonce reads must use
+					<code>walletOperationNonces(owner,walletId,signerAccount)</code> and then add one; the raw <code>walletNonces</code> getter is
+					removed. Wallet ID 0 preserves its original address and nonce stream. The zero-fee policy leaves the creation-fee discrepancy
+					dormant for that prescribed upgrade, but does not resolve the service ABI differences. The upgrade does not call the
+					eight-argument fresh-proxy initializer or set the creation fee. Client readiness includes owner-withdrawal support. These are
+					source requirements, not evidence of an executed upgrade or live Vibe adoption. <a href="#source-C14">[C14]</a>
+					<a href="#source-C19">[C19]</a>
 				</p>
 			</section>
 			<section id="code" class="chapter">
@@ -6097,7 +6110,8 @@
 				<p>
 					Each reference below identifies the repository or public frontend bundle, relevant lines and a code excerpt. Open a reference to
 					inspect the source context. The HTML embeds these excerpts and links to the exact repository revision. Contract source is pinned
-					to <code>8611d928</code> and service source to <code>7a07c0c</code>; subsequent working-tree edits are outside this edition.
+					to <code>170ae4cf</code> and service source to <code>7a07c0c</code>; all relevant committed source changes through this revision
+					are included.
 				</p>
 				<details class="source" id="source-F1">
 					<summary>
@@ -7056,7 +7070,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L152"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L152"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7115,7 +7129,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/instantLayer/InstantLayer.sol#L943"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/instantLayer/InstantLayer.sol#L943"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7208,7 +7222,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/accountLayer/facets/Core/CoreFacet.sol#L282"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/accountLayer/facets/Core/CoreFacet.sol#L282"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7255,7 +7269,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/libraries/LibOperationalFee.sol#L62"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/libraries/LibOperationalFee.sol#L62"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7302,7 +7316,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/facets/Account/AccountFacetImpl.sol#L23"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/facets/Account/AccountFacetImpl.sol#L23"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7349,7 +7363,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/facets/ViewFacet/ViewFacet.sol#L264"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/facets/ViewFacet/ViewFacet.sol#L264"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7396,7 +7410,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/interfaces/IGaslessLayer.sol#L17"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/interfaces/IGaslessLayer.sol#L17"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7569,123 +7583,122 @@
 				<details class="source" id="source-C8">
 					<summary>
 						<span class="ref-id">C8</span> Creation fees and unified quote/cap entrypoints<small
-							>perps-core / contracts/gaslessLayer/GaslessLayer.sol · lines 356–405</small
+							>perps-core / contracts/gaslessLayer/GaslessLayer.sol · lines 352–401</small
 						>
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L356"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L352"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
 						>
-						<pre><code>  356  	/// @notice Preview GaslessLayer charges for encoded action calldata without signatures or state changes.
-  357  	/// @dev Uses current balances, allowances and configuration. Does not execute the action or validate its signatures.
-  358  	///      State changes inside a batch can change the fees and payer. Use simulateFeeQuote on the completed request.
-  359  	function previewFeeQuote(bytes calldata callData, uint256 nativeAmount) external view override returns (FeeQuote memory) {
-  360  		return GaslessFeeQuoteLib.preview(callData, nativeAmount);
-  361  	}
-  362
-  363  	/// @notice Simulate the complete call, including signatures, roles and fee collection, through eth_call.
-  364  	/// @dev ALWAYS reverts: FeeQuoteResult contains the exact quote; FeeQuoteExecutionFailed contains the original failure.
-  365  	///      Use the submitting relayer/admin/owner as `from` and the intended native `value`. No changes can persist, even if sent as a transaction.
-  366  	function simulateFeeQuote(bytes calldata callData) external payable override {
-  367  		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
-  368  		GaslessFeeQuoteLib.execute(callData, true, 0);
-  369  	}
-  370
-  371  	/// @notice Execute an action with a caller-supplied cap on total GaslessLayer collateral debit, in 18 decimals.
-  372  	/// @dev Retains the underlying action&#x27;s roles. This caller limit is useful for unsigned settlement/admin actions.
-  373  	///      User-signed operation limits are enforced separately, even when relayed directly.
-  374  	function executeWithFeeLimit(bytes calldata callData, uint256 maxTotalDebit18) external payable override returns (bytes memory) {
-  375  		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
-  376  		return GaslessFeeQuoteLib.execute(callData, false, maxTotalDebit18);
-  377  	}
-  378
-  379  	/// @notice Predict the owner&#x27;s selected GaslessWallet address without deploying it.
-  380  	/// @dev Index zero preserves the original wallet address. Collateral can arrive before deployment.
-  381  	/// @param owner Owner address used to derive the GaslessWallet address.
-  382  	/// @param walletId Wallet index; zero selects the original wallet.
-  383  	/// @return Predicted GaslessWallet address.
-  384  	function getGaslessWalletAddress(address owner, uint256 walletId) external view override returns (address) {
-  385  		return GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
-  386  	}
-  387
-  388  	/// @notice Quote the flat collateral fee for deploying the selected wallet now.
-  389  	/// @dev Already deployed wallets return zero. This fee is separate from SYMMIO operational fees and their free quota.
-  390  	function getWalletCreationFee(address owner, uint256 walletId) external view override returns (uint256 feeTokenUnits) {
-  391  		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
-  392  		feeTokenUnits = wallet.code.length == 0 ? walletCreationFee : 0;
-  393  	}
-  394
-  395  	/// @notice Read the last consumed wallet-operation nonce for the selected wallet and signer account.
-  396  	/// @dev Index zero reads the original signer-account nonce mapping; positive indices use wallet-specific mappings.
-  397  	/// @param owner Owner address used to derive the GaslessWallet address.
-  398  	/// @param walletId Wallet index; zero selects the original wallet.
-  399  	/// @param signerAccount Account specified in the signed operation.
-  400  	/// @return Last consumed nonce; the next operation must use this value plus one.
-  401  	function walletOperationNonces(address owner, uint256 walletId, address signerAccount) external view override returns (uint256) {
-  402  		if (walletId == 0) return _legacyWalletOperationNonces[signerAccount];
-  403  		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
-  404  		return walletNonces[wallet][signerAccount];
-  405  	}</code></pre>
+						<pre><code>  352  	/// @notice Preview GaslessLayer charges for encoded action calldata without signatures or state changes.
+  353  	/// @dev Uses current balances, allowances and configuration. Does not execute the action or validate its signatures.
+  354  	///      State changes inside a batch can change the fees and payer. Use simulateFeeQuote on the completed request.
+  355  	function previewFeeQuote(bytes calldata callData, uint256 nativeAmount) external view override returns (FeeQuote memory) {
+  356  		return GaslessFeeQuoteLib.preview(callData, nativeAmount);
+  357  	}
+  358
+  359  	/// @notice Simulate the complete call, including signatures, roles and fee collection, through eth_call.
+  360  	/// @dev ALWAYS reverts: FeeQuoteResult contains the exact quote; FeeQuoteExecutionFailed contains the original failure.
+  361  	///      Use the submitting relayer/admin/owner as `from` and the intended native `value`. No changes can persist, even if sent as a transaction.
+  362  	function simulateFeeQuote(bytes calldata callData) external payable override {
+  363  		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
+  364  		GaslessFeeQuoteLib.execute(callData, true, 0);
+  365  	}
+  366
+  367  	/// @notice Execute an action with a caller-supplied cap on total GaslessLayer collateral debit, in 18 decimals.
+  368  	/// @dev Retains the underlying action&#x27;s roles. This caller limit is useful for unsigned settlement/admin actions.
+  369  	///      User-signed operation limits are enforced separately, even when relayed directly.
+  370  	function executeWithFeeLimit(bytes calldata callData, uint256 maxTotalDebit18) external payable override returns (bytes memory) {
+  371  		if (_reentrancyGuardEntered()) revert FeeQuoteContextActive();
+  372  		return GaslessFeeQuoteLib.execute(callData, false, maxTotalDebit18);
+  373  	}
+  374
+  375  	/// @notice Predict the owner&#x27;s selected GaslessWallet address without deploying it.
+  376  	/// @dev Index zero preserves the original wallet address. Collateral can arrive before deployment.
+  377  	/// @param owner Owner address used to derive the GaslessWallet address.
+  378  	/// @param walletId Wallet index; zero selects the original wallet.
+  379  	/// @return Predicted GaslessWallet address.
+  380  	function getGaslessWalletAddress(address owner, uint256 walletId) external view override returns (address) {
+  381  		return GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
+  382  	}
+  383
+  384  	/// @notice Quote the flat collateral fee for deploying the selected wallet now.
+  385  	/// @dev Already deployed wallets return zero. This fee is separate from SYMMIO operational fees and their free quota.
+  386  	function getWalletCreationFee(address owner, uint256 walletId) external view override returns (uint256 feeTokenUnits) {
+  387  		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
+  388  		feeTokenUnits = wallet.code.length == 0 ? walletCreationFee : 0;
+  389  	}
+  390
+  391  	/// @notice Read the last consumed wallet-operation nonce for the selected wallet and signer account.
+  392  	/// @dev Index zero reads the original signer-account nonce mapping; positive indices use wallet-specific mappings.
+  393  	/// @param owner Owner address used to derive the GaslessWallet address.
+  394  	/// @param walletId Wallet index; zero selects the original wallet.
+  395  	/// @param signerAccount Account specified in the signed operation.
+  396  	/// @return Last consumed nonce; the next operation must use this value plus one.
+  397  	function walletOperationNonces(address owner, uint256 walletId, address signerAccount) external view override returns (uint256) {
+  398  		if (walletId == 0) return _legacyWalletOperationNonces[signerAccount];
+  399  		address wallet = GaslessWalletDeployerLib.getGaslessWalletAddress(owner, walletId);
+  400  		return walletNonces[wallet][signerAccount];
+  401  	}</code></pre>
 					</div>
 				</details>
 				<details class="source" id="source-C9">
 					<summary>
 						<span class="ref-id">C9</span> Quote dispatch, actual charge accounting and rollback result<small
-							>perps-core / contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol · lines 175–216</small
+							>perps-core / contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol · lines 200–240</small
 						>
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L175"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L200"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
 						>
-						<pre><code>  175
-  176  	/// @dev Runs the original action with the original caller/value/roles. Simulation always reverts, even on success.
-  177  	///      Wrap failures so an inner call cannot impersonate the outer successful quote result.
-  178  	function execute(bytes calldata callData, bool simulation, uint256 maxTotalDebit) external returns (bytes memory result) {
-  179  		bytes4 selector = _checkSelector(callData);
-  180  		if (selector != IGaslessLayer.relayNativeGasTopUp.selector &amp;&amp; msg.value != 0) revert IGaslessLayer.UnexpectedNativeValue(msg.value);
-  181  		GaslessFeeAccounting.State storage s = GaslessFeeAccounting.state();
-  182  		if (s.active) revert IGaslessLayer.FeeQuoteContextActive();
-  183  		IGaslessLayer.FeeQuote memory quote = _newQuote(IGaslessFeeConfig(address(this)));
-  184  		s.active = true;
-  185  		bool success;
-  186  		(success, result) = address(this).delegatecall(callData);
-  187  		if (!success) {
-  188  			if (simulation) revert IGaslessLayer.FeeQuoteExecutionFailed(result);
-  189  			assembly (&quot;memory-safe&quot;) {
-  190  				revert(add(result, 32), mload(result))
-  191  			}
-  192  		}
-  193  		quote.exact = true;
-  194  		quote.payments = s.payments;
-  195  		quote.freeOpsApplied = s.freeOps;
-  196  		quote.nativeSponsored = s.nativeSponsored;
-  197  		_total(quote);
-  198  		if (simulation) revert IGaslessLayer.FeeQuoteResult(quote);
-  199  		if (quote.totalDebit18 &gt; maxTotalDebit) revert IGaslessLayer.FeeLimitExceeded(quote.totalDebit18, maxTotalDebit);
-  200  		GaslessFeeAccounting.clear();
-  201  	}
-  202
-  203  	function _newQuote(IGaslessFeeConfig config) private view returns (IGaslessLayer.FeeQuote memory q) {
-  204  		q.collateralToken = config.collateralToken();
-  205  		q.collateralDecimals = IERC20Metadata(q.collateralToken).decimals();
-  206  		q.blockNumber = block.number;
-  207  		q.timestamp = block.timestamp;
-  208  	}
-  209
-  210  	function _total(IGaslessLayer.FeeQuote memory q) private pure {
-  211  		for (uint256 i; i &lt; q.payments.length; i++) {
-  212  			IGaslessLayer.FeePayment memory p = q.payments[i];
-  213  			q.totalFee18 += p.operationalFee18 + p.depositFee18 + p.walletCreationFee18 + p.nativeTopUpFee18;
-  214  			q.totalDebit18 += p.nativeGasCollateral18;
-  215  		}
-  216  		q.totalDebit18 += q.totalFee18;</code></pre>
+						<pre><code>  200
+  201  	/// @dev Runs the original action with the original caller/value/roles. Simulation always reverts, even on success.
+  202  	///      Wrap failures so an inner call cannot impersonate the outer successful quote result.
+  203  	function execute(bytes calldata callData, bool simulation, uint256 maxTotalDebit) external returns (bytes memory result) {
+  204  		bytes4 selector = _checkSelector(callData);
+  205  		if (selector != IGaslessLayer.relayNativeGasTopUp.selector &amp;&amp; msg.value != 0) revert IGaslessLayer.UnexpectedNativeValue(msg.value);
+  206  		GaslessFeeAccounting.State storage s = GaslessFeeAccounting.state();
+  207  		if (s.active) revert IGaslessLayer.FeeQuoteContextActive();
+  208  		IGaslessLayer.FeeQuote memory quote = _newQuote(IGaslessFeeConfig(address(this)));
+  209  		s.active = true;
+  210  		bool success;
+  211  		(success, result) = address(this).delegatecall(callData);
+  212  		if (!success) {
+  213  			if (simulation) revert IGaslessLayer.FeeQuoteExecutionFailed(result);
+  214  			assembly (&quot;memory-safe&quot;) {
+  215  				revert(add(result, 32), mload(result))
+  216  			}
+  217  		}
+  218  		quote.exact = true;
+  219  		quote.payments = s.payments;
+  220  		quote.freeOpsApplied = s.freeOps;
+  221  		quote.nativeSponsored = s.nativeSponsored;
+  222  		_total(quote);
+  223  		if (simulation) revert IGaslessLayer.FeeQuoteResult(quote);
+  224  		if (quote.totalDebit18 &gt; maxTotalDebit) revert IGaslessLayer.FeeLimitExceeded(quote.totalDebit18, maxTotalDebit);
+  225  		GaslessFeeAccounting.clear();
+  226  	}
+  227
+  228  	function _newQuote(IGaslessFeeConfig config) private view returns (IGaslessLayer.FeeQuote memory q) {
+  229  		q.collateralToken = config.collateralToken();
+  230  		q.collateralDecimals = IERC20Metadata(q.collateralToken).decimals();
+  231  		q.blockNumber = block.number;
+  232  		q.timestamp = block.timestamp;
+  233  	}
+  234
+  235  	function _total(IGaslessLayer.FeeQuote memory q) private pure {
+  236  		for (uint256 i; i &lt; q.payments.length; i++) {
+  237  			IGaslessLayer.FeePayment memory p = q.payments[i];
+  238  			q.totalFee18 += p.operationalFee18 + p.depositFee18 + p.walletCreationFee18 + p.nativeTopUpFee18;
+  239  			q.totalDebit18 += p.nativeGasCollateral18;
+  240  		}</code></pre>
 					</div>
 				</details>
 				<details class="source" id="source-C10">
@@ -7696,7 +7709,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol#L6"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol#L6"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7724,7 +7737,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol#L133"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol#L133"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7771,7 +7784,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/scripts/gaslessLayer/fee-quote.ts#L32"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/scripts/gaslessLayer/fee-quote.ts#L32"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7818,7 +7831,7 @@
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/scripts/gaslessLayer/layer-libraries.ts#L49"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/scripts/gaslessLayer/layer-libraries.ts#L49"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7849,20 +7862,21 @@
 				<details class="source" id="source-C14">
 					<summary>
 						<span class="ref-id">C14</span> Upgrade zero-fee preservation and client handoff policy<small
-							>perps-core / tasks/deploy/accountInstantUpgrade.ts · lines 631–662</small
+							>perps-core / tasks/deploy/accountInstantUpgrade.ts · lines 630–665</small
 						>
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/tasks/deploy/accountInstantUpgrade.ts#L631"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/tasks/deploy/accountInstantUpgrade.ts#L630"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
 						>
-						<pre><code>  631  	const gasless = await hre.artifacts.readArtifact(&quot;GaslessLayer&quot;)
+						<pre><code>  630  export async function buildUpgradeClientHandoff(hre: any, input: any, report: any) {
+  631  	const gasless = await hre.artifacts.readArtifact(&quot;GaslessLayer&quot;)
   632  	const instant = await hre.artifacts.readArtifact(&quot;InstantLayer&quot;)
   633  	return {
-  634  		apiVersion: &quot;operations.symm.io/gasless-client-upgrade-v2&quot;,
+  634  		apiVersion: &quot;operations.symm.io/gasless-client-upgrade-v3&quot;,
   635  		chainId: 42161,
   636  		inputDigest: digest(input),
   637  		snapshotDigest: report.snapshotDigest,
@@ -7876,32 +7890,104 @@
   645  		instructions: [
   646  			&quot;Stage the indexed-wallet ABI before the Gasless Safe cutover; activate it when that upgrade executes.&quot;,
   647  			&quot;relayInstantBatch requires walletIds with one entry per signed operation. Use 0 for InstantLayer operations and the original wallet.&quot;,
-  648  			&quot;Wallet address, deposit settlement, recovery and fee/nonce reads now take wallet IDs. walletOperationNonces(owner, walletId, signerAccount) returns the last consumed nonce; use that value plus one.&quot;,
+  648  			&quot;Wallet address, deposit settlement, recovery and fee/nonce reads now take wallet IDs. Use walletOperationNonces(owner, walletId, signerAccount), not the removed walletNonces getter; it returns the last consumed nonce, so use that value plus one.&quot;,
   649  			&quot;Wallet ID 0 keeps the original address and legacy nonce stream. Positive IDs use separate wallet addresses and nonces.&quot;,
-  650  			&quot;Update event consumers for GaslessWalletDeployed, WalletDepositSettled, WalletNonCollateralTokenRecovered, WalletCreationFeeUpdated and WalletCreationFeeCollected using the attached ABI.&quot;,
-  651  			&quot;Wallet creation fees remain disabled: the upgrade verifies slot 20 is zero and does not call setWalletCreationFee. The standalone deployment recipe&#x27;s fee does not apply to this upgrade.&quot;,
-  652  			&quot;previewFeeQuote is an estimate. Use quoteGaslessFee from scripts/gaslessLayer/fee-quote.ts in exact mode with the submitting relayer/admin as from and the intended native value; simulation returns FeeQuoteResult through a revert and must use eth_call.&quot;,
-  653  			&quot;FeeQuote monetary fields and executeWithFeeLimit maxTotalDebit use 18 decimals. WalletCreationFeeUpdated/Collected and walletCreationFee use collateral token decimals. totalDebit includes collateral exchanged for native gas; totalFee excludes that exchanged principal.&quot;,
-  654  			&quot;Fee quotes cover Gasless charges, excluding Core trading fees, bridge fees and transaction gas. Execute the same encoded action directly or through executeWithFeeLimit; the wrapper retains the underlying roles.&quot;,
-  655  			&quot;Optional signed caps: set gaslessFeeLimitSalt before signing operation/delegation typed data; use signCappedNativeGasTopUp for capped top-ups. Existing untagged salts and legacy top-up signatures remain supported.&quot;,
-  656  			&quot;Use the new InstantLayer address/domain and grant fresh user delegations; old InstantLayer delegations and replay state are not migrated.&quot;,
-  657  			&quot;GaslessGateway wallet signatures continue to use the existing Gasless proxy domain and signed wallet target.&quot;,
-  658  		],
-  659  	}
-  660  }
-  661
-  662  export const accountInstantUpgradeTask = task(</code></pre>
+  650  			&quot;Update event consumers using the attached ABI, including WalletFundsWithdrawn. WalletDepositSettled has a new topic and final uint8 destination: 0 = NEW_ACCOUNT, 1 = EXISTING_ACCOUNT. Update named decoding for InstantBatchRelayed.totalFee18, InstantTemplateRelayed.totalFee18, DelegationBySigRelayed.fee18 and OperationalFeeRouted.amount18; DepositFeeCollected identifies owner.&quot;,
+  651  			&quot;withdrawWalletFunds(walletId, token, recipient, amount) is sent by the wallet owner without relayer/admin roles or a SYMMIO account. token = zero address selects native funds; amount = MaxUint256 withdraws the full balance after any creation fee. The owner pays transaction gas.&quot;,
+  652  			&quot;Admin recoverNonCollateralToken remains restricted to CONFIG_ADMIN_ROLE, rejects collateral and zero recipients, and deploys wallets without charging creation fees or moving their collateral.&quot;,
+  653  			&quot;Wallet creation fees remain disabled: the upgrade verifies slot 20 is zero and calls neither initialize nor setWalletCreationFee. The eight-argument initializer and standalone deployment recipe&#x27;s fee apply only to new proxies.&quot;,
+  654  			&quot;previewFeeQuote is an estimate. Use quoteGaslessFee from scripts/gaslessLayer/fee-quote.ts in exact mode with the submitting relayer/admin/owner as from and the intended native value; simulation returns FeeQuoteResult through a revert and must use eth_call. Owner withdrawals require the owner&#x27;s from address in preview mode too.&quot;,
+  655  			&quot;FeeQuote uses totalFee18, totalDebit18 and payment fields operationalFee18, depositFee18, walletCreationFee18, nativeTopUpFee18 and nativeGasCollateral18. These amounts and executeWithFeeLimit maxTotalDebit18 use 18 decimals; walletCreationFee/getWalletCreationFee and creation-fee events use collateral token decimals. totalDebit18 includes collateral exchanged for native gas; totalFee18 excludes that exchanged principal. Both exclude deposited/withdrawn principal.&quot;,
+  656  			&quot;Fee quotes cover Gasless charges, excluding Core trading fees, bridge fees and transaction gas. Execute the same encoded action directly or through executeWithFeeLimit; the wrapper retains the underlying roles.&quot;,
+  657  			&quot;Optional signed caps: set gaslessFeeLimitSalt before signing operation/delegation typed data; use signCappedNativeGasTopUp for capped top-ups. Existing untagged salts and legacy top-up signatures remain supported.&quot;,
+  658  			&quot;Use the new InstantLayer address/domain and grant fresh user delegations; old InstantLayer delegations and replay state are not migrated.&quot;,
+  659  			&quot;GaslessGateway wallet signatures continue to use the existing Gasless proxy domain and signed wallet target.&quot;,
+  660  		],
+  661  	}
+  662  }
+  663
+  664  export const accountInstantUpgradeTask = task(
+  665  	&quot;internal:account-instant-upgrade&quot;,</code></pre>
+					</div>
+				</details>
+				<details class="source" id="source-C18">
+					<summary>
+						<span class="ref-id">C18</span> Withdrawal execution in the linked fee library<small
+							>perps-core / contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol · lines 41–66</small
+						>
+					</summary>
+					<div class="source-code">
+						<a
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L41"
+							target="_blank"
+							rel="noreferrer"
+							>Open pinned source ↗</a
+						>
+						<pre><code>   41
+   42  	/// @notice Collect a first-deployment fee and withdraw funds in gateway proxy context.
+   43  	/// @dev The gateway validates the request and derives the caller&#x27;s wallet before this delegatecall.
+   44  	function withdrawWalletFunds(
+   45  		uint256 walletId,
+   46  		address wallet,
+   47  		address token,
+   48  		address recipient,
+   49  		uint256 amount,
+   50  		uint256 creationFee
+   51  	) external returns (uint256 withdrawnAmount) {
+   52  		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
+   53  		GaslessWallet qWallet = GaslessWallet(payable(wallet));
+   54  		address collateral = config.collateralToken();
+   55  		if (creationFee &gt; 0) {
+   56  			qWallet.transfer(collateral, config.treasury(), creationFee);
+   57  			emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
+   58  		}
+   59  		_recordWalletPayment(collateral, wallet, 0, creationFee);
+   60  		withdrawnAmount = amount;
+   61  		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? wallet.balance : IERC20(token).balanceOf(wallet);
+   62  		if (withdrawnAmount == 0) revert IGaslessLayer.WalletWithdrawalAmountZero();
+   63  		qWallet.transfer(token, recipient, withdrawnAmount);
+   64  		emit IGaslessLayer.WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
+   65  	}
+   66  </code></pre>
+					</div>
+				</details>
+				<details class="source" id="source-C19">
+					<summary>
+						<span class="ref-id">C19</span> Upgrade workflow v8 and client readiness<small
+							>perps-core / cli/tasks/account-instant-upgrade.js · lines 184–196</small
+						>
+					</summary>
+					<div class="source-code">
+						<a
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/cli/tasks/account-instant-upgrade.js#L184"
+							target="_blank"
+							rel="noreferrer"
+							>Open pinned source ↗</a
+						>
+						<pre><code>  184  export function createAccountInstantUpgradeTask(common) {
+  185  	return common({
+  186  		id: &quot;maintenance.arbitrum-account-instant-upgrade&quot;,
+  187  		version: 8,
+  188  		category: &quot;maintenance&quot;,
+  189  		risk: &quot;transaction&quot;,
+  190  		title: &quot;Arbitrum AccountLayer and InstantLayer upgrade — preserve current values&quot;,
+  191  		description:
+  192  			&quot;Deploy the new contracts first, cut AccountLayer, reproduce InstantLayer configuration, and upgrade the existing Gasless proxy with verified storage preservation.&quot;,
+  193  		supportedNetworks: [&quot;arbitrum&quot;],
+  194  		inputs: [
+  195  			{ id: &quot;network&quot;, label: &quot;Network&quot;, type: &quot;network&quot;, required: true },
+  196  			{ id: &quot;config&quot;, label: &quot;Credential recipe&quot;, type: &quot;recipe&quot;, required: true },</code></pre>
 					</div>
 				</details>
 				<details class="source" id="source-C16">
 					<summary>
 						<span class="ref-id">C16</span> Owner withdrawal and caller-bound wallet selection<small
-							>perps-core / contracts/gaslessLayer/GaslessLayer.sol · lines 330–353</small
+							>perps-core / contracts/gaslessLayer/GaslessLayer.sol · lines 330–349</small
 						>
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L330"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L330"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
@@ -7922,88 +8008,86 @@
   343  	) external override nonReentrant returns (uint256 withdrawnAmount) {
   344  		if (recipient == address(0)) revert ZeroAddress();
   345  		if (amount == 0) revert WalletWithdrawalAmountZero();
-  346  		GaslessWallet wallet = _getWalletAndCollectCreationFee(msg.sender, walletId);
-  347  		withdrawnAmount = amount;
-  348  		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? address(wallet).balance : IERC20(token).balanceOf(address(wallet));
-  349  		if (withdrawnAmount == 0) revert WalletWithdrawalAmountZero();
-  350  		wallet.transfer(token, recipient, withdrawnAmount);
-  351  		emit WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
-  352  	}
-  353  </code></pre>
+  346  		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(msg.sender, walletId);
+  347  		return GaslessFeeQuoteLib.withdrawWalletFunds(walletId, address(wallet), token, recipient, amount, deployed ? walletCreationFee : 0);
+  348  	}
+  349  </code></pre>
 					</div>
 				</details>
 				<details class="source" id="source-C17">
 					<summary>
 						<span class="ref-id">C17</span> Administrative non-collateral recovery without fees<small
-							>perps-core / contracts/gaslessLayer/GaslessLayer.sol · lines 551–572</small
+							>perps-core / contracts/gaslessLayer/GaslessLayer.sol · lines 547–569</small
 						>
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L551"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L547"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
 						>
-						<pre><code>  551  	}
-  552
-  553  	/// @notice Recover non-collateral tokens from the selected GaslessWallet.
-  554  	/// @dev Config-admin-only. Rejects the collateral token and a zero recipient. Deploys the wallet if needed
-  555  	///      without collecting a creation fee or moving wallet collateral.
-  556  	/// @param owner Owner address used to derive the GaslessWallet address.
-  557  	/// @param walletId Wallet index; zero selects the original wallet.
-  558  	/// @param token Non-collateral token to recover.
-  559  	/// @param recipient Address receiving the wallet&#x27;s full balance of token.
-  560  	/// @return amount Token amount recovered.
-  561  	function recoverNonCollateralToken(
-  562  		address owner,
-  563  		uint256 walletId,
-  564  		address token,
-  565  		address recipient
-  566  	) external override onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
-  567  		if (token == collateralToken) revert CollateralRecoveryDisabled();
-  568  		if (recipient == address(0)) revert ZeroAddress();
-  569  		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
-  570  		amount = qWallet.sweepTokenBalance(token, recipient);
-  571  		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
-  572  	}</code></pre>
+						<pre><code>  547  	}
+  548
+  549  	/// @notice Recover non-collateral tokens from the selected GaslessWallet.
+  550  	/// @dev Config-admin-only. Rejects the collateral token and a zero recipient. Deploys the wallet if needed
+  551  	///      without collecting a creation fee or moving wallet collateral.
+  552  	/// @param owner Owner address used to derive the GaslessWallet address.
+  553  	/// @param walletId Wallet index; zero selects the original wallet.
+  554  	/// @param token Non-collateral token to recover.
+  555  	/// @param recipient Address receiving the wallet&#x27;s full balance of token.
+  556  	/// @return amount Token amount recovered.
+  557  	function recoverNonCollateralToken(
+  558  		address owner,
+  559  		uint256 walletId,
+  560  		address token,
+  561  		address recipient
+  562  	) external override onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
+  563  		if (token == collateralToken) revert CollateralRecoveryDisabled();
+  564  		if (recipient == address(0)) revert ZeroAddress();
+  565  		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+  566  		amount = qWallet.sweepTokenBalance(token, recipient);
+  567  		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
+  568  	}
+  569  </code></pre>
 					</div>
 				</details>
 				<details class="source" id="source-C15">
 					<summary>
 						<span class="ref-id">C15</span> Deposit sweep and net-credit calculation<small
-							>perps-core / contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol · lines 42–63</small
+							>perps-core / contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol · lines 67–89</small
 						>
 					</summary>
 					<div class="source-code">
 						<a
-							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L42"
+							href="https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L67"
 							target="_blank"
 							rel="noreferrer"
 							>Open pinned source ↗</a
 						>
-						<pre><code>   42  	/// @notice Sweep wallet collateral and collect deposit/creation fees in gateway proxy context.
-   43  	/// @dev The gateway deploys the wallet and determines its creation fee before calling this library.
-   44  	function sweepDepositAndCollectFee(
-   45  		address owner,
-   46  		address wallet,
-   47  		uint256 creationFee
-   48  	) external returns (uint256 netDeposit, uint256 collectedDepositFee) {
-   49  		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
-   50  		address token = config.collateralToken();
-   51  		uint256 grossDeposit = GaslessWallet(payable(wallet)).sweepTokenBalance(token, address(this));
-   52  		uint256 minimum = config.minimumDeposit();
-   53  		if (grossDeposit &lt; minimum) revert IGaslessLayer.DepositAmountBelowMinimum(grossDeposit, minimum);
-   54  		collectedDepositFee = config.depositFee();
-   55  		uint256 totalFees = collectedDepositFee + creationFee;
-   56  		if (grossDeposit &lt;= totalFees) revert IGaslessLayer.DepositAmountNotAboveFees(grossDeposit, totalFees);
-   57  		if (totalFees &gt; 0) IERC20(token).safeTransfer(config.treasury(), totalFees);
-   58  		if (collectedDepositFee &gt; 0) emit IGaslessLayer.DepositFeeCollected(owner, config.treasury(), collectedDepositFee);
-   59  		if (creationFee &gt; 0) emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
-   60  		_recordWalletPayment(token, wallet, collectedDepositFee, creationFee);
-   61  		netDeposit = grossDeposit - totalFees;
-   62  	}
-   63  </code></pre>
+						<pre><code>   67  	/// @notice Sweep wallet collateral and collect deposit/creation fees in gateway proxy context.
+   68  	/// @dev The gateway deploys the wallet and determines its creation fee before calling this library.
+   69  	function sweepDepositAndCollectFee(
+   70  		address owner,
+   71  		address wallet,
+   72  		uint256 creationFee
+   73  	) external returns (uint256 netDeposit, uint256 collectedDepositFee) {
+   74  		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
+   75  		address token = config.collateralToken();
+   76  		uint256 grossDeposit = GaslessWallet(payable(wallet)).sweepTokenBalance(token, address(this));
+   77  		uint256 minimum = config.minimumDeposit();
+   78  		if (grossDeposit &lt; minimum) revert IGaslessLayer.DepositAmountBelowMinimum(grossDeposit, minimum);
+   79  		collectedDepositFee = config.depositFee();
+   80  		uint256 totalFees = collectedDepositFee + creationFee;
+   81  		if (grossDeposit &lt;= totalFees) revert IGaslessLayer.DepositAmountNotAboveFees(grossDeposit, totalFees);
+   82  		if (totalFees &gt; 0) IERC20(token).safeTransfer(config.treasury(), totalFees);
+   83  		if (collectedDepositFee &gt; 0) emit IGaslessLayer.DepositFeeCollected(owner, config.treasury(), collectedDepositFee);
+   84  		if (creationFee &gt; 0) emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
+   85  		_recordWalletPayment(token, wallet, collectedDepositFee, creationFee);
+   86  		netDeposit = grossDeposit - totalFees;
+   87  	}
+   88
+   89  	/// @notice Preserve the original account-specific quote, including its approval-only special case and quota flag.</code></pre>
 					</div>
 				</details>
 				<details class="source" id="source-S12">
@@ -8157,8 +8241,8 @@
 						<tr>
 							<td>Contract revision</td>
 							<td>
-								<code>8611d92817047bffd65096408cc1d9f10e24d7b9</code>, including the public-interface/recovery changes. Excerpts come
-								from that commit. Concurrent uncommitted Solidity edits are excluded from this edition.
+								<code>170ae4cfba1eac7453beeb9cd13c3007132c6510</code>, including the owner-withdrawal library refactor and upgrade
+								workflow v8/client handoff v3. Excerpts come from that commit; the checkout was clean at review.
 							</td>
 						</tr>
 						<tr>
@@ -8173,7 +8257,7 @@
 							<td>Contract tests</td>
 							<td>
 								181 passing in the earlier GaslessLayer/onboarding run against the pre-recovery-change source. This is historical
-								evidence, not a test result for revision 8611d928. No application/contract suite was rerun for this documentation
+								evidence, not a test result for revision 170ae4cf. No application/contract suite was rerun for this documentation
 								change.
 							</td>
 						</tr>
@@ -8197,9 +8281,10 @@
 					</tbody>
 				</table>
 				<p>
-					The document was refreshed against committed changes through <code>8611d928</code>, including owner withdrawal, fee-unit names and
-					deposit destination events. Later working-tree changes remain outside this pinned reference. Production authority, effective
-					settings and deployed code require independent verification.
+					The document was refreshed against committed changes through <code>170ae4cf</code>, including owner withdrawal, fee-unit names and
+					deposit destination events. The service remains unchanged at <code>7a07c0c</code>. The latest contract refactor moves withdrawal
+					execution into the linked fee library without changing its owner-facing flow. Production authority, effective settings and
+					deployed code require independent verification.
 				</p>
 				<h3>Document revision record</h3>
 				<table>
@@ -8218,7 +8303,7 @@
 							<td>Contract refresh</td>
 							<td>
 								Incorporated creation fees, structured fee quotes, limits, owner withdrawal, event destination and upgrade policy
-								through 8611d928.
+								through 170ae4cf.
 							</td>
 						</tr>
 						<tr>
@@ -10718,14 +10803,14 @@
 					</g>
 				</a>
 				<a
-					href="#source-C16"
+					href="#source-C18"
 					data-node="3"
 					data-model="withdrawals"
 					tabindex="0"
-					aria-label="4 · Deploy and pay if needed. First deployment fee comes from wallet collateral."
+					aria-label="4 · Collect creation fee. Fee library charges wallet collateral if deployed now."
 				>
 					<g>
-						<title>GaslessWallet: First deployment fee comes from wallet collateral. Sources: C16</title>
+						<title>GaslessLayer: Fee library charges wallet collateral if deployed now. Sources: C18</title>
 						<rect class="node-bg" x="800" y="275" width="300" height="138" rx="12" fill="white" stroke="#d8e1eb" stroke-width="1.5" />
 						<rect x="800" y="275" width="300" height="30" rx="12" fill="#e8f5ee" />
 						<rect x="800" y="291" width="300" height="14" fill="#e8f5ee" />
@@ -10733,12 +10818,12 @@
 							CONTRACT
 						</text>
 						<text x="815" y="328" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#182b45">
-							4 · Deploy and pay if needed
+							4 · Collect creation fee
 						</text>
 						<text x="815" y="352" font-family="Arial,sans-serif" font-size="13" fill="#45566b">
-							First deployment fee comes from wallet
+							Fee library charges wallet collateral if
 						</text>
-						<text x="815" y="368" font-family="Arial,sans-serif" font-size="13" fill="#45566b">collateral.</text>
+						<text x="815" y="368" font-family="Arial,sans-serif" font-size="13" fill="#45566b">deployed now.</text>
 					</g>
 				</a>
 				<a
@@ -11423,10 +11508,10 @@
 								"confidence": "verified"
 							},
 							{
-								"component": "wallet",
-								"title": "4 · Deploy and pay if needed",
-								"detail": "First deployment fee comes from wallet collateral.",
-								"evidence": ["C16"],
+								"component": "gasless",
+								"title": "4 · Collect creation fee",
+								"detail": "Fee library charges wallet collateral if deployed now.",
+								"evidence": ["C18"],
 								"phase": "execute",
 								"confidence": "verified"
 							},
@@ -11608,8 +11693,8 @@
 						"path": "contracts/gaslessLayer/GaslessLayer.sol",
 						"line": 152,
 						"end": 195,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L152",
-						"sha256": "dff4643b650226abe36dbf593e8b0c244f42116412ed66fe4781d89a6f5723cf"
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L152",
+						"sha256": "7820b368513a736e4e486aa119162cb538d7b403624ba62b54d1954cd0717ae4"
 					},
 					"C2": {
 						"id": "C2",
@@ -11618,7 +11703,7 @@
 						"path": "contracts/instantLayer/InstantLayer.sol",
 						"line": 943,
 						"end": 1020,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/instantLayer/InstantLayer.sol#L943",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/instantLayer/InstantLayer.sol#L943",
 						"sha256": "50d25ff08be5699e7bda29c948839faef1cffd68e62de62d2ee37c0492bc3a89"
 					},
 					"C3": {
@@ -11628,7 +11713,7 @@
 						"path": "contracts/accountLayer/facets/Core/CoreFacet.sol",
 						"line": 282,
 						"end": 313,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/accountLayer/facets/Core/CoreFacet.sol#L282",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/accountLayer/facets/Core/CoreFacet.sol#L282",
 						"sha256": "6784c180fcb8257a7cc9f5d9d7d1a812bb311e7afbee2951ee4a8446f296a742"
 					},
 					"C4": {
@@ -11638,7 +11723,7 @@
 						"path": "contracts/core/libraries/LibOperationalFee.sol",
 						"line": 62,
 						"end": 93,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/libraries/LibOperationalFee.sol#L62",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/libraries/LibOperationalFee.sol#L62",
 						"sha256": "0bb39fbf0ca0e10efc714fa38403d1735fe589042a00027fee1e78c3f46363e1"
 					},
 					"C5": {
@@ -11648,7 +11733,7 @@
 						"path": "contracts/core/facets/Account/AccountFacetImpl.sol",
 						"line": 23,
 						"end": 54,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/facets/Account/AccountFacetImpl.sol#L23",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/facets/Account/AccountFacetImpl.sol#L23",
 						"sha256": "433cd1a96104aafd12572c587448df5810729f742548da90c711fc42664571a4"
 					},
 					"C6": {
@@ -11658,7 +11743,7 @@
 						"path": "contracts/core/facets/ViewFacet/ViewFacet.sol",
 						"line": 264,
 						"end": 295,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/core/facets/ViewFacet/ViewFacet.sol#L264",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/core/facets/ViewFacet/ViewFacet.sol#L264",
 						"sha256": "79913a30c6beb3f05e07dbea94b81a17b2ed7008d6b5c5500dbdfbef05f1e7e0"
 					},
 					"C7": {
@@ -11668,7 +11753,7 @@
 						"path": "contracts/gaslessLayer/interfaces/IGaslessLayer.sol",
 						"line": 17,
 						"end": 179,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/interfaces/IGaslessLayer.sol#L17",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/interfaces/IGaslessLayer.sol#L17",
 						"sha256": "156d3b63e24b7664106e3cd3ff8d344870a00be0fecbf953cd340dc4f969d415"
 					},
 					"C8": {
@@ -11676,20 +11761,20 @@
 						"title": "Creation fees and unified quote/cap entrypoints",
 						"repo": "perps-core",
 						"path": "contracts/gaslessLayer/GaslessLayer.sol",
-						"line": 356,
-						"end": 405,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L356",
-						"sha256": "dff4643b650226abe36dbf593e8b0c244f42116412ed66fe4781d89a6f5723cf"
+						"line": 352,
+						"end": 401,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L352",
+						"sha256": "7820b368513a736e4e486aa119162cb538d7b403624ba62b54d1954cd0717ae4"
 					},
 					"C9": {
 						"id": "C9",
 						"title": "Quote dispatch, actual charge accounting and rollback result",
 						"repo": "perps-core",
 						"path": "contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol",
-						"line": 175,
-						"end": 216,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L175",
-						"sha256": "d547ba4cb59b0f94cb386ec5b986458cabc727129cd11cfe804d4995f88ef438"
+						"line": 200,
+						"end": 240,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L200",
+						"sha256": "420b837ed2f2b5b38fadd609e09ae15eceffe9f1a740eb4decb400acbafc534f"
 					},
 					"C10": {
 						"id": "C10",
@@ -11698,7 +11783,7 @@
 						"path": "contracts/gaslessLayer/libraries/GaslessFeeLimits.sol",
 						"line": 6,
 						"end": 18,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol#L6",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol#L6",
 						"sha256": "0e9e4148f2157a3160b2a0b8f0a0d58b89b004af792c4a4527ca70f539d28b4c"
 					},
 					"C11": {
@@ -11708,7 +11793,7 @@
 						"path": "contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol",
 						"line": 133,
 						"end": 164,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol#L133",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol#L133",
 						"sha256": "e4bd2fb6308272634c283516de36d94186133be5a316a4378f1ffcf65a868aeb"
 					},
 					"C12": {
@@ -11718,7 +11803,7 @@
 						"path": "scripts/gaslessLayer/fee-quote.ts",
 						"line": 32,
 						"end": 63,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/scripts/gaslessLayer/fee-quote.ts#L32",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/scripts/gaslessLayer/fee-quote.ts#L32",
 						"sha256": "de41a96f3fbda8a93d3e097f943ecf7ac4be1d34cd9d1d8759092be08b7a30fe"
 					},
 					"C13": {
@@ -11728,7 +11813,7 @@
 						"path": "scripts/gaslessLayer/layer-libraries.ts",
 						"line": 49,
 						"end": 69,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/scripts/gaslessLayer/layer-libraries.ts#L49",
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/scripts/gaslessLayer/layer-libraries.ts#L49",
 						"sha256": "37de0a25df238d3fb91b4f625fedd53556b2de4c43b36f79d563addd663deb4c"
 					},
 					"C14": {
@@ -11736,10 +11821,30 @@
 						"title": "Upgrade zero-fee preservation and client handoff policy",
 						"repo": "perps-core",
 						"path": "tasks/deploy/accountInstantUpgrade.ts",
-						"line": 631,
-						"end": 662,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/tasks/deploy/accountInstantUpgrade.ts#L631",
-						"sha256": "10a3cce4691ccc99fdb8966df31dfeab1fb01c5ca132bb4a5e7ce2ab762b7872"
+						"line": 630,
+						"end": 665,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/tasks/deploy/accountInstantUpgrade.ts#L630",
+						"sha256": "10d6c6454e640dbd54d535ebf52bcc572b484dab440148f5ae42b68753b45863"
+					},
+					"C18": {
+						"id": "C18",
+						"title": "Withdrawal execution in the linked fee library",
+						"repo": "perps-core",
+						"path": "contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol",
+						"line": 41,
+						"end": 66,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L41",
+						"sha256": "420b837ed2f2b5b38fadd609e09ae15eceffe9f1a740eb4decb400acbafc534f"
+					},
+					"C19": {
+						"id": "C19",
+						"title": "Upgrade workflow v8 and client readiness",
+						"repo": "perps-core",
+						"path": "cli/tasks/account-instant-upgrade.js",
+						"line": 184,
+						"end": 196,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/cli/tasks/account-instant-upgrade.js#L184",
+						"sha256": "cb377a17cb7beae07cc0d18ecd062fda52383640bfa44f2fadf28c09f12f965c"
 					},
 					"C16": {
 						"id": "C16",
@@ -11747,29 +11852,29 @@
 						"repo": "perps-core",
 						"path": "contracts/gaslessLayer/GaslessLayer.sol",
 						"line": 330,
-						"end": 353,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L330",
-						"sha256": "dff4643b650226abe36dbf593e8b0c244f42116412ed66fe4781d89a6f5723cf"
+						"end": 349,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L330",
+						"sha256": "7820b368513a736e4e486aa119162cb538d7b403624ba62b54d1954cd0717ae4"
 					},
 					"C17": {
 						"id": "C17",
 						"title": "Administrative non-collateral recovery without fees",
 						"repo": "perps-core",
 						"path": "contracts/gaslessLayer/GaslessLayer.sol",
-						"line": 551,
-						"end": 572,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/GaslessLayer.sol#L551",
-						"sha256": "dff4643b650226abe36dbf593e8b0c244f42116412ed66fe4781d89a6f5723cf"
+						"line": 547,
+						"end": 569,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/GaslessLayer.sol#L547",
+						"sha256": "7820b368513a736e4e486aa119162cb538d7b403624ba62b54d1954cd0717ae4"
 					},
 					"C15": {
 						"id": "C15",
 						"title": "Deposit sweep and net-credit calculation",
 						"repo": "perps-core",
 						"path": "contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol",
-						"line": 42,
-						"end": 63,
-						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/8611d92817047bffd65096408cc1d9f10e24d7b9/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L42",
-						"sha256": "d547ba4cb59b0f94cb386ec5b986458cabc727129cd11cfe804d4995f88ef438"
+						"line": 67,
+						"end": 89,
+						"target": "https://old-git.symmio.foundation/symmio/contracts/perps-core/-/blob/170ae4cfba1eac7453beeb9cd13c3007132c6510/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol#L67",
+						"sha256": "420b837ed2f2b5b38fadd609e09ae15eceffe9f1a740eb4decb400acbafc534f"
 					},
 					"S12": {
 						"id": "S12",

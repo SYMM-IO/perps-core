@@ -26,16 +26,18 @@ Source confidence is separate from deployed/runtime verification.
 | C5  | Core collateral transfer and 18-decimal credit                       | `perps-core/contracts/core/facets/Account/AccountFacetImpl.sol:23`                | Verified source |
 | C6  | Core operational allowance getter                                    | `perps-core/contracts/core/facets/ViewFacet/ViewFacet.sol:264`                    | Verified source |
 | C7  | Current GaslessLayer events                                          | `perps-core/contracts/gaslessLayer/interfaces/IGaslessLayer.sol:17`               | Verified source |
-| C8  | Creation fees and unified quote/cap entrypoints                      | `perps-core/contracts/gaslessLayer/GaslessLayer.sol:356`                          | Verified source |
-| C9  | Quote dispatch, actual charge accounting and rollback result         | `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:175`          | Verified source |
+| C8  | Creation fees and unified quote/cap entrypoints                      | `perps-core/contracts/gaslessLayer/GaslessLayer.sol:352`                          | Verified source |
+| C9  | Quote dispatch, actual charge accounting and rollback result         | `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:200`          | Verified source |
 | C10 | Signed salt fee-cap layout and enforcement                           | `perps-core/contracts/gaslessLayer/libraries/GaslessFeeLimits.sol:6`              | Verified source |
 | C11 | Native top-up capped signature and charge enforcement                | `perps-core/contracts/gaslessLayer/libraries/GaslessNativeGasTopUpLib.sol:133`    | Verified source |
 | C12 | TypeScript quote decoder and signing helpers                         | `perps-core/scripts/gaslessLayer/fee-quote.ts:32`                                 | Verified source |
 | C13 | library deployment graph                                             | `perps-core/scripts/gaslessLayer/layer-libraries.ts:49`                           | Verified source |
-| C14 | Upgrade zero-fee preservation and client handoff policy              | `perps-core/tasks/deploy/accountInstantUpgrade.ts:631`                            | Verified source |
+| C14 | Upgrade zero-fee preservation and client handoff policy              | `perps-core/tasks/deploy/accountInstantUpgrade.ts:630`                            | Verified source |
+| C18 | Withdrawal execution in the linked fee library                       | `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:41`           | Verified source |
+| C19 | Upgrade workflow v8 and client readiness                             | `perps-core/cli/tasks/account-instant-upgrade.js:184`                             | Verified source |
 | C16 | Owner withdrawal and caller-bound wallet selection                   | `perps-core/contracts/gaslessLayer/GaslessLayer.sol:330`                          | Verified source |
-| C17 | Administrative non-collateral recovery without fees                  | `perps-core/contracts/gaslessLayer/GaslessLayer.sol:551`                          | Verified source |
-| C15 | Deposit sweep and net-credit calculation                             | `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:42`           | Verified source |
+| C17 | Administrative non-collateral recovery without fees                  | `perps-core/contracts/gaslessLayer/GaslessLayer.sol:547`                          | Verified source |
+| C15 | Deposit sweep and net-credit calculation                             | `perps-core/contracts/gaslessLayer/libraries/GaslessFeeQuoteLib.sol:67`           | Verified source |
 | S12 | Deposit receipt finalization                                         | `gaslessq-service/services/executor-worker/src/executor_worker/main.py:704`       | Verified source |
 
 Unverified: Vibe proxy upstream mapping; Enigma assembly/notification producer; deployed ABI, settings, roles and finality; a specific live settlement.
