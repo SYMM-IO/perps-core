@@ -125,12 +125,6 @@ library GaslessFeeQuoteLib {
 				(uint256, IInstantLayer.SignedOperation[], bytes[], bytes[][], bytes[][])
 			);
 			_operations(config, quote, ops, new uint256[](ops.length), true);
-		} else if (selector == IGaslessLayer.relayGrantBatchDelegationBySig.selector) {
-			(IInstantLayer.SignedDelegation memory delegation, ) = abi.decode(callData[4:], (IInstantLayer.SignedDelegation, bytes));
-			IInstantLayer.SignedOperation[] memory ops = new IInstantLayer.SignedOperation[](1);
-			ops[0].signerAccount = delegation.delegationInfo.account;
-			ops[0].callData = abi.encodePacked(IInstantLayer.grantBatchDelegationBySig.selector);
-			_operations(config, quote, ops, new uint256[](1), true);
 		} else if (selector == IGaslessLayer.relayNativeGasTopUp.selector) {
 			(IGaslessLayer.NativeGasTopUpRequest memory request, ) = abi.decode(callData[4:], (IGaslessLayer.NativeGasTopUpRequest, bytes));
 			_native(config, quote, request, nativeAmount);
@@ -328,7 +322,6 @@ library GaslessFeeQuoteLib {
 		if (
 			selector != IGaslessLayer.relayInstantBatch.selector &&
 			selector != IGaslessLayer.relayInstantTemplate.selector &&
-			selector != IGaslessLayer.relayGrantBatchDelegationBySig.selector &&
 			selector != IGaslessLayer.relayNativeGasTopUp.selector &&
 			selector != IGaslessLayer.settleDepositToNewAccount.selector &&
 			selector != IGaslessLayer.settleDepositToExistingAccount.selector &&

@@ -700,49 +700,6 @@
             {
                 "indexed": true,
                 "internalType": "address",
-                "name": "relayer",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "delegatorAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "payer",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "delegate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "selectorCount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "fee18",
-                "type": "uint256"
-            }
-        ],
-        "name": "DelegationBySigRelayed",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
                 "name": "owner",
                 "type": "address"
             },
@@ -2344,87 +2301,6 @@
                 "type": "uint256"
             }
         ],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "components": [
-                            {
-                                "components": [
-                                    {
-                                        "internalType": "address",
-                                        "name": "addr",
-                                        "type": "address"
-                                    },
-                                    {
-                                        "internalType": "bool",
-                                        "name": "isPartyB",
-                                        "type": "bool"
-                                    }
-                                ],
-                                "internalType": "struct IInstantLayer.Account",
-                                "name": "account",
-                                "type": "tuple"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "delegatedSigner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "bytes4[]",
-                                "name": "selectors",
-                                "type": "bytes4[]"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "expiryTimestamp",
-                                "type": "uint256"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.DelegationInfo",
-                        "name": "delegationInfo",
-                        "type": "tuple"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "nonce",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "deadline",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "bytes32",
-                                "name": "salt",
-                                "type": "bytes32"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.ReplayAttackHeader",
-                        "name": "replayAttackHeader",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct IInstantLayer.SignedDelegation",
-                "name": "signedDelegation",
-                "type": "tuple"
-            },
-            {
-                "internalType": "bytes",
-                "name": "signature",
-                "type": "bytes"
-            }
-        ],
-        "name": "relayGrantBatchDelegationBySig",
-        "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },

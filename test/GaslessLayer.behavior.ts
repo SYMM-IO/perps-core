@@ -9,7 +9,6 @@ import { deployGaslessLayerLibraries, gaslessLayerFactoryOptions } from "../scri
 
 const FEE_SELECTOR = "0x11111111"
 const OTHER_SELECTOR = "0x22222222"
-const DELEGATION_RELAY_SELECTOR = "0x880231ed"
 const WALLET_EXECUTION_SENTINEL_SELECTOR = "0x1dccecab" // bytes4(keccak256("GASLESS_WALLET_EXECUTION"))
 const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000"
 const EIP_170_DEPLOYED_BYTECODE_LIMIT = 24576
@@ -81,16 +80,6 @@ describe("GaslessLayer", () => {
 		flexFields: [],
 		maxUses: 1,
 		replayAttackHeader: { nonce: 0, deadline: 0, salt: ZERO_HASH },
-	})
-
-	const makeSignedDelegation = (delegator: string, delegate: string, selectors: string[] = [FEE_SELECTOR]) => ({
-		delegationInfo: {
-			account: { addr: delegator, isPartyB: false },
-			delegatedSigner: delegate,
-			selectors,
-			expiryTimestamp: 9999999999n,
-		},
-		replayAttackHeader: { nonce: 1, deadline: 0, salt: ZERO_HASH },
 	})
 
 	// A delegation grant expressed the way the real InstantLayer consumes it: an owner-signed
@@ -1293,10 +1282,10 @@ describe("GaslessLayer", () => {
 		await collateral.mint(dep, u("50"))
 		await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, sub)
 
-		const qWallet = await ethers.getContractAt("GaslessWallet", dep)
+		const wallet = await ethers.getContractAt("GaslessWallet", dep)
 		await collateral.mint(dep, u("10"))
-		await expect(qWallet.connect(stranger).sweepTokenBalance(await collateral.getAddress(), stranger.address)).to.be.revertedWithCustomError(
-			qWallet,
+		await expect(wallet.connect(stranger).sweepTokenBalance(await collateral.getAddress(), stranger.address)).to.be.revertedWithCustomError(
+			wallet,
 			"CallerNotGateway",
 		)
 	})
@@ -1626,7 +1615,7 @@ describe("GaslessLayer", () => {
 		expect(await collateral.balanceOf(stranger.address)).to.equal(u("4"))
 	})
 
-	it("delegated wallet execution can reuse selectors granted through relayGrantBatchDelegationBySig", async () => {
+	it("delegated wallet execution can reuse selectors granted through a previous relayed batch", async () => {
 		const target = await deployWalletTarget()
 		const targetAddr = await target.getAddress()
 		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
@@ -1643,12 +1632,13 @@ describe("GaslessLayer", () => {
 			maxUses: 1,
 			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("relay granted wallet execution") },
 		}
-		const signedDelegation = makeSignedDelegation(user.address, relayer.address, [
+		const grantOp = await makeGrantOp(user.address, relayer.address, [
 			WALLET_EXECUTION_SENTINEL_SELECTOR,
 			target.interface.getFunction("record").selector,
 		])
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 		await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(relayer, op)], [[]], [[]], [0n])
 
 		expect(await target.lastMarker()).to.equal(marker)
@@ -1751,81 +1741,85 @@ describe("GaslessLayer", () => {
 		await expect(gateway.connect(relayer).relayInstantBatch([op], [], [[]], [[]], [0n])).to.be.revertedWithCustomError(gateway, "ArrayLengthMismatch")
 	})
 
-	it("relayGrantBatchDelegationBySig: charges one configured fee and forwards the delegation", async () => {
-		await gateway.connect(admin).setSelectorFeeConfig(DELEGATION_RELAY_SELECTOR, true, u("0.25"))
-		const signedDelegation = makeSignedDelegation(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+	it("relayed grant operation: charges one configured fee and forwards the delegation", async () => {
+		await gateway.connect(admin).setSelectorFeeConfig(instant.interface.getFunction("grantDelegation")!.selector, true, u("0.25"))
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		const tx = await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+		const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 
 		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.25"))
-		await expect(tx).to.emit(gateway, "DelegationBySigRelayed").withArgs(relayer.address, user.address, user.address, stranger.address, 2, u("0.25"))
+
 		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.25"))
 		expect(await instant.lastDelegationAccount()).to.equal(user.address)
 		expect(await instant.lastDelegationDelegate()).to.equal(stranger.address)
 		expect(await instant.lastDelegationSelectorCount()).to.equal(2)
 		expect(await instant.lastDelegationFirstSelector()).to.equal(FEE_SELECTOR)
-		expect(await instant.lastDelegationSignature()).to.equal("0x1234")
 	})
 
-	it("relayGrantBatchDelegationBySig: one call consumes one free usage regardless of selector count", async () => {
+	it("relayed grant operation: one call consumes one free usage regardless of selector count", async () => {
 		await gateway.connect(admin).setDailyFreeOpsLimit(1)
 		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
-		const signedDelegation = makeSignedDelegation(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		const freeTx = await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+		const freeTx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 		await expect(freeTx).to.emit(gateway, "DailyFreeOpsUsed").withArgs(user.address, 1, 1, 1)
 		expect(await core.totalOperationalFeesCharged()).to.equal(0)
 		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
 
-		await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1"))
 	})
 
-	it("relayGrantBatchDelegationBySig: block mode reverts after the one-call quota is exhausted", async () => {
+	it("relayed grant operation: block mode reverts after the one-call quota is exhausted", async () => {
 		await gateway.connect(admin).setDailyFreeOpsLimit(1)
 		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
-		const signedDelegation = makeSignedDelegation(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
-		await expect(gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234"))
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+		await expect(gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n]))
 			.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
 			.withArgs(user.address, 1)
 	})
 
-	it("relayGrantBatchDelegationBySig: bills a virtual-account delegation to the parent SubAccount", async () => {
+	it("relayed grant operation: bills a virtual-account delegation to the parent SubAccount", async () => {
 		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 		const subAccount = ethers.Wallet.createRandom().address
 		const virtualAccount = ethers.Wallet.createRandom().address
 		await accountLayer.setVirtualAccount(virtualAccount, subAccount)
-		const signedDelegation = makeSignedDelegation(virtualAccount, stranger.address)
+		const grantOp = await makeGrantOp(virtualAccount, stranger.address)
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		const tx = await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+		const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 
 		expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
 		expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
 		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
-		await expect(tx).to.emit(gateway, "DelegationBySigRelayed").withArgs(relayer.address, virtualAccount, subAccount, stranger.address, 1, u("1"))
 	})
 
-	it("relayGrantBatchDelegationBySig: applies the resolved payer core multiplier", async () => {
+	it("relayed grant operation: applies the resolved payer core multiplier", async () => {
 		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 		await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
-		const signedDelegation = makeSignedDelegation(user.address, stranger.address)
+		const grantOp = await makeGrantOp(user.address, stranger.address)
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 
 		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
 	})
 
-	it("relayGrantBatchDelegationBySig: rolls back charged fee and free usage when InstantLayer reverts", async () => {
+	it("relayed grant operation: rolls back charged fee and free usage when InstantLayer reverts", async () => {
 		await gateway.connect(admin).setDailyFreeOpsLimit(1)
 		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 		await instant.setForceDelegationFailure(true)
-		const signedDelegation = makeSignedDelegation(user.address, stranger.address)
+		const grantOp = await makeGrantOp(user.address, stranger.address)
+		await instant.setTargetExecution(true, await core.getAddress())
 
-		await expect(gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")).to.be.revertedWithCustomError(
+		await expect(gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
 			instant,
-			"ForcedDelegationFailure",
+			"TargetCallFailed",
 		)
 
 		expect(await core.totalOperationalFeesCharged()).to.equal(0)
@@ -2610,22 +2604,20 @@ describe("GaslessLayer", () => {
 			expect(await instant.lastOperationCount()).to.equal(1) // routed through the instant layer, not wallet execution
 		})
 
-		it("relayGrantBatchDelegationBySig falls back to the VA delegator when the parent cannot pay", async () => {
+		it("relayed grant operation falls back to the VA delegator when the parent cannot pay", async () => {
 			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 			const subAccount = ethers.Wallet.createRandom().address
 			const virtualAccount = ethers.Wallet.createRandom().address
 			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
 			await core.setCoreBalances(virtualAccount, u("10"), 0)
-			const signedDelegation = makeSignedDelegation(virtualAccount, stranger.address)
+			const grantOp = await makeGrantOp(virtualAccount, stranger.address)
+			await instant.setTargetExecution(true, await core.getAddress())
 
-			const tx = await gateway.connect(relayer).relayGrantBatchDelegationBySig(signedDelegation, "0x1234")
+			const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 
 			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
 			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
 			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
-			await expect(tx)
-				.to.emit(gateway, "DelegationBySigRelayed")
-				.withArgs(relayer.address, virtualAccount, virtualAccount, stranger.address, 1, u("1"))
 		})
 	})
 
@@ -2811,14 +2803,25 @@ describe("GaslessLayer", () => {
 
 	// ───────────────────────── Access control & config ─────────────────────────
 
+	it("rejects the removed delegation relay selector in every fee wrapper", async () => {
+		const removedSelector = "0x3253e757"
+		await expect(gateway.previewFeeQuote(removedSelector, 0))
+			.to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			.withArgs(removedSelector)
+		await expect(gateway.connect(relayer).simulateFeeQuote(removedSelector))
+			.to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			.withArgs(removedSelector)
+		await expect(gateway.connect(relayer).executeWithFeeLimit(removedSelector, 0))
+			.to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			.withArgs(removedSelector)
+		expect(await core.totalOperationalFeesCharged()).to.equal(0n)
+	})
+
 	it("gates relayer-only entrypoints", async () => {
 		const op = makeSignedOp(user.address)
 		const sub = ethers.Wallet.createRandom().address
 		const topUpRequest = makeNativeTopUpRequest()
 		await expect(gateway.connect(stranger).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revert(ethers)
-		await expect(
-			gateway.connect(stranger).relayGrantBatchDelegationBySig(makeSignedDelegation(user.address, stranger.address), "0x1234"),
-		).to.be.revert(ethers)
 		await expect(
 			gateway
 				.connect(stranger)
@@ -3055,11 +3058,12 @@ describe("GaslessLayer", () => {
 			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee18)
 		})
 
-		it("quotes standalone delegation as one operation and preserves quota until submitted", async () => {
+		it("quotes a relayed grant as one operation and preserves quota until submitted", async () => {
 			await gateway.setDefaultSelectorFee(coreUnits("1"))
 			await gateway.setDailyFreeOpsLimit(1)
-			const delegation = makeSignedDelegation(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
-			const data = encode("relayGrantBatchDelegationBySig", [delegation, "0x1234"])
+			const delegation = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+			await instant.setTargetExecution(true, await core.getAddress())
+			const data = encode("relayInstantBatch", [[delegation], ["0x"], [[]], [[]], [0n]])
 			for (const mode of ["preview", "exact"] as const) {
 				const q = await quote(data, mode)
 				expect(q.totalFee18).to.equal(0n)
@@ -3067,7 +3071,7 @@ describe("GaslessLayer", () => {
 				expect(q.payments).to.have.length(1)
 			}
 			expect(await instant.lastDelegationAccount()).to.equal(ethers.ZeroAddress)
-			await gateway.connect(relayer).relayGrantBatchDelegationBySig(delegation, "0x1234")
+			await gateway.connect(relayer).relayInstantBatch([delegation], ["0x"], [[]], [[]], [0n])
 			expect((await quote(data)).totalFee18).to.equal(coreUnits("1"))
 		})
 
@@ -3221,18 +3225,19 @@ describe("GaslessLayer", () => {
 			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee18)
 		})
 
-		it("enforces per-operation limits on batches, templates and delegation relays", async () => {
+		it("enforces per-operation limits on batches, templates and grant operations", async () => {
 			await gateway.setDefaultSelectorFee(coreUnits("2"))
 			const op = makeSignedOp(user.address)
 			op.replayAttackHeader.salt = gaslessFeeLimitSalt(coreUnits("1"))
-			const delegation = makeSignedDelegation(user.address, stranger.address)
+			const delegation = await makeGrantOp(user.address, stranger.address)
 			delegation.replayAttackHeader.salt = gaslessFeeLimitSalt(coreUnits("1"))
 			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([op]))).to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
 			await expect(gateway.connect(relayer).relayInstantTemplate(7, [op], ["0x"], [[]], [[]])).to.be.revertedWithCustomError(
 				gateway,
 				"FeeLimitExceeded",
 			)
-			await expect(gateway.connect(relayer).relayGrantBatchDelegationBySig(delegation, "0x1234")).to.be.revertedWithCustomError(
+			await instant.setTargetExecution(true, await core.getAddress())
+			await expect(gateway.connect(relayer).relayInstantBatch([delegation], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
 				gateway,
 				"FeeLimitExceeded",
 			)

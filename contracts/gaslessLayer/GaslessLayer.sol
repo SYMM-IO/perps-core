@@ -221,24 +221,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		emit InstantTemplateRelayed(msg.sender, templateId, signedOps.length, totalFee);
 	}
 
-	/// @notice Relay a user-signed InstantLayer delegation and charge one fee or consume one free operation.
-	/// @dev Calls InstantLayer's standalone grantBatchDelegationBySig. Owner-signed grants can also use relayInstantBatch.
-	///      The delegation account pays, with virtual accounts billed through their parent as for other InstantLayer operations.
-	///      Each relay uses one free operation when available, regardless of the number of selectors granted.
-	function relayGrantBatchDelegationBySig(
-		IInstantLayer.SignedDelegation calldata signedDelegation,
-		bytes calldata signature
-	) external override onlyRole(RELAYER_ROLE) nonReentrant {
-		IInstantLayer.DelegationInfo calldata info = signedDelegation.delegationInfo;
-		address delegatorAccount = info.account.addr;
-		(address payer, uint256 fee) = _collectOneOperationalFee(delegatorAccount, IInstantLayer.grantBatchDelegationBySig.selector);
-		GaslessFeeLimits.check(signedDelegation.replayAttackHeader.salt, fee);
-
-		instantLayer.grantBatchDelegationBySig(signedDelegation, signature);
-
-		emit DelegationBySigRelayed(msg.sender, delegatorAccount, payer, info.delegatedSigner, info.selectors.length, fee);
-	}
-
 	/// @notice Relay a user-signed native gas top-up funded by the relayer's `msg.value`.
 	/// @dev The payer is sponsored while its daily native allowance covers the request. Once exhausted,
 	///      the configured policy either reverts or charges the signed collateral amount plus the top-up fee through core.
@@ -566,38 +548,38 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	) external override onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
 		if (token == collateralToken) revert CollateralRecoveryDisabled();
 		if (recipient == address(0)) revert ZeroAddress();
-		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
-		amount = qWallet.sweepTokenBalance(token, recipient);
-		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
+		(GaslessWallet wallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		amount = wallet.sweepTokenBalance(token, recipient);
+		emit WalletNonCollateralTokenRecovered(address(wallet), token, recipient, amount);
 	}
 
 	/// @dev Owner withdrawals pay first-deployment fees from the wallet's collateral.
 	function _getWalletAndCollectCreationFee(address owner, uint256 walletId) internal returns (GaslessWallet) {
-		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		uint256 creationFee = deployed ? walletCreationFee : 0;
 		if (creationFee > 0) {
-			qWallet.transfer(collateralToken, treasury, creationFee);
-			emit WalletCreationFeeCollected(address(qWallet), address(qWallet), creationFee);
+			wallet.transfer(collateralToken, treasury, creationFee);
+			emit WalletCreationFeeCollected(address(wallet), address(wallet), creationFee);
 		}
-		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(qWallet), 0, creationFee);
-		return qWallet;
+		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(wallet), 0, creationFee);
+		return wallet;
 	}
 
 	// ═══════════════════════ Internal: Deposits ═══════════════════════
 
 	/// @dev Enforce the gross minimum, then deduct the deposit fee and any fee for deploying this wallet.
 	function _sweepDepositAndCollectFee(address owner, uint256 walletId) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
-		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		uint256 creationFee = deployed ? walletCreationFee : 0;
-		uint256 grossDeposit = qWallet.sweepTokenBalance(collateralToken, address(this));
+		uint256 grossDeposit = wallet.sweepTokenBalance(collateralToken, address(this));
 		if (grossDeposit < minimumDeposit) revert DepositAmountBelowMinimum(grossDeposit, minimumDeposit);
 		collectedDepositFee = depositFee;
 		uint256 totalFees = collectedDepositFee + creationFee;
 		if (grossDeposit <= totalFees) revert DepositAmountNotAboveFees(grossDeposit, totalFees);
 		if (totalFees > 0) IERC20(collateralToken).safeTransfer(treasury, totalFees);
 		if (collectedDepositFee > 0) emit DepositFeeCollected(owner, treasury, collectedDepositFee);
-		if (creationFee > 0) emit WalletCreationFeeCollected(address(qWallet), address(qWallet), creationFee);
-		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(qWallet), collectedDepositFee, creationFee);
+		if (creationFee > 0) emit WalletCreationFeeCollected(address(wallet), address(wallet), creationFee);
+		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(wallet), collectedDepositFee, creationFee);
 		netDeposit = grossDeposit - totalFees;
 	}
 
@@ -717,21 +699,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	function _instantBatchFeeSelectors(IInstantLayer.SignedOperation[] calldata signedOps) internal pure returns (bytes4[][] memory selectors) {
 		selectors = new bytes4[][](signedOps.length);
 		for (uint256 i = 0; i < signedOps.length; i++) selectors[i] = _instantOperationFeeSelectors(signedOps[i]);
-	}
-
-	function _collectOneOperationalFee(address signerAccount, bytes4 selector) internal returns (address payer, uint256 fee) {
-		address billingParent = _resolveBillingAccount(signerAccount);
-		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](1);
-		ops[0] = GaslessOperationalFeeLib.OpBilling({
-			signer: signerAccount,
-			billingParent: billingParent,
-			baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseSelectorFee(selector),
-			creationFee: 0
-		});
-		(uint256 totalFee, address[] memory opPayers, ) = GaslessOperationalFeeLib.settleOperationalFees(address(core), address(accountLayer), ops);
-		payer = opPayers[0];
-		fee = totalFee;
-		emit OperationalFeeRouted(signerAccount, payer, fee);
 	}
 
 	/// @dev Price the selectors captured during dispatch and resolve payers after execution.
