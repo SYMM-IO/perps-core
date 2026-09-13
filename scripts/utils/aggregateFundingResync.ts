@@ -61,7 +61,7 @@ export function accumulateGroupFunding(total: bigint, quotes: Iterable<FundingQu
 	return total
 }
 
-/** Rebuilds one group's quote-level value exactly as the former on-chain scan did. */
+/** Sums one group's per-quote funding contributions with checked arithmetic and truncation toward zero. */
 export function calculateGroupFunding(quotes: Iterable<FundingQuoteLike>, symbolId: bigint, positionType: number): bigint {
 	return accumulateGroupFunding(0n, quotes, symbolId, positionType)
 }

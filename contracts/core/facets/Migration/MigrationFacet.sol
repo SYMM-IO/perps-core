@@ -33,22 +33,14 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 
 	/// @notice Applies a batch of exact weighted paid-funding values calculated off chain from active quotes.
 	/// @dev Requires a global pause. Expected old values protect against a stale calculation. Any invalid group reverts the whole batch.
-	///      Emits one event per input group. Repeated completed repairs are safe; an empty batch is a no-op.
+	///      Emits one event per input group. Repeated completed repairs are safe; an empty batch is a no-op even when unpaused.
 	function resyncAggregateFunding(AggregateFundingGroup[] calldata groups) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
 		if (groups.length == 0) return;
 		require(GlobalAppStorage.layout().globalPaused, "MigrationFacet: Protocol is not globally paused");
 
 		for (uint256 i = 0; i < groups.length; i++) {
 			AggregateFundingGroup calldata group = groups[i];
-			MigrationFacetImpl.AggregateFundingResyncResult memory result = MigrationFacetImpl.resyncAggregateFunding(
-				group.partyA,
-				group.partyB,
-				group.symbolId,
-				group.positionType,
-				group.expectedPartyAFunding,
-				group.expectedPartyBFunding,
-				group.newFunding
-			);
+			MigrationFacetImpl.AggregateFundingResyncResult memory result = MigrationFacetImpl.resyncAggregateFunding(group);
 			emit AggregateFundingResynced(
 				group.partyA,
 				group.partyB,
@@ -56,7 +48,7 @@ contract MigrationFacet is Accessibility, IMigrationFacet {
 				group.positionType,
 				result.oldPartyAFunding,
 				result.oldPartyBFunding,
-				result.newFunding,
+				group.newFunding,
 				result.oldGlobalFunding,
 				result.newGlobalFunding
 			);

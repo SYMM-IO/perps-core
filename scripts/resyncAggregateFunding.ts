@@ -10,6 +10,11 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import { MigrationFacet__factory } from "../src/types/factories/core/facets/Migration/MigrationFacet__factory.js"
+import { ViewFacet__factory } from "../src/types/factories/core/facets/ViewFacet/ViewFacet__factory.js"
+import { ViewFacetAggregate__factory } from "../src/types/factories/core/facets/ViewFacetAggregate/ViewFacetAggregate__factory.js"
+import { ViewFacetQuote__factory } from "../src/types/factories/core/facets/ViewFacetQuote/ViewFacetQuote__factory.js"
+import type { IMigrationFacet, ViewFacetAggregate, ViewFacetQuote } from "../src/types/index.js"
 import { ethers } from "../test/helpers/hardhat-connection.js"
 import { accumulateGroupFunding, addFunding, requireInt256, subtractFunding } from "./utils/aggregateFundingResync.js"
 
@@ -24,7 +29,7 @@ interface FundingGroup {
 	partyA: string
 	partyB: string
 	symbolId: bigint
-	positionType: number
+	positionType: 0 | 1
 }
 
 interface PreparedRepair extends FundingGroup {
@@ -63,10 +68,18 @@ function parseUint256(name: string, raw: unknown): bigint {
 	return value
 }
 
-function parsePositionType(raw: unknown): number {
+function parsePositionType(raw: unknown): FundingGroup["positionType"] {
 	if (raw === "LONG" || raw === 0 || raw === "0") return 0
 	if (raw === "SHORT" || raw === 1 || raw === "1") return 1
 	throw new Error(`positionType must be LONG, SHORT, 0, or 1; received ${JSON.stringify(raw)}`)
+}
+
+function positionTypeName(positionType: FundingGroup["positionType"]) {
+	return positionType === 0 ? "LONG" : "SHORT"
+}
+
+function globalFundingKey(group: FundingGroup): string {
+	return `${group.partyB.toLowerCase()}:${group.symbolId}:${group.positionType}`
 }
 
 function parseAddress(name: string, raw: unknown): string {
@@ -91,7 +104,7 @@ function loadGroups(file: string): FundingGroup[] {
 			symbolId: parseUint256(`groups[${index}].symbolId`, item.symbolId),
 			positionType: parsePositionType(item.positionType),
 		}
-		const key = `${group.partyA.toLowerCase()}:${group.partyB.toLowerCase()}:${group.symbolId}:${group.positionType}`
+		const key = `${group.partyA.toLowerCase()}:${globalFundingKey(group)}`
 		if (seen.has(key)) throw new Error(`groups[${index}] duplicates an earlier funding group`)
 		seen.add(key)
 		return group
@@ -103,7 +116,7 @@ function jsonRepair(repair: PreparedRepair) {
 		partyA: repair.partyA,
 		partyB: repair.partyB,
 		symbolId: repair.symbolId.toString(),
-		positionType: repair.positionType === 0 ? "LONG" : "SHORT",
+		positionType: positionTypeName(repair.positionType),
 		expectedPartyAFunding: repair.expectedPartyAFunding.toString(),
 		expectedPartyBFunding: repair.expectedPartyBFunding.toString(),
 		newFunding: repair.newFunding.toString(),
@@ -112,7 +125,7 @@ function jsonRepair(repair: PreparedRepair) {
 	}
 }
 
-function contractRepair(repair: PreparedRepair) {
+function contractRepair(repair: PreparedRepair): IMigrationFacet.AggregateFundingGroupStruct {
 	return {
 		partyA: repair.partyA,
 		partyB: repair.partyB,
@@ -124,7 +137,13 @@ function contractRepair(repair: PreparedRepair) {
 	}
 }
 
-async function prepareRepair(group: FundingGroup, viewQuote: any, viewAggregate: any, blockTag: number, pageSize: number): Promise<PreparedRepair> {
+async function prepareRepair(
+	group: FundingGroup,
+	viewQuote: ViewFacetQuote,
+	viewAggregate: ViewFacetAggregate,
+	blockTag: number,
+	pageSize: number,
+): Promise<PreparedRepair> {
 	const reportedQuoteCount = BigInt(await viewQuote.partyBPositionsCount(group.partyB, group.partyA, { blockTag }))
 	let quoteCount = 0n
 	let newFunding = 0n
@@ -180,13 +199,13 @@ async function main(): Promise<void> {
 	if (!sourceBlock?.hash) throw new Error(`Source block ${blockTag} was not returned`)
 	if ((await ethers.provider.getCode(symmio, blockTag)) === "0x") throw new Error(`SYMMIO has no contract code at ${symmio}`)
 
-	const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", symmio)
+	const view = ViewFacet__factory.connect(symmio, ethers.provider)
 	const pauseState = await view.pauseState({ blockTag })
 	if (!pauseState.globalPaused) throw new Error(`Protocol was not globally paused at block ${blockTag}`)
 
-	const viewQuote = await ethers.getContractAt("ViewFacetQuote", symmio)
-	const viewAggregate = await ethers.getContractAt("ViewFacetAggregate", symmio)
-	const migrationRead = await ethers.getContractAt("MigrationFacet", symmio)
+	const viewQuote = ViewFacetQuote__factory.connect(symmio, ethers.provider)
+	const viewAggregate = ViewFacetAggregate__factory.connect(symmio, ethers.provider)
+	const migrationRead = MigrationFacet__factory.connect(symmio, ethers.provider)
 	const groups = loadGroups(groupsFile)
 	const repairs: PreparedRepair[] = []
 	for (const group of groups) repairs.push(await prepareRepair(group, viewQuote, viewAggregate, blockTag, pageSize))
@@ -195,7 +214,7 @@ async function main(): Promise<void> {
 
 	const expectedGlobals = new Map<string, { repair: PreparedRepair; oldValue: bigint; value: bigint }>()
 	for (const repair of repairs) {
-		const key = `${repair.partyB.toLowerCase()}:${repair.symbolId}:${repair.positionType}`
+		const key = globalFundingKey(repair)
 		const current = expectedGlobals.get(key)
 		if (current) {
 			if (current.oldValue !== repair.oldGlobalFunding) throw new Error(`Inconsistent fixed-block global funding for ${key}`)
@@ -228,7 +247,7 @@ async function main(): Promise<void> {
 		globalFunding: [...expectedGlobals.values()].map(expected => ({
 			partyB: expected.repair.partyB,
 			symbolId: expected.repair.symbolId.toString(),
-			positionType: expected.repair.positionType === 0 ? "LONG" : "SHORT",
+			positionType: positionTypeName(expected.repair.positionType),
 			oldFunding: expected.oldValue.toString(),
 			newFunding: expected.value.toString(),
 		})),
@@ -255,7 +274,7 @@ async function main(): Promise<void> {
 	if (!signer) throw new Error("No transaction signer is configured")
 	if (!(await view.hasRole(signer.address, MIGRATION_ROLE))) throw new Error(`Signer ${signer.address} does not have MIGRATION_ROLE`)
 	if (!(await view.pauseState()).globalPaused) throw new Error("Protocol is no longer globally paused")
-	const migration = migrationRead.connect(signer) as any
+	const migration = migrationRead.connect(signer)
 
 	for (const [index, batch] of batches.entries()) {
 		const input = batch.map(contractRepair)
@@ -267,7 +286,7 @@ async function main(): Promise<void> {
 	}
 
 	for (const repair of repairs) {
-		const key = `${repair.partyB.toLowerCase()}:${repair.symbolId}:${repair.positionType}`
+		const key = globalFundingKey(repair)
 		const [partyAFunding, partyBFunding] = await Promise.all([
 			viewAggregate.getPartyAAggregatedFundingPerPartyB(repair.partyA, repair.partyB, repair.symbolId, repair.positionType),
 			viewAggregate.getPartyBAggregatedFundingPerPartyA(repair.partyB, repair.partyA, repair.symbolId, repair.positionType),

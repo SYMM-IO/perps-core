@@ -73,8 +73,8 @@
 					</p>
 					<p>
 						When the difference is inside the limit, settlement uses the smaller same-direction amount supported by both Muon and the
-						quote calculation. If they disagree about which side won, the rounded payment is zero. The removed part is never written to a
-						balance or separate accounting field.
+						quote calculation. If they disagree about which side won, the net payment is zero. Individual PartyB payments can still offset
+						each other. The removed part is never written to a balance or separate accounting field.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Rollout prerequisites.</strong> The bound assumes repaired funding aggregates and exact aggregate notional in Muon.
@@ -82,7 +82,10 @@
 					</aside>
 
 					<h2 id="rounding">Why liquidation totals can differ</h2>
-					<p>Consider two values with decimals that the contract cannot store:</p>
+					<p>
+						Integer division truncates toward zero: it removes the fractional part, so <code>cut(4.8) = 4</code> and
+						<code>cut(−4.8) = −4</code>. Consider two values with decimals that the contract cannot store:
+					</p>
 					<pre><code>Quote-by-quote: cut(4.8) + cut(5.8) = 4 + 5 = 9
 Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 					<p>
@@ -98,9 +101,9 @@ Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 
 					<h2 id="funding">Why partial closes left dust</h2>
 					<p>
-						A funding group stores the sum of each open quote's rounded contribution. The old close path rounded the closed slice on its
-						own. Because rounding does not always split cleanly, a 60% close followed by a 40% close could leave one raw unit after the
-						position reached zero.
+						A funding group stores the sum of each open quote's contribution, truncated toward zero. The old close path truncated the
+						closed slice on its own. Because truncation does not always split cleanly, a 60% close followed by a 40% close could leave one
+						raw unit after the position reached zero.
 					</p>
 					<pre><code>Old behavior: remove cut(closed amount × funding)
 New behavior: remove cut(old open amount × funding)
@@ -114,9 +117,9 @@ New behavior: remove cut(old open amount × funding)
 					<h2 id="exact-notional">Exact Muon PnL input</h2>
 					<p>
 						The original UPNL views return an average open price. Dividing notional by amount to make that average can drop a remainder.
-						Multiplying the rounded average by the amount later cannot restore it.
+						Multiplying the truncated average by the amount later cannot restore it.
 					</p>
-					<pre><code>Old LONG price PnL: (price − rounded average) × amount / 1e18
+					<pre><code>Old LONG price PnL: (price − truncated average) × amount / 1e18
 New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					<p>
 						The new <code>getPartyAExactNotionalUpnlData</code>, <code>getPartyBExactNotionalUpnlData</code>, and
@@ -126,7 +129,7 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					</p>
 					<p>
 						Muon must calculate each funded group once. That same result is added to total UPNL and, when negative, to total unrealized
-						loss. This prevents the two signed fields from disagreeing because they rounded the same group in different ways.
+						loss. This prevents the two signed fields from disagreeing because they truncated the same group in different ways.
 					</p>
 					<aside class="callout callout-note">
 						<strong>OVERDUE safety.</strong> A rounding-sized mismatch can make a calculated loss reduction one unit larger than a quote's
@@ -142,7 +145,7 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					</p>
 					<pre><code>open amount = quantity − closed amount
 quote contribution = (open amount × accumulated paid funding) / 1e18
-new group funding = sum of the rounded quote contributions</code></pre>
+new group funding = sum of the truncated quote contributions</code></pre>
 					<p>
 						The script uses checked <code>BigInt</code> arithmetic with Solidity's signed division rule, including truncation toward zero.
 						It therefore preserves raw-unit differences. The paginated quote getter reads only the requested page instead of copying the
