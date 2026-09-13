@@ -6,6 +6,9 @@ import {
 	validateUpgradeConfig,
 	assertConfigurationParity,
 	flowDiscovery,
+	upgradeRequiresForkRehearsal,
+	createUpgradeRehearsalWaiver,
+	assertUpgradeRehearsal,
 } from "../../deployment-tooling/account-instant-upgrade.js";
 import { Interface, ZeroAddress } from "ethers";
 import assert from "node:assert/strict";
@@ -57,6 +60,52 @@ test("configuration comparison includes false, zero, relayers, template IDs and 
 		assert.throws(() => assertConfigurationParity(before, after), /Configuration drift/);
 	}
 	assert.equal(digest({ b: 2, a: 1 }), digest({ a: 1, b: 2 }));
+});
+test("fork rehearsal is required by default and only an explicit boolean can waive it", () => {
+	assert.equal(upgradeRequiresForkRehearsal(config()), true);
+	for (const required of [true, false])
+		assert.equal(upgradeRequiresForkRehearsal({ ...config(), execution: { requireForkRehearsal: required } }), required);
+	for (const execution of [
+		null,
+		{},
+		{ requireForkRehearsal: "false" },
+		{ requireForkRehearsal: 0 },
+		{ requireForkRehearsal: false, skipChecks: true },
+	])
+		assert.throws(() => validateUpgradeConfig({ ...config(), execution }), /execution/);
+});
+test("deployment requires matching rehearsal evidence or a waiver bound to the exact input, source and live snapshot", () => {
+	const input = { config: { ...config(), execution: { requireForkRehearsal: false } }, sourceCommit: "b".repeat(40) };
+	const snapshot = { blockNumber: 1234, gasless: { depositFee: "0" } };
+	const report = { snapshotDigest: digest(snapshot), snapshotBlock: snapshot.blockNumber };
+	assert.throws(() => assertUpgradeRehearsal(input, report), /snapshot/);
+	report.rehearsal = createUpgradeRehearsalWaiver(input, snapshot, "2026-09-13T00:00:00.000Z");
+	assert.equal(report.rehearsal.status, "skipped");
+	assert.doesNotThrow(() => assertUpgradeRehearsal(input, report));
+	for (const [key, value] of [
+		["snapshotDigest", "different"],
+		["snapshotBlock", 1235],
+		["inputDigest", "different"],
+		["sourceCommit", "c".repeat(40)],
+		["reason", ""],
+		["skippedAt", "invalid"],
+		["status", "failed"],
+	]) {
+		const changed = structuredClone(report);
+		changed.rehearsal[key] = value;
+		assert.throws(() => assertUpgradeRehearsal(input, changed), /rehearsal/);
+	}
+	const changedInput = structuredClone(input);
+	changedInput.config.target.relayer = address(42);
+	assert.throws(() => assertUpgradeRehearsal(changedInput, report), /rehearsal/);
+	assert.throws(() => createUpgradeRehearsalWaiver(input, { blockNumber: 0 }), /snapshot block/);
+	delete input.config.execution;
+	assert.throws(() => createUpgradeRehearsalWaiver(input, snapshot), /requires fork rehearsal/);
+	assert.throws(() => assertUpgradeRehearsal(input, report), /rehearsal/);
+	report.rehearsal = { status: "complete", snapshotDigest: report.snapshotDigest };
+	assert.doesNotThrow(() => assertUpgradeRehearsal(input, report));
+	report.rehearsal.snapshotDigest = "different";
+	assert.throws(() => assertUpgradeRehearsal(input, report), /snapshot/);
 });
 test("flow discovery binds supplied actors without requiring complete holder lists or event history", () => {
 	const value = config();

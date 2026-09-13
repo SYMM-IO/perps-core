@@ -13,6 +13,7 @@ import {
 	UPGRADE_DEPLOYMENTS,
 	digest,
 	assertConfigurationParity,
+	assertUpgradeRehearsal,
 	IMPLEMENTATION_SLOT,
 	planAccountCut,
 	validateUpgradeConfig,
@@ -742,8 +743,7 @@ export const accountInstantUpgradeTask = task(
 				}
 				await assertUpgradePreservation(ethers, input, snapshot, report)
 				if (phase === "deploy") {
-					if (report.rehearsal?.snapshotDigest !== report.snapshotDigest || report.rehearsal?.status !== "complete")
-						throw new Error("Matching fork rehearsal is required before live deployment")
+					assertUpgradeRehearsal(input, report)
 					await withJournal(ethers, input, report, false, "deployer", checkpoint =>
 						deployAccountInstantSelection(hre, ethers, input, snapshot, report, checkpoint, persist),
 					)
