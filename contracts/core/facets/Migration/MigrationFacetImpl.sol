@@ -14,9 +14,10 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
-import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
+import { AggregatedDataStorage, PartiesAggregatedFunding } from "../../storages/AggregatedDataStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
+import { IMigrationFacet } from "./IMigrationFacet.sol";
 
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -25,7 +26,6 @@ library MigrationFacetImpl {
 	struct AggregateFundingResyncResult {
 		int256 oldPartyAFunding;
 		int256 oldPartyBFunding;
-		int256 newFunding;
 		int256 oldGlobalFunding;
 		int256 newGlobalFunding;
 	}
@@ -159,43 +159,37 @@ library MigrationFacetImpl {
 	/// @notice Applies one precomputed PartyA/PartyB/symbol/side weighted paid-funding repair.
 	/// @dev Expected pair values reject stale off-chain calculations. The global PartyB value is changed only by this pair's correction.
 	function resyncAggregateFunding(
-		address partyA,
-		address partyB,
-		uint256 symbolId,
-		PositionType positionType,
-		int256 expectedPartyAFunding,
-		int256 expectedPartyBFunding,
-		int256 newFunding
+		IMigrationFacet.AggregateFundingGroup calldata group
 	) internal returns (AggregateFundingResyncResult memory result) {
-		require(!MAStorage.layout().liquidationStatus[partyA], "MigrationFacet: PartyA is in liquidation");
-		partyB.requireNotLiquidating(partyA);
+		require(!MAStorage.layout().liquidationStatus[group.partyA], "MigrationFacet: PartyA is in liquidation");
+		group.partyB.requireNotLiquidating(group.partyA);
 
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
-		result.oldPartyAFunding = aggregatedLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding;
-		result.oldPartyBFunding = aggregatedLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding;
-		result.oldGlobalFunding = aggregatedLayout.partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding;
-		result.newFunding = newFunding;
+		PartiesAggregatedFunding storage partyAFunding = aggregatedLayout.partyAAggregatedFundingPerPartyB[group.partyA][group.partyB][
+			group.symbolId
+		][group.positionType];
+		PartiesAggregatedFunding storage partyBFunding = aggregatedLayout.partyBAggregatedFundingPerPartyA[group.partyB][group.partyA][
+			group.symbolId
+		][group.positionType];
+		PartiesAggregatedFunding storage globalFunding = aggregatedLayout.partyBAggregatedFunding[group.partyB][group.symbolId][group.positionType];
+		result.oldPartyAFunding = partyAFunding.weightedPaidFunding;
+		result.oldPartyBFunding = partyBFunding.weightedPaidFunding;
+		result.oldGlobalFunding = globalFunding.weightedPaidFunding;
 
 		// A repeated completed repair is a safe no-op even though its expected-old values are now stale.
-		if (result.oldPartyAFunding == newFunding && result.oldPartyBFunding == newFunding) {
+		if (result.oldPartyAFunding == group.newFunding && result.oldPartyBFunding == group.newFunding) {
 			result.newGlobalFunding = result.oldGlobalFunding;
 			return result;
 		}
 
-		require(result.oldPartyAFunding == expectedPartyAFunding, "MigrationFacet: PartyA funding changed");
-		require(result.oldPartyBFunding == expectedPartyBFunding, "MigrationFacet: PartyB funding changed");
-		result.newGlobalFunding = result.oldGlobalFunding - result.oldPartyBFunding + newFunding;
+		require(result.oldPartyAFunding == group.expectedPartyAFunding, "MigrationFacet: PartyA funding changed");
+		require(result.oldPartyBFunding == group.expectedPartyBFunding, "MigrationFacet: PartyB funding changed");
+		result.newGlobalFunding = result.oldGlobalFunding - result.oldPartyBFunding + group.newFunding;
 
-		aggregatedLayout.partyAAggregatedFundingPerPartyB[partyA][partyB][symbolId][positionType].weightedPaidFunding = newFunding;
-		aggregatedLayout.partyBAggregatedFundingPerPartyA[partyB][partyA][symbolId][positionType].weightedPaidFunding = newFunding;
-		aggregatedLayout.partyBAggregatedFunding[partyB][symbolId][positionType].weightedPaidFunding = result.newGlobalFunding;
+		partyAFunding.weightedPaidFunding = group.newFunding;
+		partyBFunding.weightedPaidFunding = group.newFunding;
+		globalFunding.weightedPaidFunding = result.newGlobalFunding;
 
-		if (
-			result.oldPartyAFunding != result.newFunding ||
-			result.oldPartyBFunding != result.newFunding ||
-			result.oldGlobalFunding != result.newGlobalFunding
-		) {
-			LibAccount.increaseBothUpnlCounters(partyB, partyA);
-		}
+		LibAccount.increaseBothUpnlCounters(group.partyB, group.partyA);
 	}
 }

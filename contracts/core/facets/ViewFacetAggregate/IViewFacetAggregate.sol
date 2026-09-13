@@ -39,7 +39,7 @@ interface IViewFacetAggregate {
 		int256 fundingDebt;
 	}
 
-	/// @dev Uses the exact stored notional instead of a rounded average open price.
+	/// @dev Uses the exact stored notional instead of an average open price truncated toward zero.
 	struct ExactNotionalUpnlData {
 		uint256 symbolId;
 		PositionType positionType;

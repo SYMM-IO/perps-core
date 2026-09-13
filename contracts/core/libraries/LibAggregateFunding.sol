@@ -21,7 +21,7 @@ import { LibFundingRate } from "./LibFundingRate.sol";
 /// By tracking totalWeightedPaidFunding = Σ trunc(openAmount × accumulatedPaidFunding / 1e18), we can
 /// calculate total funding debt without iterating through all quotes.
 library LibAggregateFunding {
-	/// @notice Returns one quote's rounded contribution to the weighted paid-funding aggregate.
+	/// @notice Returns one quote's weighted paid-funding contribution, truncated toward zero.
 	function calculateWeightedPaidFunding(uint256 amount, int256 accumulatedPaidFunding) internal pure returns (int256) {
 		return (int256(amount) * accumulatedPaidFunding) / 1e18;
 	}
@@ -84,8 +84,7 @@ library LibAggregateFunding {
 			contributionToRemove;
 		aggregatedLayout.partyBAggregatedFunding[quote.partyB][quote.symbolId][quote.positionType].weightedPaidFunding -= contributionToRemove;
 
-		// Empty groups have no quote contributions. Clearing them also heals any old rounding dust
-		// when the last position in the group closes naturally.
+		// Empty groups have no quote contributions, so their weighted paid funding must be zero.
 		if (
 			aggregatedLayout.partyAAggregatedPositionsPerPartyB[quote.partyA][quote.partyB][quote.symbolId][quote.positionType].aggregatedAmount == 0
 		) {
