@@ -37,8 +37,8 @@
 	"files": [
 		{
 			"path": "index.html",
-			"sha256": "2ab854d7bd1273d8ed8369ccb151878613392b0460787b46ddcc46f1fbef3250",
-			"bytes": 383676
+			"sha256": "c83c8d04de0deedb9f6c5f3e2e034acbde2e7957853307ac6f13960a0027ae6c",
+			"bytes": 461899
 		},
 		{
 			"path": "Vibe-Gasless-Transaction-Flow.pdf",
@@ -47,8 +47,8 @@
 		},
 		{
 			"path": "flow-reference.md",
-			"sha256": "5a0a79cd3452570920b837e37174cab722988330429f253ae15b17af97f9e238",
-			"bytes": 51867
+			"sha256": "37408ff829c6d7909738967f536879e57ab702ef587e948a5a5aa69dc688bf3d",
+			"bytes": 60156
 		},
 		{
 			"path": "README.md",
@@ -57,23 +57,23 @@
 		},
 		{
 			"path": "ARCHITECTURE_EVIDENCE.md",
-			"sha256": "07a2aa2119e75127194d9ad86852dfb7fc73570f99098de3bb7e43b315c5a774",
-			"bytes": 4940
+			"sha256": "63feb950aa1220f54cdde747fbbf814ec6e8650d178bd4375e756509ca099921",
+			"bytes": 6580
 		},
 		{
 			"path": "architecture-model.json",
-			"sha256": "fe3392970213e7e0d6f964bc208c73c6b2384dca3053293852fcac9052d345d9",
-			"bytes": 27157
+			"sha256": "bafdff58f854d56c7418bacfc0b29ff0862f6dfde6a08ce9d6a93614ec53e6ed",
+			"bytes": 20735
 		},
 		{
 			"path": "source-manifest.json",
-			"sha256": "b2c3f5df5ce370258f9eea4519ada4f06ceff1c35ae1776e95fae08c38f05c16",
-			"bytes": 95958
+			"sha256": "dee032fbf5b65591e80509ddd729ec06ffa00600ebb94f3b7496e574565431d1",
+			"bytes": 95298
 		},
 		{
 			"path": "validation.json",
-			"sha256": "aec70e4c50b9246960b4ff996363f4993b279270a3370f603ca22cfb0c162c43",
-			"bytes": 815
+			"sha256": "19aada854bc7cb56649480f4c466bd2b42175b3de94b94f38598757403cff171",
+			"bytes": 741
 		},
 		{
 			"path": "figures/completion.png",
