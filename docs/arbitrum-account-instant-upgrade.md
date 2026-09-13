@@ -1,7 +1,7 @@
 # Arbitrum AccountLayer and InstantLayer upgrade
 
 Launch `./symmio`, select **Other maintenance scripts**, then **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values**.
-Task ID: `maintenance.arbitrum-account-instant-upgrade`. Task version 8 has 18 steps; select the `TEAM_DEPLOYER` keystore signer for deployments.
+Task ID: `maintenance.arbitrum-account-instant-upgrade`. Task version 9 has 18 steps; select the `TEAM_DEPLOYER` keystore signer for deployments.
 
 This task upgrades AccountLayer `0x5733107211B2801Acd39933a54d482FE303c4907`, replaces InstantLayer `0x2C9e944cB71329fC659Da50A10a79a508Dd49ba5`, and upgrades the implementation behind GaslessLayer `0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca`. Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09` keeps its installed facets.
 
@@ -9,11 +9,13 @@ This task upgrades AccountLayer `0x5733107211B2801Acd39933a54d482FE303c4907`, re
 
 Review `tasks/config/arbitrum-account-instant-upgrade-42161.json` before starting. It fixes target addresses, the Dev Safe as the PartyB wiring authority, the old Gasless source commit, and the preservation policy. The existing production recipe supplies RPC/explorer credential references; its deployment settings and template defaults do not supply the upgrade's configuration values.
 
+The upgrade config currently has `execution.requireForkRehearsal: false`, as explicitly requested for this rollout. The CLI records a waiver bound to the exact input, source commit, snapshot digest and block, then proceeds to the existing chain-42161 authorization prompt. It launches no fork process and does not label the rehearsal successful. Omitting this setting or setting it to `true` requires a completed matching rehearsal. This option belongs to the account/instant upgrade config, not the credential recipe; it changes no other checks or Safe stages.
+
 Each run creates `tasks/data/42161/account-instant-upgrades/<run>/` containing:
 
 - `input.json`: target/policy, exact source commit and recipe digests.
 - `configuration-input.json`: configuration read from one pinned Arbitrum block, discovery evidence, selector maps and runtime hashes.
-- `fork-recipe.json`: the same credential references targeting the local fork.
+- `fork-recipe.json`: the same credential references targeting the local fork; unused when rehearsal is waived.
 - `report.json`: deployment addresses, compatibility checks, transactions, rehearsal and verification evidence.
 - `client-upgrade.json`: deployed addresses, full Gasless/InstantLayer ABIs, new InstantLayer signing domain, disabled creation-fee policy, owner-withdrawal API and fee-quote/limit cutover instructions (manifest version 3). The task exports this before Gasless cutover and binds the operator acknowledgement to its digest.
 
@@ -37,7 +39,7 @@ Discovery uses direct getters for the configured flow. It checks the Dev Safe, r
 
 ## Execution order and authorities
 
-1. Compile and inspect current state. Restore the complete historical project dependency graph from the pinned Gasless baseline commit, then match its implementation and all four linked libraries to live bytecode. Compare storage against the narrowly permitted indexed-wallet change described below. Rehearse deployment, cut, configuration, wiring and retirement on the exact snapshot fork. Any failure stops deployment.
+1. Compile and inspect current state. Restore the complete historical project dependency graph from the pinned Gasless baseline commit, then match its implementation and all four linked libraries to live bytecode. Compare storage against the narrowly permitted indexed-wallet change described below. When rehearsal is required, rehearse deployment, cut, configuration, wiring and retirement on the exact snapshot fork. The current config explicitly waives this rehearsal and records `report.rehearsal.status: "skipped"` instead. Live inspection and preservation checks still have to pass.
 2. Review current values and the required flow permissions, then authorize chain `42161`. Use a separate deployment wallet; it receives no Core, AccountLayer or Gasless administration roles. The replacement InstantLayer constructor gives administration directly to the Dev Safe.
 3. Deploy **thirteen contracts**, in order: `LibQuoteParams`; AccountLayer `CoreFacet`, `MarginFacet`, `ControlFacet`, `ViewFacet`, `TimelockFacet`; `InstantLayer`; `GaslessNativeGasTopUpLib`; `GaslessOperationalFeeLib`; `GaslessWalletDeployerLib`; `GaslessWalletExecutionLib`; `GaslessFeeQuoteLib`; and the `GaslessLayer` implementation. Link the execution library to the new deployer library, the quote library to the new operational/execution libraries, and Gasless to all five new libraries. All Gasless libraries are freshly deployed; baseline addresses are retained only for verification. Publish all thirteen new contracts on Arbiscan.
 4. Export the AccountLayer cut for Dev Safe `0x89bE952790657297ac03f1954b22B668d819D3d9`. Execute it in the Safe, then continue. The cut has no initializer. The task verifies every installed selector before proceeding.
@@ -94,6 +96,6 @@ Safe JSON export is a `waiting_external` stage, not proof of execution. Use **Co
 
 PartyB batches use the same `waiting_external` flow as the other Safe stages. Continuing without execution leaves the step pending. The planner computes only missing calls, but changing a previously exported pending batch is refused by the Safe intent binding; execute the reviewed batch as a whole. The fork rehearsal simulates the PartyB calls locally under the Safe's address to validate role grants, wiring and retirement.
 
-For a run stopped during initial discovery with only compilation complete and no journaled transactions, a source/configuration fix requires **Cancel active task**, then starting this maintenance task again. Reopen `./symmio` first to load updated code. The fresh run copies the updated input and pins the new source; do not edit the paused run's hashes to bypass drift checks. The flow-specific discovery no longer uses historical log queries.
+For a run stopped before deployment with only compilation/inspection complete and no journaled transactions, a source/configuration change (including the rehearsal waiver) requires **Cancel active task**, then starting this maintenance task again. Reopen `./symmio` first to load updated code. The fresh run copies the updated input and pins the new source; do not edit the paused run's hashes to bypass drift checks. The flow-specific discovery no longer uses historical log queries.
 
-The fork rehearsal contains only local transactions. Explorer publication, Safe execution, a production canary and final live verification remain separate evidence. A successful rehearsal does not authorize or prove any of them.
+When enabled, the fork rehearsal contains only local transactions. A recorded waiver supplies no rehearsal evidence. Explorer publication, Safe execution, a production canary and final live verification remain separate evidence. A successful rehearsal does not authorize or prove any of them.
