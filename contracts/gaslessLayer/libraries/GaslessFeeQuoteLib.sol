@@ -32,74 +32,6 @@ interface IGaslessFeeConfig {
 
 /// @notice Shared frontend quote dispatch and atomic simulation using the actual fee collection paths.
 library GaslessFeeQuoteLib {
-	/// @notice Preserve the original account-specific quote, including its approval-only special case and quota flag.
-	function accountOperationalFee(
-		address account,
-		IInstantLayer.SignedOperation[] calldata signedOps,
-		uint256[] calldata walletIds
-	) external view returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
-		if (walletIds.length != signedOps.length) revert IGaslessLayer.ArrayLengthMismatch();
-		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
-		ISymmioAccountLayer accounts = ISymmioAccountLayer(config.accountLayer());
-		address billingAccount = GaslessBillingIdentity.resolveBillingAccount(accounts, account);
-		uint256 limit = config.dailyFreeOpsLimit();
-		uint256 freeRemaining = limit > 0 ? config.dailyFreeOpsRemaining(billingAccount) : 0;
-		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](signedOps.length);
-		uint256[] memory creations = new uint256[](signedOps.length);
-		uint256 count;
-		bool blocked;
-		for (uint256 i; i < signedOps.length; i++) {
-			// Decode and validate every target before handling quota, including other accounts' operations.
-			bytes4[] memory selectors = GaslessWalletExecutionLib.quoteOperationalFeeSelectors(address(accounts), signedOps[i], walletIds[i]);
-			if (
-				config.walletCreationFee() > 0 &&
-				signedOps[i].target.code.length == 0 &&
-				GaslessWalletExecutionLib.isWalletOperation(address(accounts), signedOps[i], walletIds[i])
-			) {
-				creations[i] = config.walletCreationFee();
-				for (uint256 j; j < i; j++) {
-					if (creations[j] > 0 && signedOps[j].target == signedOps[i].target) {
-						creations[i] = 0;
-						break;
-					}
-				}
-			}
-			if (GaslessBillingIdentity.resolveBillingAccount(accounts, signedOps[i].signerAccount.addr) != billingAccount) continue;
-			bool free = freeRemaining > 0;
-			if (free) {
-				freeRemaining--;
-				freeOpsApplied++;
-			}
-			if (!free && limit > 0 && config.revertWhenFreeQuotaExhausted()) blocked = true;
-			uint256 base;
-			if (!free) for (uint256 j; j < selectors.length; j++) base += config.getBaseOperationalFee(selectors[j]);
-			bytes4 selector = signedOps[i].callData.length < 4 ? bytes4(0) : bytes4(signedOps[i].callData[:4]);
-			if (
-				signedOps.length == 1 &&
-				signedOps[i].target == config.core() &&
-				signedOps[i].flexFields.length == 0 &&
-				(selector == ISymmioCore.approveOperationalFee.selector || selector == ISymmioCore.approveOperationalFeeWithMultiplier.selector)
-			) {
-				amountDue18 = GaslessOperationalFeeLib.postApprovalOperationalFee(
-					config.core(),
-					billingAccount,
-					address(this),
-					signedOps[i].callData,
-					base
-				);
-				continue;
-			}
-			uint256 creation = creations[i] == 0 ? 0 : creations[i] * 10 ** (18 - IERC20Metadata(config.collateralToken()).decimals());
-			ops[count++] = GaslessOperationalFeeLib.OpBilling(signedOps[i].signerAccount.addr, billingAccount, base, creation);
-		}
-		if (blocked) return (0, freeOpsApplied, true);
-		assembly ("memory-safe") {
-			mstore(ops, count)
-		}
-		(, uint256[] memory fees) = GaslessOperationalFeeLib.planOperationalFees(config.core(), address(accounts), ops);
-		for (uint256 i; i < fees.length; i++) amountDue18 += fees[i];
-	}
-
 	function recordWalletPayment(address token, address wallet, uint256 deposit, uint256 creation) external {
 		if (!GaslessFeeAccounting.state().active) return;
 		uint256 scale = 10 ** (18 - IERC20Metadata(token).decimals());
@@ -222,6 +154,24 @@ library GaslessFeeQuoteLib {
 			else for (uint256 j; j < selectors.length; j++) ops[i].baseFee += config.getBaseOperationalFee(selectors[j]);
 		}
 		(address[] memory payers, uint256[] memory fees) = GaslessOperationalFeeLib.planOperationalFees(config.core(), address(accounts), ops);
+		// Preserve approval-only pricing before signatures or allowance are available.
+		// This estimates the billing parent's charge; simulation resolves any post-execution VA fallback.
+		bytes4 selector = signedOps[0].callData.length < 4 ? bytes4(0) : bytes4(signedOps[0].callData);
+		if (
+			n == 1 &&
+			signedOps[0].target == config.core() &&
+			signedOps[0].flexFields.length == 0 &&
+			(selector == ISymmioCore.approveOperationalFee.selector || selector == ISymmioCore.approveOperationalFeeWithMultiplier.selector)
+		) {
+			payers[0] = ops[0].billingParent;
+			fees[0] = GaslessOperationalFeeLib.postApprovalOperationalFee(
+				config.core(),
+				ops[0].billingParent,
+				address(this),
+				signedOps[0].callData,
+				ops[0].baseFee
+			);
+		}
 		q.payments = new IGaslessLayer.FeePayment[](n);
 		for (uint256 i; i < n; i++) {
 			q.payments[i] = IGaslessLayer.FeePayment(

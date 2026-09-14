@@ -224,7 +224,10 @@ await gateway.settleDepositToNewAccount(owner, 1n, affiliate, accountData)
 const nonce = (await gateway.walletOperationNonces(owner, 2n, signerAccount)) + 1n
 // Sign the usual wallet SignedOperation with target = wallet2 and that nonce.
 const walletIds = [2n]
-await gateway.getAccountOperationalFee(signerAccount, [signedOp], walletIds)
+const callData = gateway.interface.encodeFunctionData("relayInstantBatch", [[signedOp], [signature], [], [], walletIds])
+const quote = await gateway.previewFeeQuote(callData, 0)
+// quote.totalFee18 includes operational and wallet creation fees.
+// quote.payments identifies the accounts and balances that pay.
 await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</code></pre>
 					<p>
 						The relay requires one wallet index per operation, including batches containing only InstantLayer operations. Use 0 for
@@ -271,8 +274,8 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 						Upgrade the GaslessLayer implementation and its linked libraries on the existing compatible proxy without reinitializing it,
 						then update the service and frontend to the wallet-aware API. This is a breaking API change; wallet addresses, stored state,
 						and signatures remain valid. Existing transfers can use index 0 without moving their funds. Pass one wallet ID per operation
-						to both relayInstantBatch and getAccountOperationalFee, including an all-zero list for InstantLayer-only batches. Update event
-						consumers for every index, including zero, to read
+						to <code>relayInstantBatch</code>, including an all-zero list for InstantLayer-only batches. Preview that same encoded call
+						with <code>previewFeeQuote(callData, 0)</code>. Update event consumers for every index, including zero, to read
 						<code>GaslessWalletDeployed</code>, <code>WalletDepositSettled</code>, and <code>WalletNonCollateralTokenRecovered</code>. All
 						relayed wallet execution continues to emit <code>WalletOperationRelayed</code> with the actual wallet address.
 					</p>
@@ -281,8 +284,8 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 						<strong>Update clients when upgrading</strong> The old <code>relayInstantBatch</code>, <code>getGaslessWalletAddress</code>,
 						<code>settleDepositToNewAccount</code>, <code>settleDepositToExistingAccount</code>, and
 						<code>recoverNonCollateralToken</code> names remain, but their signatures now require wallet IDs as shown above. The old
-						signatures are removed. <code>getAccountOperationalFee</code> now requires the wallet ID array as its third argument and
-						replaces <code>getAccountOperationalFeeForWallets</code>. Use
+						signatures are removed. The account-specific fee getters are also removed; use
+						<a href="#frontend-fee-quotes"><code>previewFeeQuote</code> and <code>simulateFeeQuote</code></a> for fee quotes. Use
 						<code>walletOperationNonces(owner, walletId, signerAccount)</code> for every wallet index.
 					</aside>
 
@@ -416,9 +419,8 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						deployed. Free-operation quotas and selector-fee multipliers do not change the creation fee. Execution converts the fee to
 						Core's 18-decimal accounting units; deposit and owner-withdrawal payments use the token's decimals.
 						<code>getWalletCreationFee(owner, walletId)</code> returns the fee due for that wallet at the current state, or zero if
-						deployed. <code>getAccountOperationalFee</code> includes execution creation fees once per distinct undeployed wallet in the
-						supplied batch, assigned to its first operation. Do not add that fee again to the account quote. The common frontend quote
-						below includes creation fees for every fee-bearing deployment route.
+						deployed. <code>previewFeeQuote</code> includes execution creation fees once per distinct undeployed wallet in the supplied
+						batch, assigned to its first operation. Its <code>totalFee18</code> already includes those fees; do not add them again.
 					</p>
 					<p>
 						<code>WalletCreationFeeCollected(wallet, payer, amount)</code> reports the creation fee in collateral token units. For
@@ -551,6 +553,40 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						Display every quote amount with <code>formatUnits(amount, 18)</code>, including USDC fees. For example,
 						<code>5000000000000000000n</code> means 5 USDC when USDC is collateral. <code>collateralDecimals</code> describes the token's
 						raw transfer units; it does not change the quote's 18-decimal units.
+					</p>
+
+					<h3 id="quote-batch-accounts">A batch has more than one account</h3>
+					<p>
+						Suppose Alice submits two operations and Bob submits one, each costing 1 USDC. Preview the whole batch once:
+						<code>totalFee18</code> is 3 USDC, and <code>payments</code> contains one row per operation in batch order. To show Alice's
+						operations costing 2 USDC, select the rows whose <code>account</code> is Alice's signer account and add
+						<code>operationalFee18 + walletCreationFee18</code>. To show which balance needs the money, group by <code>payer</code> and
+						<code>source</code> instead. A Virtual Account's row keeps the Virtual Account as <code>account</code> even when its parent
+						pays.
+					</p>
+					<p>
+						For a parent account and its Virtual Accounts together, include the rows for every signer belonging to that parent. Keep the
+						full batch when requesting the preview: removing other operations can change which operation pays a shared wallet's creation
+						fee or uses the remaining free quota. <code>freeOpsApplied</code> counts free operations across the whole batch;
+						<code>dailyFreeOpsRemaining(account)</code> reads one billing account's remaining quota.
+					</p>
+					<p>
+						If quota exhaustion is configured to block execution, preview reverts with
+						<code>DailyFreeOpsLimitExceeded(account, limit)</code>. The frontend should show that the batch is blocked, not a zero fee.
+						The <code>quoteGaslessFee</code> helper reports <code>status: "reverted"</code> with <code>errorName</code> and
+						<code>errorArgs</code>.
+					</p>
+
+					<h3 id="quote-approval-only">The request itself changes the fee multiplier</h3>
+					<p>
+						Suppose the base fee is 2 USDC and the user is approving GaslessLayer with a 50% fee multiplier. For a batch containing only
+						that Core approval, with no flex fields, preview reads the multiplier in the approval calldata and quotes 1 USDC for the
+						billing parent. This works before the signature or allowance is available. The same rule applies to an approval-only template.
+					</p>
+					<p>
+						This estimates the parent's charge; it does not prove that the parent can pay. Use simulation once the request is ready to
+						check whether execution charges a Virtual Account instead. For approvals mixed with other operations, or approvals using flex
+						fields, preview uses current state; simulation observes the completed approval and subsequent charges.
 					</p>
 
 					<h3 id="quote-deposit-example">Code for the deposit preview</h3>
@@ -705,15 +741,6 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 									<td>
 										The raw collateral-token amount, or zero if deployed. Format this getter with the token's decimals—for USDC,
 										normally 6. It is only the creation component, not a whole-action quote.
-									</td>
-								</tr>
-								<tr>
-									<td>The combined operational and wallet-creation charge for one billing account in a batch</td>
-									<td><code>getAccountOperationalFee(account, signedOps, walletIds)</code></td>
-									<td>
-										<code>amountDue18</code> already includes applicable wallet-creation fees; do not add them again.
-										<code>freeOpsApplied</code> reports free quota used, and <code>wouldBlockOnQuota</code> reports a quota block.
-										Use the common action quote when the screen needs the fee breakdown, payer addresses, or payment sources.
 									</td>
 								</tr>
 								<tr>
