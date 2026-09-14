@@ -495,25 +495,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		amount18 = _baseSelectorFee(selector);
 	}
 
-	/// @notice Quote account fees for InstantLayer and indexed GaslessWallet operations.
-	/// @dev Targets are checked and calls decoded before applying quotas, even for operations covered by the free quota.
-	///      Includes one flat creation fee per undeployed wallet, even when its operation uses the free quota.
-	///      Billing uses the parent's quota and quotes the signer VA's fee when the parent cannot pay.
-	///      An approval-only quote uses the parent's post-approval multiplier; a later VA fallback can change the actual charge.
-	/// @param account Account whose operations are quoted; virtual accounts resolve to their billing parent.
-	/// @param signedOps Operations to identify and price; only the requested billing account's operations contribute to the quote.
-	/// @param walletIds Wallet index per operation; use zero for InstantLayer operations or the original wallet.
-	/// @return amountDue18 Total quoted collateral charge in 18 decimals; zero when fully waived or blocked by the quota policy.
-	/// @return freeOpsApplied Number of the billing account's operations covered by its remaining daily quota.
-	/// @return wouldBlockOnQuota Whether execution would exceed the daily quota in block mode.
-	function getAccountOperationalFee(
-		address account,
-		IInstantLayer.SignedOperation[] calldata signedOps,
-		uint256[] calldata walletIds
-	) external view override returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
-		return GaslessFeeQuoteLib.accountOperationalFee(account, signedOps, walletIds);
-	}
-
 	// ═══════════════════════ Admin Recovery ═══════════════════════
 
 	function setTreasury(address treasury_) external onlyRole(CONFIG_ADMIN_ROLE) {
@@ -738,7 +719,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		}
 	}
 
-	// dailyFreeOpsRemaining, getAccountOperationalFee, and _useDailyFreeOp share these day and quota calculations.
+	// dailyFreeOpsRemaining and _useDailyFreeOp share these day and quota calculations.
 	// Tests check that quotes and charges agree on whether an operation is free.
 
 	/// @dev Current UTC day index (matches the packed DailyFreeOpsUsage.day).

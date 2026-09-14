@@ -122,12 +122,6 @@ interface IGaslessLayer {
 
 	function getBaseOperationalFee(bytes4 selector) external view returns (uint256 amount18);
 
-	function getAccountOperationalFee(
-		address account,
-		IInstantLayer.SignedOperation[] calldata signedOps,
-		uint256[] calldata walletIds
-	) external view returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota);
-
 	// ────────────────────────── Events ────────────────────────────
 
 	// Payers are read from the per-op OperationalFeeRouted events in the same receipt.

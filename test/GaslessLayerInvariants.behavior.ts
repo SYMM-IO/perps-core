@@ -44,6 +44,7 @@ describe("GaslessLayer wallet API", () => {
 			"settleWalletDepositToExistingAccount",
 			"recoverWalletNonCollateralToken",
 			"getAccountOperationalFeeForWallets",
+			"getAccountOperationalFee",
 			"getWalletOperationNonce",
 			"walletNonces",
 		]) {
@@ -56,7 +57,6 @@ describe("GaslessLayer wallet API", () => {
 			settleDepositToNewAccount: ["owner", "walletId", "affiliate", "accountData"],
 			settleDepositToExistingAccount: ["owner", "walletId", "subAccount"],
 			recoverNonCollateralToken: ["owner", "walletId", "token", "recipient"],
-			getAccountOperationalFee: ["account", "signedOps", "walletIds"],
 			walletOperationNonces: ["owner", "walletId", "signerAccount"],
 		}
 		for (const [name, inputs] of Object.entries(expectedInputs)) {
