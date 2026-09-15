@@ -55,17 +55,28 @@ RPC resolution uses the keystore even if the shell has a separate RPC override.
    rereading the full catalog or verifying symbol state after each transaction.
 7. Once all batches have successful receipts, the separate read-only verification step
    reads the full catalog at one block at or after the last confirmed transaction. It
-   checks every LF target, quote minimum, and other captured symbol setting. Only this
-   successful comparison marks the run complete.
+   checks every LF target, quote minimum, and other captured symbol setting. Funding
+   schedule differences are reported separately as described below. Only this successful
+   comparison marks the run complete.
 
 The only setter used is
 `setSymbolAcceptableValuesBatch(symbolIds, existingQuoteMinimums, targetLFs)`.
 One symbol consumes one quota unit, independent of transaction count. The quota is shared
 with other operators. Gas can require a batch size below 50.
 
-Unexpected quote-minimum or other observed symbol changes stop the run. Concurrent
-governance changes between a read and transaction inclusion cannot be prevented by this
-setter; coordinate with other symbol operators during the rollout.
+Unexpected quote-minimum or other observed symbol changes outside the funding schedule
+stop the run. Concurrent governance changes between a read and transaction inclusion
+cannot be prevented by this setter; coordinate with other symbol operators during the rollout.
+
+Funding operators can independently update `fundingRateEpochDuration` and
+`fundingRateWindowTime` while an LF rollout is paused or running. These two fields are
+never included in LF calldata. Their differences from the original snapshot are retained
+in the report with symbol IDs, old/new values, and the first observed block; they do not
+block execution or final verification. The original snapshot stays intact, and the live
+funding values are not restored to it. Final verification records the funding differences
+still present, so completion does not claim that funding schedules remained unchanged.
+Quote minima, symbol identity/type, validation state, trading fees, maximum leverage,
+unexpected LF changes, and contract implementation checks remain strict.
 
 ## Resume and evidence
 
@@ -91,7 +102,8 @@ to 16 times with two seconds between attempts. These retries never submit a tran
 At final verification, the last transaction's successful receipt must agree with its
 containing block, including transaction inclusion. An early or provisional hash triggers
 refreshes of that receipt only. The final catalog's block hash is checked again after its
-state reads. Persistent inconsistency or mismatched symbol settings prevents completion.
+state reads. Persistent inconsistency or mismatched settings outside the separately
+reported funding schedule prevents completion.
 
 If final verification fails, **Continue active task** retries that read-only step without
 re-entering execution. A pause during execution instead starts with the fresh catalog
@@ -110,6 +122,8 @@ Evidence is under `.symmio/tasks/runs/<task>-<run>/lf-update/`:
   (`processed`/`pending`), counts from the latest catalog observation (`completed`), and
   full final symbol reads at the recorded verification block/hash. Earlier reports may
   also contain per-batch `postState` evidence; new batches do not require it.
+  `fundingChanges` records distinct observed funding differences with their first observed
+  block; `verification.fundingChanges` lists those present in the final catalog read.
 
 Back up the run directory. Completion covers its captured catalog; new listings need a
 new plan. Catalog changes, unexpected LF values, or implementation changes stop the task

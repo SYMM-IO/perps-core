@@ -19,6 +19,7 @@ import {
 	parseLfConfig,
 	serializeLfSymbol,
 	type LfConfig,
+	type LfFundingChange,
 	type LfPlan,
 	type LfSymbol,
 } from "./lfUpdate.js"
@@ -157,7 +158,8 @@ export type LfReport = {
 	observedTargetIds?: string[]
 	total?: number
 	nextEligibleAt?: string
-	verification?: { block: any; symbols: LfSymbol[] }
+	fundingChanges?: Array<LfFundingChange & { firstObservedAt: Awaited<ReturnType<typeof blockAt>> }>
+	verification?: { block: any; symbols: LfSymbol[]; fundingChanges?: LfFundingChange[] }
 	pending?: number
 }
 function saveReport(file: string, report: LfReport) {
@@ -171,6 +173,28 @@ function saveReport(file: string, report: LfReport) {
 		})),
 	}
 	atomicWriteJson(file, sanitized)
+}
+function recordFundingChanges(report: LfReport, changes: LfFundingChange[], block: Awaited<ReturnType<typeof blockAt>>, file: string) {
+	let added = 0
+	for (const change of changes) {
+		report.fundingChanges ??= []
+		if (
+			report.fundingChanges.some(
+				existing =>
+					existing.symbolId === change.symbolId &&
+					existing.field === change.field &&
+					existing.before === change.before &&
+					existing.after === change.after,
+			)
+		)
+			continue
+		report.fundingChanges.push({ ...change, firstObservedAt: block })
+		added++
+	}
+	if (added) {
+		console.log(`LF observed ${added} funding-setting changes since the snapshot; recorded in report.json. Current funding settings are retained.`)
+		saveReport(file, report)
+	}
 }
 export async function reconcileLfReport(provider: any, file: string, expectedDigest: string, authority: string): Promise<LfReport> {
 	const report: LfReport = fs.existsSync(file)
@@ -295,6 +319,8 @@ export async function verifyLfUpdate(options: LfVerificationOptions): Promise<Lf
 		} else verification = await readFinal(plan.snapshot.block.number)
 		report.verification = verification
 		const analysis = analyzeLfState(plan.snapshot.symbols, verification.symbols, plan.btcEthIds)
+		report.verification.fundingChanges = analysis.fundingChanges
+		recordFundingChanges(report, analysis.fundingChanges, verification.block, reportPath)
 		Object.assign(report, {
 			block: verification.block,
 			completed: analysis.complete,
@@ -350,6 +376,7 @@ export async function runLfUpdate(options: {
 		// Starting or resuming always observes the whole catalog. Continuous windows reuse receipt-backed progress.
 		current = await readCatalog(provider, config, plan.snapshot.identity, block.number)
 		const observed = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
+		recordFundingChanges(report, observed.fundingChanges, block, reportPath)
 		if (observed.pending.some(symbol => confirmedIds.has(symbol.symbolId)))
 			throw new Error("A previously confirmed LF update is no longer at target; inspect its receipt and current state before another write")
 		report.completed = observed.complete
@@ -382,7 +409,8 @@ export async function runLfUpdate(options: {
 		const start = Number(selected[0].symbolId) - 1,
 			end = Number(selected.at(-1)!.symbolId)
 		const fresh = await readCatalog(provider, config, plan.snapshot.identity, block.number, start, end - start)
-		analyzeLfState(plan.snapshot.symbols.slice(start, end), fresh, plan.btcEthIds)
+		const freshAnalysis = analyzeLfState(plan.snapshot.symbols.slice(start, end), fresh, plan.btcEthIds)
+		recordFundingChanges(report, freshAnalysis.fundingChanges, block, reportPath)
 		current.splice(start, fresh.length, ...fresh)
 		analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
 		const stillPending = selected.filter(symbol => analysis.pending.some(pending => pending.symbolId === symbol.symbolId))
