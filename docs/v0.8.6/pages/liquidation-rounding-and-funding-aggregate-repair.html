@@ -132,9 +132,11 @@ Total paid = 100; liquidation can finish</code></pre>
 					</p>
 					<p>
 						If positive signed UPNL overstated PartyA's deferred credit, that credit is corrected once when the target is recorded after
-						the final position closes. A dispute-role override cancels the unconsumed automatic reduction and uses the supplied amounts;
-						Clearing House takeover also cancels the unconsumed reduction. Neither path reverses payments already made. A new liquidation
-						starts with no pending reduction, and normal completion clears it.
+						the final position closes. The deduction is <code>min(deferred balance, signed UPNL - target UPNL)</code>: a zero balance
+						stays zero, and an insufficient balance is reduced only to zero without reverting liquidation. A dispute-role override cancels
+						the unconsumed automatic reduction and uses the supplied amounts; Clearing House takeover also cancels the unconsumed
+						reduction. Neither path reverses payments already made. A new liquidation starts with no pending reduction, and normal
+						completion clears it.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Keep the settlement PartyB list independently.</strong> Liquidators must retain the PartyBs from the liquidated quotes
