@@ -39,6 +39,7 @@ export const LF_DEPLOYMENTS = [
 export const LF_STEPS = [
 	{ id: "inspect", phase: "prepare", title: "Read symbols and review BTC/ETH classifications" },
 	{ id: "authorize", phase: "authorization", title: "Review LF changes and authorize the selected chain" },
+	// Keep the bound title compatible with already-reviewed, paused runs.
 	{ id: "apply", phase: "execution", title: "Apply and verify LF batches" },
 	{ id: "verify", phase: "verification", title: "Verify every symbol against the reviewed plan" },
 ];
@@ -82,6 +83,7 @@ export function lfEnvironment(ctx, input, phase, execute = false) {
 		LF_UPDATE_DIRECTORY: lfDirectory(ctx),
 		LF_UPDATE_PHASE: phase,
 		LF_UPDATE_PLAN_DIGEST: ctx.state.lfPlanDigest || "",
+		LF_UPDATE_CONTINUATION: "false",
 		EXECUTE: String(execute),
 		CONFIRM_CHAIN_ID: execute ? String(input.chainId) : "",
 		DRY_RUN: "",
@@ -200,7 +202,7 @@ export function createLfUpdateTask(common) {
 		category: "maintenance",
 		risk: "transaction",
 		title: "Update symbol LF minimums",
-		description: "Set BTC/ETH to 3% and other symbols to 4%, preserving quote minimums and verifying each batch.",
+		description: "Set BTC/ETH to 3% and other symbols to 4%, then verify every symbol and preserved quote minimum.",
 		supportedNetworks: Object.keys(CHAINS).filter(name => !CHAINS[name].simulated),
 		inputs: [
 			{ id: "network", type: "network", label: "Network", required: true },
@@ -290,20 +292,22 @@ export function createLfUpdateTask(common) {
 				readLfPlan(ctx);
 				await reconcileLfTask(ctx, input);
 				let previousPending = Infinity;
+				let continuing = false;
 				for (;;) {
 					ctx.checkpoint();
-					await adapter(ctx, input, "apply", true);
+					await adapter(ctx, input, "apply", true, { LF_UPDATE_CONTINUATION: String(continuing) });
 					const report = read(path.join(lfDirectory(ctx), "report.json"));
-					if (report.status === "complete") break;
+					if (report.status === "submitted" || report.status === "complete") break;
 					if (report.status === "waiting-daily-limit" || report.status === "waiting-enforcement")
 						ctx.wait(`${report.status}: ${report.nextEligibleAt}. Choose Continue active task when eligible.`);
 					if (report.status !== "ready" || report.pending >= previousPending)
 						throw new Error(`LF update made no progress (${report.status}); inspect the report`);
 					previousPending = report.pending;
+					continuing = true;
 				}
 			});
 			await ctx.step("verify", LF_STEPS[3].title, async () => {
-				await adapter(ctx, input, "apply");
+				await adapter(ctx, input, "verify");
 				const report = read(path.join(lfDirectory(ctx), "report.json"));
 				if (report.status !== "complete" || report.verification?.symbols?.length !== report.total)
 					throw new Error("LF final on-chain verification is incomplete");

@@ -5,7 +5,7 @@ import path from "node:path"
 
 import { requireExecutionConfirmation } from "../../tasks/deploy/executionGuard.js"
 import { createLfPlan, parseLfConfig } from "../utils/lfUpdate.js"
-import { inspectLf, reconcileLfReport, runLfUpdate } from "../utils/lfUpdateRuntime.js"
+import { inspectLf, reconcileLfReport, runLfUpdate, verifyLfUpdate } from "../utils/lfUpdateRuntime.js"
 import { atomicWriteJson, verifyDigest } from "../utils/symbolSync.js"
 
 const required = (name: string) => {
@@ -15,7 +15,7 @@ const required = (name: string) => {
 }
 async function main() {
 	const phase = process.env.LF_UPDATE_PHASE || "inspect"
-	if (!["inspect", "plan", "apply", "reconcile"].includes(phase)) throw new Error("Invalid LF phase")
+	if (!["inspect", "plan", "apply", "reconcile", "verify"].includes(phase)) throw new Error("Invalid LF phase")
 	const config = parseLfConfig(JSON.parse(required("LF_UPDATE_CONFIG")))
 	const directory = path.resolve(required("LF_UPDATE_DIRECTORY"))
 	const connection = await hre.network.getOrCreate()
@@ -60,8 +60,20 @@ async function main() {
 	const signer = execute
 		? (await ethers.getSigners()).find(candidate => candidate.address.toLowerCase() === config.authority.toLowerCase())
 		: undefined
-	const report = await runLfUpdate({ provider: ethers.provider, signer, plan, expectedDigest: digest, reportPath, execute })
-	console.log(`LF ${report.status}: ${report.completed}/${report.total} symbols verified. Report: ${reportPath}`)
+	const options = { provider: ethers.provider, signer, plan, expectedDigest: digest, reportPath, execute }
+	const report =
+		phase === "verify"
+			? await verifyLfUpdate(options)
+			: await runLfUpdate({
+					...options,
+					deferFinalVerification: true,
+					continueRun: process.env.LF_UPDATE_CONTINUATION === "true",
+				})
+	console.log(
+		report.status === "complete"
+			? `LF complete: ${report.completed}/${report.total} symbols verified. Report: ${reportPath}`
+			: `LF ${report.status}: ${report.processed}/${report.total} symbols processed; final verification pending. Report: ${reportPath}`,
+	)
 }
 main().catch(error => {
 	// Do not serialize RPC request bodies or endpoint credentials into terminal/task output.

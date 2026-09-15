@@ -4,6 +4,7 @@ import fs from "node:fs"
 import { emitTaskEvent } from "../../tasks/deploy/logger.js"
 import { reconcileDeploymentTransactions, send, type DeploymentTransactionRecord } from "../../tasks/deploy/tx.js"
 import { retryLfReads, type LfReadRetry } from "./lfReadRetry.js"
+import { verifyLfReceiptState, type LfReceiptEvidence } from "./lfReceipt.js"
 import {
 	LF_CORE_ABI,
 	LF_MANAGER_ABI,
@@ -14,6 +15,7 @@ import {
 	classifyLfSymbols,
 	createLfPlan,
 	lfCapacity,
+	lfTarget,
 	parseLfConfig,
 	serializeLfSymbol,
 	type LfConfig,
@@ -137,6 +139,8 @@ export function validateLfPlan(plan: LfPlan, expectedDigest?: string): void {
 type LfTransaction = DeploymentTransactionRecord & {
 	actionId?: string
 	symbolIds?: string[]
+	receiptObservations?: LfReceiptEvidence[]
+	// Retained when resuming reports written by the earlier per-batch verifier.
 	postState?: { block: Awaited<ReturnType<typeof blockAt>>; symbols: LfSymbol[]; pendingSymbolIds: string[] }
 }
 export type LfReport = {
@@ -149,6 +153,8 @@ export type LfReport = {
 	block?: any
 	capacity?: any
 	completed?: number
+	processed?: number
+	observedTargetIds?: string[]
 	total?: number
 	nextEligibleAt?: string
 	verification?: { block: any; symbols: LfSymbol[] }
@@ -204,6 +210,107 @@ async function simulate(provider: any, config: LfConfig, action: ReturnType<type
 	await provider.call({ to: action.to, from: config.authority, data: action.data, value: 0n })
 	return provider.estimateGas({ to: action.to, from: config.authority, data: action.data, value: 0n })
 }
+function confirmedTransactions(report: LfReport) {
+	return report.transactions.filter(tx => tx.status === "confirmed" || tx.status === "replaced")
+}
+function confirmedFloor(plan: LfPlan, report: LfReport) {
+	return confirmedTransactions(report).reduce((minimum, tx) => Math.max(minimum, tx.blockNumber ?? 0), plan.snapshot.block.number)
+}
+function confirmedSymbolIds(plan: LfPlan, report: LfReport): Set<string> {
+	const result = new Set<string>()
+	for (const transaction of confirmedTransactions(report)) {
+		const config = plan.snapshot.config
+		const decoded = new Interface(LF_MANAGER_ABI).decodeFunctionData("setSymbolAcceptableValuesBatch", transaction.data!)
+		const ids: string[] = decoded[0].map(String)
+		if (
+			!ids.length ||
+			new Set(ids).size !== ids.length ||
+			ids.some((id, i) => !plan.snapshot.symbols[Number(id) - 1] || (i > 0 && BigInt(id) <= BigInt(ids[i - 1])))
+		)
+			throw new Error("Recorded LF transaction contains invalid symbol IDs")
+		const expected = buildLfAction(
+			config.symbolManager,
+			ids.map(id => plan.snapshot.symbols[Number(id) - 1]),
+			plan.btcEthIds,
+		)
+		if (
+			!same(transaction.from ?? "", config.authority) ||
+			!same(transaction.to ?? "", config.symbolManager) ||
+			transaction.value !== "0" ||
+			transaction.data !== expected.data
+		)
+			throw new Error("Recorded LF transaction does not match the reviewed plan")
+		transaction.symbolIds = ids
+		ids.forEach(id => result.add(id))
+	}
+	return result
+}
+function observeReceipt(transaction: LfTransaction, receipt: LfReceiptEvidence) {
+	transaction.receiptObservations ??= []
+	if (!transaction.receiptObservations.some(observed => JSON.stringify(observed) === JSON.stringify(receipt)))
+		transaction.receiptObservations.push(receipt)
+}
+type LfVerificationOptions = {
+	provider: any
+	plan: LfPlan
+	expectedDigest: string
+	reportPath: string
+	readRetry?: LfReadRetry
+}
+/** Read-only final proof. A failed proof can be retried without executing the apply step. */
+export async function verifyLfUpdate(options: LfVerificationOptions): Promise<LfReport> {
+	const { plan, expectedDigest, reportPath } = options
+	const provider = retryLfReads(options.provider, options.readRetry)
+	validateLfPlan(plan, expectedDigest)
+	if ((await provider.getNetwork()).chainId !== BigInt(plan.snapshot.config.chainId)) throw new Error("Wrong chain for LF plan")
+	const report = await reconcileLfReport(provider, reportPath, expectedDigest, plan.snapshot.config.authority)
+	confirmedSymbolIds(plan, report)
+	report.status = "verification-pending"
+	delete report.verification
+	saveReport(reportPath, report)
+	const readFinal = async (minimumBlock: number) => {
+		const block = await latestBlock(provider, minimumBlock)
+		await checkIdentity(provider, plan, block.number)
+		const symbols = await readCatalog(provider, plan.snapshot.config, plan.snapshot.identity, block.number)
+		await blockAt(provider, block.number, block.hash)
+		return { block, symbols }
+	}
+	try {
+		const last = confirmedTransactions(report).at(-1)
+		let verification: { block: Awaited<ReturnType<typeof blockAt>>; symbols: LfSymbol[] }
+		if (last) {
+			const result = await verifyLfReceiptState({
+				provider,
+				hash: last.replacementHash ?? last.hash,
+				initialReceipt: last.receiptObservations?.at(-1),
+				retry: options.readRetry,
+				readState: block => readFinal(Math.max(block.number, confirmedFloor(plan, report))),
+				onReceipt: receipt => {
+					observeReceipt(last, receipt)
+					saveReport(reportPath, report)
+				},
+			})
+			last.blockNumber = result.block.number
+			verification = result.state
+		} else verification = await readFinal(plan.snapshot.block.number)
+		report.verification = verification
+		const analysis = analyzeLfState(plan.snapshot.symbols, verification.symbols, plan.btcEthIds)
+		Object.assign(report, {
+			block: verification.block,
+			completed: analysis.complete,
+			total: verification.symbols.length,
+			pending: analysis.pending.length,
+		})
+		if (analysis.pending.length) throw new Error(`LF final verification failed: ${analysis.pending.length} symbols do not match their targets`)
+		report.status = "complete"
+		return report
+	} catch (error) {
+		report.status = "verification-failed"
+		throw error
+	} finally {
+		saveReport(reportPath, report)
+	}
+}
 /** One bounded window. All signer writes go through send() and its persistent write-ahead hook. */
 export async function runLfUpdate(options: {
 	provider: any
@@ -214,6 +321,8 @@ export async function runLfUpdate(options: {
 	execute: boolean
 	maxBatches?: number
 	readRetry?: LfReadRetry
+	continueRun?: boolean
+	deferFinalVerification?: boolean
 }): Promise<LfReport> {
 	const { signer, plan, expectedDigest, reportPath, execute } = options
 	const provider = retryLfReads(options.provider, options.readRetry)
@@ -225,20 +334,37 @@ export async function runLfUpdate(options: {
 	const snapshotBlock = await provider.getBlock(plan.snapshot.block.number)
 	if (snapshotBlock?.hash !== plan.snapshot.block.hash) throw new Error("Snapshot block changed or is unavailable; review a new plan")
 	const report = await reconcileLfReport(provider, reportPath, expectedDigest, config.authority)
-	const confirmedBlock = report.transactions.reduce(
-		(minimum, tx) => (tx.status === "confirmed" || tx.status === "replaced" ? Math.max(minimum, tx.blockNumber ?? 0) : minimum),
-		plan.snapshot.block.number,
-	)
-	let block = await latestBlock(provider, confirmedBlock)
+	const confirmedIds = confirmedSymbolIds(plan, report)
+	let block = await latestBlock(provider, confirmedFloor(plan, report))
 	await checkIdentity(provider, plan, block.number)
-	let current = await readCatalog(provider, config, plan.snapshot.identity, block.number)
+	let current: LfSymbol[]
+	if (options.continueRun) {
+		if (!execute || report.status !== "ready" || !report.observedTargetIds) throw new Error("LF continuation requires a successful preceding window")
+		const expectedIds = new Set([...report.observedTargetIds, ...confirmedIds])
+		if ([...expectedIds].some(id => plan.snapshot.symbols[Number(id) - 1]?.symbolId !== id)) throw new Error("Invalid LF continuation symbol IDs")
+		current = plan.snapshot.symbols.map((symbol: LfSymbol) => ({
+			...symbol,
+			minAcceptablePortionLF: expectedIds.has(symbol.symbolId) ? lfTarget(symbol.symbolId, plan.btcEthIds) : symbol.minAcceptablePortionLF,
+		}))
+	} else {
+		// Starting or resuming always observes the whole catalog. Continuous windows reuse receipt-backed progress.
+		current = await readCatalog(provider, config, plan.snapshot.identity, block.number)
+		const observed = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
+		if (observed.pending.some(symbol => confirmedIds.has(symbol.symbolId)))
+			throw new Error("A previously confirmed LF update is no longer at target; inspect its receipt and current state before another write")
+		report.completed = observed.complete
+		report.observedTargetIds = current
+			.filter(symbol => symbol.minAcceptablePortionLF === lfTarget(symbol.symbolId, plan.btcEthIds))
+			.map(symbol => symbol.symbolId)
+	}
+	delete report.verification
 	let analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
 	let sent = 0
 	while (analysis.pending.length) {
-		block = await latestBlock(provider, block.number)
+		block = await latestBlock(provider, Math.max(block.number, confirmedFloor(plan, report)))
 		await checkIdentity(provider, plan, block.number)
 		const capacity = await managerState(provider, config, block)
-		Object.assign(report, { block, capacity, completed: analysis.complete, total: current.length, pending: analysis.pending.length })
+		Object.assign(report, { block, capacity, processed: analysis.complete, total: current.length, pending: analysis.pending.length })
 		if (!capacity.remaining) {
 			report.status = "waiting-daily-limit"
 			report.nextEligibleAt = capacity.resetDue
@@ -291,39 +417,28 @@ export async function runLfUpdate(options: {
 		} finally {
 			saveReport(reportPath, report)
 		}
-		// Verify the block that actually contains this transaction, not an unbounded latest read.
-		block = await blockAt(provider, receipt.blockNumber, receipt.blockHash)
-		const after = await readCatalog(provider, config, plan.snapshot.identity, block.number, start, end - start)
-		// State reads may have waited for RPC catch-up. Recheck their block hash before accepting them.
-		await blockAt(provider, block.number, block.hash)
-		const verified = analyzeLfState(plan.snapshot.symbols.slice(start, end), after, plan.btcEthIds)
-		const pendingSymbolIds = verified.pending.filter(symbol => action.symbolIds.includes(symbol.symbolId)).map(symbol => symbol.symbolId)
-		report.transactions.at(-1)!.postState = { block, symbols: after, pendingSymbolIds }
-		report.status = pendingSymbolIds.length ? "post-state-mismatch" : "batch-verified"
-		saveReport(reportPath, report)
-		if (pendingSymbolIds.length)
-			throw new Error(
-				`LF post-state verification failed at receipt block ${block.number} for transaction ${receipt.hash}; symbols ${pendingSymbolIds.join(",")} do not match their targets`,
-			)
-		current.splice(start, after.length, ...after)
+		const transaction = report.transactions.at(-1)!
+		observeReceipt(transaction, {
+			hash: receipt.hash,
+			blockNumber: receipt.blockNumber,
+			blockHash: receipt.blockHash,
+			status: Number(receipt.status),
+		})
+		// Successful receipts advance expected progress. Symbol state is proved once, after all batches.
+		for (const symbolId of action.symbolIds) current[Number(symbolId) - 1].minAcceptablePortionLF = lfTarget(symbolId, plan.btcEthIds)
 		analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
+		report.status = "batch-confirmed"
+		saveReport(reportPath, report)
 		sent++
-		console.log(`LF progress: ${analysis.complete}/${current.length} symbols at target; receipt and post-state checked`)
+		console.log(`LF progress: ${analysis.complete}/${current.length} symbols processed; receipt confirmed, final verification pending`)
 		if (sent >= (options.maxBatches ?? 5)) {
 			report.status = "ready"
 			break
 		}
 	}
-	// Full fresh catalog proof also detects symbols added or unrelated settings changed during this window.
-	block = await latestBlock(provider, block.number)
-	await checkIdentity(provider, plan, block.number)
-	current = await readCatalog(provider, config, plan.snapshot.identity, block.number)
-	analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
-	Object.assign(report, { block, completed: analysis.complete, total: current.length, pending: analysis.pending.length })
-	if (!analysis.pending.length) {
-		report.status = "complete"
-		report.verification = { block, symbols: current }
-	}
+	Object.assign(report, { block, processed: analysis.complete, total: current.length, pending: analysis.pending.length })
+	if (!analysis.pending.length) report.status = "submitted"
 	saveReport(reportPath, report)
+	if (report.status === "submitted" && !options.deferFinalVerification) return verifyLfUpdate(options)
 	return report
 }
