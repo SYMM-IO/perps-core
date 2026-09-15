@@ -97,7 +97,7 @@ test("LF task declares the standard transaction, signer and recovery contract", 
 	assert.equal(definition.handler, definition.run);
 	assert.equal(definition.transactionJournal, true);
 	assert.deepEqual(definition.plan(), LF_STEPS);
-	assert.deepEqual(definition.resumePolicy, { strategy: "stable-step-id", sourceDrift: "refuse", inputDrift: "refuse" });
+	assert.deepEqual(definition.resumePolicy, { strategy: "stable-step-id", sourceDrift: "confirm", inputDrift: "refuse" });
 	assert.equal(definition.cancellationPolicy.reconcileSubmittedTransactions, true);
 	assert.deepEqual(definition.signerPolicy.allowedModes, [SIGNER_MODES.KEYSTORE]);
 	assert.deepEqual(

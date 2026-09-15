@@ -51,7 +51,9 @@ RPC resolution uses the keystore even if the shell has a separate RPC override.
    reports any existing LF values that would **decrease** to the exact policy target.
    Type the chain ID to authorize the reviewed changes.
 6. Each batch is simulated and gas-estimated before submission. The task waits for its
-   receipt, checks the resulting values, and finishes with a fresh full-catalog comparison.
+   receipt, checks the resulting values at that receipt's block (including its hash), and
+   finishes with a full-catalog comparison at or after the last confirmed transaction.
+   A lagging RPC `latest` response cannot move verification behind a confirmed batch.
 
 The only setter used is
 `setSymbolAcceptableValuesBatch(symbolIds, existingQuoteMinimums, targetLFs)`.
@@ -66,7 +68,19 @@ setter; coordinate with other symbol operators during the rollout.
 
 Choose **Continue active task** after a quota reset, the enforcement time, or resolving a
 transient failure. First Ctrl+C pauses at the next adapter boundary (at most five LF
-batches per invocation). Do not edit the reviewed plan or source while a task is active.
+batches per invocation). Keep the reviewed plan and task state intact.
+
+If a reviewed script fix was installed while the task was paused, restart `./symmio` and
+choose **Continue active task**. The runner asks you to type `MIGRATE <source-hash-prefix>`
+to accept the changed source, records that confirmation, and retains the original plan,
+completed steps, and transaction journal. It refuses migration while any transaction
+outcome is unresolved. Changed inputs or a modified LF plan are still rejected.
+
+A successful receipt followed by a verification failure does not undo that batch. Read
+the recorded receipt and symbol state before continuing. Resume reads at or after the
+highest confirmed transaction block and skips symbols already at target. If the RPC
+cannot serve the receipt block, or returns a different block hash, the task stops before
+the next batch; resolve the RPC or chain-consistency issue and reconcile before resuming.
 
 The task reconciles recorded hashes before another write and skips symbols already at
 target. Unknown transaction outcomes block further writes. Replacement/dropped-transaction
@@ -78,8 +92,8 @@ Evidence is under `.symmio/tasks/runs/<task>-<run>/lf-update/`:
 - `snapshot.json`: block/hash, original catalog, contract identity, authority/quota check,
   announcement reference, and enforcement time.
 - `plan.json` and `preview.csv`: reviewed BTC/ETH IDs, all targets, and planned calldata.
-- `report.json`: transaction hashes/receipts, progress, and final symbol reads at the
-  recorded verification block/hash.
+- `report.json`: transaction hashes/receipts, each new batch's `postState` symbol reads
+  and block/hash, progress, and final symbol reads at the recorded verification block/hash.
 
 Back up the run directory. Completion covers its captured catalog; new listings need a
 new plan. Catalog changes, unexpected LF values, or implementation changes stop the task
