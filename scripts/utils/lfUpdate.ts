@@ -124,12 +124,35 @@ export function parseLfIds(text: string, symbols: LfSymbol[]): string[] {
 export function lfTarget(symbolId: string, btcEthIds: string[]): string {
 	return btcEthIds.includes(symbolId) ? LF_BTC_ETH : LF_OTHER
 }
-export function analyzeLfState(baseline: LfSymbol[], current: LfSymbol[], btcEthIds: string[]): { pending: LfSymbol[]; complete: number } {
+export type LfFundingChange = {
+	symbolId: string
+	name: string
+	field: "fundingRateEpochDuration" | "fundingRateWindowTime"
+	before: string
+	after: string
+}
+export function analyzeLfState(
+	baseline: LfSymbol[],
+	current: LfSymbol[],
+	btcEthIds: string[],
+): {
+	pending: LfSymbol[]
+	complete: number
+	fundingChanges: LfFundingChange[]
+} {
 	if (baseline.length !== current.length) throw new Error("Symbol catalog changed; create and review a new LF plan")
 	const pending: LfSymbol[] = []
+	const fundingChanges: LfFundingChange[] = []
 	for (const [index, before] of baseline.entries()) {
 		const now = current[index]
 		for (const field of Object.keys(before) as Array<keyof LfSymbol>) {
+			// The acceptable-values setter cannot write either funding field. Preserve live
+			// schedules and report their drift separately from the reviewed LF/quote inputs.
+			if (field === "fundingRateEpochDuration" || field === "fundingRateWindowTime") {
+				if (before[field] !== now[field])
+					fundingChanges.push({ symbolId: before.symbolId, name: before.name, field, before: before[field], after: now[field] })
+				continue
+			}
 			if (field !== "minAcceptablePortionLF" && before[field] !== now[field])
 				throw new Error(`Symbol ${before.symbolId} ${field} changed; review a new plan`)
 		}
@@ -139,7 +162,7 @@ export function analyzeLfState(baseline: LfSymbol[], current: LfSymbol[], btcEth
 			throw new Error(`Symbol ${before.symbolId} LF changed unexpectedly; review a new plan`)
 		pending.push(now)
 	}
-	return { pending, complete: current.length - pending.length }
+	return { pending, complete: current.length - pending.length, fundingChanges }
 }
 export function lfCapacity(limit: string, used: string, lastReset: string, timestamp: string) {
 	const resetAt = BigInt(lastReset) + 86400n,

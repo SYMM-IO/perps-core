@@ -411,4 +411,39 @@ describe("LF update operator adapter", function () {
 		}
 		assert.equal(report.transactions.at(-1)!.receiptObservations!.at(-1)!.blockHash, report.verification!.block.hash)
 	})
+	for (const continueRun of [false, true]) {
+		it(`retains independent funding updates during ${continueRun ? "continuous execution" : "resume"} and records them in final proof`, async function () {
+			const plan = await prepare()
+			await runLfUpdate({ ...args(plan, true), maxBatches: 1, deferFinalVerification: true })
+			// An independent operator changes both a completed and a pending symbol.
+			for (const symbolId of [1, 3]) await context.symbolControlFacet.connect(operator).setSymbolFundingState(symbolId, 14400, 420)
+			const result = await runLfUpdate({ ...args(plan, true), continueRun })
+			assert.equal(result.status, "complete")
+			assert.deepEqual(
+				result.transactions.flatMap(tx => tx.symbolIds),
+				["1", "2", "3", "4"],
+			)
+			assert.equal(result.fundingChanges!.length, 4)
+			assert.equal(result.verification!.fundingChanges!.length, 4)
+			for (const index of [0, 2]) {
+				assert.equal(result.verification!.symbols[index].fundingRateEpochDuration, "14400")
+				assert.equal(result.verification!.symbols[index].fundingRateWindowTime, "420")
+				assert.equal(result.verification!.symbols[index].minAcceptableQuoteValue, plan.snapshot.symbols[index].minAcceptableQuoteValue)
+				assert.notEqual(plan.snapshot.symbols[index].fundingRateEpochDuration, "14400")
+			}
+		})
+	}
+	it("records funding changes after the last LF receipt without submitting another transaction", async function () {
+		const plan = await prepare()
+		await runLfUpdate({ ...args(plan, true), deferFinalVerification: true })
+		await context.symbolControlFacet.connect(operator).setSymbolFundingState(1, 14400, 420)
+		const nonce = await ethers.provider.getTransactionCount(operator.address)
+		const result = await verifyLfUpdate(args(plan))
+		assert.equal(result.status, "complete")
+		assert.equal(result.verification!.fundingChanges!.length, 2)
+		assert.equal(result.fundingChanges!.length, 2)
+		assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce)
+		const again = await verifyLfUpdate(args(plan))
+		assert.equal(again.fundingChanges!.length, 2)
+	})
 })

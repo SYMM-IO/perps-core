@@ -66,3 +66,35 @@ test("quota resets at the contract boundary and clamps a lowered limit below usa
 	assert.equal(lfCapacity("3000", "100", "1000", "87400").remaining, 3000)
 	assert.equal(lfCapacity("50", "100", "1000", "1001").remaining, 0)
 })
+
+test("funding schedule changes are reported without changing LF calldata or quote minimums", () => {
+	const current = symbols.map(s => ({ ...s }))
+	current[0].fundingRateEpochDuration = "14400"
+	current[0].fundingRateWindowTime = "420"
+	const result = analyzeLfState(symbols, current, ["1", "2", "3"])
+	assert.deepEqual(result.fundingChanges, [
+		{ symbolId: "1", name: "BTCUSDT", field: "fundingRateEpochDuration", before: "3600", after: "14400" },
+		{ symbolId: "1", name: "BTCUSDT", field: "fundingRateWindowTime", before: "300", after: "420" },
+	])
+	assert.equal(result.pending.length, 5)
+	assert.deepEqual(
+		buildLfAction("0x1111111111111111111111111111111111111111", result.pending, ["1", "2", "3"]),
+		buildLfAction("0x1111111111111111111111111111111111111111", symbols, ["1", "2", "3"]),
+	)
+})
+
+test("funding drift does not relax identity, trading, leverage, quote-minimum, or LF checks", () => {
+	for (const [field, value] of Object.entries({
+		symbolId: "9",
+		name: "ETHUSDT",
+		isValid: false,
+		tradingFee: "101",
+		maxLeverage: "201",
+		minAcceptableQuoteValue: "0",
+		minAcceptablePortionLF: "7",
+	})) {
+		const current = symbols.map(s => ({ ...s }))
+		Object.assign(current[0], { fundingRateEpochDuration: "14400", [field]: value })
+		assert.throws(() => analyzeLfState(symbols, current, ["1", "2", "3"]), /changed/)
+	}
+})
