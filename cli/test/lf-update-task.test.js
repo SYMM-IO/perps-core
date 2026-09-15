@@ -181,7 +181,6 @@ test("review, dry run, confirmation, writes and final reads occur in order", asy
 			["inspect", "false"],
 			["plan", "false"],
 			["apply", "false"],
-			["reconcile", "false"],
 			["apply", "true"],
 			["apply", "false"],
 		],
@@ -218,4 +217,28 @@ test("cancellation recovers missing adapter records from the runner transaction 
 	assert.deepEqual(await reconcileLfTask(ctx, input), { unresolved: [] });
 	const report = JSON.parse(fs.readFileSync(path.join(lfDirectory(ctx), "report.json")));
 	assert.equal(report.transactions.length, 1);
+});
+test("successful batch windows do not launch reconciliation or replay completed preparation", async t => {
+	const { ctx, input, calls } = fixture(t);
+	const runProcess = ctx.runProcess.bind(ctx);
+	let windows = 0;
+	ctx.runProcess = async (cmd, args, options) => {
+		const executing = options.env.LF_UPDATE_PHASE === "apply" && options.env.EXECUTE === "true";
+		if (executing) ctx.executionStatus = ++windows < 3 ? "ready" : "complete";
+		await runProcess(cmd, args, options);
+		if (executing) {
+			const file = path.join(lfDirectory(ctx), "report.json");
+			const report = JSON.parse(fs.readFileSync(file));
+			report.pending = 3 - windows;
+			report.transactions = [{ hash: "0x" + String(windows).repeat(64), status: "confirmed" }];
+			write(file, report);
+			ctx.state.transactions = report.transactions;
+		}
+	};
+	await definition.run(ctx, input);
+	assert.equal(windows, 3);
+	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "reconcile").length, 0);
+	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "inspect").length, 1);
+	await reconcileLfTask(ctx, input);
+	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "reconcile").length, 0);
 });
