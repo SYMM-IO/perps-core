@@ -3,6 +3,7 @@ import fs from "node:fs"
 
 import { emitTaskEvent } from "../../tasks/deploy/logger.js"
 import { reconcileDeploymentTransactions, send, type DeploymentTransactionRecord } from "../../tasks/deploy/tx.js"
+import { retryLfReads, type LfReadRetry } from "./lfReadRetry.js"
 import {
 	LF_CORE_ABI,
 	LF_MANAGER_ABI,
@@ -27,8 +28,9 @@ const coreInterface = new Interface(LF_CORE_ABI)
 
 async function blockAt(provider: any, tag: "latest" | number, expectedHash?: string) {
 	const block = await provider.getBlock(tag)
-	if (!block?.hash || (typeof tag === "number" && block.number !== tag))
-		throw new Error(`LF verification block ${tag} is unavailable; resume when the RPC can serve it`)
+	if (!block?.hash) throw new Error(`LF verification block ${tag} is unavailable; resume when the RPC can serve it`)
+	if (typeof tag === "number" && block.number !== tag)
+		throw new Error(`RPC returned block ${block.number} instead of LF verification block ${tag}; reconcile before continuing`)
 	if (expectedHash && block.hash !== expectedHash) throw new Error(`LF receipt block ${tag} changed; reconcile before continuing`)
 	return { number: block.number, hash: block.hash, timestamp: String(block.timestamp) }
 }
@@ -209,8 +211,10 @@ export async function runLfUpdate(options: {
 	reportPath: string
 	execute: boolean
 	maxBatches?: number
+	readRetry?: LfReadRetry
 }): Promise<LfReport> {
-	const { provider, signer, plan, expectedDigest, reportPath, execute } = options
+	const { signer, plan, expectedDigest, reportPath, execute } = options
+	const provider = retryLfReads(options.provider, options.readRetry)
 	validateLfPlan(plan, expectedDigest)
 	const config = parseLfConfig(plan.snapshot.config)
 	if ((await provider.getNetwork()).chainId !== BigInt(config.chainId)) throw new Error("Wrong chain for LF plan")
@@ -288,6 +292,8 @@ export async function runLfUpdate(options: {
 		// Verify the block that actually contains this transaction, not an unbounded latest read.
 		block = await blockAt(provider, receipt.blockNumber, receipt.blockHash)
 		const after = await readCatalog(provider, config, plan.snapshot.identity, block.number, start, end - start)
+		// State reads may have waited for RPC catch-up. Recheck their block hash before accepting them.
+		await blockAt(provider, block.number, block.hash)
 		const verified = analyzeLfState(plan.snapshot.symbols.slice(start, end), after, plan.btcEthIds)
 		const pendingSymbolIds = verified.pending.filter(symbol => action.symbolIds.includes(symbol.symbolId)).map(symbol => symbol.symbolId)
 		report.transactions.at(-1)!.postState = { block, symbols: after, pendingSymbolIds }

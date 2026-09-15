@@ -210,6 +210,41 @@ describe("LF update operator adapter", function () {
 			["1", "2", "3", "4"],
 		)
 	})
+	for (const missing of ["block", "state"]) {
+		it(`waits for temporarily unavailable receipt ${missing} data without resubmitting`, async function () {
+			const plan = await prepare(),
+				failures = new Map<number, number>()
+			const delayedProvider = new Proxy(ethers.provider, {
+				get(target, property) {
+					const method = missing === "block" ? "getBlock" : "call"
+					if (property === method)
+						return async (argument: any) => {
+							const tag = missing === "block" ? argument : argument.blockTag
+							if (typeof tag === "number" && tag > plan.snapshot.block.number && (failures.get(tag) ?? 0) < 2) {
+								failures.set(tag, (failures.get(tag) ?? 0) + 1)
+								if (missing === "block") return null
+								throw Object.assign(new Error("missing revert data"), { info: { error: { message: "header not found" } } })
+							}
+							return (target[method] as any)(argument)
+						}
+					const value = Reflect.get(target, property)
+					return typeof value === "function" ? value.bind(target) : value
+				},
+			})
+			const report = await runLfUpdate({
+				...args(plan, true),
+				provider: delayedProvider,
+				readRetry: { maxAttempts: 3, delayMs: 0 },
+			})
+			assert.equal(report.status, "complete")
+			assert.deepEqual(
+				report.transactions.flatMap(tx => tx.symbolIds),
+				["1", "2", "3", "4"],
+			)
+			assert.equal(failures.size, 2)
+			assert.ok([...failures.values()].every(count => count === 2))
+		})
+	}
 	for (const unavailable of [true, false]) {
 		it(`stops before another batch when the receipt block ${unavailable ? "is unavailable" : "has a different hash"}`, async function () {
 			const plan = await prepare(),
@@ -227,7 +262,7 @@ describe("LF update operator adapter", function () {
 				},
 			})
 			await assert.rejects(
-				runLfUpdate({ ...args(plan, true), provider: inconsistentProvider }),
+				runLfUpdate({ ...args(plan, true), provider: inconsistentProvider, readRetry: { maxAttempts: 3, delayMs: 0 } }),
 				unavailable ? /verification block .* unavailable/ : /receipt block .* changed/,
 			)
 			assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce + 1)
@@ -237,6 +272,37 @@ describe("LF update operator adapter", function () {
 			assert.equal(report.transactions[0].postState, undefined)
 		})
 	}
+	it("rejects a receipt block hash that changes while state reads catch up", async function () {
+		const plan = await prepare()
+		let delayedState = false
+		const changedProvider = new Proxy(ethers.provider, {
+			get(target, property) {
+				if (property === "call")
+					return async (tx: any) => {
+						if (typeof tx.blockTag === "number" && tx.blockTag > plan.snapshot.block.number && !delayedState) {
+							delayedState = true
+							throw new Error("header not found")
+						}
+						return target.call(tx)
+					}
+				if (property === "getBlock")
+					return async (tag: any) => {
+						const block = await target.getBlock(tag)
+						return delayedState && typeof tag === "number" && tag > plan.snapshot.block.number ? { ...block, hash: "0x" + "ab".repeat(32) } : block
+					}
+				const value = Reflect.get(target, property)
+				return typeof value === "function" ? value.bind(target) : value
+			},
+		})
+		await assert.rejects(
+			runLfUpdate({ ...args(plan, true), provider: changedProvider, readRetry: { maxAttempts: 3, delayMs: 0 } }),
+			/receipt block .* changed/,
+		)
+		const report = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
+		assert.equal(report.transactions.length, 1)
+		assert.equal(report.transactions[0].status, "confirmed")
+		assert.equal(report.transactions[0].postState, undefined)
+	})
 	it("resumes after a submission failure following a confirmed first batch", async function () {
 		const plan = await prepare()
 		let attempts = 0
