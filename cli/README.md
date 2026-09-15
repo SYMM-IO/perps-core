@@ -6,6 +6,12 @@ Run the checkout-local operator application in an interactive terminal:
 ./symmio
 ```
 
+For the liquidation-fee policy rollout, select **Other maintenance scripts → Update symbol
+LF minimums**. It uses an existing keystore wallet and network RPC, reviews every symbol,
+and applies resumable 3% BTC/ETH and 4% other-symbol batches. See the
+[LF update runbook](../docs/symbol-lf-update.md) for prerequisites, classification review,
+announcement timing, and transaction evidence.
+
 The fixed Arbitrum v0.8.6 production upgrade is available under **Other maintenance scripts** as **Arbitrum Perps Core v0.8.6 upgrade**. Its resumable phases and standard JSON input/report contract are documented in [the Arbitrum upgrade runbook](../docs/arbitrum-perps-upgrade.md).
 
 For the current AccountLayer/InstantLayer upgrade that preserves GaslessLayer's proxy and current on-chain values, select **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values**. See [its upgrade runbook](../docs/arbitrum-account-instant-upgrade.md) for the input JSON, eight deployments, Safe batches and separate PartyB administrator stages.

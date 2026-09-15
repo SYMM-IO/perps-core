@@ -22,6 +22,7 @@ import { createAccountInstantUpgradeTask } from "./account-instant-upgrade.js";
 import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
+import { createLfUpdateTask } from "./lf-update.js";
 import { isAddress } from "ethers";
 import fs from "node:fs";
 import path from "node:path";
@@ -1310,6 +1311,7 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 });
 
 const MAINTENANCE_TASKS = [
+	createLfUpdateTask(common),
 	createArbitrumRoundingUpgradeTask(common),
 	createArbitrumRoundingUpgradeTask(common, "stage-funding"),
 	createArbitrumRoundingUpgradeTask(common, "production"),

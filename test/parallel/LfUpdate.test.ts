@@ -9,6 +9,7 @@ import { inspectLf, runLfUpdate } from "../../scripts/utils/lfUpdateRuntime.js"
 import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { loadFixture, time } from "../helpers/network-helpers.js"
+import { Hedger } from "../models/Hedger.js"
 import { User } from "../models/User.js"
 import { limitQuoteRequestBuilder } from "../models/requestModels/QuoteRequest.js"
 import { decimal } from "../utils/Common.js"
@@ -139,5 +140,43 @@ describe("LF update operator adapter", function () {
 			await expect(user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).cva(decimal(22n)).partyAmm(decimal(mm)).lf(decimal(lf)).build())).to
 				.not.be.reverted
 		}
+	})
+	it("preserves an already-open position including its original locked LF", async function () {
+		const user = new User(context, context.signers.user),
+			hedger = new Hedger(context, context.signers.hedger)
+		await user.setup()
+		await user.setBalances(decimal(5000n), decimal(3000n), decimal(3000n))
+		await hedger.setup()
+		await hedger.setBalances(decimal(10000n), decimal(10000n))
+		await user.sendQuote(limitQuoteRequestBuilder().lf(decimal(2n)).partyAmm(decimal(76n)).build())
+		await hedger.lockQuote(1)
+		await hedger.openPosition(1)
+		const before = await context.viewFacetQuote.getQuote(1)
+		const plan = await prepare()
+		await runLfUpdate(args(plan, true))
+		assert.deepEqual((await context.viewFacetQuote.getQuote(1)).toArray(true), before.toArray(true))
+	})
+	it("rejects a successful receipt whose expected state change did not happen", async function () {
+		const plan = await prepare()
+		const noEffectSigner = {
+			getAddress: () => operator.getAddress(),
+			sendTransaction: () => operator.sendTransaction({ to: operator.address, value: 0 }),
+		}
+		await assert.rejects(runLfUpdate({ ...args(plan, true), signer: noEffectSigner }), /post-state verification failed/)
+	})
+	it("resumes after a submission failure following a confirmed first batch", async function () {
+		const plan = await prepare()
+		let attempts = 0
+		const interruptedSigner = {
+			getAddress: () => operator.getAddress(),
+			sendTransaction: (transaction: any) => {
+				if (++attempts === 2) throw new Error("test signing interruption")
+				return operator.sendTransaction(transaction)
+			},
+		}
+		await assert.rejects(runLfUpdate({ ...args(plan, true), signer: interruptedSigner }), /signing interruption/)
+		const report = await runLfUpdate(args(plan, true))
+		assert.equal(report.status, "complete")
+		assert.equal(report.transactions.length, 2)
 	})
 })
