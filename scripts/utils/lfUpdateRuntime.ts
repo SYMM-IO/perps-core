@@ -25,10 +25,18 @@ const PAGE_SIZE = 200
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const coreInterface = new Interface(LF_CORE_ABI)
 
-async function latestBlock(provider: any) {
-	const block = await provider.getBlock("latest")
-	if (!block?.hash) throw new Error("Latest block is unavailable")
+async function blockAt(provider: any, tag: "latest" | number, expectedHash?: string) {
+	const block = await provider.getBlock(tag)
+	if (!block?.hash || (typeof tag === "number" && block.number !== tag))
+		throw new Error(`LF verification block ${tag} is unavailable; resume when the RPC can serve it`)
+	if (expectedHash && block.hash !== expectedHash) throw new Error(`LF receipt block ${tag} changed; reconcile before continuing`)
 	return { number: block.number, hash: block.hash, timestamp: String(block.timestamp) }
+}
+async function latestBlock(provider: any, minimumBlock = 0) {
+	const block = await blockAt(provider, "latest")
+	// A load-balanced RPC can expose a receipt before its latest-block read catches up.
+	// Never interpret a pre-transaction catalog as pending work, including on resume.
+	return block.number < minimumBlock ? blockAt(provider, minimumBlock) : block
 }
 async function identityAt(provider: any, config: LfConfig, block: number) {
 	const core = new Contract(config.core, LF_CORE_ABI, provider)
@@ -124,7 +132,11 @@ export function validateLfPlan(plan: LfPlan, expectedDigest?: string): void {
 	const rebuilt = createLfPlan(plan.snapshot, plan.btcEthIds.join(","))
 	if (rebuilt.digest !== digest) throw new Error("LF plan does not match its snapshot and reviewed classification")
 }
-type LfTransaction = DeploymentTransactionRecord & { actionId?: string; symbolIds?: string[] }
+type LfTransaction = DeploymentTransactionRecord & {
+	actionId?: string
+	symbolIds?: string[]
+	postState?: { block: Awaited<ReturnType<typeof blockAt>>; symbols: LfSymbol[]; pendingSymbolIds: string[] }
+}
 export type LfReport = {
 	apiVersion: string
 	planDigest: string
@@ -207,13 +219,17 @@ export async function runLfUpdate(options: {
 	const snapshotBlock = await provider.getBlock(plan.snapshot.block.number)
 	if (snapshotBlock?.hash !== plan.snapshot.block.hash) throw new Error("Snapshot block changed or is unavailable; review a new plan")
 	const report = await reconcileLfReport(provider, reportPath, expectedDigest, config.authority)
-	let block = await latestBlock(provider)
+	const confirmedBlock = report.transactions.reduce(
+		(minimum, tx) => (tx.status === "confirmed" || tx.status === "replaced" ? Math.max(minimum, tx.blockNumber ?? 0) : minimum),
+		plan.snapshot.block.number,
+	)
+	let block = await latestBlock(provider, confirmedBlock)
 	await checkIdentity(provider, plan, block.number)
 	let current = await readCatalog(provider, config, plan.snapshot.identity, block.number)
 	let analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
 	let sent = 0
 	while (analysis.pending.length) {
-		block = await latestBlock(provider)
+		block = await latestBlock(provider, block.number)
 		await checkIdentity(provider, plan, block.number)
 		const capacity = await managerState(provider, config, block)
 		Object.assign(report, { block, capacity, completed: analysis.complete, total: current.length, pending: analysis.pending.length })
@@ -252,8 +268,9 @@ export async function runLfUpdate(options: {
 				? { maxFeePerGas: fee.maxFeePerGas, maxPriorityFeePerGas: fee.maxPriorityFeePerGas }
 				: { gasPrice: fee.gasPrice }
 		if (fees.gasPrice === null) throw new Error("RPC returned no usable transaction fee estimate")
+		let receipt: Awaited<ReturnType<typeof send>>
 		try {
-			await send(
+			receipt = await send(
 				signer.sendTransaction({ to: action.to, data: action.data, value: 0n, gasLimit: (gas * 120n) / 100n, ...fees }),
 				`Update LF for symbol IDs ${action.symbolIds.join(",")}`,
 				undefined,
@@ -268,11 +285,18 @@ export async function runLfUpdate(options: {
 		} finally {
 			saveReport(reportPath, report)
 		}
-		block = await latestBlock(provider)
+		// Verify the block that actually contains this transaction, not an unbounded latest read.
+		block = await blockAt(provider, receipt.blockNumber, receipt.blockHash)
 		const after = await readCatalog(provider, config, plan.snapshot.identity, block.number, start, end - start)
 		const verified = analyzeLfState(plan.snapshot.symbols.slice(start, end), after, plan.btcEthIds)
-		if (verified.pending.some(symbol => action.symbolIds.includes(symbol.symbolId)))
-			throw new Error("LF post-state verification failed despite a successful receipt")
+		const pendingSymbolIds = verified.pending.filter(symbol => action.symbolIds.includes(symbol.symbolId)).map(symbol => symbol.symbolId)
+		report.transactions.at(-1)!.postState = { block, symbols: after, pendingSymbolIds }
+		report.status = pendingSymbolIds.length ? "post-state-mismatch" : "batch-verified"
+		saveReport(reportPath, report)
+		if (pendingSymbolIds.length)
+			throw new Error(
+				`LF post-state verification failed at receipt block ${block.number} for transaction ${receipt.hash}; symbols ${pendingSymbolIds.join(",")} do not match their targets`,
+			)
 		current.splice(start, after.length, ...after)
 		analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)
 		sent++
@@ -283,7 +307,7 @@ export async function runLfUpdate(options: {
 		}
 	}
 	// Full fresh catalog proof also detects symbols added or unrelated settings changed during this window.
-	block = await latestBlock(provider)
+	block = await latestBlock(provider, block.number)
 	await checkIdentity(provider, plan, block.number)
 	current = await readCatalog(provider, config, plan.snapshot.identity, block.number)
 	analysis = analyzeLfState(plan.snapshot.symbols, current, plan.btcEthIds)

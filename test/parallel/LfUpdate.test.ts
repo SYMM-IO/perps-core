@@ -163,7 +163,80 @@ describe("LF update operator adapter", function () {
 			sendTransaction: () => operator.sendTransaction({ to: operator.address, value: 0 }),
 		}
 		await assert.rejects(runLfUpdate({ ...args(plan, true), signer: noEffectSigner }), /post-state verification failed/)
+		const report = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
+		assert.equal(report.status, "post-state-mismatch")
+		assert.deepEqual(report.transactions[0].postState.pendingSymbolIds, ["1", "2"])
+		assert.equal(report.transactions[0].postState.block.number, report.transactions[0].blockNumber)
 	})
+	it("verifies receipt blocks when latest remains behind confirmed LF transactions", async function () {
+		const plan = await prepare(),
+			staleBlock = await ethers.provider.getBlock("latest")
+		const laggingProvider = new Proxy(ethers.provider, {
+			get(target, property) {
+				if (property === "getBlock") return (tag: any) => (tag === "latest" ? Promise.resolve(staleBlock) : target.getBlock(tag))
+				const value = Reflect.get(target, property)
+				return typeof value === "function" ? value.bind(target) : value
+			},
+		})
+		const report = await runLfUpdate({ ...args(plan, true), provider: laggingProvider })
+		assert.equal(report.status, "complete")
+		assert.equal(report.transactions.length, 2)
+		assert.ok(report.verification!.block.number >= report.transactions.at(-1)!.blockNumber!)
+		assert.deepEqual(
+			report.transactions.flatMap(tx => tx.symbolIds),
+			["1", "2", "3", "4"],
+		)
+		for (const tx of report.transactions) {
+			assert.equal(tx.postState!.block.number, tx.blockNumber)
+			assert.deepEqual(tx.postState!.pendingSymbolIds, [])
+		}
+	})
+	it("does not resubmit confirmed symbols when a resumed RPC head is behind the receipt", async function () {
+		const plan = await prepare(),
+			staleBlock = await ethers.provider.getBlock("latest")
+		await runLfUpdate({ ...args(plan, true), maxBatches: 1 })
+		const laggingProvider = new Proxy(ethers.provider, {
+			get(target, property) {
+				if (property === "getBlock") return (tag: any) => (tag === "latest" ? Promise.resolve(staleBlock) : target.getBlock(tag))
+				const value = Reflect.get(target, property)
+				return typeof value === "function" ? value.bind(target) : value
+			},
+		})
+		const report = await runLfUpdate({ ...args(plan, true), provider: laggingProvider })
+		assert.equal(report.status, "complete")
+		assert.equal(report.transactions.length, 2)
+		assert.deepEqual(
+			report.transactions.flatMap(tx => tx.symbolIds),
+			["1", "2", "3", "4"],
+		)
+	})
+	for (const unavailable of [true, false]) {
+		it(`stops before another batch when the receipt block ${unavailable ? "is unavailable" : "has a different hash"}`, async function () {
+			const plan = await prepare(),
+				nonce = await ethers.provider.getTransactionCount(operator.address)
+			const inconsistentProvider = new Proxy(ethers.provider, {
+				get(target, property) {
+					if (property === "getBlock")
+						return async (tag: any) => {
+							const block = await target.getBlock(tag)
+							if (typeof tag === "number" && tag > plan.snapshot.block.number) return unavailable ? null : { ...block, hash: "0x" + "ab".repeat(32) }
+							return block
+						}
+					const value = Reflect.get(target, property)
+					return typeof value === "function" ? value.bind(target) : value
+				},
+			})
+			await assert.rejects(
+				runLfUpdate({ ...args(plan, true), provider: inconsistentProvider }),
+				unavailable ? /verification block .* unavailable/ : /receipt block .* changed/,
+			)
+			assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce + 1)
+			const report = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
+			assert.equal(report.transactions.length, 1)
+			assert.equal(report.transactions[0].status, "confirmed")
+			assert.equal(report.transactions[0].postState, undefined)
+		})
+	}
 	it("resumes after a submission failure following a confirmed first batch", async function () {
 		const plan = await prepare()
 		let attempts = 0
