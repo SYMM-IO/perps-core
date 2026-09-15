@@ -218,6 +218,9 @@ export function createLfUpdateTask(common) {
 		],
 		prepare,
 		signerPolicy: { role: "LF operator", allowedModes: [SIGNER_MODES.KEYSTORE] },
+		// Preserve the reviewed LF plan and journal when an operator accepts a recovery fix.
+		// The shared runner requires typed source-hash confirmation and refuses unresolved transactions.
+		resumePolicy: { strategy: "stable-step-id", sourceDrift: "confirm", inputDrift: "refuse" },
 		plan: () => LF_STEPS.map(step => ({ ...step })),
 		run: async (ctx, input) => {
 			await ctx.step("inspect", LF_STEPS[0].title, async () => {
