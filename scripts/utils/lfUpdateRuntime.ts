@@ -183,10 +183,12 @@ export async function reconcileLfReport(provider: any, file: string, expectedDig
 		!Array.isArray(report.transactions)
 	)
 		throw new Error("LF report binding mismatch")
+	const uncertain = report.transactions.filter(tx => tx.status === "unresolved" || tx.status === "timed_out")
+	if (!uncertain.length) return report
 	try {
-		await reconcileDeploymentTransactions(report.transactions, provider, authority)
+		await reconcileDeploymentTransactions(uncertain, provider, authority)
 	} finally {
-		for (const transaction of report.transactions) {
+		for (const transaction of uncertain) {
 			emitTaskEvent(transaction.status === "confirmed" || transaction.status === "replaced" ? "tx.confirmed" : "tx.failed", { transaction })
 		}
 		saveReport(file, report)

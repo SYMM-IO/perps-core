@@ -86,8 +86,10 @@ transaction journal intact. A different block number/hash, changed symbol settin
 a contract revert still stops the run; resolve the RPC or chain-consistency issue and
 reconcile before resuming.
 
-The task reconciles recorded hashes before another write and skips symbols already at
-target. Unknown transaction outcomes block further writes. Replacement/dropped-transaction
+Transaction reconciliation runs only for unresolved outcomes. Successful batch windows
+continue without a reconciliation subprocess or replaying earlier success events. Each
+new transaction still gets its receipt and symbol-value checks. The task skips symbols
+already at target. Unknown transaction outcomes block further writes. Replacement/dropped-transaction
 recovery uses the shared journal controls in `cli/README.md`. Cancellation stops future
 writes; confirmed changes remain on-chain. Rollback needs a separately reviewed action.
 

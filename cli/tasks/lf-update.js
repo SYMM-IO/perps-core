@@ -187,7 +187,7 @@ export async function reconcileLfTask(ctx, input) {
 		const temporary = `${file}.tmp`;
 		fs.writeFileSync(temporary, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
 		fs.renameSync(temporary, file);
-		await adapter(ctx, input, "reconcile");
+		if (report.transactions.some(tx => ["submitted", "unresolved", "timed_out"].includes(tx.status))) await adapter(ctx, input, "reconcile");
 	}
 	return {
 		unresolved: (ctx.state.transactions || []).filter(tx => ["submitted", "unresolved", "timed_out"].includes(tx.status)).map(tx => tx.hash),
