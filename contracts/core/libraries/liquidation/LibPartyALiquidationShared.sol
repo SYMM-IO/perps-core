@@ -57,6 +57,7 @@ library LibPartyALiquidationShared {
 		accountLayout.liquidators[partyA].push(msg.sender);
 		uint256 positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
 		accountLayout.liquidationStartPositionCounts[partyA] = positionsCount;
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 
 		// Classify liquidation severity and cap the liquidator fee.
 		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];

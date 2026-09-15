@@ -345,7 +345,7 @@ library ClearingHouseFacetImpl {
 
 		liquidationId = chLayout.partyATakeoverDetails[partyA].liquidationId;
 
-		// Clear each supplied settlement and remove its connection if no positions or pending quotes remain.
+		// Clear settlement buckets supplied by the clearing house; their connections may already be gone.
 		uint256 clearedSettlements = 0;
 		for (uint256 i = 0; i < settledPartyBs.length; i++) {
 			address partyB = settledPartyBs[i];
@@ -359,7 +359,6 @@ library ClearingHouseFacetImpl {
 			}
 			delete accountLayout.settlementStates[partyA][partyB];
 			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
-			LibConnections.removeConnectionIfNoPositions(partyA, partyB);
 		}
 		// Every pending settlement created by the normal liquidation flow must be cleared here.
 		// Otherwise its settlement state and reserve contribution would be stranded once
@@ -445,6 +444,8 @@ library ClearingHouseFacetImpl {
 
 		accountLayout.liquidationDetails[partyA].disputed = false;
 		accountLayout.liquidationDetails[partyA].liquidationFee = 0;
+		// Takeover replaces normal settlement, so no unapplied automatic reduction may survive it.
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 		delete accountLayout.liquidators[partyA];
 
 		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });
