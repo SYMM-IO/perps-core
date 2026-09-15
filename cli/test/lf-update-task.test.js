@@ -263,3 +263,20 @@ test("retrying final verification never re-enters the apply step", async t => {
 	assert.equal(calls.filter(call => call.env.EXECUTE === "true").length, 1);
 	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "verify").length, 2);
 });
+
+test("CSV review and completion point to exports labelled by chain ID and UTC datetime", async t => {
+	const { ctx, input, notes } = fixture(t);
+	const runProcess = ctx.runProcess.bind(ctx);
+	ctx.runProcess = async (cmd, args, options) => {
+		await runProcess(cmd, args, options);
+		const stamp = "20260915T183000.123Z";
+		const phase = options.env.LF_UPDATE_PHASE;
+		write(path.join(lfDirectory(ctx), "latest-output.json"), {
+			directory: path.join(lfDirectory(ctx), "outputs", "8453", `${stamp}-${phase}`),
+			files: { "preview.csv": `8453-${stamp}-${phase}-preview.csv` },
+		});
+	};
+	await definition.run(ctx, input);
+	assert.match(notes.flat().join(" "), /outputs\/8453\/20260915T183000\.123Z-apply\/8453-20260915T183000\.123Z-apply-preview\.csv/);
+	assert.match(notes.flat().join(" "), /outputs\/8453\/20260915T183000\.123Z-verify/);
+});
