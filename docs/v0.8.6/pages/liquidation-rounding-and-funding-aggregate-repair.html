@@ -41,6 +41,7 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#rounding">Why liquidation totals can differ</a>
+				<a class="toc-link level-2" href="#settlement">Applying the cap at settlement</a>
 				<a class="toc-link level-2" href="#funding">Why partial closes left dust</a>
 				<a class="toc-link level-2" href="#exact-notional">Exact Muon PnL input</a>
 				<a class="toc-link level-2" href="#repair">Repairing existing groups</a>
@@ -74,7 +75,8 @@
 					<p>
 						When the difference is within the limit, settlement uses the smaller same-direction amount supported by both Muon and the
 						quote calculation. If they disagree about which party owes the net payment, that payment is zero. Individual PartyB payments
-						can still offset each other. The discarded difference is never written to a balance or separate accounting field.
+						can still offset each other. A temporary reduction carries the adjustment across settlement batches; it is not a balance,
+						claim, or permanent dust counter.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Rollout prerequisites.</strong> The bound assumes repaired funding aggregates and exact aggregate notional in Muon.
@@ -96,8 +98,43 @@ Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 					<p>
 						The position count is saved at liquidation start, so closing positions in several batches cannot shrink or grow the limit. The
 						final settlement amount is the smaller magnitude when both calculations agree on its direction. For example, losses of 100 and
-						101 settle at 100. No rounding residual is stored or assigned to another account.
+						101 settle at 100. No separate payment is created for the difference or assigned to another account.
 					</p>
+
+					<h2 id="settlement">Applying the cap at settlement</h2>
+					<p>
+						Closing a position removes its PartyB connection as soon as that pair has no open positions or pending quotes. Pending-quote
+						cleanup follows the same rule. A saved settlement does not keep an empty connection alive. Once the final position closes, the
+						contract checks the rounding bound and records the target UPNL and the signed reduction still needed. PartyB settlement
+						amounts are not changed in the position-closing transaction.
+					</p>
+					<p>
+						<code>settlePartyALiquidation</code> and its snapshot variant use the PartyB addresses supplied by the caller. Before paying
+						each pending settlement, the contract reduces its expected amount toward zero and reduces its actual amount in the same
+						direction without crossing zero. Existing OVERDUE haircuts and funding classification still apply. Only buckets with the
+						needed sign consume the reduction, in caller-supplied order; it is not a proportional split between PartyBs.
+					</p>
+					<pre><code>Muon loss = 100; quote loss = 102; reduction needed = 2
+First settlement:  quote payment 1  becomes 0; reduction left = 1
+Second settlement: quote payment 101 becomes 100; reduction left = 0
+Total paid = 100; liquidation can finish</code></pre>
+					<p>
+						Partial batches carry only the remaining reduction in <code>partyALiquidationRoundingReduction</code>. Empty batches do not
+						consume it; unknown, duplicate, or already-settled PartyBs revert the transaction. Normal finalization requires every PartyB
+						settlement and the whole reduction to be consumed. Positive PartyB reserves remain conservative until payment, then their
+						contributions are released as usual. No new rounding event, vault transfer, or permanent counter is introduced.
+					</p>
+					<p>
+						If positive signed UPNL overstated PartyA's deferred credit, that credit is corrected once when the target is recorded after
+						the final position closes. A dispute-role override cancels the unconsumed automatic reduction and uses the supplied amounts;
+						Clearing House takeover also cancels the unconsumed reduction. Neither path reverses payments already made. A new liquidation
+						starts with no pending reduction, and normal completion clears it.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Keep the settlement PartyB list independently.</strong> Liquidators must retain the PartyBs from the liquidated quotes
+						or their indexed events. Do not rebuild the settlement list from <code>getConnectedPartyBs</code> after positions close: empty
+						connections have already been removed, while their saved settlement records still need payment.
+					</aside>
 
 					<h2 id="funding">Why partial closes left dust</h2>
 					<p>
@@ -190,6 +227,13 @@ npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;net
 						three-unit allowance and liquidation-start position count; this update does not introduce or enable them.
 					</p>
 					<p>
+						The settlement-time cap appends one mapping to <code>AccountStorage.Layout</code> without changing public function signatures
+						or existing storage offsets. Finish all active PartyA liquidations, including takeovers, on the previous implementation before
+						upgrading this flow. An in-progress liquidation may contain retained connections or already-adjusted buckets from the old
+						implementation; this update does not migrate that intermediate state. The shared liquidation-start helper also changes, so
+						rebuild and relink both legacy and snapshot setup paths together with settlement and Clearing House callers.
+					</p>
+					<p>
 						The deployment scope includes <code>MigrationFacet</code>, <code>ViewFacetAggregate</code>, and <code>ViewFacetQuote</code>,
 						plus the funding and liquidation changes in <code>PartyBBatchActionsFacet</code>, <code>PartyBLiquidationFacet</code>,
 						<code>PartyBPositionActionsFacetImpl</code>, <code>SymbolAdjustmentFacet</code>, <code>ClearingHouseFacetImpl</code>,
@@ -243,7 +287,8 @@ npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;net
 					</ol>
 					<p>
 						When the fixed allowance accepts a difference, both parties settle using the smaller same-direction amount. The discarded
-						difference is not a payment and is not stored, emitted, or assigned to a vault or account.
+						difference is not a payment and is not emitted or assigned to a vault or account. Only the unapplied reduction is stored
+						temporarily while settlement batches are in progress.
 					</p>
 				</article>
 			</main>

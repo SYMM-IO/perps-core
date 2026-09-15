@@ -219,8 +219,9 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
-			expect(settlement.expectedAmount).to.equal(smallerSignedLoss)
-			expect(settlement.actualAmount).to.equal(smallerSignedLoss)
+			// Closing records the cap, but does not change the PartyB bucket until settlement.
+			expect(settlement.expectedAmount).to.equal(settledUpnl)
+			expect(settlement.actualAmount).to.equal(settledUpnl)
 			expect((await user.getLiquidatedStateOfPartyA()).partyAAccumulatedUpnl).to.equal(smallerSignedLoss)
 
 			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
@@ -292,8 +293,8 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
-			expect(settlement.expectedAmount).to.equal(signedProfit)
-			expect(settlement.actualAmount).to.equal(signedProfit)
+			expect(settlement.expectedAmount).to.equal(quoteProfit)
+			expect(settlement.actualAmount).to.equal(quoteProfit)
 
 			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
 			const hedgerAfter = await hedger.getBalanceInfo(userAddr)
@@ -342,8 +343,8 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 				const partyBBefore = await hedger.getBalanceInfo(userAddr)
 				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 				const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
-				expect(settlement.expectedAmount).to.equal(0n)
-				expect(settlement.actualAmount).to.equal(0n)
+				expect(settlement.expectedAmount).to.equal(quoteUpnl)
+				expect(settlement.actualAmount).to.equal(quoteUpnl)
 				const detail = await user.getLiquidatedStateOfPartyA()
 				expect(detail.liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
 				expect(detail.disputed).to.equal(false)
@@ -392,14 +393,14 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			})
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, quoteIds)
 			const settlements = await context.viewFacet.getSettlementStates(userAddr, partyBs)
-			expect(settlements.map(value => value.expectedAmount)).to.deep.equal([-1n, 1n])
-			expect(settlements.map(value => value.actualAmount)).to.deep.equal([-1n, 1n])
+			expect(settlements.map(value => value.expectedAmount)).to.deep.equal([-2n, 1n])
+			expect(settlements.map(value => value.actualAmount)).to.deep.equal([-2n, 1n])
 			expect((await user.getLiquidatedStateOfPartyA()).partyAAccumulatedUpnl).to.equal(0n)
 			const balances = await Promise.all(partyBs.map(partyB => context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)))
 			await facet.settlePartyALiquidationWithSnapshot(userAddr, partyBs)
 			for (const [index, partyB] of partyBs.entries()) {
 				expect((await context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)) - balances[index]).to.equal(
-					settlements[index].cva - settlements[index].actualAmount,
+					settlements[index].cva - (index === 0 ? -1n : 1n),
 				)
 			}
 			expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
@@ -427,11 +428,16 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 				expect((await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr]))[0].expectedAmount).to.equal(quoteUpnl)
 				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteIds[1]])
 				const settlements = await context.viewFacet.getSettlementStates(userAddr, partyBs)
-				expect(settlements.map(value => value.expectedAmount)).to.deep.equal([0n, 0n])
-				expect(settlements.map(value => value.actualAmount)).to.deep.equal([0n, 0n])
+				expect(settlements.map(value => value.expectedAmount)).to.deep.equal([quoteUpnl, quoteUpnl])
+				expect(settlements.map(value => value.actualAmount)).to.deep.equal([quoteUpnl, quoteUpnl])
 				expect((await user.getLiquidatedStateOfPartyA()).partyAAccumulatedUpnl).to.equal(0n)
+				expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
 				const balances = await Promise.all(partyBs.map(partyB => context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)))
-				await facet.settlePartyALiquidationWithSnapshot(userAddr, partyBs)
+				// Each one-unit bucket consumes only half the reduction, across two transactions.
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [partyBs[0]])
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(true)
+				expect((await context.viewFacet.getSettlementStates(userAddr, [partyBs[1]]))[0].actualAmount).to.equal(quoteUpnl)
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [partyBs[1]])
 				for (const [index, partyB] of partyBs.entries()) {
 					expect((await context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)) - balances[index]).to.equal(settlements[index].cva)
 				}
@@ -464,8 +470,8 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 					const partyBBefore = await hedger.getBalanceInfo(userAddr)
 					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 					const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
-					expect(settlement.expectedAmount).to.equal(quoteUpnl + reduction)
-					expect(settlement.actualAmount).to.equal(expectedActual)
+					expect(settlement.expectedAmount).to.equal(quoteUpnl)
+					expect(settlement.actualAmount).to.equal(expectedActual - reduction)
 					expect(settlement.cva).to.equal(expectedCva)
 					expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
 					await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
@@ -490,9 +496,10 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 				const allocated = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddr, ZeroAddress)
 				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 				const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
-				expect(settlement.actualAmount).to.equal(payment)
-				expect(settlement.expectedAmount).to.equal(payment)
-				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(payment)
+				expect(settlement.actualAmount).to.equal(quoteProfit)
+				expect(settlement.expectedAmount).to.equal(quoteProfit)
+				// Keep the original conservative reserve until this PartyB is actually settled.
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(quoteProfit)
 				await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
 				expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddr, ZeroAddress)).to.equal(allocated + settlement.cva - payment)
 				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(0n)
@@ -547,7 +554,13 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 
 					if (pendingOrder === "before positions") await facet.liquidatePendingPositionsPartyAWithSnapshot(userAddr)
 					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [firstQuote])
+					expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, await firstPartyB.getAddress())).to.equal(
+						pendingOrder !== "before positions",
+					)
 					if (pendingOrder === "between position batches") await facet.liquidatePendingPositionsPartyAWithSnapshot(userAddr)
+					if (pendingOrder !== "after positions") {
+						expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, await firstPartyB.getAddress())).to.equal(false)
+					}
 					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [lastQuote])
 					if (pendingOrder === "after positions") await facet.liquidatePendingPositionsPartyAWithSnapshot(userAddr)
 
@@ -555,11 +568,23 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 					expect(detail.disputed).to.equal(false)
 					expect(detail.partyAAccumulatedUpnl).to.equal(signedUpnl)
 					const [losingSettlement, winningSettlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr, hedger2Addr])
-					expect(losingSettlement.expectedAmount).to.equal(losingUpnl + (direction === "negative" ? 1n : 0n))
-					expect(winningSettlement.expectedAmount).to.equal(winningUpnl - (direction === "positive" ? 1n : 0n))
+					expect(losingSettlement.expectedAmount).to.equal(losingUpnl)
+					expect(winningSettlement.expectedAmount).to.equal(winningUpnl)
 					expect(losingSettlement.actualAmount).to.equal(losingSettlement.expectedAmount)
 					expect(winningSettlement.actualAmount).to.equal(winningSettlement.expectedAmount)
-					await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr, hedger2Addr])
+					expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
+					const balances = await Promise.all([hedger, hedger2].map(partyB => partyB.getBalanceInfo(userAddr)))
+					// Pay the opposite-direction bucket first: it must not consume the reduction.
+					const settlementOrder = direction === "negative" ? [hedger2Addr, hedgerAddr] : [hedgerAddr, hedger2Addr]
+					await facet.settlePartyALiquidationWithSnapshot(userAddr, [settlementOrder[0]])
+					expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(true)
+					await facet.settlePartyALiquidationWithSnapshot(userAddr, [settlementOrder[1]])
+					expect((await hedger.getBalanceInfo(userAddr)).allocatedBalances - balances[0].allocatedBalances).to.equal(
+						losingSettlement.cva - losingUpnl - (direction === "negative" ? 1n : 0n),
+					)
+					expect((await hedger2.getBalanceInfo(userAddr)).allocatedBalances - balances[1].allocatedBalances).to.equal(
+						winningSettlement.cva - winningUpnl + (direction === "positive" ? 1n : 0n),
+					)
 					expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
 					expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
 					expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedgerAddr)).to.equal(false)

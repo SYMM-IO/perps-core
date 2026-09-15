@@ -61,10 +61,7 @@ library LibPartyALiquidationProcess {
 				quoteLayout.partyBPendingQuotes[quote.partyB][partyA].length > 0
 			) {
 				delete quoteLayout.partyBPendingQuotes[quote.partyB][partyA];
-				// Keep pending settlement buckets discoverable until the final position batch.
-				if (!accountLayout.settlementStates[partyA][quote.partyB].pending || quoteLayout.partyAPositionsCount[partyA] == 0) {
-					LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
-				}
+				LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
 				// Subtract from cross bucket before zeroing per-partyA balances
 				accountLayout.partyBPendingLockedBalances[quote.partyB][address(0)].sub(
 					accountLayout.partyBPendingLockedBalances[quote.partyB][partyA]
@@ -190,6 +187,7 @@ library LibPartyALiquidationProcess {
 			// Close the quote and update accumulated PartyA uPNL when this PartyB has no remaining positions.
 			LibAccount.subFromPartyBLockedBalances(quote);
 			LibQuote.closePositionFully(quote.id, liquidationPrice);
+			LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 partyAExpectedReceivableFromPartyB = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
@@ -234,49 +232,20 @@ library LibPartyALiquidationProcess {
 						accountLayout.liquidationStartPositionCounts[partyA];
 				if (difference > allowance) {
 					liquidationDetail.disputed = true;
-					_removeClosedPartyBConnections(accountLayout, partyA);
 					return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 				}
-				_capSettlementToSmallerUpnl(accountLayout, partyA, signedUpnl, settledUpnl);
+				_prepareSettlementRounding(accountLayout, partyA, signedUpnl, settledUpnl);
 			}
-			_removeClosedPartyBConnections(accountLayout, partyA);
 		}
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 	}
 
-	/// @dev Caps an accepted rounding difference to the smaller same-direction uPNL. If the two
-	///      calculations disagree on which party won, neither side receives the disputed dust.
-	///      The cap is applied to existing PartyB buckets and leaves no residual state behind.
-	function _capSettlementToSmallerUpnl(AccountStorage.Layout storage accountLayout, address partyA, int256 signedUpnl, int256 settledUpnl) private {
+	/// @dev Records the accepted cap once, without enumerating PartyBs. Their buckets are adjusted
+	///      as they settle. Opposite-direction calculations cap to zero. PartyA's deferred credit
+	///      is corrected now so neither later settlement batches nor a takeover apply it twice.
+	function _prepareSettlementRounding(AccountStorage.Layout storage accountLayout, address partyA, int256 signedUpnl, int256 settledUpnl) private {
 		int256 cappedUpnl = _smallerSameDirectionUpnl(signedUpnl, settledUpnl);
-		uint256 remainingReduction = LibUtils.absDiff(settledUpnl, cappedUpnl);
-		bool reducePositiveAmounts = settledUpnl > cappedUpnl;
-		address[] storage partyBs = accountLayout.connectedPartyBs[partyA];
-
-		for (uint256 i = 0; i < partyBs.length && remainingReduction != 0; i++) {
-			address partyB = partyBs[i];
-			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][partyB];
-			int256 expectedAmount = settlementState.expectedAmount;
-			if (!settlementState.pending || (reducePositiveAmounts ? expectedAmount <= 0 : expectedAmount >= 0)) continue;
-
-			uint256 expectedMagnitude = SignedMath.abs(expectedAmount);
-			uint256 reduction = Math.min(expectedMagnitude, remainingReduction);
-			if (reducePositiveAmounts) {
-				settlementState.expectedAmount -= int256(reduction);
-				if (settlementState.actualAmount > 0) {
-					settlementState.actualAmount -= int256(Math.min(uint256(settlementState.actualAmount), reduction));
-				}
-			} else {
-				settlementState.expectedAmount += int256(reduction);
-				if (settlementState.actualAmount < 0) {
-					settlementState.actualAmount += int256(Math.min(SignedMath.abs(settlementState.actualAmount), reduction));
-				}
-			}
-			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, settlementState.actualAmount);
-			remainingReduction -= reduction;
-		}
-
-		require(remainingReduction == 0, "LiquidationFacet: Invalid rounding cap");
+		accountLayout.partyALiquidationRoundingReduction[partyA] = settledUpnl - cappedUpnl;
 		accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl = cappedUpnl;
 
 		// A positive signed uPNL can be swept into PartyA's deferred balance before quote-level
@@ -288,20 +257,32 @@ library LibPartyALiquidationProcess {
 		}
 	}
 
+	/// @dev Applies only the still-needed reduction to this pending PartyB before payment. Positive
+	///      reductions consume positive expected amounts; negative reductions consume negative ones.
+	///      The returned remainder carries over to later PartyBs and later settlement transactions.
+	function _capSettlementToSmallerUpnl(LiquidationSettlementState storage settlementState, int256 remainingReduction) private returns (int256) {
+		int256 expectedAmount = settlementState.expectedAmount;
+		if (remainingReduction == 0 || (remainingReduction > 0 ? expectedAmount <= 0 : expectedAmount >= 0)) return remainingReduction;
+
+		uint256 reduction = Math.min(SignedMath.abs(expectedAmount), SignedMath.abs(remainingReduction));
+		if (remainingReduction > 0) {
+			settlementState.expectedAmount -= int256(reduction);
+			if (settlementState.actualAmount > 0) {
+				settlementState.actualAmount -= int256(Math.min(uint256(settlementState.actualAmount), reduction));
+			}
+			return remainingReduction - int256(reduction);
+		}
+		settlementState.expectedAmount += int256(reduction);
+		if (settlementState.actualAmount < 0) {
+			settlementState.actualAmount += int256(Math.min(SignedMath.abs(settlementState.actualAmount), reduction));
+		}
+		return remainingReduction + int256(reduction);
+	}
+
 	function _smallerSameDirectionUpnl(int256 signedUpnl, int256 settledUpnl) private pure returns (int256) {
 		if (signedUpnl > 0 && settledUpnl > 0) return signedUpnl < settledUpnl ? signedUpnl : settledUpnl;
 		if (signedUpnl < 0 && settledUpnl < 0) return signedUpnl > settledUpnl ? signedUpnl : settledUpnl;
 		return 0;
-	}
-
-	/// @dev Connections are kept until the final quote closes so every pending PartyB settlement
-	///      bucket is available when the aggregate rounding cap is applied.
-	function _removeClosedPartyBConnections(AccountStorage.Layout storage accountLayout, address partyA) private {
-		uint256 index = accountLayout.connectedPartyBs[partyA].length;
-		while (index > 0) {
-			LibConnections.removeConnectionIfNoPositions(partyA, accountLayout.connectedPartyBs[partyA][index - 1]);
-			index--;
-		}
 	}
 
 	/// @notice Resolves a liquidation dispute by overriding settlement amounts for Party Bs
@@ -318,6 +299,8 @@ library LibPartyALiquidationProcess {
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA].disputed = disputed;
 		require(partyBs.length == amounts.length, "LiquidationFacet: Invalid length");
+		// A privileged resolution replaces the automatic payment plan, including any unconsumed cap.
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 
 		// Override PartyB settlement buckets and keep settlement reserves in sync.
 		for (uint256 i = 0; i < partyBs.length; i++) {
@@ -357,6 +340,7 @@ library LibPartyALiquidationProcess {
 		settleAmounts = new int256[](partyBs.length);
 		allocationKeys = new address[](partyBs.length);
 		cvaAmounts = new uint256[](partyBs.length);
+		int256 remainingReduction = accountLayout.partyALiquidationRoundingReduction[partyA];
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			address partyB = partyBs[i];
 
@@ -364,6 +348,7 @@ library LibPartyALiquidationProcess {
 			partyB.requireNotCrossLiquidating();
 			LiquidationSettlementState storage settlementState = accountLayout.settlementStates[partyA][partyB];
 			require(settlementState.pending, "LiquidationFacet: PartyB is not in settlement");
+			remainingReduction = _capSettlementToSmallerUpnl(settlementState, remainingReduction);
 			settlementState.pending = false;
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;
 
@@ -418,9 +403,11 @@ library LibPartyALiquidationProcess {
 			delete accountLayout.settlementStates[partyA][partyB];
 			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
 		}
+		accountLayout.partyALiquidationRoundingReduction[partyA] = remainingReduction;
 
 		// Once every PartyB bucket is settled, release PartyA-side balances and close the liquidation.
 		if (accountLayout.liquidationDetails[partyA].involvedPartyBCounts == 0) {
+			require(remainingReduction == 0, "LiquidationFacet: Invalid rounding cap");
 			_finalizePartyALiquidation(accountLayout, maLayout, partyA, liquidationId);
 			fullySettled = true;
 		}
@@ -520,6 +507,7 @@ library LibPartyALiquidationProcess {
 		delete accountLayout.liquidators[partyA];
 		delete accountLayout.liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId];
 		delete accountLayout.liquidationStartPositionCounts[partyA];
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 		delete accountLayout.liquidationDetails[partyA].liquidationType;
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
