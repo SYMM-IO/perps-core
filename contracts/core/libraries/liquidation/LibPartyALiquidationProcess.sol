@@ -249,11 +249,11 @@ library LibPartyALiquidationProcess {
 		accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl = cappedUpnl;
 
 		// A positive signed uPNL can be swept into PartyA's deferred balance before quote-level
-		// settlement is known. Keep at most the positive amount supported by both calculations.
+		// settlement is known. Correct only the credit actually set aside; the deferred balance
+		// may be zero or smaller than the rounding difference.
 		if (signedUpnl > cappedUpnl && signedUpnl > 0) {
 			uint256 deferredReduction = uint256(signedUpnl - cappedUpnl);
-			require(accountLayout.partyADeferredBalance[partyA] >= deferredReduction, "LiquidationFacet: Invalid positive rounding cap");
-			accountLayout.partyADeferredBalance[partyA] -= deferredReduction;
+			accountLayout.partyADeferredBalance[partyA] -= Math.min(accountLayout.partyADeferredBalance[partyA], deferredReduction);
 		}
 	}
 

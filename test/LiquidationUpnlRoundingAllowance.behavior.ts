@@ -2,6 +2,7 @@ import { expect } from "chai"
 import { ZeroAddress } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { scalarGetterSlot, setSignedStorage } from "./helpers/diamond-storage.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { LiquidationType, PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
@@ -279,6 +280,51 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 	})
 
 	describe("positive uPNL rounding", function () {
+		for (const { deferred, reduction, remaining } of [
+			{ deferred: 0n, reduction: 1n, remaining: 0n },
+			{ deferred: 1n, reduction: 2n, remaining: 0n },
+			{ deferred: 2n, reduction: 2n, remaining: 0n },
+			{ deferred: 3n, reduction: 2n, remaining: 1n },
+		]) {
+			it(`caps the deferred deduction at the available balance: ${deferred} credit, ${reduction} reduction`, async function () {
+				const quoteId = await openLong(INCIDENT_QUANTITY)
+				await advanceEpochs(4n)
+				const balance = await user.getBalanceInfo()
+				const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
+				const state = await signedState(hedgerAddr, 1n, price)
+				const quoteProfit = await quoteLevelUpnl([quoteId], price)
+				const signedProfit = quoteProfit + reduction
+				expect(quoteProfit).to.be.greaterThan(0n)
+
+				// Seed the allocation boundary directly, then let liquidation create the deferred balance.
+				// The zero-credit case has a negative available balance, so no surplus is swept at all.
+				const surplus = deferred === 0n ? -1n : deferred
+				const allocation = balance.lockedCva + balance.lockedLf - signedProfit + surplus
+				expect(allocation).to.be.greaterThan(0n)
+				const allocationSlot = await scalarGetterSlot(context.viewFacet, "allocatedBalanceOfPartyA", [userAddr])
+				await setSignedStorage(context.diamond, allocationSlot, allocation)
+				const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: 0n })
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(deferred)
+				const hedgerBefore = await hedger.getBalanceInfo(userAddr)
+
+				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(remaining)
+				const detail = await user.getLiquidatedStateOfPartyA()
+				expect(detail.disputed).to.equal(false)
+				expect(detail.partyAAccumulatedUpnl).to.equal(quoteProfit)
+				const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+				expect(settlement.expectedAmount).to.equal(quoteProfit)
+				expect(settlement.actualAmount).to.equal(quoteProfit)
+
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(0n)
+				expect((await user.getBalanceInfo()).allocatedBalances).to.equal(remaining)
+				const hedgerAfter = await hedger.getBalanceInfo(userAddr)
+				expect(hedgerAfter.allocatedBalances - hedgerBefore.allocatedBalances).to.equal(settlement.cva - quoteProfit)
+			})
+		}
+
 		it("caps PartyB's payment when the quote profit is larger than the signed profit", async function () {
 			const quoteId = await openLong(INCIDENT_QUANTITY)
 			await advanceEpochs(4n)
