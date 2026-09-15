@@ -1,0 +1,143 @@
+import { expect } from "chai"
+import assert from "node:assert/strict"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
+import { LF_BTC_ETH, LF_OTHER, LF_ROLE_NAME, createLfPlan } from "../../scripts/utils/lfUpdate.js"
+import { inspectLf, runLfUpdate } from "../../scripts/utils/lfUpdateRuntime.js"
+import { initializeFixture } from "../Initialize.fixture.js"
+import { ethers } from "../helpers/hardhat-connection.js"
+import { loadFixture, time } from "../helpers/network-helpers.js"
+import { User } from "../models/User.js"
+import { limitQuoteRequestBuilder } from "../models/requestModels/QuoteRequest.js"
+import { decimal } from "../utils/Common.js"
+
+describe("LF update operator adapter", function () {
+	let context: any, manager: any, operator: any, directory: string, config: any
+	beforeEach(async function () {
+		context = await loadFixture(initializeFixture)
+		operator = context.signers.admin
+		const core = await context.symbolControlFacet.getAddress()
+		manager = await (await ethers.getContractFactory("SymmioSymbolManager")).deploy(core, operator.address)
+		await manager.waitForDeployment()
+		await manager.grantRole(ethers.id(LF_ROLE_NAME), operator.address)
+		await manager.grantRole(ethers.id("SETTER_ROLE"), operator.address)
+		await context.controlFacet.connect(operator).grantRole(await manager.getAddress(), ethers.id("SYMBOL_MANAGER_ROLE"))
+		for (const name of ["BTCUSD_CARBONRWA", "ETHUSDT", "SOLUSDT"]) {
+			await context.symbolControlFacet.connect(operator).addSymbol(name, decimal(7n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+		}
+		await context.symbolControlFacet.connect(operator).setSymbolValidationState(2, false)
+		directory = fs.mkdtempSync(path.join(os.tmpdir(), "lf-adapter-"))
+		config = {
+			network: "localhost",
+			chainId: Number((await ethers.provider.getNetwork()).chainId),
+			core,
+			symbolManager: await manager.getAddress(),
+			authority: operator.address,
+			batchSize: 2,
+			announcementReference: "local fixture announcement",
+			enforcementAt: "2020-01-01T00:00:00Z",
+		}
+	})
+	afterEach(() => fs.rmSync(directory, { recursive: true, force: true }))
+	async function prepare() {
+		const snapshot = await inspectLf(ethers.provider, config)
+		return createLfPlan(snapshot, snapshot.classification.btcEthIds.join(","))
+	}
+	const args = (plan: any, execute = false) => ({
+		provider: ethers.provider,
+		signer: operator,
+		plan,
+		expectedDigest: plan.digest,
+		reportPath: path.join(directory, "report.json"),
+		execute,
+	})
+	it("dry-runs, journals partial execution, resumes and verifies every symbol without duplicate writes", async function () {
+		const plan = await prepare(),
+			before = await ethers.provider.getTransactionCount(operator.address)
+		assert.equal((await runLfUpdate(args(plan))).status, "ready")
+		assert.equal(await ethers.provider.getTransactionCount(operator.address), before)
+		const partial = await runLfUpdate({ ...args(plan, true), maxBatches: 1 })
+		assert.equal(partial.status, "ready")
+		assert.equal(partial.transactions.length, 1)
+		assert.equal(partial.transactions[0].status, "confirmed")
+		const complete = await runLfUpdate(args(plan, true))
+		assert.equal(complete.status, "complete")
+		assert.equal(complete.transactions.length, 2)
+		assert.deepEqual(
+			complete.verification!.symbols.map(symbol => symbol.minAcceptablePortionLF),
+			[LF_BTC_ETH, LF_BTC_ETH, LF_BTC_ETH, LF_OTHER],
+		)
+		assert.deepEqual(
+			complete.verification!.symbols.map(symbol => symbol.minAcceptableQuoteValue),
+			plan.snapshot.symbols.map((symbol: any) => symbol.minAcceptableQuoteValue),
+		)
+		assert.equal(complete.verification!.symbols[1].isValid, false)
+		const nonce = await ethers.provider.getTransactionCount(operator.address)
+		assert.equal((await runLfUpdate(args(plan, true))).status, "complete")
+		assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce)
+	})
+	it("waits for quota and resumes after the on-chain reset", async function () {
+		await manager.setDailyLimits([25, 25, 25, 25, 2, 25, 25])
+		const plan = await prepare()
+		assert.equal((await runLfUpdate(args(plan, true))).status, "waiting-daily-limit")
+		await time.increase(86400)
+		assert.equal((await runLfUpdate(args(plan, true))).status, "complete")
+	})
+	it("refuses quote-minimum drift, wrong signer, tampered plan, and premature enforcement", async function () {
+		config.enforcementAt = new Date((Number(await time.latest()) + 3600) * 1000).toISOString().replace(".000Z", "Z")
+		const plan = await prepare()
+		assert.equal((await runLfUpdate(args(plan, true))).status, "waiting-enforcement")
+		await assert.rejects(runLfUpdate({ ...args(plan, true), signer: context.signers.user }), /signer/)
+		await assert.rejects(runLfUpdate({ ...args(plan), expectedDigest: "wrong" }), /digest/)
+		await context.symbolControlFacet.connect(operator).setSymbolAcceptableValues(1, 99, decimal(1n, 16))
+		await assert.rejects(runLfUpdate(args(plan, true)), /minAcceptableQuoteValue/)
+	})
+	it("stops on unknown transaction outcomes before another broadcast", async function () {
+		const plan = await prepare(),
+			report = await runLfUpdate(args(plan))
+		report.transactions.push({
+			label: "uncertain LF",
+			hash: "0x" + "ab".repeat(32),
+			nonce: 9,
+			status: "unresolved",
+			from: operator.address,
+			to: config.symbolManager,
+			data: plan.actions[0].data,
+			value: "0",
+			submittedAt: new Date().toISOString(),
+			durationMs: 0,
+			confirmations: 1,
+		})
+		fs.writeFileSync(args(plan).reportPath, JSON.stringify(report))
+		const nonce = await ethers.provider.getTransactionCount(operator.address)
+		await assert.rejects(runLfUpdate(args(plan, true)), /unresolved broadcast/)
+		assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce)
+	})
+	it("enforces the 3% and 4% collateral boundary on new quotes through the actual Core", async function () {
+		const plan = await prepare()
+		await runLfUpdate(args(plan, true))
+		const user = new User(context, context.signers.user)
+		await user.setup()
+		await user.setBalances(decimal(5000n), decimal(3000n), decimal(3000n))
+		for (const [symbolId, lf, mm] of [
+			[1, 3n, 75n],
+			[4, 4n, 74n],
+		] as const) {
+			// Total locked collateral is exactly 100; changing MM in the failing quote keeps that denominator fixed.
+			await expect(
+				user.sendQuote(
+					limitQuoteRequestBuilder()
+						.symbolId(symbolId)
+						.cva(decimal(22n))
+						.partyAmm(decimal(mm) + 1n)
+						.lf(decimal(lf) - 1n)
+						.build(),
+				),
+			).to.be.revertedWith("PartyAFacet: LF is not enough")
+			await expect(user.sendQuote(limitQuoteRequestBuilder().symbolId(symbolId).cva(decimal(22n)).partyAmm(decimal(mm)).lf(decimal(lf)).build())).to
+				.not.be.reverted
+		}
+	})
+})
