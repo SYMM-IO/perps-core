@@ -4,8 +4,8 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { LF_BTC_ETH, LF_OTHER, LF_ROLE_NAME, createLfPlan } from "../../scripts/utils/lfUpdate.js"
-import { inspectLf, runLfUpdate } from "../../scripts/utils/lfUpdateRuntime.js"
+import { LF_BTC_ETH, LF_OTHER, LF_CORE_ABI, LF_ROLE_NAME, createLfPlan } from "../../scripts/utils/lfUpdate.js"
+import { inspectLf, runLfUpdate, verifyLfUpdate } from "../../scripts/utils/lfUpdateRuntime.js"
 import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { loadFixture, time } from "../helpers/network-helpers.js"
@@ -156,17 +156,22 @@ describe("LF update operator adapter", function () {
 		await runLfUpdate(args(plan, true))
 		assert.deepEqual((await context.viewFacetQuote.getQuote(1)).toArray(true), before.toArray(true))
 	})
-	it("rejects a successful receipt whose expected state change did not happen", async function () {
+	it("defers final proof and detects missing LF effects without resubmitting", async function () {
 		const plan = await prepare()
-		const noEffectSigner = {
-			getAddress: () => operator.getAddress(),
-			sendTransaction: () => operator.sendTransaction({ to: operator.address, value: 0 }),
-		}
-		await assert.rejects(runLfUpdate({ ...args(plan, true), signer: noEffectSigner }), /post-state verification failed/)
-		const report = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
-		assert.equal(report.status, "post-state-mismatch")
-		assert.deepEqual(report.transactions[0].postState.pendingSymbolIds, ["1", "2"])
-		assert.equal(report.transactions[0].postState.block.number, report.transactions[0].blockNumber)
+		const report = await runLfUpdate({ ...args(plan, true), deferFinalVerification: true })
+		assert.equal(report.status, "submitted")
+		assert.equal(report.verification, undefined)
+		await context.symbolControlFacet
+			.connect(operator)
+			.setSymbolAcceptableValues(1, plan.snapshot.symbols[0].minAcceptableQuoteValue, plan.snapshot.symbols[0].minAcceptablePortionLF)
+		const nonce = await ethers.provider.getTransactionCount(operator.address)
+		await assert.rejects(verifyLfUpdate(args(plan)), /final verification failed/)
+		const failed = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
+		assert.equal(failed.status, "verification-failed")
+		assert.equal(failed.pending, 1)
+		assert.equal(failed.verification.symbols.length, 4)
+		await assert.rejects(runLfUpdate(args(plan, true)), /previously confirmed LF update is no longer at target/)
+		assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce)
 	})
 	it("verifies receipt blocks when latest remains behind confirmed LF transactions", async function () {
 		const plan = await prepare(),
@@ -186,10 +191,7 @@ describe("LF update operator adapter", function () {
 			report.transactions.flatMap(tx => tx.symbolIds),
 			["1", "2", "3", "4"],
 		)
-		for (const tx of report.transactions) {
-			assert.equal(tx.postState!.block.number, tx.blockNumber)
-			assert.deepEqual(tx.postState!.pendingSymbolIds, [])
-		}
+		assert.ok(report.transactions.every(tx => tx.postState === undefined))
 	})
 	it("does not resubmit confirmed symbols when a resumed RPC head is behind the receipt", async function () {
 		const plan = await prepare(),
@@ -241,12 +243,12 @@ describe("LF update operator adapter", function () {
 				report.transactions.flatMap(tx => tx.symbolIds),
 				["1", "2", "3", "4"],
 			)
-			assert.equal(failures.size, 2)
+			assert.ok(failures.size >= 1)
 			assert.ok([...failures.values()].every(count => count === 2))
 		})
 	}
 	for (const unavailable of [true, false]) {
-		it(`stops before another batch when the receipt block ${unavailable ? "is unavailable" : "has a different hash"}`, async function () {
+		it(`defers proof until all batches finish when the final receipt block ${unavailable ? "is unavailable" : "has a different hash"}`, async function () {
 			const plan = await prepare(),
 				nonce = await ethers.provider.getTransactionCount(operator.address)
 			const inconsistentProvider = new Proxy(ethers.provider, {
@@ -265,9 +267,9 @@ describe("LF update operator adapter", function () {
 				runLfUpdate({ ...args(plan, true), provider: inconsistentProvider, readRetry: { maxAttempts: 3, delayMs: 0 } }),
 				unavailable ? /verification block .* unavailable/ : /receipt block .* changed/,
 			)
-			assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce + 1)
+			assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce + 2)
 			const report = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
-			assert.equal(report.transactions.length, 1)
+			assert.equal(report.transactions.length, 2)
 			assert.equal(report.transactions[0].status, "confirmed")
 			assert.equal(report.transactions[0].postState, undefined)
 		})
@@ -299,7 +301,7 @@ describe("LF update operator adapter", function () {
 			/receipt block .* changed/,
 		)
 		const report = JSON.parse(fs.readFileSync(args(plan).reportPath, "utf8"))
-		assert.equal(report.transactions.length, 1)
+		assert.equal(report.transactions.length, 2)
 		assert.equal(report.transactions[0].status, "confirmed")
 		assert.equal(report.transactions[0].postState, undefined)
 	})
@@ -317,5 +319,96 @@ describe("LF update operator adapter", function () {
 		const report = await runLfUpdate(args(plan, true))
 		assert.equal(report.status, "complete")
 		assert.equal(report.transactions.length, 2)
+	})
+	it("reads the full catalog once at start and once at the end across continuous windows", async function () {
+		const plan = await prepare()
+		let catalogs = 0
+		const lookups: string[] = []
+		const abi = new ethers.Interface(LF_CORE_ABI)
+		const provider = new Proxy(ethers.provider, {
+			get(target, property) {
+				if (property === "call")
+					return (request: any) => {
+						const parsed = abi.parseTransaction({ data: request.data })
+						if (["getSymbols", "getSymbolsWithType"].includes(parsed?.name ?? "") && parsed!.args[1] === 200n) catalogs++
+						return target.call(request)
+					}
+				if (property === "getTransactionReceipt")
+					return (hash: string) => {
+						lookups.push(hash)
+						return target.getTransactionReceipt(hash)
+					}
+				const value = Reflect.get(target, property)
+				return typeof value === "function" ? value.bind(target) : value
+			},
+		})
+		const first = await runLfUpdate({ ...args(plan, true), provider, maxBatches: 1, deferFinalVerification: true })
+		assert.equal(first.status, "ready")
+		assert.equal(catalogs, 1)
+		const second = await runLfUpdate({ ...args(plan, true), provider, continueRun: true, deferFinalVerification: true })
+		assert.equal(second.status, "submitted")
+		assert.equal(second.verification, undefined)
+		assert.equal(catalogs, 1)
+		assert.deepEqual(lookups, [])
+		const final = await verifyLfUpdate({ ...args(plan), provider })
+		assert.equal(final.status, "complete")
+		assert.equal(catalogs, 2)
+		assert.deepEqual(lookups, [])
+		assert.equal(final.transactions.length, 2)
+	})
+	it("reads fresh state on a real resume and skips legacy successful receipts without post-state proofs", async function () {
+		const plan = await prepare()
+		const partial = await runLfUpdate({ ...args(plan, true), maxBatches: 1 })
+		delete partial.transactions[0].receiptObservations
+		delete partial.transactions[0].postState
+		fs.writeFileSync(args(plan).reportPath, JSON.stringify(partial))
+		const lookups: string[] = []
+		const provider = new Proxy(ethers.provider, {
+			get(target, property) {
+				if (property === "getTransactionReceipt")
+					return (hash: string) => {
+						lookups.push(hash)
+						return target.getTransactionReceipt(hash)
+					}
+				const value = Reflect.get(target, property)
+				return typeof value === "function" ? value.bind(target) : value
+			},
+		})
+		const result = await runLfUpdate({ ...args(plan, true), provider })
+		assert.equal(result.status, "complete")
+		assert.equal(result.transactions.length, 2)
+		assert.deepEqual(lookups, [])
+	})
+	it("checks fresh quote minimums before writing a continuation window", async function () {
+		const plan = await prepare()
+		await runLfUpdate({ ...args(plan, true), maxBatches: 1 })
+		await context.symbolControlFacet.connect(operator).setSymbolAcceptableValues(3, 99, decimal(1n, 16))
+		const nonce = await ethers.provider.getTransactionCount(operator.address)
+		await assert.rejects(runLfUpdate({ ...args(plan, true), continueRun: true }), /minAcceptableQuoteValue/)
+		assert.equal(await ethers.provider.getTransactionCount(operator.address), nonce)
+	})
+	it("continues through provisional receipts without duplicate transactions", async function () {
+		const plan = await prepare()
+		const earlySigner = {
+			getAddress: () => operator.getAddress(),
+			async sendTransaction(request: any) {
+				const tx = await operator.sendTransaction(request)
+				return new Proxy(tx, {
+					get(target, property) {
+						if (property === "wait") return async (confirmations: number) => ({ ...(await target.wait(confirmations)), blockHash: ethers.ZeroHash })
+						const value = Reflect.get(target, property)
+						return typeof value === "function" ? value.bind(target) : value
+					},
+				})
+			},
+		}
+		const report = await runLfUpdate({ ...args(plan, true), signer: earlySigner, readRetry: { maxAttempts: 3, delayMs: 0 } })
+		assert.equal(report.status, "complete")
+		assert.equal(report.transactions.length, 2)
+		for (const tx of report.transactions) {
+			assert.equal(tx.receiptObservations![0].blockHash, ethers.ZeroHash)
+			assert.equal(tx.postState, undefined)
+		}
+		assert.equal(report.transactions.at(-1)!.receiptObservations!.at(-1)!.blockHash, report.verification!.block.hash)
 	})
 })

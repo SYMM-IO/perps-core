@@ -69,10 +69,14 @@ function fixture(t) {
 			if (env.LF_UPDATE_PHASE === "inspect")
 				write(path.join(dir, "snapshot.json"), seal({ symbols: [row], classification: { btcEthIds: ["1"], ambiguousIds: [] } }));
 			if (env.LF_UPDATE_PHASE === "plan") write(path.join(dir, "plan.json"), seal({ rows: [row], btcEthIds: ["1"] }));
-			if (env.LF_UPDATE_PHASE === "apply") {
+			if (["apply", "verify"].includes(env.LF_UPDATE_PHASE)) {
 				if (env.EXECUTE === "true") ctx.executed = true;
 				const status =
-					env.EXECUTE === "true" ? ctx.executionStatus || "complete" : ctx.executed ? ctx.verificationStatus || "complete" : "ready";
+					env.LF_UPDATE_PHASE === "verify"
+						? ctx.verificationStatus || "complete"
+						: env.EXECUTE === "true"
+							? ctx.executionStatus || "submitted"
+							: "ready";
 				write(path.join(dir, "report.json"), {
 					apiVersion: "operations.symm.io/lf-report-v1",
 					status,
@@ -164,6 +168,7 @@ test("adapter uses keystore credentials and defaults to no execution", t => {
 	assert.equal(env.KEYSTORE_DEPLOYER_KEY, "LF_OPERATOR");
 	assert.equal(env.SYMMIO_EXPECTED_SIGNER, operator);
 	assert.equal(env.EXECUTE, "false");
+	assert.equal(env.LF_UPDATE_CONTINUATION, "false");
 	assert.equal(env.CONFIRM_CHAIN_ID, "");
 	assert.equal(env.SYMMIO_RPC_URL_OVERRIDE, "");
 	assert.equal(env.SYMMIO_DEPLOYMENT_RECIPE, "");
@@ -182,7 +187,7 @@ test("review, dry run, confirmation, writes and final reads occur in order", asy
 			["plan", "false"],
 			["apply", "false"],
 			["apply", "true"],
-			["apply", "false"],
+			["verify", "false"],
 		],
 	);
 	assert.match(notes.flat().join(" "), /announcement-123/);
@@ -193,7 +198,7 @@ test("quota pause resumes the reviewed plan without recollecting credentials or 
 	ctx.executionStatus = "waiting-daily-limit";
 	await assert.rejects(definition.run(ctx, input), /Continue active task/);
 	assert.deepEqual([...completed], ["inspect", "authorize"]);
-	ctx.executionStatus = "complete";
+	ctx.executionStatus = "submitted";
 	await definition.run(ctx, input);
 	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "inspect").length, 1);
 	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "plan").length, 1);
@@ -224,7 +229,7 @@ test("successful batch windows do not launch reconciliation or replay completed 
 	let windows = 0;
 	ctx.runProcess = async (cmd, args, options) => {
 		const executing = options.env.LF_UPDATE_PHASE === "apply" && options.env.EXECUTE === "true";
-		if (executing) ctx.executionStatus = ++windows < 3 ? "ready" : "complete";
+		if (executing) ctx.executionStatus = ++windows < 3 ? "ready" : "submitted";
 		await runProcess(cmd, args, options);
 		if (executing) {
 			const file = path.join(lfDirectory(ctx), "report.json");
@@ -237,8 +242,24 @@ test("successful batch windows do not launch reconciliation or replay completed 
 	};
 	await definition.run(ctx, input);
 	assert.equal(windows, 3);
+	assert.deepEqual(
+		calls.filter(call => call.env.EXECUTE === "true").map(call => call.env.LF_UPDATE_CONTINUATION),
+		["false", "true", "true"],
+	);
+	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "verify").length, 1);
 	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "reconcile").length, 0);
 	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "inspect").length, 1);
 	await reconcileLfTask(ctx, input);
 	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "reconcile").length, 0);
+});
+
+test("retrying final verification never re-enters the apply step", async t => {
+	const { ctx, input, completed, calls } = fixture(t);
+	ctx.verificationStatus = "verification-failed";
+	await assert.rejects(definition.run(ctx, input), /verification is incomplete/);
+	assert.deepEqual([...completed], ["inspect", "authorize", "apply"]);
+	ctx.verificationStatus = "complete";
+	await definition.run(ctx, input);
+	assert.equal(calls.filter(call => call.env.EXECUTE === "true").length, 1);
+	assert.equal(calls.filter(call => call.env.LF_UPDATE_PHASE === "verify").length, 2);
 });

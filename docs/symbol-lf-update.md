@@ -50,10 +50,13 @@ RPC resolution uses the keystore even if the shell has a separate RPC override.
    ID, name, existing quote minimum, and old/target LF in contract units. The screen also
    reports any existing LF values that would **decrease** to the exact policy target.
    Type the chain ID to authorize the reviewed changes.
-6. Each batch is simulated and gas-estimated before submission. The task waits for its
-   receipt, checks the resulting values at that receipt's block (including its hash), and
-   finishes with a full-catalog comparison at or after the last confirmed transaction.
-   A lagging RPC `latest` response cannot move verification behind a confirmed batch.
+6. Each batch is simulated and gas-estimated before submission, then waits for a
+   successful receipt. Continuous five-batch windows reuse recorded progress without
+   rereading the full catalog or verifying symbol state after each transaction.
+7. Once all batches have successful receipts, the separate read-only verification step
+   reads the full catalog at one block at or after the last confirmed transaction. It
+   checks every LF target, quote minimum, and other captured symbol setting. Only this
+   successful comparison marks the run complete.
 
 The only setter used is
 `setSymbolAcceptableValuesBatch(symbolIds, existingQuoteMinimums, targetLFs)`.
@@ -76,20 +79,25 @@ to accept the changed source, records that confirmation, and retains the origina
 completed steps, and transaction journal. It refuses migration while any transaction
 outcome is unresolved. Changed inputs or a modified LF plan are still rejected.
 
-A successful receipt followed by a verification failure does not undo that batch. Read
-the recorded receipt and symbol state before continuing. Resume reads at or after the
-highest confirmed transaction block and skips symbols already at target. If the RPC
-cannot yet serve a block or its state, the task retries that same read up to 16 times,
-with two seconds between attempts and progress messages. These retries never submit
-another transaction. If the data remains unavailable, the task pauses with its confirmed
-transaction journal intact. A different block number/hash, changed symbol settings, or
-a contract revert still stops the run; resolve the RPC or chain-consistency issue and
-reconcile before resuming.
+A successful receipt does not by itself prove the resulting symbol values. During
+execution, progress is labelled **processed; final verification pending**. On a real
+resume, the task rereads the catalog at or after the highest confirmed transaction block,
+skips symbols already at target, and refuses another write if a previously confirmed
+update is no longer at target. Each new batch still rereads its selected symbols and
+checks implementation identity, authority, quota, and simulation before submission.
 
-Transaction reconciliation runs only for unresolved outcomes. Successful batch windows
-continue without a reconciliation subprocess or replaying earlier success events. Each
-new transaction still gets its receipt and symbol-value checks. The task skips symbols
-already at target. Unknown transaction outcomes block further writes. Replacement/dropped-transaction
+If the RPC cannot yet serve a required block or its state, the task retries that read up
+to 16 times with two seconds between attempts. These retries never submit a transaction.
+At final verification, the last transaction's successful receipt must agree with its
+containing block, including transaction inclusion. An early or provisional hash triggers
+refreshes of that receipt only. The final catalog's block hash is checked again after its
+state reads. Persistent inconsistency or mismatched symbol settings prevents completion.
+
+If final verification fails, **Continue active task** retries that read-only step without
+re-entering execution. A pause during execution instead starts with the fresh catalog
+read described above. Transaction reconciliation runs only for unresolved outcomes;
+continuous successful batches do not replay earlier receipt checks or success events.
+Unknown transaction outcomes block further writes. Replacement/dropped-transaction
 recovery uses the shared journal controls in `cli/README.md`. Cancellation stops future
 writes; confirmed changes remain on-chain. Rollback needs a separately reviewed action.
 
@@ -98,8 +106,10 @@ Evidence is under `.symmio/tasks/runs/<task>-<run>/lf-update/`:
 - `snapshot.json`: block/hash, original catalog, contract identity, authority/quota check,
   announcement reference, and enforcement time.
 - `plan.json` and `preview.csv`: reviewed BTC/ETH IDs, all targets, and planned calldata.
-- `report.json`: transaction hashes/receipts, each new batch's `postState` symbol reads
-  and block/hash, progress, and final symbol reads at the recorded verification block/hash.
+- `report.json`: transaction hashes and receipt observations, expected execution progress
+  (`processed`/`pending`), counts from the latest catalog observation (`completed`), and
+  full final symbol reads at the recorded verification block/hash. Earlier reports may
+  also contain per-batch `postState` evidence; new batches do not require it.
 
 Back up the run directory. Completion covers its captured catalog; new listings need a
 new plan. Catalog changes, unexpected LF values, or implementation changes stop the task
@@ -109,7 +119,8 @@ does not upgrade contracts.
 ## Verification scope
 
 The focused test uses the real local Core and Symbol Manager to check dry runs, partial
-execution, quota resets, idempotency, drift/authority checks, and quotes failing just below
+execution, final-only verification, continuous-window read counts, recovery without duplicate
+writes, quota resets, idempotency, drift/authority checks, and quotes failing just below
 or succeeding at the 3%/4% collateral boundary:
 
 ```bash
