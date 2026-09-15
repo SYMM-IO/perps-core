@@ -54,8 +54,8 @@
 						<div>
 							<h1>Liquidation Rounding and Funding Aggregate Repair</h1>
 							<p class="hero-copy">
-								v0.8.6 separates harmless integer rounding from a real liquidation mismatch and keeps stored funding totals equal to
-								the sum of their open quotes.
+								Tiny calculation differences should not stop a liquidation. v0.8.6 handles those differences and fixes funding totals
+								that became inaccurate after partial closes.
 							</p>
 						</div>
 					</div>
@@ -64,23 +64,29 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Muon calculates one total from position groups. Liquidation settles the same account quote by quote. Integer division can
-						produce a small difference between these totals even when both calculations are correct. The contract uses the position count
-						recorded at liquidation start to bound that difference.
+						When an account does not have enough funds to keep its positions open, liquidation closes them and settles what each party
+						owes. Muon, the external service that reports profit and loss, calculates a total from groups of positions. The contract
+						calculates each position separately and adds the results.
 					</p>
 					<p>
-						The allowance is fixed at <code>3</code> raw units per starting position and always applies. A larger mismatch still opens a
-						dispute.
+						Both calculations use tiny whole-number accounting units. If division leaves a fraction of a unit, that fraction is dropped.
+						This is rounding. Dropping fractions before adding the results can give a slightly different total from adding first. Even
+						with the same prices and positions, the totals can differ by a few units. Previously, even a one-unit difference could stop
+						the liquidation and require manual resolution.
 					</p>
 					<p>
-						When the difference is within the limit, settlement uses the smaller same-direction amount supported by both Muon and the
-						quote calculation. If they disagree about which party owes the net payment, that payment is zero. Individual PartyB payments
-						can still offset each other. A temporary reduction carries the adjustment across settlement batches; it is not a balance,
-						claim, or permanent dust counter.
+						v0.8.6 accepts only a tiny difference, limited by how many positions the account had when liquidation started. When both
+						calculations agree on who owes money, settlement uses the smaller amount: for example, 100 instead of 101 accounting units,
+						not whole tokens. If they disagree on who owes the net payment, that payment is zero. Larger differences still require a
+						dispute to be resolved.
+					</p>
+					<p>
+						The update also fixes how saved funding totals change when part of a position closes, provides a one-time repair for totals
+						that are already wrong, and gives Muon exact position values to calculate from.
 					</p>
 					<aside class="callout callout-note">
-						<strong>Rollout prerequisites.</strong> The bound assumes repaired funding aggregates and exact aggregate notional in Muon.
-						Complete both while affected actions are paused, before resuming with the fixed allowance.
+						<strong>Before resuming activity:</strong> repair incorrect saved funding totals and update Muon's calculation. The small
+						allowance is safe only when both use the correct underlying values.
 					</aside>
 
 					<h2 id="rounding">Why liquidation totals can differ</h2>
@@ -159,11 +165,18 @@ New behavior: remove cut(old open amount × funding)
 					<pre><code>Old LONG price PnL: (price − truncated average) × amount / 1e18
 New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 					<p>
-						The new <code>getPartyAExactNotionalUpnlData</code>, <code>getPartyBExactNotionalUpnlData</code>, and
-						<code>getPartyBGlobalExactNotionalUpnlData</code> views return the stored <code>aggregatedNotional</code>. The old views
+						v0.8.6 adds three views: <code>getPartyAExactNotionalUpnlData</code>, <code>getPartyBExactNotionalUpnlData</code>, and
+						<code>getPartyBGlobalExactNotionalUpnlData</code>. They return the stored <code>aggregatedNotional</code>. The old views
 						remain unchanged for existing readers. The corresponding Muon implementation must enable the exact-notional path for contract
 						addresses listed in <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
 					</p>
+					<aside class="callout callout-note">
+						<strong>Muon compatibility with v0.8.5.</strong> These views do not exist in v0.8.5 contracts, so Muon cannot call them on
+						those deployments. It needs to calculate the exact inputs itself, for example by reading all open quotes at the same block and
+						summing <code>(quantity − closedAmount) × openedPrice</code> for each PartyA/PartyB/symbol/direction group. Use exact integer
+						arithmetic without dividing each product first; do not reconstruct notional from the rounded average price. Enable the new
+						getter path only for deployments that actually expose the v0.8.6 views.
+					</aside>
 					<p>
 						Muon must calculate each funded group once and add that result to total UPNL and, when negative, to total unrealized loss.
 						Using the same result prevents the two signed fields from disagreeing because of different truncation.
@@ -176,49 +189,18 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 
 					<h2 id="repair">Repairing existing groups</h2>
 					<p>
-						The one-time repair calculates the correct quote-level totals off chain. This avoids an unbounded on-chain loop when one
-						PartyA and PartyB pair has many open quotes. <code>scripts/resyncAggregateFunding.ts</code> reads the pair page by page at a
-						fixed block where the protocol is globally paused. It calculates each quote independently:
-					</p>
-					<pre><code>open amount = quantity − closed amount
-quote contribution = (open amount × accumulated paid funding) / 1e18
-new group funding = sum of the truncated quote contributions</code></pre>
-					<p>
-						The script uses checked <code>BigInt</code> arithmetic with Solidity's signed division rule, including truncation toward zero.
-						It therefore preserves raw-unit differences. The paginated quote getter reads only the requested page instead of copying the
-						pair's full open-position list first. The script reads until the array ends and verifies that the number of returned quotes
-						matches <code>partyBPositionsCount</code> before producing calldata.
+						Fixing future partial closes does not correct funding totals that are already wrong. We therefore make a one-time repair of
+						the affected groups, so their saved totals match the positions that are still open.
 					</p>
 					<p>
-						<code>resyncAggregateFunding</code> receives each final value together with the exact PartyA and PartyB pair values observed
-						by the script. The contract requires a global pause, rejects liquidating parties, and reverts if either observed value has
-						changed. It then sets both pair values to the calculated value and changes the global PartyB value by only that pair's
-						correction:
+						While the protocol is paused, a script reads the open quotes in manageable pages and recalculates the totals using the same
+						arithmetic as the contract. Doing this work off chain avoids running out of transaction gas when a group contains many quotes.
 					</p>
-					<pre><code>new global PartyB funding = old global funding − old pair funding + new pair funding</code></pre>
 					<p>
-						The contract applies groups atomically in input order. An empty batch does nothing, and repeating a completed repair is a
-						no-op. A change to stored funding values increments both UPNL counters, invalidating old Muon signatures.
-						<code>AggregateFundingResynced</code> records the old and new values for every input group. The contract trusts
-						<code>MIGRATION_ROLE</code> to review the script's output and submit the final value; it does not scan quotes during the
-						transaction.
-					</p>
-					<p>The groups file is a JSON array. Use decimal strings for symbol IDs so JSON cannot round a large integer.</p>
-					<pre><code>[
-  {
-    "partyA": "0x...",
-    "partyB": "0x...",
-    "symbolId": "1",
-    "positionType": "LONG"
-  }
-]</code></pre>
-					<pre><code>GROUPS_FILE=./groups.json SYMMIO=0x... \
-npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;network&gt;</code></pre>
-					<p>
-						The default run is read-only and prints exact calldata for governance review. Set <code>OUTPUT_FILE</code> to save that plan.
-						To send it with the configured <code>MIGRATION_ROLE</code> signer, add <code>EXECUTE=true</code> and
-						<code>CONFIRM_CHAIN_ID=&lt;chain-id&gt;</code>. <code>PAGE_SIZE</code> controls RPC page size and
-						<code>GROUP_BATCH_SIZE</code> controls the number of constant-gas repairs in each transaction.
+						An authorized operator reviews the results and submits them through <code>resyncAggregateFunding</code>. This corrects the
+						affected PartyA/PartyB funding totals and PartyB's overall funding total; it does not change positions or transfer money. The
+						contract rejects the repair if the checked values changed in the meantime. After verifying the repaired totals, activity can
+						resume with the new rules keeping them accurate.
 					</p>
 
 					<h2 id="rollout">Safe rollout</h2>
@@ -252,33 +234,29 @@ npx hardhat run --no-compile scripts/resyncAggregateFunding.ts --network &lt;net
 						<strong>Check selectors before building the cut.</strong> Query <code>facetAddress(bytes4)</code> through the diamond loupe
 						for each function signature. Use <code>Add</code> for an absent selector and <code>Replace</code> for an existing selector
 						that must point to an updated facet. Only use <code>Remove</code> for a deployed selector that is intentionally retired.
-						Removing an absent selector reverts the whole cut. The four-field repair variant was an intermediate development version; its
-						presence in Git is not evidence that it was deployed. Do not include its removal unless the target loupe confirms it exists
-						and the upgrade retires it.
+						Removing an absent selector reverts the whole cut. Check the target deployment rather than assuming that every function in Git
+						was deployed.
 					</aside>
-					<p>The seven-field repair function has this canonical ABI signature; the position-type enum is encoded as <code>uint8</code>:</p>
-					<pre><code>resyncAggregateFunding((address,address,uint256,uint8,int256,int256,int256)[])</code></pre>
 					<ol>
 						<li>
 							Record the target chain, diamond address, deployed facets, and library addresses. Prepare the complete deployment and
 							selector plan above, then rehearse the upgrade and repair against a recent fork of that deployment.
 						</li>
 						<li>
-							List the affected funding groups in the JSON input file and finish active PartyA and PartyB liquidations involving them
-							before the global pause. The repair rejects liquidating parties, and a global pause also blocks liquidation settlement. If
-							a liquidation cannot finish, resolve it through the existing dispute or Clearing House flow before repairing its groups.
+							Identify the funding groups that need repair and finish active PartyA and PartyB liquidations involving them before the
+							global pause. The repair rejects liquidating parties, and a global pause also blocks liquidation settlement. If a
+							liquidation cannot finish, resolve it through the existing dispute or Clearing House flow before repairing its groups.
 						</li>
 						<li>
 							Globally pause the protocol and confirm that the affected accounts are no longer liquidating. Deploy the updated libraries
 							and dependent facets, refresh the target's selector inventory, and apply the reviewed diamond cut. Verify its facet
-							mappings, the seven-field repair selector, and the exact-notional getters before calculating repairs.
+							mappings, the repair function, and the exact-notional getters before calculating repairs.
 						</li>
 						<li>
-							Run <code>scripts/resyncAggregateFunding.ts</code> without <code>EXECUTE</code>. Review the fixed block, every old and new
-							raw value, and the generated calldata. Keep the global pause in place and avoid other state-changing migrations throughout
-							the calculation and repair.
+							Use the repair script to calculate the correct totals without submitting changes. Review the proposed corrections and keep
+							the protocol paused throughout the calculation and repair.
 						</li>
-						<li>Execute the reviewed batches, then verify each event and the script's pair and global post-checks before unpausing.</li>
+						<li>Apply the approved repairs in manageable batches, then verify the corrected totals before unpausing.</li>
 						<li>
 							Activate the corresponding Muon implementation, add the deployed chain and diamond address to
 							<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.
