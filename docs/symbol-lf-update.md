@@ -79,8 +79,12 @@ outcome is unresolved. Changed inputs or a modified LF plan are still rejected.
 A successful receipt followed by a verification failure does not undo that batch. Read
 the recorded receipt and symbol state before continuing. Resume reads at or after the
 highest confirmed transaction block and skips symbols already at target. If the RPC
-cannot serve the receipt block, or returns a different block hash, the task stops before
-the next batch; resolve the RPC or chain-consistency issue and reconcile before resuming.
+cannot yet serve a block or its state, the task retries that same read up to 16 times,
+with two seconds between attempts and progress messages. These retries never submit
+another transaction. If the data remains unavailable, the task pauses with its confirmed
+transaction journal intact. A different block number/hash, changed symbol settings, or
+a contract revert still stops the run; resolve the RPC or chain-consistency issue and
+reconcile before resuming.
 
 The task reconciles recorded hashes before another write and skips symbols already at
 target. Unknown transaction outcomes block further writes. Replacement/dropped-transaction
