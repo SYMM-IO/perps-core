@@ -4,6 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { requireExecutionConfirmation } from "../../tasks/deploy/executionGuard.js"
+import { exportLfArtifacts, type LfPhase } from "../utils/lfArtifacts.js"
 import { createLfPlan, parseLfConfig } from "../utils/lfUpdate.js"
 import { inspectLf, reconcileLfReport, runLfUpdate, verifyLfUpdate } from "../utils/lfUpdateRuntime.js"
 import { atomicWriteJson, verifyDigest } from "../utils/symbolSync.js"
@@ -13,11 +14,13 @@ const required = (name: string) => {
 	if (!value) throw new Error(`${name} is required`)
 	return value
 }
+let outputContext: { directory: string; config: ReturnType<typeof parseLfConfig>; phase: LfPhase } | undefined
 async function main() {
 	const phase = process.env.LF_UPDATE_PHASE || "inspect"
 	if (!["inspect", "plan", "apply", "reconcile", "verify"].includes(phase)) throw new Error("Invalid LF phase")
 	const config = parseLfConfig(JSON.parse(required("LF_UPDATE_CONFIG")))
 	const directory = path.resolve(required("LF_UPDATE_DIRECTORY"))
+	outputContext = { directory, config, phase: phase as LfPhase }
 	const connection = await hre.network.getOrCreate()
 	if (connection.networkName !== config.network) throw new Error("Selected Hardhat network does not match LF configuration")
 	const { ethers } = connection
@@ -71,11 +74,31 @@ async function main() {
 				})
 	console.log(
 		report.status === "complete"
-			? `LF complete: ${report.completed}/${report.total} symbols verified. Report: ${reportPath}`
-			: `LF ${report.status}: ${report.processed}/${report.total} symbols processed; final verification pending. Report: ${reportPath}`,
+			? `LF complete: ${report.completed}/${report.total} symbols verified.`
+			: `LF ${report.status}: ${report.processed}/${report.total} symbols processed; final verification pending.`,
 	)
 }
-main().catch(error => {
+async function run() {
+	let succeeded = false
+	try {
+		await main()
+		succeeded = true
+	} finally {
+		if (outputContext) {
+			try {
+				const output = exportLfArtifacts({ ...outputContext, succeeded })
+				console.log(`LF output (${outputContext.config.chainId}): ${output.directory}`)
+				for (const name of ["report.json", "verification.json"])
+					if (output.files[name]) console.log(`LF ${name}: ${path.join(output.directory, output.files[name])}`)
+			} catch (error) {
+				if (succeeded) throw error
+				// Keep the original adapter failure; never include raw RPC errors in exports.
+				console.error("LF output export failed; working evidence remains in the run directory")
+			}
+		}
+	}
+}
+run().catch(error => {
 	// Do not serialize RPC request bodies or endpoint credentials into terminal/task output.
 	console.error(
 		String(error.reason || error.shortMessage || error.message || "LF operation failed").replace(/https?:\/\/\S+/g, "[redacted endpoint]"),

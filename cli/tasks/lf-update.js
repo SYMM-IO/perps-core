@@ -45,6 +45,14 @@ export const LF_STEPS = [
 ];
 const read = file => JSON.parse(fs.readFileSync(file, "utf8"));
 export const lfDirectory = ctx => path.join(path.dirname(ctx.state.eventPath), "lf-update");
+function outputFile(ctx, name) {
+	const pointer = path.join(lfDirectory(ctx), "latest-output.json");
+	if (fs.existsSync(pointer)) {
+		const output = read(pointer);
+		if (output.files?.[name]) return path.join(output.directory, output.files[name]);
+	}
+	return path.join(lfDirectory(ctx), name);
+}
 const configFor = input =>
 	Object.fromEntries(
 		["network", "chainId", "core", "symbolManager", "authority", "batchSize", "announcementReference", "enforcementAt"].map(key => [
@@ -273,7 +281,7 @@ export function createLfUpdateTask(common) {
 						`Existing minimum quote values are preserved. ${reductions.length} existing LF rates would decrease to the exact policy target.`,
 						`Announcement: ${input.announcementReference}`,
 						`Enforcement: ${input.enforcementAt}`,
-						`Review all names, IDs, old/new rates and quote minima: ${path.join(lfDirectory(ctx), "preview.csv")}`,
+						`Review all names, IDs, old/new rates and quote minima: ${outputFile(ctx, "preview.csv")}`,
 					].join("\n"),
 					"LF rollout preview",
 				);
@@ -311,7 +319,9 @@ export function createLfUpdateTask(common) {
 				const report = read(path.join(lfDirectory(ctx), "report.json"));
 				if (report.status !== "complete" || report.verification?.symbols?.length !== report.total)
 					throw new Error("LF final on-chain verification is incomplete");
-				ctx.ui.note(`${report.total} symbols verified at block ${report.block.number}. Evidence: ${lfDirectory(ctx)}`, "LF update complete");
+				const pointer = path.join(lfDirectory(ctx), "latest-output.json");
+				const evidence = fs.existsSync(pointer) ? read(pointer).directory : lfDirectory(ctx);
+				ctx.ui.note(`${report.total} symbols verified at block ${report.block.number}. Evidence: ${evidence}`, "LF update complete");
 			});
 		},
 		validateResume: ({ state }) => {

@@ -113,7 +113,29 @@ Unknown transaction outcomes block further writes. Replacement/dropped-transacti
 recovery uses the shared journal controls in `cli/README.md`. Cancellation stops future
 writes; confirmed changes remain on-chain. Rollback needs a separately reviewed action.
 
-Evidence is under `.symmio/tasks/runs/<task>-<run>/lf-update/`:
+Every adapter attempt exports evidence under
+`.symmio/tasks/runs/<task>-<run>/lf-update/outputs/<chainId>/<UTC-datetime>-<phase>/`.
+Both the folder and every exported filename identify the chain and UTC datetime, including
+milliseconds. For example:
+
+```text
+outputs/8453/20260915T183000.123Z-verify/
+  8453-20260915T183000.123Z-verify-plan.json
+  8453-20260915T183000.123Z-verify-preview.csv
+  8453-20260915T183000.123Z-verify-report.json
+  8453-20260915T183000.123Z-verify-verification.json
+  8453-20260915T183000.123Z-verify-manifest.json
+```
+
+The CSV review and final completion screen point to these exports. A verification file
+includes the chain ID, Core/manager addresses, UTC creation time, plan digest, status,
+block/hash, and observed symbols when available. Failed attempts are labelled incomplete.
+Later attempts create new folders and retain earlier evidence. A manifest records each
+attempt's phase and whether the adapter succeeded.
+
+Working files remain under `.symmio/tasks/runs/<task>-<run>/lf-update/` so existing paused
+runs keep their bound plan and journal. `latest-output.json` points to the newest export.
+The corresponding exported files contain:
 
 - `snapshot.json`: block/hash, original catalog, contract identity, authority/quota check,
   announcement reference, and enforcement time.
