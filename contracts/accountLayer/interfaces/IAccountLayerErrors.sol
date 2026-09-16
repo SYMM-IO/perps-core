@@ -52,6 +52,7 @@ interface IAccountLayerErrors {
 	/// @param account Account the call attempted to act on
 	error AccountOutOfScope(address scope, address account);
 	error UnauthorizedHookCaller();
+	error ExecuteForAccountNotAllowedDuringSubAccountDeletion();
 	error HookFailed(bytes reason);
 	error HookActionFailed(bytes reason);
 	error ReentrancyGuardReentrantCall();

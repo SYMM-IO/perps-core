@@ -218,7 +218,14 @@ library LibAccountLayerUtils {
 		}
 
 		// Set hook context before calling
-		afLayout.hookContext = HookContext({ account: account, affiliate: affiliate, symmioCore: symmioCore, isActive: true, activeHook: hook });
+		afLayout.hookContext = HookContext({
+			account: account,
+			affiliate: affiliate,
+			symmioCore: symmioCore,
+			isActive: true,
+			activeHook: hook,
+			activeHookSelector: selector
+		});
 
 		(bool success, bytes memory result) = hook.call(data);
 
