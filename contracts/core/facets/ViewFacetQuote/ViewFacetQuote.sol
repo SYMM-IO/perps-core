@@ -199,8 +199,10 @@ contract ViewFacetQuote is IViewFacetQuote {
 	/// @return An array of open positions.
 	function getPartyBOpenPositionsImp(address partyB, address partyA, uint256 start, uint256 size) internal view returns (Quote[] memory) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		uint256[] memory partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
-		if (partyBOpenPositions.length < start + size) size = partyBOpenPositions.length - start;
+		uint256[] storage partyBOpenPositions = quoteLayout.partyBOpenPositions[partyB][partyA];
+		if (start >= partyBOpenPositions.length) return new Quote[](0);
+		uint256 remaining = partyBOpenPositions.length - start;
+		if (size > remaining) size = remaining;
 
 		Quote[] memory quotes = new Quote[](size);
 		uint256 end = start + size;

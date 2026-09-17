@@ -298,6 +298,8 @@ library LibQuote {
 	/// @param quote The quote being updated.
 	/// @param amount The amount to subtract.
 	function subFromPartiesAggregatedPositions(Quote storage quote, uint256 amount) internal {
+		uint256 oldOpenAmount = quoteOpenAmount(quote);
+		uint256 newOpenAmount = oldOpenAmount - amount;
 		LibSymbolAdjustmentInventory.consumeOldBasisAmount(quote, amount);
 		subFromPartyBAggregatedPositions(quote, amount);
 		subFromPartyAAggregatedPositions(quote, amount);
@@ -305,7 +307,7 @@ library LibQuote {
 		// Track aggregate funding for nonce-free Muon verification
 		// Note: If funding was charged before this call, accumulatedPaidFunding is already updated
 		// and updatePartiesAggregateFunding was called in chargeAccumulatedFundingFee
-		LibAggregateFunding.subFromPartiesAggregateFunding(quote, amount);
+		LibAggregateFunding.subFromPartiesAggregateFunding(quote, oldOpenAmount, newOpenAmount);
 	}
 
 	/// @notice Updates Party B aggregated positions notional when the opened price changes.

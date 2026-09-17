@@ -1,7 +1,8 @@
 import { expect } from "chai"
+import { ZeroAddress } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
-import { ethers } from "./helpers/hardhat-connection.js"
+import { scalarGetterSlot, setSignedStorage } from "./helpers/diamond-storage.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { LiquidationType, PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
@@ -10,9 +11,10 @@ import { User } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getPriceFetcher } from "./utils/Common.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummyLiquidationSig, getDummySingleUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
-const D = 10n ** 18n
+const FIXED_POINT_SCALE = 10n ** 18n
 const EPOCH = 500n
 // 1e16 + 1 per epoch: an odd rate makes amount * rate / 1e18 carry a fractional part.
 const RATE = 10_000_000_000_000_001n
@@ -20,21 +22,6 @@ const INCIDENT_QUANTITY = 92_203_449_000_000_000_000n
 const OPEN_PRICE = decimal(10n)
 // One truncation on the price PnL side and two on the funding side per position.
 const ALLOWANCE_PER_POSITION = 3n
-
-const roundingEvents = new ethers.Interface([
-	"event LiquidationUpnlRoundingAccepted(address partyA, int256 signedUpnl, int256 settledUpnl, uint256 allowance, bytes liquidationId)",
-])
-
-function parseRoundingAccepted(logs: readonly any[]) {
-	return logs.flatMap(log => {
-		try {
-			const parsed = roundingEvents.parseLog({ topics: log.topics as string[], data: log.data })
-			return parsed?.name === "LiquidationUpnlRoundingAccepted" ? [parsed.args] : []
-		} catch {
-			return []
-		}
-	})
-}
 
 export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 	let context: RunContext
@@ -84,7 +71,7 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		sigs: sig.sigs,
 	})
 
-	const openLong = async (quantity: bigint, price: bigint = OPEN_PRICE): Promise<bigint> => {
+	const openLong = async (quantity: bigint, price: bigint = OPEN_PRICE, partyB: Hedger = hedger): Promise<bigint> => {
 		const quoteId = await user.sendQuote(
 			limitQuoteRequestBuilder()
 				.positionType(PositionType.LONG)
@@ -93,8 +80,8 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 				.upnlSig(getDummySingleUpnlAndPriceSig(price))
 				.build(),
 		)
-		await hedger.lockQuote(quoteId)
-		await hedger.openPosition(quoteId, limitOpenRequestBuilder().filledAmount(quantity).openPrice(price).price(price).build())
+		await partyB.lockQuote(quoteId)
+		await partyB.openPosition(quoteId, limitOpenRequestBuilder().filledAmount(quantity).openPrice(price).price(price).build())
 		return quoteId
 	}
 
@@ -104,27 +91,42 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
 		const free = balance.allocatedBalances - balance.lockedCva - balance.lockedLf
 		const targetLoss = free - fundingDebt + balance.lockedLf / 2n
-		return OPEN_PRICE - ((targetLoss * D) / totalQuantity + 1n)
+		return OPEN_PRICE - ((targetLoss * FIXED_POINT_SCALE) / totalQuantity + 1n)
+	}
+
+	/** Profitable price whose uPNL leaves a zero-allocation historical snapshot in NORMAL liquidation. */
+	const positiveNormalLiquidationPrice = async (quoteId: bigint, quantity: bigint): Promise<bigint> => {
+		const balance = await user.getBalanceInfo()
+		const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([quoteId])
+		const targetProfit = balance.lockedCva + balance.lockedLf / 2n
+		const pnlBeforeFunding = targetProfit + fundingDebt
+		return OPEN_PRICE + (pnlBeforeFunding * FIXED_POINT_SCALE + quantity - 1n) / quantity
 	}
 
 	const quoteLevelUpnl = async (quoteIds: bigint[], price: bigint): Promise<bigint> =>
 		(await user.getUpnl(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
 
-	/** What an O(groups) Muon computes from the aggregate views: avgOpenPrice PnL minus trunc(A*F/1e18) - W. */
+	/** Aggregate Muon arithmetic using exact notional and the stored paid-funding total. */
 	const aggregateUpnl = async (price: bigint, state: any): Promise<bigint> => {
-		const [entry] = await context.viewFacetAggregate.getPartyAUpnlData(userAddr, hedgerAddr, 0, 10)
+		const [entry] = await context.viewFacetAggregate.getPartyAExactNotionalUpnlData(userAddr, hedgerAddr, 0, 10)
 		const weightedPaid = await context.viewFacetAggregate.getPartyAAggregatedFundingPerPartyB(userAddr, hedgerAddr, 1, PositionType.LONG)
-		const funding = (entry.aggregatedAmount * state.cumulativeLongFee) / D - weightedPaid
-		const pnl = ((price - entry.avgOpenPrice) * entry.aggregatedAmount) / D
+		const funding = (entry.aggregatedAmount * state.cumulativeLongFee) / FIXED_POINT_SCALE - weightedPaid
+		const pnl = (price * entry.aggregatedAmount - entry.aggregatedNotional) / FIXED_POINT_SCALE
 		return pnl - funding
 	}
 
-	const startLiquidation = async (signedUpnl: bigint, price: bigint, state: any) => {
-		const allocated = (await user.getBalanceInfo()).allocatedBalances
-		const sig = await getDummyLiquidationSig("0x10", signedUpnl, [1n], [price], signedUpnl, allocated)
+	const startLiquidation = async (
+		signedUpnl: bigint,
+		price: bigint,
+		state: Awaited<ReturnType<typeof signedState>> | Awaited<ReturnType<typeof signedState>>[],
+		overrides: { totalUnrealizedLoss?: bigint; liquidationAllocatedBalance?: bigint } = {},
+	) => {
+		const allocated = overrides.liquidationAllocatedBalance ?? (await user.getBalanceInfo()).allocatedBalances
+		const totalUnrealizedLoss = overrides.totalUnrealizedLoss ?? signedUpnl
+		const sig = await getDummyLiquidationSig("0x10", signedUpnl, [1n], [price], totalUnrealizedLoss, allocated)
 		const facet = context.partyALiquidationSnapshotFacet.connect(context.signers.liquidator)
 		await facet.liquidatePartyAWithSnapshot(userAddr, snapshotSig(sig, []))
-		await facet.setSymbolsPriceWithSnapshot(userAddr, snapshotSig(sig, [state]))
+		await facet.setSymbolsPriceWithSnapshot(userAddr, snapshotSig(sig, Array.isArray(state) ? state : [state]))
 		return facet
 	}
 
@@ -184,23 +186,20 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			expect(signedUpnl - settledUpnl).to.equal(-1n)
 		})
 
-		it("accepts a one-unit aggregate rounding difference and settles at quote-level amounts", async function () {
+		it("accepts one-unit rounding without configuration", async function () {
 			const facet = await startLiquidation(signedUpnl, price, state)
-			const detailBefore = await user.getLiquidatedStateOfPartyA()
-			expect(detailBefore.liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
+		})
+
+		it("uses the quote loss when it is smaller than the signed loss", async function () {
+			const facet = await startLiquidation(signedUpnl, price, state)
+			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
 			const hedgerBefore = await hedger.getBalanceInfo(userAddr)
 
-			const tx = await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
-			const receipt = await tx.wait()
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
 			expect(settlement.expectedAmount).to.equal(settledUpnl)
-			const accepted = parseRoundingAccepted(receipt?.logs ?? [])
-			expect(accepted).to.have.length(1)
-			expect(accepted[0].partyA).to.equal(userAddr)
-			expect(accepted[0].signedUpnl).to.equal(signedUpnl)
-			expect(accepted[0].settledUpnl).to.equal(settledUpnl)
-			expect(accepted[0].allowance).to.equal(ALLOWANCE_PER_POSITION)
-			expect(accepted[0].liquidationId).to.equal(detailBefore.liquidationId)
 
 			const detail = await user.getLiquidatedStateOfPartyA()
 			expect(detail.disputed).to.equal(false)
@@ -210,14 +209,30 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			await expect(facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])).to.not.be.reverted
 			expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
 			const hedgerAfter = await hedger.getBalanceInfo(userAddr)
-			// PartyB is paid the quote-level loss plus its CVA, untouched by the signed value.
+			// The quote-level loss is already the smaller amount, so PartyB receives it plus CVA.
 			expect(hedgerAfter.allocatedBalances - hedgerBefore.allocatedBalances).to.equal(-settledUpnl + settlement.cva)
 		})
 
-		it("does not emit the rounding event when signed and settled uPNL are equal", async function () {
+		it("caps the quote loss when it is larger than the signed loss", async function () {
+			const smallerSignedLoss = settledUpnl + 1n
+			const facet = await startLiquidation(smallerSignedLoss, price, state)
+			const hedgerBefore = await hedger.getBalanceInfo(userAddr)
+
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+			const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+			// Closing records the cap, but does not change the PartyB bucket until settlement.
+			expect(settlement.expectedAmount).to.equal(settledUpnl)
+			expect(settlement.actualAmount).to.equal(settledUpnl)
+			expect((await user.getLiquidatedStateOfPartyA()).partyAAccumulatedUpnl).to.equal(smallerSignedLoss)
+
+			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+			const hedgerAfter = await hedger.getBalanceInfo(userAddr)
+			expect(hedgerAfter.allocatedBalances - hedgerBefore.allocatedBalances).to.equal(-smallerSignedLoss + settlement.cva)
+		})
+
+		it("settles without a cap when signed and settled uPNL are equal", async function () {
 			const facet = await startLiquidation(settledUpnl, price, state)
-			const tx = await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
-			expect(parseRoundingAccepted((await tx.wait())?.logs ?? [])).to.have.length(0)
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
 		})
 
@@ -247,6 +262,384 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 		})
 	})
 
+	describe("OVERDUE loss rounding", function () {
+		it("saturates a one-unit loss mismatch instead of reverting", async function () {
+			const quoteId = await openLong(INCIDENT_QUANTITY)
+			await advanceEpochs(4n)
+			const price = await normalLiquidationPrice([quoteId], INCIDENT_QUANTITY)
+			const state = await signedState(hedgerAddr, 1n, price)
+			const signedUpnl = await quoteLevelUpnl([quoteId], price)
+			const facet = await startLiquidation(signedUpnl, price, state, {
+				liquidationAllocatedBalance: 0n,
+				totalUnrealizedLoss: signedUpnl + 1n,
+			})
+
+			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.OVERDUE))
+			await expect(facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])).to.not.be.reverted
+		})
+	})
+
+	describe("positive uPNL rounding", function () {
+		for (const { deferred, reduction, remaining } of [
+			{ deferred: 0n, reduction: 1n, remaining: 0n },
+			{ deferred: 1n, reduction: 2n, remaining: 0n },
+			{ deferred: 2n, reduction: 2n, remaining: 0n },
+			{ deferred: 3n, reduction: 2n, remaining: 1n },
+		]) {
+			it(`caps the deferred deduction at the available balance: ${deferred} credit, ${reduction} reduction`, async function () {
+				const quoteId = await openLong(INCIDENT_QUANTITY)
+				await advanceEpochs(4n)
+				const balance = await user.getBalanceInfo()
+				const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
+				const state = await signedState(hedgerAddr, 1n, price)
+				const quoteProfit = await quoteLevelUpnl([quoteId], price)
+				const signedProfit = quoteProfit + reduction
+				expect(quoteProfit).to.be.greaterThan(0n)
+
+				// Seed the allocation boundary directly, then let liquidation create the deferred balance.
+				// The zero-credit case has a negative available balance, so no surplus is swept at all.
+				const surplus = deferred === 0n ? -1n : deferred
+				const allocation = balance.lockedCva + balance.lockedLf - signedProfit + surplus
+				expect(allocation).to.be.greaterThan(0n)
+				const allocationSlot = await scalarGetterSlot(context.viewFacet, "allocatedBalanceOfPartyA", [userAddr])
+				await setSignedStorage(context.diamond, allocationSlot, allocation)
+				const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: 0n })
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(deferred)
+				const hedgerBefore = await hedger.getBalanceInfo(userAddr)
+
+				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(remaining)
+				const detail = await user.getLiquidatedStateOfPartyA()
+				expect(detail.disputed).to.equal(false)
+				expect(detail.partyAAccumulatedUpnl).to.equal(quoteProfit)
+				const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+				expect(settlement.expectedAmount).to.equal(quoteProfit)
+				expect(settlement.actualAmount).to.equal(quoteProfit)
+
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(0n)
+				expect((await user.getBalanceInfo()).allocatedBalances).to.equal(remaining)
+				const hedgerAfter = await hedger.getBalanceInfo(userAddr)
+				expect(hedgerAfter.allocatedBalances - hedgerBefore.allocatedBalances).to.equal(settlement.cva - quoteProfit)
+			})
+		}
+
+		it("caps PartyB's payment when the quote profit is larger than the signed profit", async function () {
+			const quoteId = await openLong(INCIDENT_QUANTITY)
+			await advanceEpochs(4n)
+			const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
+			const state = await signedState(hedgerAddr, 1n, price)
+			const quoteProfit = await quoteLevelUpnl([quoteId], price)
+			const signedProfit = quoteProfit - 1n
+			const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: 0n })
+			const hedgerBefore = await hedger.getBalanceInfo(userAddr)
+
+			expect(signedProfit).to.be.greaterThan(0n)
+			expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+			const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+			expect(settlement.expectedAmount).to.equal(quoteProfit)
+			expect(settlement.actualAmount).to.equal(quoteProfit)
+
+			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+			const hedgerAfter = await hedger.getBalanceInfo(userAddr)
+			expect(hedgerAfter.allocatedBalances - hedgerBefore.allocatedBalances).to.equal(settlement.cva - signedProfit)
+		})
+
+		it("restores only the quote profit when it is smaller than the signed profit", async function () {
+			const quoteId = await openLong(INCIDENT_QUANTITY)
+			await advanceEpochs(4n)
+			const balanceBefore = await user.getBalanceInfo()
+			const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
+			const state = await signedState(hedgerAddr, 1n, price)
+			const quoteProfit = await quoteLevelUpnl([quoteId], price)
+			const signedProfit = quoteProfit + 1n
+			const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: 0n })
+
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+			const balanceAfter = await user.getBalanceInfo()
+			expect(balanceAfter.allocatedBalances).to.equal(
+				balanceBefore.allocatedBalances - balanceBefore.lockedCva - balanceBefore.lockedLf + quoteProfit,
+			)
+		})
+	})
+
+	describe("zero and opposite-direction rounding", function () {
+		for (const [quoteUpnl, signedUpnl] of [
+			[-1n, 1n],
+			[1n, -1n],
+			[-1n, 0n],
+			[1n, 0n],
+			[0n, -1n],
+			[0n, 1n],
+		]) {
+			it(`settles zero when quotes report ${quoteUpnl} and Muon reports ${signedUpnl}`, async function () {
+				await context.partyBAccountFacet.connect(hedger.signer).allocateForPartyB(decimal(1000n), userAddr)
+				const quoteId = await openLong(FIXED_POINT_SCALE)
+				const price = OPEN_PRICE + quoteUpnl
+				expect(await quoteLevelUpnl([quoteId], price)).to.equal(quoteUpnl)
+				const balance = await user.getBalanceInfo()
+				const facet = await startLiquidation(signedUpnl, price, await signedState(hedgerAddr, 1n, price), {
+					totalUnrealizedLoss: quoteUpnl < 0n ? quoteUpnl : 0n,
+					liquidationAllocatedBalance: balance.lockedCva + balance.lockedLf / 2n,
+				})
+				const deferredBefore = await context.viewFacet.getPartyADeferredBalance(userAddr)
+				const partyBBefore = await hedger.getBalanceInfo(userAddr)
+				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+				const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+				expect(settlement.expectedAmount).to.equal(quoteUpnl)
+				expect(settlement.actualAmount).to.equal(quoteUpnl)
+				const detail = await user.getLiquidatedStateOfPartyA()
+				expect(detail.liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
+				expect(detail.disputed).to.equal(false)
+				expect(detail.partyAAccumulatedUpnl).to.equal(0n)
+				const expectedDeferred = deferredBefore - (signedUpnl > 0n ? signedUpnl : 0n)
+				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(expectedDeferred)
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+				expect((await hedger.getBalanceInfo(userAddr)).allocatedBalances - partyBBefore.allocatedBalances).to.equal(settlement.cva)
+				expect((await user.getBalanceInfo()).allocatedBalances).to.equal(expectedDeferred)
+			})
+		}
+
+		it("rejects an empty repeat batch without reducing the deferred balance again", async function () {
+			const quoteId = await openLong(INCIDENT_QUANTITY)
+			await advanceEpochs(4n)
+			const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
+			const quoteProfit = await quoteLevelUpnl([quoteId], price)
+			const facet = await startLiquidation(quoteProfit + 1n, price, await signedState(hedgerAddr, 1n, price), { liquidationAllocatedBalance: 0n })
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+			const deferred = await context.viewFacet.getPartyADeferredBalance(userAddr)
+			const settlements = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+			await expect(facet.liquidatePositionsPartyAWithSnapshot(userAddr, [])).to.be.revertedWith("LiquidationFacet: Empty quote list")
+			expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(deferred)
+			expect(await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])).to.deep.equal(settlements)
+			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+		})
+	})
+
+	describe("rounding reduction across multiple PartyBs", function () {
+		it("nets opposite PartyB payments to zero when the signed and quote totals disagree on direction", async function () {
+			const hedger2 = new Hedger(context, context.signers.hedger2)
+			await hedger2.setup()
+			await hedger2.setBalances(decimal(5000n), decimal(5000n))
+			await context.fundingRateFacet.connect(hedger2.signer).setEpochDurations([1], [EPOCH])
+			for (const partyB of [hedger, hedger2]) {
+				await context.partyBAccountFacet.connect(partyB.signer).allocateForPartyB(decimal(1000n), userAddr)
+			}
+			const partyBs = [hedgerAddr, await hedger2.getAddress()]
+			const quoteIds = [await openLong(2n * FIXED_POINT_SCALE), await openLong(FIXED_POINT_SCALE, OPEN_PRICE - 2n, hedger2)]
+			const price = OPEN_PRICE - 1n
+			expect(await quoteLevelUpnl(quoteIds, price)).to.equal(-1n)
+			const balance = await user.getBalanceInfo()
+			const facet = await startLiquidation(1n, price, await Promise.all(partyBs.map(partyB => signedState(partyB, 1n, price))), {
+				totalUnrealizedLoss: -2n,
+				liquidationAllocatedBalance: balance.lockedCva + balance.lockedLf / 2n,
+			})
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, quoteIds)
+			const settlements = await context.viewFacet.getSettlementStates(userAddr, partyBs)
+			expect(settlements.map(value => value.expectedAmount)).to.deep.equal([-2n, 1n])
+			expect(settlements.map(value => value.actualAmount)).to.deep.equal([-2n, 1n])
+			expect((await user.getLiquidatedStateOfPartyA()).partyAAccumulatedUpnl).to.equal(0n)
+			const balances = await Promise.all(partyBs.map(partyB => context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)))
+			await facet.settlePartyALiquidationWithSnapshot(userAddr, partyBs)
+			for (const [index, partyB] of partyBs.entries()) {
+				expect((await context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)) - balances[index]).to.equal(
+					settlements[index].cva - (index === 0 ? -1n : 1n),
+				)
+			}
+			expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+		})
+
+		for (const quoteUpnl of [-1n, 1n]) {
+			it(`reduces both ${quoteUpnl}-unit buckets when the aggregate payment is zero`, async function () {
+				const hedger2 = new Hedger(context, context.signers.hedger2)
+				await hedger2.setup()
+				await hedger2.setBalances(decimal(5000n), decimal(5000n))
+				await context.fundingRateFacet.connect(hedger2.signer).setEpochDurations([1], [EPOCH])
+				const partyBs = [hedgerAddr, await hedger2.getAddress()]
+				for (const partyB of [hedger, hedger2]) {
+					await context.partyBAccountFacet.connect(partyB.signer).allocateForPartyB(decimal(1000n), userAddr)
+				}
+				const quoteIds = [await openLong(FIXED_POINT_SCALE), await openLong(FIXED_POINT_SCALE, OPEN_PRICE, hedger2)]
+				const price = OPEN_PRICE + quoteUpnl
+				expect(await quoteLevelUpnl(quoteIds, price)).to.equal(2n * quoteUpnl)
+				const balance = await user.getBalanceInfo()
+				const facet = await startLiquidation(-quoteUpnl, price, await Promise.all(partyBs.map(partyB => signedState(partyB, 1n, price))), {
+					totalUnrealizedLoss: quoteUpnl < 0n ? 2n * quoteUpnl : 0n,
+					liquidationAllocatedBalance: balance.lockedCva + balance.lockedLf / 2n,
+				})
+				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteIds[0]])
+				expect((await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr]))[0].expectedAmount).to.equal(quoteUpnl)
+				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteIds[1]])
+				const settlements = await context.viewFacet.getSettlementStates(userAddr, partyBs)
+				expect(settlements.map(value => value.expectedAmount)).to.deep.equal([quoteUpnl, quoteUpnl])
+				expect(settlements.map(value => value.actualAmount)).to.deep.equal([quoteUpnl, quoteUpnl])
+				expect((await user.getLiquidatedStateOfPartyA()).partyAAccumulatedUpnl).to.equal(0n)
+				expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
+				const balances = await Promise.all(partyBs.map(partyB => context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)))
+				// Each one-unit bucket consumes only half the reduction, across two transactions.
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [partyBs[0]])
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(true)
+				expect((await context.viewFacet.getSettlementStates(userAddr, [partyBs[1]]))[0].actualAmount).to.equal(quoteUpnl)
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [partyBs[1]])
+				for (const [index, partyB] of partyBs.entries()) {
+					expect((await context.viewFacet.allocatedBalanceOfPartyB(partyB, userAddr)) - balances[index]).to.equal(settlements[index].cva)
+				}
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+			})
+		}
+	})
+
+	describe("rounding cap with liquidation haircuts", function () {
+		for (const liquidationType of [LiquidationType.LATE, LiquidationType.OVERDUE]) {
+			for (const signedDifference of [-1n, 1n]) {
+				it(`settles ${LiquidationType[liquidationType]} with a ${signedDifference}-unit signed loss difference`, async function () {
+					const quoteId = await openLong(INCIDENT_QUANTITY)
+					await advanceEpochs(4n)
+					const price = await normalLiquidationPrice([quoteId], INCIDENT_QUANTITY)
+					const quoteUpnl = await quoteLevelUpnl([quoteId], price)
+					const signedUpnl = quoteUpnl + signedDifference
+					const balance = await user.getBalanceInfo()
+					const allocated = -signedUpnl + (liquidationType === LiquidationType.LATE ? balance.lockedCva / 2n : -decimal(1n))
+					const facet = await startLiquidation(signedUpnl, price, await signedState(hedgerAddr, 1n, price), {
+						totalUnrealizedLoss: signedUpnl,
+						liquidationAllocatedBalance: allocated,
+					})
+					const detail = await user.getLiquidatedStateOfPartyA()
+					expect(detail.liquidationType).to.equal(BigInt(liquidationType))
+					const reduction = signedDifference > 0n ? signedDifference : 0n
+					const expectedActual =
+						liquidationType === LiquidationType.LATE ? quoteUpnl + reduction : quoteUpnl + (-quoteUpnl * detail.deficit) / -signedUpnl + reduction
+					const expectedCva = liquidationType === LiquidationType.LATE ? balance.lockedCva - detail.deficit : 0n
+					const partyBBefore = await hedger.getBalanceInfo(userAddr)
+					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+					const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+					expect(settlement.expectedAmount).to.equal(quoteUpnl)
+					expect(settlement.actualAmount).to.equal(expectedActual - reduction)
+					expect(settlement.cva).to.equal(expectedCva)
+					expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
+					await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+					expect((await hedger.getBalanceInfo(userAddr)).allocatedBalances - partyBBefore.allocatedBalances).to.equal(expectedCva - expectedActual)
+					expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+				})
+			}
+		}
+	})
+
+	describe("rounding cap for a cross-margin PartyB", function () {
+		for (const signedDifference of [-1n, 1n]) {
+			it(`keeps the reserve and payment exact with a ${signedDifference}-unit signed profit difference`, async function () {
+				const quoteId = await openLong(INCIDENT_QUANTITY)
+				await migratePartyBToCross(context, hedger, [quoteId])
+				await advanceEpochs(4n)
+				const price = await positiveNormalLiquidationPrice(quoteId, INCIDENT_QUANTITY)
+				const quoteProfit = await quoteLevelUpnl([quoteId], price)
+				const signedProfit = quoteProfit + signedDifference
+				const payment = signedDifference < 0n ? signedProfit : quoteProfit
+				const facet = await startLiquidation(signedProfit, price, await signedState(hedgerAddr, 1n, price), { liquidationAllocatedBalance: 0n })
+				const allocated = await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddr, ZeroAddress)
+				await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
+				const [settlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr])
+				expect(settlement.actualAmount).to.equal(quoteProfit)
+				expect(settlement.expectedAmount).to.equal(quoteProfit)
+				// Keep the original conservative reserve until this PartyB is actually settled.
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(quoteProfit)
+				await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
+				expect(await context.viewFacet.allocatedBalanceOfPartyB(hedgerAddr, ZeroAddress)).to.equal(allocated + settlement.cva - payment)
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(0n)
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+			})
+		}
+	})
+
+	describe("connection cleanup across liquidation batches", function () {
+		for (const direction of ["negative", "positive"] as const) {
+			for (const pendingOrder of ["before positions", "between position batches", "after positions"] as const) {
+				it(`settles a ${direction} rounding cap with pending quotes cleared ${pendingOrder}`, async function () {
+					const hedger2 = new Hedger(context, context.signers.hedger2)
+					await hedger2.setup()
+					await hedger2.setBalances(decimal(5000n), decimal(5000n))
+					await context.partyBAccountFacet.connect(hedger2.signer).allocateForPartyB(decimal(1000n), userAddr)
+					await context.fundingRateFacet.connect(hedger2.signer).setEpochDurations([1], [EPOCH])
+					const hedger2Addr = await hedger2.getAddress()
+					const secondQuantity = decimal(100n)
+					const secondOpenPrice = decimal(1n)
+					const losingQuote = await openLong(INCIDENT_QUANTITY)
+					const winningQuote = await openLong(secondQuantity, secondOpenPrice, hedger2)
+					await advanceEpochs(4n)
+					const firstPartyB = direction === "negative" ? hedger : hedger2
+					const firstQuote = direction === "negative" ? losingQuote : winningQuote
+					const lastQuote = direction === "negative" ? winningQuote : losingQuote
+					const pendingQuote = await user.sendQuote()
+					await firstPartyB.lockQuote(pendingQuote)
+
+					const balance = await user.getBalanceInfo()
+					const targetUpnl =
+						direction === "negative"
+							? -(balance.allocatedBalances - balance.lockedCva - balance.lockedLf / 2n)
+							: balance.lockedCva + balance.lockedLf / 2n
+					const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts([losingQuote, winningQuote])
+					const price =
+						(INCIDENT_QUANTITY * OPEN_PRICE + secondQuantity * secondOpenPrice + (targetUpnl + fundingDebt) * FIXED_POINT_SCALE) /
+						(INCIDENT_QUANTITY + secondQuantity)
+					const losingUpnl =
+						((price - OPEN_PRICE) * INCIDENT_QUANTITY) / FIXED_POINT_SCALE - (await context.viewFacetQuote.getSumQuoteFundingDebts([losingQuote]))
+					const winningUpnl =
+						((price - secondOpenPrice) * secondQuantity) / FIXED_POINT_SCALE - (await context.viewFacetQuote.getSumQuoteFundingDebts([winningQuote]))
+					expect(losingUpnl).to.be.lessThan(0n)
+					expect(winningUpnl).to.be.greaterThan(0n)
+					const signedUpnl = losingUpnl + winningUpnl + (direction === "negative" ? 1n : -1n)
+					const states = [await signedState(hedgerAddr, 1n, price), await signedState(hedger2Addr, 1n, price)]
+					const facet = await startLiquidation(signedUpnl, price, states, {
+						totalUnrealizedLoss: losingUpnl,
+						liquidationAllocatedBalance: direction === "positive" ? 0n : balance.allocatedBalances,
+					})
+					expect((await user.getLiquidatedStateOfPartyA()).liquidationType).to.equal(BigInt(LiquidationType.NORMAL))
+
+					if (pendingOrder === "before positions") await facet.liquidatePendingPositionsPartyAWithSnapshot(userAddr)
+					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [firstQuote])
+					expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, await firstPartyB.getAddress())).to.equal(
+						pendingOrder !== "before positions",
+					)
+					if (pendingOrder === "between position batches") await facet.liquidatePendingPositionsPartyAWithSnapshot(userAddr)
+					if (pendingOrder !== "after positions") {
+						expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, await firstPartyB.getAddress())).to.equal(false)
+					}
+					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [lastQuote])
+					if (pendingOrder === "after positions") await facet.liquidatePendingPositionsPartyAWithSnapshot(userAddr)
+
+					const detail = await user.getLiquidatedStateOfPartyA()
+					expect(detail.disputed).to.equal(false)
+					expect(detail.partyAAccumulatedUpnl).to.equal(signedUpnl)
+					const [losingSettlement, winningSettlement] = await context.viewFacet.getSettlementStates(userAddr, [hedgerAddr, hedger2Addr])
+					expect(losingSettlement.expectedAmount).to.equal(losingUpnl)
+					expect(winningSettlement.expectedAmount).to.equal(winningUpnl)
+					expect(losingSettlement.actualAmount).to.equal(losingSettlement.expectedAmount)
+					expect(winningSettlement.actualAmount).to.equal(winningSettlement.expectedAmount)
+					expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
+					const balances = await Promise.all([hedger, hedger2].map(partyB => partyB.getBalanceInfo(userAddr)))
+					// Pay the opposite-direction bucket first: it must not consume the reduction.
+					const settlementOrder = direction === "negative" ? [hedger2Addr, hedgerAddr] : [hedgerAddr, hedger2Addr]
+					await facet.settlePartyALiquidationWithSnapshot(userAddr, [settlementOrder[0]])
+					expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(true)
+					await facet.settlePartyALiquidationWithSnapshot(userAddr, [settlementOrder[1]])
+					expect((await hedger.getBalanceInfo(userAddr)).allocatedBalances - balances[0].allocatedBalances).to.equal(
+						losingSettlement.cva - losingUpnl - (direction === "negative" ? 1n : 0n),
+					)
+					expect((await hedger2.getBalanceInfo(userAddr)).allocatedBalances - balances[1].allocatedBalances).to.equal(
+						winningSettlement.cva - winningUpnl + (direction === "positive" ? 1n : 0n),
+					)
+					expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+					expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
+					expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedgerAddr)).to.equal(false)
+					expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedger2Addr)).to.equal(false)
+				})
+			}
+		}
+	})
+
 	describe("allowance scales with the position count captured at start", function () {
 		let quoteA: bigint
 		let quoteB: bigint
@@ -267,10 +660,7 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			const facet = await startLiquidation(settledUpnl - 2n * ALLOWANCE_PER_POSITION, price, state)
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteA])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
-			const tx = await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteB])
-			const accepted = parseRoundingAccepted((await tx.wait())?.logs ?? [])
-			expect(accepted).to.have.length(1)
-			expect(accepted[0].allowance).to.equal(2n * ALLOWANCE_PER_POSITION)
+			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteB])
 			expect((await user.getLiquidatedStateOfPartyA()).disputed).to.equal(false)
 		})
 

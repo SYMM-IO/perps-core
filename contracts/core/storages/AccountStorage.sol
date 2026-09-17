@@ -258,6 +258,11 @@ library AccountStorage {
 		/// @dev Sizes the uPNL rounding allowance for the whole liquidation, so closing positions in batches does not shrink it.
 		///      Kept beside LiquidationDetail so the public liquidation-detail tuple stays unchanged. Cleared when the liquidation ends.
 		mapping(address => uint256) liquidationStartPositionCounts;
+		/// @notice Accepted uPNL reduction still to apply to pending PartyB settlements.
+		/// @dev Positive reduces PartyB payments to PartyA; negative reduces PartyA payments to PartyBs.
+		///      Temporary state shared across settlement batches, not a balance or a dust counter.
+		///      Cleared on settlement completion, dispute override, takeover, and a new liquidation.
+		mapping(address => int256) partyALiquidationRoundingReduction;
 	}
 
 	function layout() internal pure returns (Layout storage l) {
