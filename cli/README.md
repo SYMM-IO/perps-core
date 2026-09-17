@@ -16,6 +16,8 @@ The fixed Arbitrum v0.8.6 production upgrade is available under **Other maintena
 
 For the current AccountLayer/InstantLayer upgrade that preserves GaslessLayer's proxy and current on-chain values, select **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values**. See [its upgrade runbook](../docs/arbitrum-account-instant-upgrade.md) for the input JSON, eight deployments, Safe batches and separate PartyB administrator stages.
 
+For HyperEVM v0.8.5, select **Other maintenance scripts → HyperEVM v0.8.5 / recover the zero-address balance**. The guided flow runs local tests, records TPM recipient confirmation, deploys the isolated recovery facet, exports the Safe sweep, and verifies the recovery and Leon handoff. Fork rehearsal is optional and off by default. See the [recovery runbook](../docs/hyperevm-zero-balance-recovery.md).
+
 `./symmio --help` only explains how to launch the application. Every other argument and
 non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
 no generated CLI bundle.
