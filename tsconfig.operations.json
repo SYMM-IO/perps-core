@@ -4,7 +4,7 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
-	"include": ["hardhat.config.ts", "tasks/**/*.ts", "scripts/**/*.ts"],
+	"include": ["hardhat.config.ts", "hardhat.recovery.config.ts", "tasks/**/*.ts", "scripts/**/*.ts"],
 	"exclude": [
 		// These are test-model harnesses covered by the Hardhat test suites. Including them
 		// pulls the entire legacy test type graph into the deployment/tooling gate.
