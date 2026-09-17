@@ -332,8 +332,7 @@ library ClearingHouseFacetImpl {
 
 	/// @notice Settles the clearing house liquidation for PartyA takeover
 	/// @param partyA The partyA being settled
-	/// @param settledPartyBs PartyBs whose settlement states should be cleaned up
-	///        (includes partyBs processed by normal flow before takeover whose connections were already removed)
+	/// @param settledPartyBs All PartyBs with pending settlements from the normal liquidation flow
 	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) public returns (bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -349,9 +348,7 @@ library ClearingHouseFacetImpl {
 
 		liquidationId = chLayout.partyATakeoverDetails[partyA].liquidationId;
 
-		// Clear settlement states for partyBs explicitly provided by the clearing house.
-		// This is needed because the normal liquidation flow may have set settlement states
-		// for partyBs whose connections were already removed from connectedPartyBs.
+		// Clear settlement buckets supplied by the clearing house; their connections may already be gone.
 		uint256 clearedSettlements = 0;
 		for (uint256 i = 0; i < settledPartyBs.length; i++) {
 			address partyB = settledPartyBs[i];
@@ -450,6 +447,8 @@ library ClearingHouseFacetImpl {
 
 		accountLayout.liquidationDetails[partyA].disputed = false;
 		accountLayout.liquidationDetails[partyA].liquidationFee = 0;
+		// Takeover replaces normal settlement, so no unapplied automatic reduction may survive it.
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 		delete accountLayout.liquidators[partyA];
 
 		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });

@@ -118,8 +118,8 @@ library LibQuoteClose {
 
 		address feeCollector = LibAccount.getFeeCollector(quote.affiliate);
 		accountLayout.balances[feeCollector] += fee;
-		quote.closedAmount += filledAmount;
 		LibQuote.subFromPartiesAggregatedPositions(quote, filledAmount);
+		quote.closedAmount += filledAmount;
 		quote.quantityToClose -= filledAmount;
 
 		if (quote.closedAmount == quote.quantity) {
