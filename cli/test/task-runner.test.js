@@ -646,3 +646,16 @@ test("a blocked cancellation names the hashes and the exact recovery path", asyn
 	assert.match(cancelled.lastError, /DEPLOY_TX_REPLACEMENTS/);
 	assert.match(cancelled.lastError, /CONFIRM_DROPPED_TX_HASHES/);
 });
+
+test("resume detects changes to the isolated v085 compiler configuration", async () => {
+	const task = mutating({
+		run: async () => {
+			throw new Error("pause");
+		},
+	});
+	const { root, runner } = runnerFor(task);
+	fs.writeFileSync(path.join(root, "hardhat.recovery.config.ts"), "solc 0.8.18");
+	await runner.start("maintenance.test");
+	fs.writeFileSync(path.join(root, "hardhat.recovery.config.ts"), "solc 0.8.36");
+	await assert.rejects(runner.resumeActive(), /Task source changed/);
+});

@@ -128,6 +128,7 @@ function hashSourceTree(root) {
 		"tasks",
 		"utils",
 		"hardhat.config.ts",
+		"hardhat.recovery.config.ts",
 		"package.json",
 		"package-lock.json",
 		"tsconfig.json",
