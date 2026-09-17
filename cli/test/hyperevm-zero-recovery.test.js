@@ -10,7 +10,7 @@ import {
 	planCut,
 	validateInput,
 	requireValidation,
-	requireTpmConfirmation,
+	requireRecipientConfirmation,
 	recoveryEvent,
 	recoveryAction,
 } from "../../deployment-tooling/hyperevm-zero-recovery.js";
@@ -99,11 +99,11 @@ test("an operator-requested fork must pass all guards for this exact input and a
 		);
 	assert.throws(() => requireValidation(report, input, { deployedBytecode: "0x6001" }), /fork rehearsal/);
 });
-test("TPM must confirm the exact recipient with a named, dated reference", () => {
-	const valid = { recipient: TARGET.recipient, confirmedBy: "TPM", reference: "approval-123", confirmedAt: "2026-09-17T10:00:00Z" };
-	requireTpmConfirmation(valid);
-	for (const field of Object.keys(valid)) assert.throws(() => requireTpmConfirmation({ ...valid, [field]: "" }), /TPM confirmation/);
-	assert.throws(() => requireTpmConfirmation({ ...valid, recipient: TARGET.owner }), /TPM confirmation/);
+test("operator confirmation requires only the exact recipient and confirmation date", () => {
+	const valid = { recipient: TARGET.recipient, confirmedAt: "2026-09-17T10:00:00Z" };
+	requireRecipientConfirmation(valid);
+	for (const field of Object.keys(valid)) assert.throws(() => requireRecipientConfirmation({ ...valid, [field]: "" }), /Operator confirmation/);
+	assert.throws(() => requireRecipientConfirmation({ ...valid, recipient: TARGET.owner }), /Operator confirmation/);
 });
 const eventLog = (amount = 200981026302519456100n, recipient = TARGET.recipient, before = 4605160364884342n, after = before + amount) => ({
 	address: TARGET.core,
@@ -158,7 +158,7 @@ test("prepare defaults to no fork and never asks for archive credentials", async
 	assert.equal(prompts.length, 1);
 	validateInput(JSON.parse(fs.readFileSync(input.input)), root);
 });
-test("resume verifies the existing Safe export and records handoff only after evidence, with no fork RPC", async t => {
+test("resume completes after recovery verification, cleanup and summary without communication prompts", async t => {
 	const root = fixture(t),
 		task = createHyperEvmZeroRecoveryTask(v => v);
 	const standard = { ...inputFor(false), sourceDigest: sourceDigest(root) },
@@ -168,10 +168,10 @@ test("resume verifies the existing Safe export and records handoff only after ev
 		inputDigest: input.inputDigest,
 		safeDelivery: { builderPath: "existing.json" },
 		localTests: { passed: true },
-		tpm: { recipient: TARGET.recipient, confirmedBy: "TPM", reference: "r", confirmedAt: new Date().toISOString() },
+		recipientConfirmation: { recipient: TARGET.recipient, confirmedAt: new Date().toISOString() },
 	};
 	fs.writeFileSync(input.output, JSON.stringify(report));
-	const completed = new Set(["compile", "test", "inspect", "tpm", "authorize", "deploy", "publish", "cut", "grant"]),
+	const completed = new Set(["compile", "test", "inspect", "recipient", "authorize", "deploy", "publish", "cut", "grant"]),
 		phases = [],
 		prompts = [];
 	const ctx = {
@@ -183,7 +183,8 @@ test("resume verifies the existing Safe export and records handoff only after ev
 		ui: {
 			text: async p => {
 				prompts.push(p.message);
-				return p.message.includes("transaction hash") ? "0x" + "1".repeat(64) : "tpm-message-1";
+				assert.match(p.message, /transaction hash/);
+				return "0x" + "1".repeat(64);
 			},
 			note: () => {},
 		},
@@ -201,8 +202,8 @@ test("resume verifies the existing Safe export and records handoff only after ev
 			const current = JSON.parse(fs.readFileSync(input.output));
 			if (phase === "verify-recovery") current.recovery = { transactionHash: "0x" + "1".repeat(64) };
 			if (phase === "evidence") {
-				current.handoffFile = path.join(root, "handoff.txt");
-				fs.writeFileSync(current.handoffFile, "TPM: coordinate with Leon");
+				current.summaryFile = path.join(root, "recovery-summary.txt");
+				fs.writeFileSync(current.summaryFile, "Recovery verified");
 			}
 			fs.writeFileSync(input.output, JSON.stringify(current));
 		},
@@ -211,16 +212,17 @@ test("resume verifies the existing Safe export and records handoff only after ev
 		},
 	};
 	await task.run(ctx, input);
-	assert.deepEqual(phases, ["verify-recovery", "cleanup", "evidence", "evidence"]);
-	assert.equal(JSON.parse(fs.readFileSync(input.output)).handoff.reference, "tpm-message-1");
+	assert.deepEqual(phases, ["verify-recovery", "cleanup", "evidence"]);
+	assert.equal(completed.has("evidence"), true);
+	assert.equal(prompts.length, 1);
 	assert.equal(prompts.filter(p => p.includes("transaction hash")).length, 1);
 });
-test("skipping the optional fork cannot skip local tests or TPM confirmation", () => {
+test("skipping the optional fork retains local tests and recipient confirmation, with verification as the final step", () => {
 	const task = createHyperEvmZeroRecoveryTask(v => v),
 		ids = task.plan({}, { forkEnabled: false }).map(s => s.id);
-	assert.deepEqual(ids.slice(0, 5), ["compile", "test", "inspect", "tpm", "authorize"]);
+	assert.deepEqual(ids.slice(0, 5), ["compile", "test", "inspect", "recipient", "authorize"]);
 	assert.ok(ids.indexOf("recovery") < ids.indexOf("cleanup"));
-	assert.ok(ids.indexOf("evidence") < ids.indexOf("handoff"));
+	assert.equal(ids.at(-1), "evidence");
 });
 
 test("first Safe export contains only the full-balance recovery call and waits without marking execution complete", async t => {
@@ -230,7 +232,7 @@ test("first Safe export contains only the full-balance recovery call and waits w
 		input = { ...standard, inputDigest: digest(standard), input: path.join(root, "input.json"), output: path.join(root, "report.json") };
 	fs.writeFileSync(input.input, JSON.stringify(standard));
 	fs.writeFileSync(input.output, JSON.stringify({ inputDigest: input.inputDigest }));
-	const completed = new Set(["compile", "test", "inspect", "tpm", "authorize", "deploy", "publish", "cut", "grant"]);
+	const completed = new Set(["compile", "test", "inspect", "recipient", "authorize", "deploy", "publish", "cut", "grant"]);
 	const ctx = {
 		root,
 		state: { runId: "recovery-test" },

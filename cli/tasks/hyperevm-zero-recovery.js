@@ -6,7 +6,7 @@ import {
 	digest,
 	sourceDigest,
 	validateInput,
-	requireTpmConfirmation,
+	requireRecipientConfirmation,
 } from "../../deployment-tooling/hyperevm-zero-recovery.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
 import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, hydrateSigner, selectSigner, signerEnvironment } from "../signer/index.js";
@@ -20,7 +20,7 @@ export const RECOVERY_PLAN = Object.freeze(
 		["compile", "prepare", "Compile the isolated Solidity 0.8.18 recovery facet"],
 		["test", "verification", "Run the local recovery tests"],
 		["inspect", "prepare", "Inspect Core, Safe and authorities"],
-		["tpm", "authorization", "Record TPM confirmation of the exact recipient"],
+		["recipient", "authorization", "Confirm the exact recipient address"],
 		["rehearse", "verification", "Prove full-precision recovery and guards on a historical fork"],
 		["authorize", "authorization", "Review and authorize the live operations"],
 		["deploy", "deployment", "Deploy the recovery facet"],
@@ -29,8 +29,7 @@ export const RECOVERY_PLAN = Object.freeze(
 		["grant", "execution", "Grant the Safe a temporary recovery role if needed"],
 		["recovery", "execution", "Export the Safe recovery and verify its receipt"],
 		["cleanup", "execution", "Remove only the recovery role granted by this task"],
-		["evidence", "verification", "Verify final balances and write the TPM / Leon handoff"],
-		["handoff", "verification", "Record delivery of recovery evidence to the TPM"],
+		["evidence", "verification", "Verify final balances and write the recovery summary"],
 	].map(([id, phase, title]) => ({ id, phase, title })),
 );
 
@@ -104,12 +103,12 @@ async function resumeHash(ctx, input, label) {
 export function createHyperEvmZeroRecoveryTask(common) {
 	return common({
 		id: "maintenance.hyperevm-zero-balance-recovery",
-		version: 2,
+		version: 3,
 		category: "maintenance",
 		risk: "transaction",
 		title: "HyperEVM v0.8.5 / recover the zero-address balance",
 		description:
-			"Test the add-only upgrade locally, optionally rehearse a fork, deploy one facet, export the Safe sweep, and verify the TPM / Leon handoff.",
+			"Test the add-only upgrade locally, optionally rehearse a fork, deploy one facet, export the Safe sweep, and verify the recovery balances.",
 		supportedNetworks: ["hyperevm"],
 		inputs: ["network", "input", "output", "inputDigest", "rpcKey", "archiveRpcKey"].map(id => ({
 			id,
@@ -121,7 +120,7 @@ export function createHyperEvmZeroRecoveryTask(common) {
 			"local test evidence; optional fork evidence",
 			"deployment and governance receipts",
 			"Safe Transaction Builder recovery JSON",
-			"full-precision recovery evidence and TPM handoff",
+			"full-precision recovery evidence and summary",
 		],
 		signerPolicy: () => ({
 			role: "Recovery facet deployment wallet",
@@ -150,7 +149,7 @@ export function createHyperEvmZeroRecoveryTask(common) {
 				output = path.join(directory, "report.json");
 			atomicWrite(input, standard);
 			ui.note(
-				`Core: ${TARGET.core}\nRecipient: ${TARGET.recipient}\nOwner / role admin: ${TARGET.owner}\nAll amounts use the internal 18-decimal balance. TPM confirmation is required before live operations. Fork rehearsal: ${forkEnabled ? "enabled (requires an archive RPC)" : "not requested"}.\nReports: ${directory}`,
+				`Core: ${TARGET.core}\nRecipient: ${TARGET.recipient}\nOwner / role admin: ${TARGET.owner}\nAll amounts use the internal 18-decimal balance. You confirm the recipient before live operations. Fork rehearsal: ${forkEnabled ? "enabled (requires an archive RPC)" : "not requested"}.\nReports: ${directory}`,
 			);
 			return { network: "hyperevm", chainId: 999, mode: "live", forkEnabled, ...references, input, output, inputDigest };
 		},
@@ -184,24 +183,20 @@ export function createHyperEvmZeroRecoveryTask(common) {
 				atomicWrite(input.output, report);
 			});
 			await step("inspect", () => runRecoveryPhase(ctx, input, "inspect"));
-			await step("tpm", async () => {
+			await step("recipient", async () => {
 				const report = readReport(input);
-				if (report.tpm) {
-					requireTpmConfirmation(report.tpm);
+				if (report.recipientConfirmation) {
+					requireRecipientConfirmation(report.recipientConfirmation);
 					return;
 				}
-				const confirmation = {};
-				for (const [key, message] of [
-					["recipient", `Paste the recipient address confirmed by the TPM (${TARGET.recipient})`],
-					["confirmedBy", "TPM name"],
-					["reference", "Confirmation reference (ticket/message URL or recorded approval)"],
-				]) {
-					confirmation[key] = await ctx.ui.text({ message, validate: v => (v?.trim() ? undefined : "Required") });
-					if (!confirmation[key]) return ctx.wait("TPM confirmation is required before continuing.");
-				}
-				confirmation.confirmedAt = new Date().toISOString();
-				requireTpmConfirmation(confirmation);
-				report.tpm = confirmation;
+				const recipient = await ctx.ui.text({
+					message: `Confirm the recovery recipient by entering its address (${TARGET.recipient})`,
+					validate: value =>
+						value?.toLowerCase() === TARGET.recipient.toLowerCase() ? undefined : "Enter the displayed recipient address",
+				});
+				if (!recipient) return ctx.wait("Confirm the recipient to continue.");
+				report.recipientConfirmation = { recipient, confirmedAt: new Date().toISOString() };
+				requireRecipientConfirmation(report.recipientConfirmation);
 				atomicWrite(input.output, report);
 			});
 			if (input.forkEnabled) await step("rehearse", () => runRecoveryPhase(ctx, input, "rehearse"));
@@ -283,18 +278,9 @@ export function createHyperEvmZeroRecoveryTask(common) {
 					report.temporaryRole ? { selection: await ownerSigner(ctx), transaction: await resumeHash(ctx, input, "cleanup") } : {},
 				);
 			});
-			await step("evidence", () => runRecoveryPhase(ctx, input, "evidence"));
-			await step("handoff", async () => {
+			await step("evidence", async () => {
 				const report = await runRecoveryPhase(ctx, input, "evidence");
-				ctx.ui.note(fs.readFileSync(report.handoffFile, "utf8"));
-				const reference = await ctx.ui.text({
-					message: "After sending this evidence to the TPM and asking them to coordinate with Leon, record the message/ticket reference",
-					validate: v => (v?.trim() ? undefined : "Record the delivery reference"),
-				});
-				if (!reference)
-					return ctx.wait(`Send ${report.handoffFile} to the TPM, request Leon coordination, then continue to record delivery.`);
-				report.handoff = { reference, recordedAt: new Date().toISOString(), recordedByOperator: true };
-				atomicWrite(input.output, report);
+				ctx.ui.note(fs.readFileSync(report.summaryFile, "utf8"));
 			});
 		},
 		reconcile: async (ctx, input) => {

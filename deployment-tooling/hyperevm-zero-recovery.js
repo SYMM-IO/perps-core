@@ -60,14 +60,9 @@ export function validateInput(input, root) {
 	if (root && sourceDigest(root) !== input.sourceDigest) throw new Error("Recovery source or isolated compiler configuration changed");
 }
 
-export function requireTpmConfirmation(confirmation) {
-	if (
-		!sameAddress(confirmation?.recipient, TARGET.recipient) ||
-		!confirmation?.confirmedBy?.trim() ||
-		!confirmation?.reference?.trim() ||
-		!Number.isFinite(Date.parse(confirmation?.confirmedAt))
-	)
-		throw new Error("TPM confirmation of the exact recipient, name, reference and date is required");
+export function requireRecipientConfirmation(confirmation) {
+	if (!sameAddress(confirmation?.recipient, TARGET.recipient) || !Number.isFinite(Date.parse(confirmation?.confirmedAt)))
+		throw new Error("Operator confirmation of the exact recipient and confirmation date is required");
 }
 
 export function planCut(baseline, current, facet) {

@@ -14,7 +14,7 @@ This workflow moves the entire available internal balance of address zero into t
 | Internal balance precision       | 18 decimals                                               |
 | Legacy AccountFacet              | `0xb6c0FD8B8721ECfb8De7782B9565DE5c8A5C468B`              |
 
-The recipient is a reviewed candidate until the operator records the TPM's confirmation. The task requires the exact recipient address, TPM name, and approval reference before deployment or recovery.
+The operator confirms the exact recipient address before deployment or recovery. No external approval reference or communication is required.
 
 ## Contract change
 
@@ -30,7 +30,7 @@ The frozen storage declaration comes from v0.8.5 commit `6aace1560476374dc7002e6
 2. Select RPC and deployment wallet references. The deployment wallet is separate from the Core owner and recipient Safe.
 3. Compile the isolated artifact and run its local contract and operation tests.
 4. Read Core ownership, effective recovery-role administration, pause flags, persistent signer, collateral decimals, selector map, facet runtime hashes, Safe owners/threshold and raw balances.
-5. Record TPM confirmation of the recipient.
+5. Confirm the recipient address in the operator prompt.
 6. If requested, run the fork rehearsal. A failed requested rehearsal stops the run; it is never silently treated as passed or skipped.
 7. Review the live-operation summary and type `RECOVER ZERO BALANCE ON 999`.
 8. Deploy one facet using the deployment wallet and publish its source on Hyperevmscan.
@@ -38,7 +38,7 @@ The frozen storage declaration comes from v0.8.5 commit `6aace1560476374dc7002e6
 10. Export the recovery call as Safe Transaction Builder JSON. Import it into the **recipient Safe**, review and execute there. The call sweeps the full balance at execution; no amount is rounded or entered manually.
 11. Choose **Continue active task** and provide the executed on-chain transaction hash, not a Safe proposal hash. Verify a successful canonical receipt, exact recovery event, current runtime/selector wiring and fresh source/recipient balances.
 12. Remove only the recovery role temporarily granted by this task. A preexisting role remains intact.
-13. Generate `tpm-handoff.txt`. Send it to the TPM and ask them to coordinate with Leon; record the delivery reference to finish the task.
+13. Verify the final balances and generate `recovery-summary.txt`. The task displays the summary and completes.
 
 The workflow never changes pause flags to make recovery succeed. Any unexpected selector, runtime, owner, collateral, pause/fee-collector or signer drift stops the operation for review. If the Safe balance changes after recovery, automatic reconciliation stops; investigate the intervening activity instead of treating a different current balance as proof of the sweep.
 
@@ -59,12 +59,12 @@ For an optional fork, additionally configure a real archive endpoint under `RPC_
 
 ## Evidence and proof boundaries
 
-Outputs live under `tasks/data/999/zero-recovery/<input-digest>/`; Safe files are linked from `report.json`. Keep the input, report, Safe export, transaction receipts and handoff together. Task-runner journals remain under `.symmio/tasks/`.
+Outputs live under `tasks/data/999/zero-recovery/<input-digest>/`; Safe files are linked from `report.json`. Keep the input, report, Safe export, transaction receipts and summary together. Task-runner journals remain under `.symmio/tasks/`.
 
 - **Local tests:** exact raw arithmetic, dust, two storage writes, unrelated balance preservation, empty/repeat recovery, unauthorized/revoked role, global/accounting pause, persistent signer, zero recipient, overflow, compiler provenance and interrupted transaction reconciliation.
 - **Optional live-state fork:** additionally installs the facet through the deployed diamond, exercises the deployed nonzero suspended-account recovery and verifies selector preservation. Impersonation, gas funding, guard mutations and the synthetic legacy account exist only on the local fork.
 - **Production evidence:** successful canonical receipts, verified deployed runtime, unchanged legacy selectors, the recovery event's before/after amounts and matching fresh balances. Without an archive endpoint, current runtime and fresh balances are verified; historical execution-block runtime is not independently read. The report distinguishes this from the optional archive-backed verification.
-- **Handoff:** the generated text contains the full recovered amount, recipient, recovery transaction link, upgrade transaction, raw before/after balances and the Leon coordination request. Completion records the operator's delivery reference; the CLI itself does not send a message.
+- **Summary:** the generated text contains the full recovered amount, recipient, recovery transaction link, upgrade transaction and raw before/after balances. The task completes after verification and temporary-role cleanup; it does not require sending a message or recording delivery.
 
 Skipping the fork is recorded as not requested, never as a passed fork. Local checks and latest-state inspection do not establish full historical funding provenance for the zero-address balance.
 
@@ -76,7 +76,7 @@ A known pending or replaced transaction must be reconciled with its original or 
 
 Once a Safe export exists, continuation requests execution evidence instead of issuing a new sweep. An empty source alone does not prove the intended recipient was credited. Cancellation does not undo deployments or a diamond cut and remains blocked while a submitted operation's outcome is unresolved.
 
-If the upgrade is installed but recovery cannot proceed, leave balances untouched and review the failing guard. Removing this one selector, if required, is a separate owner-approved rollback. A completed balance transfer is not automatically reversed. Preserve the receipt and coordinate any subsequent movement with the TPM.
+If the upgrade is installed but recovery cannot proceed, leave balances untouched and review the failing guard. Removing this one selector, if required, is a separate owner-approved rollback. A completed balance transfer is not automatically reversed. Preserve the receipt; any subsequent transfer requires a separate operational review.
 
 ## Developer verification
 
