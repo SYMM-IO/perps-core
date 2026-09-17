@@ -262,21 +262,17 @@ library LibPartyALiquidationProcess {
 	///      The returned remainder carries over to later PartyBs and later settlement transactions.
 	function _capSettlementToSmallerUpnl(LiquidationSettlementState storage settlementState, int256 remainingReduction) private returns (int256) {
 		int256 expectedAmount = settlementState.expectedAmount;
-		if (remainingReduction == 0 || (remainingReduction > 0 ? expectedAmount <= 0 : expectedAmount >= 0)) return remainingReduction;
+		if (remainingReduction == 0 || expectedAmount == 0 || (remainingReduction > 0) != (expectedAmount > 0)) return remainingReduction;
 
-		uint256 reduction = Math.min(SignedMath.abs(expectedAmount), SignedMath.abs(remainingReduction));
-		if (remainingReduction > 0) {
-			settlementState.expectedAmount -= int256(reduction);
-			if (settlementState.actualAmount > 0) {
-				settlementState.actualAmount -= int256(Math.min(uint256(settlementState.actualAmount), reduction));
-			}
-			return remainingReduction - int256(reduction);
+		int256 sign = remainingReduction > 0 ? int256(1) : int256(-1);
+		int256 reduction = sign * int256(Math.min(SignedMath.abs(expectedAmount), SignedMath.abs(remainingReduction)));
+		settlementState.expectedAmount = expectedAmount - reduction;
+
+		int256 actualAmount = settlementState.actualAmount;
+		if (actualAmount != 0 && (actualAmount > 0) == (reduction > 0)) {
+			settlementState.actualAmount = actualAmount - sign * int256(Math.min(SignedMath.abs(actualAmount), SignedMath.abs(reduction)));
 		}
-		settlementState.expectedAmount += int256(reduction);
-		if (settlementState.actualAmount < 0) {
-			settlementState.actualAmount += int256(Math.min(SignedMath.abs(settlementState.actualAmount), reduction));
-		}
-		return remainingReduction + int256(reduction);
+		return remainingReduction - reduction;
 	}
 
 	function _smallerSameDirectionUpnl(int256 signedUpnl, int256 settledUpnl) private pure returns (int256) {
