@@ -8,6 +8,45 @@ import test from "node:test";
 
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
+for (const columns of [80, 200]) {
+	test(`CSV review path remains visible at the authorization prompt in a ${columns}-column terminal`, { timeout: 15_000 }, async t => {
+		const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-review-pty-"));
+		t.after(() => fs.rmSync(stateRoot, { recursive: true, force: true }));
+		const csvPath =
+			"/home/operator/perps-core/.symmio/tasks/runs/maintenance.update-symbol-lf-11d11c1c-9117-4c73-8b2a-9cf5f6eb2da2/lf-update/outputs/42161/20260917T110358.870Z-apply/42161-20260917T110358.870Z-apply-preview.csv";
+		const child = spawn(
+			"python3",
+			[
+				path.resolve("cli/test/fixtures/pty-review-note.py"),
+				process.cwd(),
+				process.execPath,
+				path.resolve("cli/test/fixtures/progress-app.js"),
+				String(columns),
+			],
+			{
+				cwd: process.cwd(),
+				stdio: ["ignore", "pipe", "pipe"],
+				env: { ...process.env, SYMMIO_PTY_STATE_ROOT: stateRoot, SYMMIO_PTY_CSV_PATH: csvPath },
+			},
+		);
+		let output = "";
+		child.stdout.on("data", chunk => (output += chunk.toString()));
+		child.stderr.on("data", chunk => (output += chunk.toString()));
+		const code = await new Promise((resolve, reject) => {
+			child.on("error", reject);
+			child.on("close", resolve);
+		});
+		assert.equal(code, 0, output.replace(ANSI, ""));
+		const screen = renderTerminalScreen(output, { columns, rows: 40 });
+		assert.match(screen, /After reviewing the CSV/);
+		assert.match(screen, /LF rollout preview/);
+		assert.ok(screen.replace(/[│\s]/gu, "").includes(csvPath), screen);
+		assert.match(screen, /Wallet: 0x86E99594c904160924AA6d629cfeb5F0F73e916F/);
+		const state = JSON.parse(fs.readFileSync(path.join(stateRoot, "active.json"), "utf8"));
+		assert.equal(state.transactions.length, 0);
+	});
+}
+
 test("PTY arrow navigation renders the exact home menu and exits cleanly", { timeout: 10_000 }, async () => {
 	const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-home-pty-"));
 	const child = spawn("python3", [path.resolve("cli/test/fixtures/pty-home.py"), process.cwd(), process.execPath, path.resolve("cli/symmio.js")], {
