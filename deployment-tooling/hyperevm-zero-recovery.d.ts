@@ -14,7 +14,7 @@ export function sourceDigest(root: string): string
 export function selectorMap(facets: any): Record<string, string>
 export function sameAddress(a: any, b: any): boolean
 export function validateInput(input: any, root?: string): void
-export function requireTpmConfirmation(confirmation: any): void
+export function requireRecipientConfirmation(confirmation: any): void
 export function planCut(baseline: any, current: any, facet: string): any[]
 export function requireRehearsal(report: any, input: any, artifact: any): void
 export function recoveryEvent(receipt: any): {

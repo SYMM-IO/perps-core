@@ -18,7 +18,7 @@ import {
 	recoveryEvent,
 	recoveryAction,
 	requireValidation,
-	requireTpmConfirmation,
+	requireRecipientConfirmation,
 	sameAddress,
 	selectorMap,
 	validateInput,
@@ -420,7 +420,7 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 
 					return
 				}
-				requireTpmConfirmation(report.tpm)
+				requireRecipientConfirmation(report.recipientConfirmation)
 				requireValidation(report, input, artifact)
 				requireBaseline(report, snapshot, report.facet)
 				const liveOperation = async (label: string, request: any, owner = false) => {
@@ -559,13 +559,13 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 					check(report.recovery && report.cleanup, "Recovery and role cleanup evidence are incomplete")
 					check(
 						snapshot.zero === "0" && snapshot.recipient === report.recovery.recipientAfter && snapshot.safeRole === report.baseline.safeRole,
-						"Final balance or recovery role drift; review before handoff",
+						"Final balance or recovery role drift; review before completion",
 					)
 					const r = report.recovery
-					const text = `HyperEVM v0.8.5 zero-address recovery completed.\n\nCore: ${TARGET.core}\nRecipient (internal Core balance): ${TARGET.recipient}\nTPM confirmation: ${report.tpm.confirmedBy}; ${report.tpm.reference}; ${report.tpm.confirmedAt}\nRecovered: ${r.amountFormatted} USDC in internal 18-decimal units (${r.amount} raw).\nRecovery transaction: https://hyperevmscan.io/tx/${r.transactionHash}\nVerified transaction-atomic balances (raw, 18 decimals):\naddress(0): ${r.zeroBefore} -> ${r.zeroAfter}\nMultisig: ${r.recipientBefore} -> ${r.recipientAfter}\nFresh balances agree at observed block ${snapshot.observedThroughBlock}.\nFacet: ${report.facet}\nUpgrade transaction: ${report.operations.cut?.hash}\nValidation: local recovery tests passed. ${input.forkEnabled ? `Optional fork passed at block ${report.rehearsal.blockNumber} (${report.rehearsal.blockHash}).` : "Fork rehearsal was not requested by the operator."}\nTemporary recovery role removed: ${report.cleanup.temporaryRoleRemoved}; original roles preserved.\n\nTPM: please coordinate with Leon on the recovered funds and next steps. This operation credited the multisig's internal Core account; it did not withdraw ERC-20 tokens.\n`
-					const file = path.join(path.dirname(args.output), "tpm-handoff.txt")
+					const text = `HyperEVM v0.8.5 zero-address recovery completed.\n\nCore: ${TARGET.core}\nRecipient (internal Core balance): ${TARGET.recipient}\nRecipient confirmed by operator: ${report.recipientConfirmation.confirmedAt}\nRecovered: ${r.amountFormatted} USDC in internal 18-decimal units (${r.amount} raw).\nRecovery transaction: https://hyperevmscan.io/tx/${r.transactionHash}\nVerified transaction-atomic balances (raw, 18 decimals):\naddress(0): ${r.zeroBefore} -> ${r.zeroAfter}\nMultisig: ${r.recipientBefore} -> ${r.recipientAfter}\nFresh balances agree at observed block ${snapshot.observedThroughBlock}.\nFacet: ${report.facet}\nUpgrade transaction: ${report.operations.cut?.hash}\nValidation: local recovery tests passed. ${input.forkEnabled ? `Optional fork passed at block ${report.rehearsal.blockNumber} (${report.rehearsal.blockHash}).` : "Fork rehearsal was not requested by the operator."}\nTemporary recovery role removed: ${report.cleanup.temporaryRoleRemoved}; original roles preserved.\n\nThis operation credited the multisig's internal Core account; it did not withdraw ERC-20 tokens.\n`
+					const file = path.join(path.dirname(args.output), "recovery-summary.txt")
 					atomicWriteFile(file, text, 0o600)
-					report.handoffFile = file
+					report.summaryFile = file
 					report.finalSnapshot = snapshot
 					return
 				}
