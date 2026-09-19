@@ -6,6 +6,8 @@ Run the checkout-local operator application in an interactive terminal:
 ./symmio
 ```
 
+For disputed virtual-account liquidation, select **Other maintenance scripts → Settle a disputed account using Clearing House**. Load the prefilled case JSON, review the calculated solver, liquidator and parent shares, and let the named admin sign with Ledger or keystore. See the [disputed-settlement runbook](../docs/disputed-settlement.md) for the input rules, exact calculations and recovery behavior.
+
 For the liquidation-fee policy rollout, select **Other maintenance scripts → Update symbol
 LF minimums**. It uses an existing keystore wallet and network RPC, reviews every symbol,
 and applies resumable 3% BTC/ETH and 4% other-symbol batches. See the
