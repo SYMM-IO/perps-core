@@ -23,8 +23,16 @@ const TERMINAL_CONTROL = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/
 
 function usefulProcessError(lines) {
 	const cleaned = lines.map(line => String(line).trim()).filter(Boolean);
+	const connectionCode = cleaned
+		.join("\n")
+		.match(
+			/\b(?:ERR_SSL_[A-Z0-9_]+|CERT_[A-Z0-9_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE|DEPTH_ZERO_SELF_SIGNED_CERT|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)\b/u,
+		)?.[0];
+	if (connectionCode) return `Connection failed (${connectionCode}); check the configured endpoint or proxy, then retry`;
 	return (
-		cleaned.find(line => /^(?:HardhatError|ProviderError|Error|TypeError|RangeError|ReferenceError|SyntaxError):/u.test(line)) ||
+		cleaned.find(line =>
+			/^(?:HardhatError|ProviderError|UnknownError|RequestError|Error|TypeError|RangeError|ReferenceError|SyntaxError):/u.test(line),
+		) ||
 		cleaned.find(line => !/^at\s/u.test(line)) ||
 		cleaned.at(-1)
 	);
@@ -597,7 +605,7 @@ export function createTaskRunner(options = {}) {
 					emit("process.started", { command: [command, ...args].join(" ") });
 					const child = spawn(command, args, {
 						cwd: processOptions.cwd || root,
-						env: { ...process.env, ...processOptions.env, SYMMIO_TASK_EVENT_FD: "3" },
+						env: { ...process.env, ...processOptions.env, SYMMIO_TASK_EVENT_FD: processOptions.captureEvents === false ? "" : "3" },
 						stdio: ["pipe", "pipe", "pipe", "pipe"],
 					});
 					activeChildren.add(child);
@@ -624,6 +632,9 @@ export function createTaskRunner(options = {}) {
 						const lines = eventBuffer.split(/\r?\n/);
 						eventBuffer = lines.pop() || "";
 						for (const line of lines) {
+							// A local test may call production transaction helpers. Its mocked events
+							// must not bind a live signer or enter the operational transaction journal.
+							if (processOptions.captureEvents === false) continue;
 							try {
 								const taskEvent = JSON.parse(line);
 								emit(taskEvent.type || "task.detail", taskEvent.detail || taskEvent);
