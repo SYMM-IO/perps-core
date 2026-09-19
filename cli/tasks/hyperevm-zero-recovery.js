@@ -15,6 +15,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+export const PUBLIC_RPC = Object.freeze({ key: "RPC_HYPEREVM_PUBLIC", url: "https://rpc.hyperliquid.xyz/evm" });
+
 export const RECOVERY_PLAN = Object.freeze(
 	[
 		["compile", "prepare", "Compile the isolated Solidity 0.8.18 recovery facet"],
@@ -39,6 +41,7 @@ const readReport = input => {
 	return report;
 };
 const environment = input => ({
+	...(input.rpcKey === PUBLIC_RPC.key ? { [PUBLIC_RPC.key]: PUBLIC_RPC.url } : {}),
 	SYMMIO_RECOVERY_RPC_KEY: input.rpcKey,
 	SYMMIO_RECOVERY_ARCHIVE_KEY: input.archiveRpcKey || "",
 	SYMMIO_RECOVERY_EXECUTE: "false",
@@ -130,9 +133,18 @@ export function createHyperEvmZeroRecoveryTask(common) {
 		prepare: async ({ ui, root = PROJECT_ROOT }) => {
 			const forkEnabled = await ui.confirm({ message: "Run an optional HyperEVM fork rehearsal before deployment?", initialValue: false });
 			if (forkEnabled === null) return null;
-			const references = {};
+			const rpcSource = await ui.select({
+				message: "HyperEVM RPC provider",
+				options: [
+					{ value: "public", label: "Public Hyperliquid RPC", hint: "No RPC credentials needed" },
+					{ value: "custom", label: "Custom RPC provider", hint: "Use a Hardhat keystore reference" },
+				],
+				initialValue: "public",
+			});
+			if (!rpcSource) return null;
+			const references = rpcSource === "public" ? { rpcKey: PUBLIC_RPC.key } : {};
 			for (const [key, value, message] of [
-				["rpcKey", "RPC_HYPEREVM", "HyperEVM RPC keystore key"],
+				...(rpcSource === "custom" ? [["rpcKey", "RPC_HYPEREVM", "HyperEVM RPC keystore key"]] : []),
 				...(forkEnabled ? [["archiveRpcKey", "RPC_HYPEREVM_ARCHIVE", "Historical archive RPC keystore key (for the optional fork)"]] : []),
 			]) {
 				references[key] = await ui.text({
@@ -149,7 +161,7 @@ export function createHyperEvmZeroRecoveryTask(common) {
 				output = path.join(directory, "report.json");
 			atomicWrite(input, standard);
 			ui.note(
-				`Core: ${TARGET.core}\nRecipient: ${TARGET.recipient}\nOwner / role admin: ${TARGET.owner}\nAll amounts use the internal 18-decimal balance. You confirm the recipient before live operations. Fork rehearsal: ${forkEnabled ? "enabled (requires an archive RPC)" : "not requested"}.\nReports: ${directory}`,
+				`Core: ${TARGET.core}\nRecipient: ${TARGET.recipient}\nOwner / role admin: ${TARGET.owner}\nRPC: ${rpcSource === "public" ? "Public Hyperliquid" : references.rpcKey}\nAll amounts use the internal 18-decimal balance. You confirm the recipient before live operations. Fork rehearsal: ${forkEnabled ? "enabled (requires an archive RPC)" : "not requested"}.\nReports: ${directory}`,
 			);
 			return { network: "hyperevm", chainId: 999, mode: "live", forkEnabled, ...references, input, output, inputDigest };
 		},
