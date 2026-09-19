@@ -171,6 +171,7 @@ export function createHyperEvmZeroRecoveryTask(common) {
 			await step("compile", () => ctx.runProcess("./node_modules/.bin/hardhat", ["compile", "--config", CONFIG], { env: environment(input) }));
 			await step("test", async () => {
 				await ctx.runProcess("./node_modules/.bin/hardhat", ["test", "mocha", "--no-compile", "--config", CONFIG], {
+					captureEvents: false,
 					env: environment(input),
 				});
 				const report = fs.existsSync(input.output) ? readReport(input) : { schema: 1, inputDigest: input.inputDigest };

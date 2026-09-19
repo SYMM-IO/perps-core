@@ -158,6 +158,29 @@ test("prepare defaults to no fork and never asks for archive credentials", async
 	assert.equal(prompts.length, 1);
 	validateInput(JSON.parse(fs.readFileSync(input.input)), root);
 });
+test("local recovery tests cannot add mock transactions to the live task journal", async t => {
+	const root = fixture(t),
+		task = createHyperEvmZeroRecoveryTask(v => v),
+		standard = { ...inputFor(false), sourceDigest: sourceDigest(root) },
+		input = { ...standard, inputDigest: digest(standard), input: path.join(root, "input.json"), output: path.join(root, "report.json") };
+	fs.writeFileSync(input.input, JSON.stringify(standard));
+	const calls = [];
+	await task.run(
+		{
+			root,
+			step: async (id, _title, fn) => {
+				if (id === "test") await fn();
+			},
+			runProcess: async (_exe, args, options) => calls.push({ args, options }),
+		},
+		input,
+	);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].args[0], "test");
+	assert.equal(calls[0].options.captureEvents, false);
+	assert.equal(calls[0].options.env.SYMMIO_RECOVERY_EXECUTE, "false");
+	assert.equal(JSON.parse(fs.readFileSync(input.output)).localTests.passed, true);
+});
 test("resume completes after recovery verification, cleanup and summary without communication prompts", async t => {
 	const root = fixture(t),
 		task = createHyperEvmZeroRecoveryTask(v => v);
