@@ -1,3 +1,4 @@
+import { TARGET as RECOVERY_TARGET } from "../../deployment-tooling/hyperevm-zero-recovery.js";
 import { activeDescription, homeOptions, taskSummary } from "../app.js";
 import { HELP_TEXT, runCli } from "../symmio.js";
 import { catalog } from "../task-runner.js";
@@ -54,6 +55,48 @@ test("home menu ordering is exact and active actions stay visibly disabled", () 
 test("idle state describes deployment reports as history, not active task state", () => {
 	assert.match(activeDescription(null), /No active task/);
 	assert.match(activeDescription(null), /Completed deployment reports remain in history/);
+});
+
+test("migrated recovery shows the required Ledger separately from the historical deployment wallet", () => {
+	const active = {
+		taskId: "maintenance.hyperevm-zero-balance-recovery",
+		taskVersion: 4,
+		title: "HyperEVM recovery",
+		status: "paused",
+		network: "hyperevm",
+		completedSteps: ["compile", "test", "recipient", "deploy", "publish"],
+		plan: Array.from({ length: 12 }, () => ({})),
+		signing: { transaction: { mode: "hardhat-keystore", key: "TEAM_DEPLOYER" } },
+		signer: "0x00c2796b3AD3369D604E009D75204D7a15Cc584b",
+		transactions: [{ from: "0x00c2796b3AD3369D604E009D75204D7a15Cc584b", status: "confirmed" }],
+	};
+	const before = structuredClone(active);
+	const pending = activeDescription(active);
+	assert.ok(pending.includes(`Required signer: Ledger • ${RECOVERY_TARGET.owner} (selection pending)`));
+	assert.match(pending, /Completed deployment signer: hardhat-keystore • TEAM_DEPLOYER/);
+	assert.doesNotMatch(pending, /^Signer: hardhat-keystore/m);
+	assert.deepEqual(active, before, "Rendering must preserve real deployment evidence");
+	active.signing.governance = { mode: "ledger", address: RECOVERY_TARGET.owner, derivation: "ledger-live" };
+	const selected = activeDescription(active);
+	assert.ok(selected.includes(`Signer for remaining transactions: Ledger • ${RECOVERY_TARGET.owner}`));
+	assert.doesNotMatch(selected, /selection pending/);
+	assert.match(selected, /Completed deployment signer: hardhat-keystore/);
+});
+
+test("new recovery displays its selected Ledger while legacy and unrelated tasks retain their actual signer", () => {
+	const active = {
+		taskId: "maintenance.hyperevm-zero-balance-recovery",
+		taskVersion: 4,
+		signing: { transaction: { mode: "ledger", address: RECOVERY_TARGET.owner, derivation: "ledger-live" } },
+	};
+	assert.ok(activeDescription(active).includes(`Signer for remaining transactions: Ledger • ${RECOVERY_TARGET.owner}`));
+	assert.doesNotMatch(activeDescription(active), /selection pending|Completed deployment/);
+	for (const other of [{ taskId: "deploy.core" }, { taskVersion: 3 }]) {
+		assert.match(
+			activeDescription({ ...active, ...other, signing: { transaction: { mode: "hardhat-keystore", key: "TEAM_DEPLOYER" } } }),
+			/^Signer: hardhat-keystore • TEAM_DEPLOYER$/m,
+		);
+	}
 });
 
 test("catalog is explicit, complete, and hides deployment primitives", () => {
