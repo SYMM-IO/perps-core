@@ -1,5 +1,7 @@
 import {
 	CONFIG,
+	EXECUTION,
+	sameAddress,
 	TARGET,
 	ROLE,
 	SELECTOR,
@@ -9,7 +11,7 @@ import {
 	requireRecipientConfirmation,
 } from "../../deployment-tooling/hyperevm-zero-recovery.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
-import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, hydrateSigner, selectSigner, signerEnvironment } from "../signer/index.js";
+import { SIGNER_MODES, hydrateSigner, selectSigner, signerEnvironment } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -28,8 +30,8 @@ export const RECOVERY_PLAN = Object.freeze(
 		["deploy", "deployment", "Deploy the recovery facet"],
 		["publish", "publication", "Publish the facet on Hyperevmscan"],
 		["cut", "execution", "Add the recovery selector using the Core owner"],
-		["grant", "execution", "Grant the Safe a temporary recovery role if needed"],
-		["recovery", "execution", "Export the Safe recovery and verify its receipt"],
+		["grant", "execution", "Grant the Ledger a temporary recovery role if needed"],
+		["recovery", "execution", "Recover to the multisig using Ledger and verify the receipt"],
 		["cleanup", "execution", "Remove only the recovery role granted by this task"],
 		["evidence", "verification", "Verify final balances and write the recovery summary"],
 	].map(([id, phase, title]) => ({ id, phase, title })),
@@ -76,21 +78,24 @@ export async function runRecoveryPhase(ctx, input, phase, { selection, transacti
 	);
 	return readReport(input);
 }
-async function ownerSigner(ctx) {
-	const existing = ctx.getSigner("governance");
-	if (existing) return existing;
-	const proceed = await ctx.ui.confirm({ message: `Continue with Core owner / role admin ${TARGET.owner}?`, initialValue: false });
-	if (!proceed) return ctx.wait("Waiting for the Core owner. Continue active task when the owner is available.");
+export function requireOwnerLedger(selection) {
+	if (selection?.mode !== SIGNER_MODES.LEDGER || !sameAddress(selection.address, TARGET.owner))
+		throw new Error(`This recovery requires Ledger ${TARGET.owner}`);
+	return selection;
+}
+async function ownerSigner(ctx, input) {
+	const existing = ctx.getSigner("governance") || (input.signer?.mode === SIGNER_MODES.LEDGER ? input.signer : null);
+	if (existing) return requireOwnerLedger(existing);
 	const selection = await selectSigner(ctx.ui, {
-		role: "Core owner / recovery role admin",
-		allowedModes: EOA_SIGNER_MODES.filter(m => m !== SIGNER_MODES.LOCAL_NODE),
+		role: "Recovery operator (Core owner and role admin)",
+		allowedModes: [SIGNER_MODES.LEDGER],
 		initialMode: SIGNER_MODES.LEDGER,
 		network: "hyperevm",
 		chainId: 999,
 		expectedAddress: TARGET.owner,
 	});
-	if (!selection) return ctx.wait("Core owner signer selection cancelled.");
-	return ctx.bindSigner("governance", selection);
+	if (!selection) return ctx.wait("Ledger selection cancelled. Continue when the owner Ledger is ready.");
+	return ctx.bindSigner("governance", requireOwnerLedger(selection));
 }
 async function resumeHash(ctx, input, label) {
 	const op = readReport(input).operations?.[label];
@@ -106,12 +111,12 @@ async function resumeHash(ctx, input, label) {
 export function createHyperEvmZeroRecoveryTask(common) {
 	return common({
 		id: "maintenance.hyperevm-zero-balance-recovery",
-		version: 3,
+		version: 4,
 		category: "maintenance",
 		risk: "transaction",
 		title: "HyperEVM v0.8.5 / recover the zero-address balance",
 		description:
-			"Test the add-only upgrade locally, optionally rehearse a fork, deploy one facet, export the Safe sweep, and verify the recovery balances.",
+			"Test the add-only upgrade locally, optionally rehearse a fork, use the owner Ledger for each transaction, and verify the recovery balances.",
 		supportedNetworks: ["hyperevm"],
 		inputs: ["network", "input", "output", "inputDigest", "rpcKey", "archiveRpcKey"].map(id => ({
 			id,
@@ -122,13 +127,14 @@ export function createHyperEvmZeroRecoveryTask(common) {
 		artifacts: [
 			"local test evidence; optional fork evidence",
 			"deployment and governance receipts",
-			"Safe Transaction Builder recovery JSON",
+			"Ledger recovery receipt",
 			"full-precision recovery evidence and summary",
 		],
 		signerPolicy: () => ({
-			role: "Recovery facet deployment wallet",
-			allowedModes: EOA_SIGNER_MODES.filter(m => m !== SIGNER_MODES.LOCAL_NODE),
-			initialMode: SIGNER_MODES.KEYSTORE,
+			role: "Recovery operator (Core owner and role admin)",
+			allowedModes: [SIGNER_MODES.LEDGER],
+			initialMode: SIGNER_MODES.LEDGER,
+			expectedAddress: TARGET.owner,
 		}),
 		prepare: async ({ ui, root = PROJECT_ROOT }) => {
 			const forkEnabled = await ui.confirm({ message: "Run an optional HyperEVM fork rehearsal before deployment?", initialValue: false });
@@ -154,14 +160,22 @@ export function createHyperEvmZeroRecoveryTask(common) {
 				});
 				if (!references[key]) return null;
 			}
-			const standard = { schema: 1, target: TARGET, forkEnabled, ...references, sourceDigest: sourceDigest(root), runId: randomUUID() };
+			const standard = {
+				schema: 2,
+				execution: EXECUTION,
+				target: TARGET,
+				forkEnabled,
+				...references,
+				sourceDigest: sourceDigest(root),
+				runId: randomUUID(),
+			};
 			const inputDigest = digest(standard),
 				directory = path.join(root, "tasks", "data", "999", "zero-recovery", inputDigest);
 			const input = path.join(directory, "input.json"),
 				output = path.join(directory, "report.json");
 			atomicWrite(input, standard);
 			ui.note(
-				`Core: ${TARGET.core}\nRecipient: ${TARGET.recipient}\nOwner / role admin: ${TARGET.owner}\nRPC: ${rpcSource === "public" ? "Public Hyperliquid" : references.rpcKey}\nAll amounts use the internal 18-decimal balance. You confirm the recipient before live operations. Fork rehearsal: ${forkEnabled ? "enabled (requires an archive RPC)" : "not requested"}.\nReports: ${directory}`,
+				`Core: ${TARGET.core}\nRecipient: ${TARGET.recipient}\nLedger operator / Core owner: ${TARGET.owner}\nRPC: ${rpcSource === "public" ? "Public Hyperliquid" : references.rpcKey}\nAll amounts use the internal 18-decimal balance. You confirm the recipient before live operations. Fork rehearsal: ${forkEnabled ? "enabled (requires an archive RPC)" : "not requested"}.\nReports: ${directory}`,
 			);
 			return { network: "hyperevm", chainId: 999, mode: "live", forkEnabled, ...references, input, output, inputDigest };
 		},
@@ -216,7 +230,7 @@ export function createHyperEvmZeroRecoveryTask(common) {
 			await step("authorize", async () => {
 				const report = readReport(input);
 				ctx.ui.note(
-					`Local recovery tests passed. ${input.forkEnabled ? `Optional fork passed at block ${report.rehearsal.blockNumber}.` : "Fork rehearsal not requested."}\nZero balance: ${report.baseline.zero} raw (18 decimals).\nRecipient: ${TARGET.recipient}\nDeploy one facet, publish, add one selector, grant a temporary role if absent, export a Safe sweep, then remove only the temporary role. The sweep takes the full balance at execution.`,
+					`Local recovery tests passed. ${input.forkEnabled ? `Optional fork passed at block ${report.rehearsal.blockNumber}.` : "Fork rehearsal not requested."}\nZero balance: ${report.baseline.zero} raw (18 decimals).\nRecipient: ${TARGET.recipient}\nDeploy one facet, publish, add one selector, grant the Ledger a temporary recovery role if absent, recover directly using that Ledger, then remove only that temporary role. No Safe signatures are needed. Ledger: ${TARGET.owner}. The sweep takes the full balance at execution.`,
 				);
 				const phrase = "RECOVER ZERO BALANCE ON 999";
 				const value = await ctx.ui.text({
@@ -226,7 +240,10 @@ export function createHyperEvmZeroRecoveryTask(common) {
 				if (value !== phrase) return ctx.wait("Live operations have not been authorized.");
 			});
 			await step("deploy", async () =>
-				runRecoveryPhase(ctx, input, "deploy", { selection: input.signer, transaction: await resumeHash(ctx, input, "deploy") }),
+				runRecoveryPhase(ctx, input, "deploy", {
+					selection: requireOwnerLedger(input.signer),
+					transaction: await resumeHash(ctx, input, "deploy"),
+				}),
 			);
 			await step("publish", () => runRecoveryPhase(ctx, input, "publish"));
 			for (const phase of ["cut", "grant"])
@@ -235,52 +252,29 @@ export function createHyperEvmZeroRecoveryTask(common) {
 					ctx.ui.note(
 						phase === "cut"
 							? `Core: ${TARGET.core}\nAdd selector: ${SELECTOR}\nFacet: ${report.facet}\nNo replacement, removal or initializer.`
-							: `Recovery role: ${ROLE}\nRecipient: ${TARGET.recipient}\nGrant only if absent at baseline; remove the temporary grant after recovery.`,
+							: `Recovery role: ${ROLE}\nLedger role holder: ${TARGET.owner}\nRecipient: ${TARGET.recipient}\nGrant only if absent at baseline; remove the temporary grant after recovery.`,
 					);
 					return runRecoveryPhase(ctx, input, phase, {
-						selection: await ownerSigner(ctx),
+						selection: await ownerSigner(ctx, input),
 						transaction: await resumeHash(ctx, input, phase),
 					});
 				});
 			await step("recovery", async () => {
-				let report = readReport(input);
-				if (!report.safeDelivery && ctx.state.safeDispatches?.["zero-recovery"]) {
-					report.safeDelivery = ctx.state.safeDispatches["zero-recovery"];
-					atomicWrite(input.output, report);
-				}
+				const report = readReport(input);
+				if (report.safeDelivery || ctx.state.safeDispatches?.["zero-recovery"])
+					throw new Error("An old Safe export exists; reconcile it before switching the recovery operator");
 				if (report.recovery) return runRecoveryPhase(ctx, input, "verify-recovery");
-				// Once exported, always ask for execution evidence before considering any further export.
-				if (!report.safeDelivery) {
-					report = await runRecoveryPhase(ctx, input, "plan-recovery");
+				// Reconcile an existing intent first, even when its successful execution already emptied the source.
+				if (!report.operations?.recovery) {
+					const preview = await runRecoveryPhase(ctx, input, "plan-recovery");
 					ctx.ui.note(
-						`Safe recovery preview (raw units, 18 decimals):\naddress(0): ${report.preview.snapshot.zero} -> 0\nRecipient: ${TARGET.recipient}\nRecipient balance: ${report.preview.snapshot.recipient} -> ${BigInt(report.preview.snapshot.recipient) + BigInt(report.preview.snapshot.zero)}\nThe call sweeps the full available amount at execution.`,
-					);
-					const delivery = await dispatchSafeActions(
-						ctx,
-						{ mode: SIGNER_MODES.SAFE_FILE, safeAddress: TARGET.recipient },
-						[report.preview.action],
-						{
-							root: ctx.root,
-							chainId: 999,
-							network: "hyperevm",
-							name: "Recover zero-address internal balance",
-							description: `Sweep the full internal balance to ${TARGET.recipient}, including all 18-decimal dust.`,
-							stateKey: "zero-recovery",
-							processEnv: environment(input),
-						},
-					);
-					report.safeDelivery = delivery;
-					atomicWrite(input.output, report);
-					return ctx.wait(
-						`Import ${delivery.builderPath} into the recipient Safe and execute it. Continue this task with the executed on-chain transaction hash.`,
+						`Ledger: ${TARGET.owner}\nRecovery preview (raw units, 18 decimals):\naddress(0): ${preview.preview.snapshot.zero} -> 0\nRecipient: ${TARGET.recipient}\nRecipient balance: ${preview.preview.snapshot.recipient} -> ${BigInt(preview.preview.snapshot.recipient) + BigInt(preview.preview.snapshot.zero)}\nApprove the recovery on Ledger. The call takes the full balance at execution.`,
 					);
 				}
-				const transaction = await ctx.ui.text({
-					message: "Executed recovery transaction hash from the recipient Safe",
-					validate: v => (/^0x[0-9a-fA-F]{64}$/.test(v) ? undefined : "Enter the executed on-chain transaction hash"),
+				await runRecoveryPhase(ctx, input, "recover", {
+					...(report.operations?.recovery ? {} : { selection: await ownerSigner(ctx, input) }),
+					transaction: await resumeHash(ctx, input, "recovery"),
 				});
-				if (!transaction) return ctx.wait(`Awaiting Safe execution. Existing export: ${report.safeDelivery.builderPath}`);
-				await runRecoveryPhase(ctx, input, "verify-recovery", { transaction });
 			});
 			await step("cleanup", async () => {
 				const report = readReport(input);
@@ -288,7 +282,7 @@ export function createHyperEvmZeroRecoveryTask(common) {
 					ctx,
 					input,
 					"cleanup",
-					report.temporaryRole ? { selection: await ownerSigner(ctx), transaction: await resumeHash(ctx, input, "cleanup") } : {},
+					report.temporaryRole ? { selection: await ownerSigner(ctx, input), transaction: await resumeHash(ctx, input, "cleanup") } : {},
 				);
 			});
 			await step("evidence", async () => {

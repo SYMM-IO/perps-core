@@ -1,5 +1,6 @@
 import {
 	TARGET,
+	EXECUTION,
 	SELECTOR,
 	LEGACY_SELECTOR,
 	REQUIRED_CHECKS,
@@ -14,7 +15,7 @@ import {
 	recoveryEvent,
 	recoveryAction,
 } from "../../deployment-tooling/hyperevm-zero-recovery.js";
-import { createHyperEvmZeroRecoveryTask, PUBLIC_RPC, runRecoveryPhase } from "../tasks/hyperevm-zero-recovery.js";
+import { createHyperEvmZeroRecoveryTask, PUBLIC_RPC, runRecoveryPhase, requireOwnerLedger } from "../tasks/hyperevm-zero-recovery.js";
 import { ZeroAddress, keccak256 } from "ethers";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -25,7 +26,8 @@ import test from "node:test";
 const facet = "0x1111111111111111111111111111111111111111";
 const baseline = { [LEGACY_SELECTOR]: TARGET.legacyAccountFacet, "0x12345678": TARGET.owner };
 const inputFor = forkEnabled => ({
-	schema: 1,
+	schema: 2,
+	execution: EXECUTION,
 	target: TARGET,
 	forkEnabled,
 	rpcKey: "RPC_HYPEREVM",
@@ -105,9 +107,15 @@ test("operator confirmation requires only the exact recipient and confirmation d
 	for (const field of Object.keys(valid)) assert.throws(() => requireRecipientConfirmation({ ...valid, [field]: "" }), /Operator confirmation/);
 	assert.throws(() => requireRecipientConfirmation({ ...valid, recipient: TARGET.owner }), /Operator confirmation/);
 });
-const eventLog = (amount = 200981026302519456100n, recipient = TARGET.recipient, before = 4605160364884342n, after = before + amount) => ({
+const eventLog = (
+	amount = 200981026302519456100n,
+	recipient = TARGET.recipient,
+	before = 4605160364884342n,
+	after = before + amount,
+	operator = TARGET.owner,
+) => ({
 	address: TARGET.core,
-	...iface.encodeEventLog(iface.getEvent("ZeroAddressBalanceRecovered"), [TARGET.recipient, recipient, amount, before, after]),
+	...iface.encodeEventLog(iface.getEvent("ZeroAddressBalanceRecovered"), [operator, recipient, amount, before, after]),
 });
 test("receipt evidence preserves every raw unit and rejects wrong/duplicate/malformed evidence", () => {
 	const good = eventLog();
@@ -123,6 +131,7 @@ test("receipt evidence preserves every raw unit and rejects wrong/duplicate/malf
 		{ status: 1, logs: [eventLog(1n, TARGET.owner)] },
 		{ status: 1, logs: [eventLog(1n, TARGET.recipient, 0n, 0n)] },
 		{ status: 1, logs: [eventLog(0n)] },
+		{ status: 1, logs: [eventLog(1n, TARGET.recipient, 0n, 1n, TARGET.recipient)] },
 	])
 		assert.throws(() => recoveryEvent(receipt));
 });
@@ -224,66 +233,6 @@ test("local recovery tests cannot add mock transactions to the live task journal
 	assert.equal(calls[0].options.env.SYMMIO_RECOVERY_EXECUTE, "false");
 	assert.equal(JSON.parse(fs.readFileSync(input.output)).localTests.passed, true);
 });
-test("resume completes after recovery verification, cleanup and summary without communication prompts", async t => {
-	const root = fixture(t),
-		task = createHyperEvmZeroRecoveryTask(v => v);
-	const standard = { ...inputFor(false), sourceDigest: sourceDigest(root) },
-		input = { ...standard, inputDigest: digest(standard), input: path.join(root, "input.json"), output: path.join(root, "report.json") };
-	fs.writeFileSync(input.input, JSON.stringify(standard));
-	const report = {
-		inputDigest: input.inputDigest,
-		safeDelivery: { builderPath: "existing.json" },
-		localTests: { passed: true },
-		recipientConfirmation: { recipient: TARGET.recipient, confirmedAt: new Date().toISOString() },
-	};
-	fs.writeFileSync(input.output, JSON.stringify(report));
-	const completed = new Set(["compile", "test", "inspect", "recipient", "authorize", "deploy", "publish", "cut", "grant"]),
-		phases = [],
-		prompts = [];
-	const ctx = {
-		root,
-		state: {},
-		getSigner: () => {
-			throw new Error("No signer should be needed");
-		},
-		ui: {
-			text: async p => {
-				prompts.push(p.message);
-				assert.match(p.message, /transaction hash/);
-				return "0x" + "1".repeat(64);
-			},
-			note: () => {},
-		},
-		step: async (id, _title, fn) => {
-			if (!completed.has(id)) {
-				await fn();
-				completed.add(id);
-			}
-		},
-		runProcess: async (_exe, args, { env }) => {
-			assert.equal(env[PUBLIC_RPC.key], undefined);
-			assert.equal(env.SYMMIO_RECOVERY_ARCHIVE_KEY, "");
-			assert.equal(env.SYMMIO_RECOVERY_EXECUTE, "false");
-			const phase = args[args.indexOf("--phase") + 1];
-			phases.push(phase);
-			const current = JSON.parse(fs.readFileSync(input.output));
-			if (phase === "verify-recovery") current.recovery = { transactionHash: "0x" + "1".repeat(64) };
-			if (phase === "evidence") {
-				current.summaryFile = path.join(root, "recovery-summary.txt");
-				fs.writeFileSync(current.summaryFile, "Recovery verified");
-			}
-			fs.writeFileSync(input.output, JSON.stringify(current));
-		},
-		wait: () => {
-			throw new Error("Unexpected wait");
-		},
-	};
-	await task.run(ctx, input);
-	assert.deepEqual(phases, ["verify-recovery", "cleanup", "evidence"]);
-	assert.equal(completed.has("evidence"), true);
-	assert.equal(prompts.length, 1);
-	assert.equal(prompts.filter(p => p.includes("transaction hash")).length, 1);
-});
 test("skipping the optional fork retains local tests and recipient confirmation, with verification as the final step", () => {
 	const task = createHyperEvmZeroRecoveryTask(v => v),
 		ids = task.plan({}, { forkEnabled: false }).map(s => s.id);
@@ -292,51 +241,107 @@ test("skipping the optional fork retains local tests and recipient confirmation,
 	assert.equal(ids.at(-1), "evidence");
 });
 
-test("first Safe export contains only the full-balance recovery call and waits without marking execution complete", async t => {
+const ledger = { mode: "ledger", address: TARGET.owner, derivation: "ledger-live" };
+test("the task binds every new transaction to the owner Ledger", () => {
+	const task = createHyperEvmZeroRecoveryTask(v => v);
+	assert.deepEqual(task.signerPolicy().allowedModes, ["ledger"]);
+	assert.equal(task.signerPolicy().expectedAddress, TARGET.owner);
+	assert.equal(requireOwnerLedger(ledger), ledger);
+	for (const selection of [{ ...ledger, address: TARGET.recipient }, { mode: "hardhat-keystore", key: "TEAM_DEPLOYER" }, undefined])
+		assert.throws(() => requireOwnerLedger(selection), /requires Ledger/);
+	assert.throws(() => validateInput({ ...inputFor(false), schema: 1, execution: undefined }), /target changed/);
+});
+
+for (const saved of ["new", "submitted", "confirmed", "verified", "safe-export"])
+	test(`Ledger recovery resume handles ${saved} without another sweep or Safe signature prompt`, async t => {
+		const root = fixture(t),
+			task = createHyperEvmZeroRecoveryTask(v => v);
+		const standard = { ...inputFor(false), sourceDigest: sourceDigest(root) };
+		const input = {
+			...standard,
+			signer: ledger,
+			inputDigest: digest(standard),
+			input: path.join(root, "input.json"),
+			output: path.join(root, "report.json"),
+		};
+		fs.writeFileSync(input.input, JSON.stringify(standard));
+		const hash = "0x" + "1".repeat(64);
+		const report = { inputDigest: input.inputDigest };
+		if (["submitted", "confirmed", "verified"].includes(saved))
+			report.operations = { recovery: { status: saved === "verified" ? "confirmed" : saved, nonce: 7, hash } };
+		if (saved === "verified") report.recovery = { transactionHash: hash };
+		if (saved === "safe-export") report.safeDelivery = { builderPath: "existing.json" };
+		fs.writeFileSync(input.output, JSON.stringify(report));
+		const phases = [],
+			prompts = [];
+		const ctx = {
+			root,
+			state: {},
+			getSigner: () => null,
+			ui: {
+				note: () => {},
+				text: async p => {
+					prompts.push(p.message);
+					assert.match(p.message, /interrupted.*hash/);
+					return hash;
+				},
+			},
+			step: async (id, _title, fn) => {
+				if (id === "recovery") await fn();
+			},
+			runProcess: async (_exe, args, { env }) => {
+				const phase = args[args.indexOf("--phase") + 1];
+				phases.push(phase);
+				assert.equal(env.SYMMIO_RECOVERY_EXECUTE, saved === "new" && phase === "recover" ? "true" : "false");
+				if (phase === "recover" && saved === "new") {
+					assert.equal(env.SYMMIO_SIGNER_MODE, "ledger");
+					assert.equal(env.SYMMIO_EXPECTED_SIGNER, TARGET.owner);
+				}
+				if (phase === "plan-recovery") {
+					const current = JSON.parse(fs.readFileSync(input.output));
+					current.preview = { snapshot: { zero: "200981026302519456100", recipient: "4605160364884342" }, action: recoveryAction() };
+					fs.writeFileSync(input.output, JSON.stringify(current));
+				}
+			},
+			wait: message => {
+				throw new Error(message);
+			},
+		};
+		if (saved === "safe-export") return assert.rejects(task.run(ctx, input), /old Safe export/);
+		await task.run(ctx, input);
+		assert.deepEqual(phases, saved === "new" ? ["plan-recovery", "recover"] : saved === "verified" ? ["verify-recovery"] : ["recover"]);
+		assert.equal(prompts.length, saved === "submitted" ? 1 : 0);
+	});
+
+test("deployment, upgrade, grant and cleanup reuse the single selected Ledger", async t => {
 	const root = fixture(t),
 		task = createHyperEvmZeroRecoveryTask(v => v);
-	const standard = { ...inputFor(false), sourceDigest: sourceDigest(root) },
-		input = { ...standard, inputDigest: digest(standard), input: path.join(root, "input.json"), output: path.join(root, "report.json") };
-	fs.writeFileSync(input.input, JSON.stringify(standard));
-	fs.writeFileSync(input.output, JSON.stringify({ inputDigest: input.inputDigest }));
-	const completed = new Set(["compile", "test", "inspect", "recipient", "authorize", "deploy", "publish", "cut", "grant"]);
-	const ctx = {
-		root,
-		state: { runId: "recovery-test" },
-		ui: { note: () => {} },
-		emit: () => {},
-		step: async (id, _title, fn) => {
-			if (!completed.has(id)) {
-				await fn();
-				completed.add(id);
-			}
-		},
-		runProcess: async (_exe, args) => {
-			assert.equal(args[args.indexOf("--phase") + 1], "plan-recovery");
-			fs.writeFileSync(
-				input.output,
-				JSON.stringify({
-					inputDigest: input.inputDigest,
-					preview: {
-						snapshot: { zero: "1234567890123456789", recipient: "1" },
-						action: recoveryAction(),
-					},
-				}),
-			);
-		},
-		wait: message => {
-			throw new Error(message);
-		},
+	const standard = { ...inputFor(false), sourceDigest: sourceDigest(root) };
+	const input = {
+		...standard,
+		signer: ledger,
+		inputDigest: digest(standard),
+		input: path.join(root, "input.json"),
+		output: path.join(root, "report.json"),
 	};
-	await assert.rejects(task.run(ctx, input), /Import .*recipient Safe/);
-	const report = JSON.parse(fs.readFileSync(input.output));
-	const batch = JSON.parse(fs.readFileSync(report.safeDelivery.builderPath));
-	assert.equal(batch.chainId, "999");
-	assert.equal(batch.transactions.length, 1);
-	const tx = batch.transactions[0];
-	assert.equal(tx.to.toLowerCase(), TARGET.core.toLowerCase());
-	assert.equal(tx.value, "0");
-	assert.equal(iface.decodeFunctionData("recoverZeroAddressBalance", tx.data)[0], TARGET.recipient);
-	assert.equal(completed.has("recovery"), false);
-	assert.equal(report.recovery, undefined);
+	fs.writeFileSync(input.input, JSON.stringify(standard));
+	fs.writeFileSync(input.output, JSON.stringify({ inputDigest: input.inputDigest, temporaryRole: true, facet }));
+	const phases = [];
+	await task.run(
+		{
+			root,
+			getSigner: () => null,
+			ui: { note: () => {} },
+			step: async (id, _title, fn) => {
+				if (["deploy", "cut", "grant", "cleanup"].includes(id)) await fn();
+			},
+			runProcess: async (_exe, args, { env }) => {
+				phases.push(args[args.indexOf("--phase") + 1]);
+				assert.equal(env.SYMMIO_SIGNER_MODE, "ledger");
+				assert.equal(env.SYMMIO_EXPECTED_SIGNER, TARGET.owner);
+			},
+		},
+		input,
+	);
+	assert.deepEqual(phases, ["deploy", "cut", "grant", "cleanup"]);
 });

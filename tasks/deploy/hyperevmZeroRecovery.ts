@@ -43,25 +43,27 @@ export async function recoverySnapshot(provider: any, blockTag: number | string 
 		at = { blockTag }
 	const start = await provider.getBlock(blockTag)
 	check(start?.hash, "Missing snapshot block")
-	const [owner, collateral, safeRole, admin, facets, zero, recipient, packed, signer, safeCode, threshold, owners, decimals] = await Promise.all([
-		core.owner(at),
-		core.getCollateral(at),
-		core.hasRole(TARGET.recipient, ROLE, at),
-		core.isRoleAdmin(TARGET.owner, ROLE, at),
-		core.facets(at),
-		core.balanceOf(ZeroAddress, at),
-		core.balanceOf(TARGET.recipient, at),
-		provider.getStorage(TARGET.core, globalSlot + 1n, blockTag),
-		provider.getStorage(TARGET.core, globalSlot + 10n, blockTag),
-		provider.getCode(TARGET.recipient, blockTag),
-		new Contract(
-			TARGET.recipient,
-			["function getThreshold() view returns(uint256)", "function getOwners() view returns(address[])"],
-			provider,
-		).getThreshold(at),
-		new Contract(TARGET.recipient, ["function getOwners() view returns(address[])"], provider).getOwners(at),
-		new Contract(TARGET.collateral, ["function decimals() view returns(uint8)"], provider).decimals(at),
-	])
+	const [owner, collateral, safeRole, operatorRole, admin, facets, zero, recipient, packed, signer, safeCode, threshold, owners, decimals] =
+		await Promise.all([
+			core.owner(at),
+			core.getCollateral(at),
+			core.hasRole(TARGET.recipient, ROLE, at),
+			core.hasRole(TARGET.owner, ROLE, at),
+			core.isRoleAdmin(TARGET.owner, ROLE, at),
+			core.facets(at),
+			core.balanceOf(ZeroAddress, at),
+			core.balanceOf(TARGET.recipient, at),
+			provider.getStorage(TARGET.core, globalSlot + 1n, blockTag),
+			provider.getStorage(TARGET.core, globalSlot + 10n, blockTag),
+			provider.getCode(TARGET.recipient, blockTag),
+			new Contract(
+				TARGET.recipient,
+				["function getThreshold() view returns(uint256)", "function getOwners() view returns(address[])"],
+				provider,
+			).getThreshold(at),
+			new Contract(TARGET.recipient, ["function getOwners() view returns(address[])"], provider).getOwners(at),
+			new Contract(TARGET.collateral, ["function decimals() view returns(uint8)"], provider).decimals(at),
+		])
 	check(
 		sameAddress(owner, TARGET.owner) && sameAddress(collateral, TARGET.collateral),
 		"Core owner or collateral differs from the reviewed v0.8.5 target",
@@ -80,6 +82,7 @@ export async function recoverySnapshot(provider: any, blockTag: number | string 
 		owner,
 		collateral,
 		safeRole,
+		operatorRole,
 		admin,
 		threshold: threshold.toString(),
 		owners: [...owners],
@@ -98,6 +101,7 @@ export function requireOperational(snapshot: any) {
 	check(sameAddress(snapshot.signer, ZeroAddress), "Core persistent signer is active")
 }
 function requireBaseline(report: any, snapshot: any, facet = ZeroAddress) {
+	check(snapshot.safeRole === report.baseline.safeRole, "Recipient recovery role changed outside this Ledger workflow")
 	planCut(report.baseline.selectors, snapshot.selectors, facet)
 	for (const [a, h] of Object.entries(report.baseline.codeHashes)) check(snapshot.codeHashes[a] === h, `Baseline facet runtime changed: ${a}`)
 	check(snapshot.packed === report.baseline.packed && snapshot.signer === report.baseline.signer, "Core pause/fee-collector or signer state drifted")
@@ -171,10 +175,8 @@ export async function rehearseRecovery(hre: any, report: any, input: any, artifa
 			requireBaseline(report, before)
 			check(before.zero === pinned.snapshot.zero && before.recipient === pinned.snapshot.recipient, "Fork balances differ from archive snapshot")
 			check(BigInt(before.zero) > 0n, "No zero-address balance to rehearse")
-			const owner = await ethers.getImpersonatedSigner(TARGET.owner),
-				safe = await ethers.getImpersonatedSigner(TARGET.recipient)
+			const owner = await ethers.getImpersonatedSigner(TARGET.owner)
 			await nh.setBalance(TARGET.owner, 10n ** 20n)
-			await nh.setBalance(TARGET.recipient, 10n ** 20n)
 			const [deployer, attacker, legacyUser, legacyRecipient] = await ethers.getSigners()
 			const deployment = await new ethers.ContractFactory(artifact.abi, artifact.bytecode, deployer).deploy()
 			await deployment.waitForDeployment()
@@ -182,8 +184,8 @@ export async function rehearseRecovery(hre: any, report: any, input: any, artifa
 			for (const a of planCut(report.baseline.selectors, before.selectors, facet)) await (await owner.sendTransaction(a)).wait()
 			const core: any = coreAt(provider),
 				privileged: any = core.connect(owner),
-				recovery: any = core.connect(safe)
-			if (!before.safeRole) await (await privileged.grantRole(TARGET.recipient, ROLE)).wait()
+				recovery: any = core.connect(owner)
+			if (!before.operatorRole) await (await privileged.grantRole(TARGET.owner, ROLE)).wait()
 			const checks: string[] = []
 			const mustRevert = async (name: string, promise: Promise<any>, reason: string) => {
 				let error: any
@@ -266,7 +268,7 @@ export async function rehearseRecovery(hre: any, report: any, input: any, artifa
 				evidence,
 				localRecoveryTransaction: tx.hash,
 				syntheticState:
-					"Local owner/Safe impersonation and gas funding; pause/signer guard mutations; unrelated legacy account balance and suspender role. None broadcast.",
+					"Local owner impersonation and gas funding; pause/signer guard mutations; unrelated legacy account balance and suspender role. None broadcast.",
 			}
 		} finally {
 			await fork.close()
@@ -348,6 +350,57 @@ export async function submitRecoveryOperation(
 	return receipt
 }
 
+export function recoveryRoleAction(report: any, snapshot: any, phase: "grant" | "cleanup") {
+	check(typeof report.baseline.operatorRole === "boolean", "Ledger role baseline is missing")
+	check(snapshot.safeRole === report.baseline.safeRole, "Recipient recovery role changed")
+	if (phase === "grant") {
+		if (report.baseline.operatorRole) {
+			check(snapshot.operatorRole, "Ledger's preexisting recovery role was revoked outside this task")
+			return null
+		}
+		check(!snapshot.operatorRole || report.operations?.grant, "Ledger recovery role granted outside this task")
+		return action("grantRole", [TARGET.owner, ROLE])
+	}
+	check(report.recovery, "Recovery evidence required before role cleanup")
+	if (report.temporaryRole) {
+		const grant = report.operations?.grant
+		check(
+			!report.baseline.operatorRole &&
+				grant?.status === "confirmed" &&
+				sameAddress(grant.intent?.from, TARGET.owner) &&
+				sameAddress(grant.intent?.to, TARGET.core) &&
+				grant.intent?.data === action("grantRole", [TARGET.owner, ROLE]).data,
+			"Cannot revoke a role that this run did not temporarily grant to the Ledger",
+		)
+		return snapshot.operatorRole || report.operations?.cleanup ? action("revokeRole", [TARGET.owner, ROLE]) : null
+	}
+	check(snapshot.operatorRole === report.baseline.operatorRole, "Original Ledger recovery role changed")
+	return null
+}
+
+export async function previewLedgerRecovery(provider: any, report: any, snapshot: any) {
+	check(!report.safeDelivery, "Reconcile the old Safe export before using Ledger recovery")
+	check(!report.recovery && !report.operations?.recovery, "Reconcile the existing recovery; never prepare another sweep")
+	requireOperational(snapshot)
+	check(snapshot.operatorRole && BigInt(snapshot.zero) > 0n, "Ledger lacks recovery role or zero-address balance is empty")
+	const tx = recoveryAction()
+	const result = await provider.call({ ...tx, from: TARGET.owner })
+	check(BigInt(iface.decodeFunctionResult("recoverZeroAddressBalance", result)[0]) > 0n, "Recovery simulation returned no balance")
+	report.preview = {
+		snapshot,
+		action: tx,
+		operator: TARGET.owner,
+		note: "Sweeps the full raw balance at execution; this preview can change as funds accrue",
+	}
+}
+
+export async function executeLedgerRecovery(provider: any, report: any, snapshot: any, execute: (label: string, tx: any) => Promise<any>) {
+	check(!report.safeDelivery, "Reconcile the old Safe export before using Ledger recovery")
+	// An existing intent must go through exact receipt reconciliation, even after the source is empty or the role was removed.
+	if (!report.operations?.recovery) await previewLedgerRecovery(provider, report, snapshot)
+	return execute("recovery", recoveryAction())
+}
+
 export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", "Isolated v0.8.5 recovery workflow")
 	.addOption({ name: "phase", type: ArgumentType.STRING, defaultValue: "inspect" })
 	.addOption({ name: "input", type: ArgumentType.STRING, defaultValue: "" })
@@ -395,7 +448,7 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 					}
 					return
 				}
-				const snapshot = await recoverySnapshot(provider)
+				let snapshot = await recoverySnapshot(provider)
 				requireOperational(snapshot)
 				if (args.phase === "inspect") {
 					check(BigInt(snapshot.zero) > 0n, "Zero-address balance is empty; no recovery deployment is needed")
@@ -404,6 +457,7 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 						report.baseline = snapshot
 					}
 					requireBaseline(report, snapshot, report.facet)
+					check(typeof report.baseline.operatorRole === "boolean", "Ledger role baseline is missing; migrate the previous run first")
 					if (input.forkEnabled) {
 						const archive = await hre.network.create("recovery-archive")
 						try {
@@ -423,7 +477,13 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 				requireRecipientConfirmation(report.recipientConfirmation)
 				requireValidation(report, input, artifact)
 				requireBaseline(report, snapshot, report.facet)
-				const liveOperation = async (label: string, request: any, owner = false) => {
+				const liveOperation = async (label: string, request: any, owner = true) => {
+					const saved = report.operations?.[label]
+					if (saved) {
+						if (owner) check(sameAddress(saved.intent.from, TARGET.owner), "Saved operation is not from the reviewed Ledger")
+						return submitRecoveryOperation(provider, { getAddress: async () => saved.intent.from }, report, label, request, save, args.transaction)
+					}
+					check(process.env.SYMMIO_SIGNER_MODE === "ledger", "New recovery operations require the owner Ledger")
 					check(
 						process.env.SYMMIO_RECOVERY_EXECUTE === "true" && process.env.CONFIRM_CHAIN_ID === "999",
 						"Explicit HyperEVM execution authorization is required",
@@ -469,34 +529,40 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 				check(planCut(report.baseline.selectors, snapshot.selectors, report.facet).length === 0, "Recovery selector is not installed")
 				check(report.operations?.cut?.status === "confirmed", "Reconcile this task's upgrade receipt first")
 				if (args.phase === "grant") {
-					if (report.baseline.safeRole) {
-						check(snapshot.safeRole, "The Safe's preexisting recovery role was revoked outside this task")
-						return
+					const tx = recoveryRoleAction(report, snapshot, "grant")
+					if (tx) {
+						await liveOperation("grant", tx)
+						check(await coreAt(provider).hasRole(TARGET.owner, ROLE), "Ledger role grant not reflected on Core")
+						report.temporaryRole = true
 					}
-					if (snapshot.safeRole && !report.operations?.grant)
-						throw new Error("Recovery role granted outside this task; review its ownership before proceeding")
-					await liveOperation("grant", action("grantRole", [TARGET.recipient, ROLE]), true)
-					check(await coreAt(provider).hasRole(TARGET.recipient, ROLE), "Role grant not reflected on Core")
-					report.temporaryRole = true
 					return
 				}
 				if (args.phase === "plan-recovery") {
-					check(!report.recovery, "Recovery was already verified; never export another sweep")
-					check(
-						snapshot.safeRole && BigInt(snapshot.zero) > 0n,
-						"Safe lacks recovery role or zero-address balance is empty; reconcile any prior transaction",
-					)
-					const tx = recoveryAction()
-					const result = await provider.call({ ...tx, from: TARGET.recipient })
-					check(BigInt(iface.decodeFunctionResult("recoverZeroAddressBalance", result)[0]) > 0n, "Recovery simulation returned no balance")
-					report.preview = { snapshot, action: tx, note: "Sweeps the full raw balance at execution; this preview can change as funds accrue" }
+					await previewLedgerRecovery(provider, report, snapshot)
 					return
 				}
-				if (args.phase === "verify-recovery") {
+				if (args.phase === "recover") {
+					const receipt = await executeLedgerRecovery(provider, report, snapshot, liveOperation)
+					args.transaction = receipt.hash
+					// The pre-send snapshot still contains the unrecovered balance. Verify against fresh state.
+					snapshot = await recoverySnapshot(provider)
+					requireOperational(snapshot)
+					requireBaseline(report, snapshot, report.facet)
+				}
+				if (args.phase === "verify-recovery" || args.phase === "recover") {
 					const hash = args.transaction || report.recovery?.transactionHash
-					check(/^0x[0-9a-fA-F]{64}$/.test(hash || ""), "Supply the executed Safe transaction hash")
+					check(/^0x[0-9a-fA-F]{64}$/.test(hash || ""), "Supply the executed Ledger recovery transaction hash")
 					check(!report.recovery || report.recovery.transactionHash.toLowerCase() === hash.toLowerCase(), "Recovery transaction changed")
-					const receipt = await provider.getTransactionReceipt(hash)
+					check(report.operations?.recovery, "A journaled Ledger recovery operation is required")
+					const receipt = await submitRecoveryOperation(
+						provider,
+						{ getAddress: async () => TARGET.owner },
+						report,
+						"recovery",
+						recoveryAction(),
+						save,
+						hash,
+					)
 					check(receipt && (await provider.getBlock(receipt.blockNumber))?.hash === receipt.blockHash, "Recovery receipt missing or noncanonical")
 					const evidence = recoveryEvent(receipt)
 					const cut = report.operations.cut
@@ -544,25 +610,23 @@ export const hyperevmZeroRecoveryTask = task("internal:hyperevm-zero-recovery", 
 				}
 				if (args.phase === "cleanup") {
 					check(report.recovery, "Recovery evidence required before role cleanup")
-					if (report.temporaryRole) {
-						check(
-							!report.baseline.safeRole && report.operations.grant?.status === "confirmed",
-							"Cannot revoke a role that this run did not temporarily grant",
-						)
-						if (snapshot.safeRole || report.operations?.cleanup) await liveOperation("cleanup", action("revokeRole", [TARGET.recipient, ROLE]), true)
-						check(!(await coreAt(provider).hasRole(TARGET.recipient, ROLE)), "Temporary recovery role remains")
-					} else check(snapshot.safeRole === report.baseline.safeRole, "Original recovery role changed")
+					const tx = recoveryRoleAction(report, snapshot, "cleanup")
+					if (tx) await liveOperation("cleanup", tx)
+					check((await coreAt(provider).hasRole(TARGET.owner, ROLE)) === report.baseline.operatorRole, "Original Ledger recovery role not restored")
 					report.cleanup = { temporaryRoleRemoved: Boolean(report.temporaryRole), blockNumber: await provider.getBlockNumber() }
 					return
 				}
 				if (args.phase === "evidence") {
 					check(report.recovery && report.cleanup, "Recovery and role cleanup evidence are incomplete")
 					check(
-						snapshot.zero === "0" && snapshot.recipient === report.recovery.recipientAfter && snapshot.safeRole === report.baseline.safeRole,
+						snapshot.zero === "0" &&
+							snapshot.recipient === report.recovery.recipientAfter &&
+							snapshot.safeRole === report.baseline.safeRole &&
+							snapshot.operatorRole === report.baseline.operatorRole,
 						"Final balance or recovery role drift; review before completion",
 					)
 					const r = report.recovery
-					const text = `HyperEVM v0.8.5 zero-address recovery completed.\n\nCore: ${TARGET.core}\nRecipient (internal Core balance): ${TARGET.recipient}\nRecipient confirmed by operator: ${report.recipientConfirmation.confirmedAt}\nRecovered: ${r.amountFormatted} USDC in internal 18-decimal units (${r.amount} raw).\nRecovery transaction: https://hyperevmscan.io/tx/${r.transactionHash}\nVerified transaction-atomic balances (raw, 18 decimals):\naddress(0): ${r.zeroBefore} -> ${r.zeroAfter}\nMultisig: ${r.recipientBefore} -> ${r.recipientAfter}\nFresh balances agree at observed block ${snapshot.observedThroughBlock}.\nFacet: ${report.facet}\nUpgrade transaction: ${report.operations.cut?.hash}\nValidation: local recovery tests passed. ${input.forkEnabled ? `Optional fork passed at block ${report.rehearsal.blockNumber} (${report.rehearsal.blockHash}).` : "Fork rehearsal was not requested by the operator."}\nTemporary recovery role removed: ${report.cleanup.temporaryRoleRemoved}; original roles preserved.\n\nThis operation credited the multisig's internal Core account; it did not withdraw ERC-20 tokens.\n`
+					const text = `HyperEVM v0.8.5 zero-address recovery completed.\n\nCore: ${TARGET.core}\nLedger operator: ${TARGET.owner}\nRecipient (internal Core balance): ${TARGET.recipient}\nRecipient confirmed by operator: ${report.recipientConfirmation.confirmedAt}\nRecovered: ${r.amountFormatted} USDC in internal 18-decimal units (${r.amount} raw).\nRecovery transaction: https://hyperevmscan.io/tx/${r.transactionHash}\nVerified transaction-atomic balances (raw, 18 decimals):\naddress(0): ${r.zeroBefore} -> ${r.zeroAfter}\nMultisig: ${r.recipientBefore} -> ${r.recipientAfter}\nFresh balances agree at observed block ${snapshot.observedThroughBlock}.\nFacet: ${report.facet}\nUpgrade transaction: ${report.operations.cut?.hash}\nValidation: local recovery tests passed. ${input.forkEnabled ? `Optional fork passed at block ${report.rehearsal.blockNumber} (${report.rehearsal.blockHash}).` : "Fork rehearsal was not requested by the operator."}\nTemporary recovery role removed: ${report.cleanup.temporaryRoleRemoved}; original roles preserved.\n\nThis operation credited the multisig's internal Core account; it did not withdraw ERC-20 tokens.\n`
 					const file = path.join(path.dirname(args.output), "recovery-summary.txt")
 					atomicWriteFile(file, text, 0o600)
 					report.summaryFile = file
