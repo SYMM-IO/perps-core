@@ -9,8 +9,22 @@
 	"operator": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
 	"partyA": "0x652b2e3e3850801ed22c600b13535fbcf93b2664",
 	"shares": {
-		"solver": { "pnlBps": 10000, "fundingBps": 10000, "cvaBps": 10000 },
-		"liquidator": { "basis": "remainderAfterSolver", "shareBps": 0, "recipient": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94" },
+		"solver": {
+			"pnlBps": 10000,
+			"fundingBps": 10000,
+			"cvaBps": 10000,
+			"expectedAmounts": {
+				"pnl": "2.493108170448664277",
+				"funding": "0.053876144664567485",
+				"cva": "0.895588429244244328"
+			}
+		},
+		"liquidator": {
+			"basis": "remainderAfterSolver",
+			"shareBps": 0,
+			"expectedAmount": "0.000000000000000000",
+			"recipient": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
+		},
 		"remainder": "parent"
 	}
 }

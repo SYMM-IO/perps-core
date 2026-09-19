@@ -10,7 +10,7 @@ import {
 	verifyPlan,
 } from "../../deployment-tooling/disputed-settlement.js";
 import { settlementFixture } from "./fixtures/disputed-settlement.js";
-import { Interface, ZeroAddress } from "ethers";
+import { Interface, ZeroAddress, formatUnits } from "ethers";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -39,6 +39,75 @@ test("input-file rules reproduce the disputed case with exact 18-decimal conserv
 		);
 	assert.equal(plan.totals[0].recorded.funding, "53876144664567485");
 	verifyPlan(plan, f.input);
+});
+const caseShares = () => JSON.parse(fs.readFileSync(new URL("../../tasks/config/disputed-settlement.arbitrum-652b2e.json", import.meta.url))).shares;
+
+test("filled case records the exact solver components and zero liquidator amount alongside percentages", () => {
+	const f = settlementFixture();
+	f.input.shares = caseShares();
+	const p = f.plan();
+	assert.deepEqual(p.solverAmounts, { pnl: "2493108170448664277", funding: "53876144664567485", cva: "895588429244244328" });
+	assert.equal(p.liquidatorFee, "0");
+	for (const component of ["pnl", "funding", "cva"])
+		assert.equal(formatUnits(p.solverAmounts[component], 18), f.input.shares.solver.expectedAmounts[component]);
+});
+
+test("a one-unit component mismatch or stale expected amount stops plan creation", () => {
+	for (const component of ["pnl", "funding", "cva"]) {
+		const f = settlementFixture();
+		f.input.shares = caseShares();
+		const raw = f.plan().solverAmounts[component];
+		f.input.shares.solver.expectedAmounts[component] = formatUnits(BigInt(raw) + 1n, 18);
+		assert.throws(f.plan, new RegExp(`Solver ${component} calculates to`));
+	}
+	const f = settlementFixture();
+	f.input.shares = caseShares();
+	f.input.shares.solver.cvaBps = 5000;
+	assert.throws(f.plan, /Solver cva calculates to/);
+});
+
+test("liquidator amount validates the percentage result rather than overriding it", () => {
+	const f = settlementFixture();
+	f.input.shares = caseShares();
+	f.input.shares.liquidator.expectedAmount = "0.000000000000000001";
+	assert.throws(f.plan, /Liquidator share calculates to 0.0/);
+	f.input.shares.liquidator.shareBps = 2500;
+	f.input.shares.liquidator.expectedAmount = "0.144993638667457910";
+	f.snapshot.feeRecipient = { address: f.input.shares.liquidator.recipient, registeredB: false, liquidated: false };
+	assert.equal(f.plan().liquidatorFee, "144993638667457910");
+});
+
+test("expected amounts require exact decimal strings with all three solver components", () => {
+	for (const invalid of [2.49, "1e-3", "0.0000000000000000001", "", null, "NaN", " 1", "01.2"]) {
+		const f = settlementFixture();
+		f.input.shares = caseShares();
+		f.input.shares.solver.expectedAmounts.pnl = invalid;
+		assert.throws(() => validateInput(f.input), /decimal string/);
+	}
+	for (const mutate of [
+		f => delete f.input.shares.solver.expectedAmounts.funding,
+		f => (f.input.shares.solver.expectedAmounts = null),
+		f => (f.input.shares.solver.expectedAmounts.cva = "-1"),
+		f => (f.input.shares.liquidator.expectedAmount = "-1"),
+		f => (f.input.shares.liquidator.expectedAmount = 0),
+	]) {
+		const f = settlementFixture();
+		f.input.shares = caseShares();
+		mutate(f);
+		assert.throws(() => validateInput(f.input));
+	}
+});
+
+test("expected solver amounts check the sum after per-market percentage rounding", () => {
+	const f = settlementFixture();
+	f.snapshot.logs[1].symbolId = "2";
+	f.snapshot.quotes[1].symbolId = "2";
+	f.input.shares.solver = { pnlBps: 3333, fundingBps: 3333, cvaBps: 3333 };
+	const calculated = f.plan();
+	f.input.shares.solver.expectedAmounts = Object.fromEntries(
+		Object.entries(calculated.solverAmounts).map(([key, raw]) => [key, formatUnits(raw, 18)]),
+	);
+	assert.equal(f.plan().solverTotal, calculated.solverTotal);
 });
 test("shares are calculated from the file, including fee recipients and raw-unit rounding", () => {
 	const f = settlementFixture();

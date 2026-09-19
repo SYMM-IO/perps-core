@@ -288,3 +288,12 @@ test("runtime refuses chain, source and account economics drift before signing",
 	await assert.rejects(h.run("grant", { execute: true }), /chain differs/)
 	assert.equal(h.sends(), 0)
 })
+
+test("an expected payout mismatch stops inspection before any plan or signature", async () => {
+	const h = harness()
+	h.input.shares.liquidator.expectedAmount = "0.000000000000000001"
+	h.report.inputDigest = digest(h.input)
+	await assert.rejects(h.run("inspect"), /Liquidator share calculates to/)
+	assert.equal(h.report.plan, undefined)
+	assert.equal(h.sends(), 0)
+})
