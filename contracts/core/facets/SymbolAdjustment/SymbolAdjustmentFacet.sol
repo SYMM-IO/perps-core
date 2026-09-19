@@ -286,6 +286,11 @@ contract SymbolAdjustmentFacet is Accessibility, ISymbolAdjustmentFacet {
 		uint256 oldQuantity = quote.quantity;
 		uint256 oldOpenedPrice = quote.openedPrice;
 		QuoteAdjustmentPreview memory preview = _previewQuote(quote, factor);
+		if (quote.quantityToClose > 0 && preview.quantityToClose == 0) {
+			quote.quoteStatus = QuoteStatus.OPENED;
+			quote.statusModifyTimestamp = block.timestamp;
+			emit CloseRequestCancelledByAdjustment(quoteId, symbolId, QuoteStorage.layout().closeIds[quoteId]);
+		}
 		quote.quantity = preview.quantity;
 		quote.openedPrice = preview.openedPrice;
 		quote.initialOpenedPrice = preview.initialOpenedPrice;

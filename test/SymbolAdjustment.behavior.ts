@@ -1086,6 +1086,88 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			expect(after.requestedClosePrice).to.equal(before.requestedClosePrice / 4n)
 		})
 
+		for (const requestDuringWindow of [false, true]) {
+			for (const cancelPending of [false, true]) {
+				it(`cancels an unrepresentable ${cancelPending ? "CANCEL_CLOSE_PENDING" : "CLOSE_PENDING"} price requested ${requestDuringWindow ? "during" : "before"} restatement`, async function () {
+					const firstId = await openPositionForUser()
+					const quoteId = await openAndPartiallyClose(decimal(100n), decimal(40n))
+					const quantityToClose = requestDuringWindow ? decimal(60n) : decimal(30n)
+					const request = async () => {
+						await user.requestToClosePosition(
+							quoteId,
+							limitCloseRequestBuilder().quantityToClose(quantityToClose).closePrice(ethers.MaxUint256).deadline(ethers.MaxUint256).build(),
+						)
+						if (cancelPending) await user.requestToCancelCloseRequest(quoteId)
+					}
+					if (!requestDuringWindow) await request()
+					await activateFactorAndStartRestatement(decimal(5n, 17))
+					await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [firstId])
+					if (requestDuringWindow) await request()
+					const before = await context.viewFacetQuote.getQuote(quoteId)
+					const closeId = await context.viewFacetQuote.getQuoteCloseId(quoteId)
+					expect(before.quoteStatus).to.equal(cancelPending ? QuoteStatus.CANCEL_CLOSE_PENDING : QuoteStatus.CLOSE_PENDING)
+					await expect(context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)).to.be.revertedWith(
+						"SymbolAdjustmentFacet: Restatement already mutated",
+					)
+					const preview = await context.viewFacetSymbol.previewQuoteAdjustment(SYMBOL_ID, quoteId)
+					expect(preview.quantityToClose).to.equal(0n)
+					expect(preview.requestedClosePrice).to.equal(0n)
+					const venueView = (await context.viewFacetQuote.getQuoteInVenueUnits(quoteId)).quote
+					expect(venueView.quoteStatus).to.equal(QuoteStatus.OPENED)
+					expect(venueView.quantityToClose).to.equal(0n)
+					expect(venueView.requestedClosePrice).to.equal(0n)
+					expect(venueView.statusModifyTimestamp).to.equal(before.statusModifyTimestamp)
+					// Read-only conversion must not cancel the stored request.
+					expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(before.quoteStatus)
+					const tx = await context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])
+					await expect(tx).to.emit(context.symbolAdjustmentFacet, "CloseRequestCancelledByAdjustment").withArgs(quoteId, SYMBOL_ID, closeId)
+					const after = await context.viewFacetQuote.getQuote(quoteId)
+					expect(after.quoteStatus).to.equal(QuoteStatus.OPENED)
+					expect(after.quantityToClose).to.equal(0n)
+					expect(after.requestedClosePrice).to.equal(0n)
+					expect(after.quantity).to.equal(before.quantity / 2n)
+					expect(after.closedAmount).to.equal(before.closedAmount / 2n)
+					expect(after.openedPrice).to.equal(before.openedPrice * 2n)
+					expect(after.avgClosedPrice).to.equal(before.avgClosedPrice * 2n)
+					expect(after.lockedValues).to.deep.equal(before.lockedValues)
+					expect(after.deadline).to.equal(before.deadline)
+					expect(after.orderType).to.equal(before.orderType)
+					expect(await context.viewFacetQuote.getQuoteCloseId(quoteId)).to.equal(closeId)
+					expect(after.statusModifyTimestamp).to.be.greaterThan(before.statusModifyTimestamp)
+					await expect(context.symbolAdjustmentFacet.connect(context.signers.hedger).applyAdjustment(SYMBOL_ID, [quoteId])).to.be.revertedWith(
+						"SymbolAdjustmentFacet: Already restated",
+					)
+					await finalizeRestatementAfterWindow(SYMBOL_ID)
+					expect(await context.viewFacetSymbol.isSymbolFrozen(SYMBOL_ID)).to.be.false
+					// The preserved position can receive and fill a fresh close request after finalization.
+					const remaining = after.quantity - after.closedAmount
+					await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(remaining).closePrice(after.openedPrice).build())
+					expect(await context.viewFacetQuote.getQuoteCloseId(quoteId)).to.be.greaterThan(closeId)
+					await hedger.fillCloseRequest(quoteId, limitFillCloseRequestBuilder().filledAmount(remaining).closedPrice(after.openedPrice).build())
+					expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CLOSED)
+				})
+			}
+		}
+
+		it("cancels only close prices whose exact rounded result overflows uint256", async function () {
+			const harness = await (await ethers.getContractFactory("QuoteAdjustmentHarness")).deploy()
+			const max = ethers.MaxUint256
+			for (const quantity of [7n, decimal(100n) + 9n]) {
+				for (const factor of [decimal(1n, 16), decimal(3n, 17), decimal(5n, 17), decimal(9n, 17), decimal(1n), decimal(11n, 17), decimal(4n)]) {
+					const scaled = (quantity * factor) / decimal(1n)
+					if (scaled === 0n) continue // Existing amount-underflow coverage checks this separate failure.
+					const lastRepresentable = ((max + 1n) * scaled - 1n) / quantity
+					const prices = [0n, 1n, max, lastRepresentable - 1n, lastRepresentable, lastRepresentable + 1n].filter(p => p >= 0n && p <= max)
+					for (const price of prices) {
+						const expected = (quantity * price) / scaled
+						const result = await harness.previewCloseRequest(quantity, quantity, price, factor)
+						expect(result.adjustedCloseAmount).to.equal(expected > max ? 0n : scaled)
+						expect(result.adjustedClosePrice).to.equal(expected > max ? 0n : expected)
+					}
+				}
+			}
+		})
+
 		it("should reject a reverse split that rounds a pending close amount to zero", async function () {
 			const quoteId = await openPositionForUser()
 			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(1n).build())

@@ -25,4 +25,18 @@ contract QuoteAdjustmentHarness {
 		QuoteAdjustmentData memory result = LibQuoteAdjustment.preview(quote, factor);
 		return (result.quantity, result.closedAmount);
 	}
+
+	function previewCloseRequest(
+		uint256 quantity,
+		uint256 quantityToClose,
+		uint256 closePrice,
+		uint256 factor
+	) external pure returns (uint256 adjustedCloseAmount, uint256 adjustedClosePrice) {
+		Quote memory quote;
+		quote.quantity = quantity;
+		quote.quantityToClose = quantityToClose;
+		quote.requestedClosePrice = closePrice;
+		QuoteAdjustmentData memory result = LibQuoteAdjustment.preview(quote, factor);
+		return (result.quantityToClose, result.requestedClosePrice);
+	}
 }

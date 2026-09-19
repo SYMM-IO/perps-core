@@ -192,7 +192,12 @@
 						<li>The account owner may sign directly.</li>
 						<li>
 							A delegated signer needs an active InstantLayer delegation for the wallet-execution sentinel and every inner call
-							selector.
+							selector. For calls to AccountLayer, nested <code>executeTimelockOp</code> wrappers are unwrapped and the enclosed
+							operation's selector is checked; granting the wrapper selector does not authorize the enclosed operation.
+						</li>
+						<li>
+							Delegated calls must have zero native <code>value</code>. Only owner-signed wallet operations may send native currency;
+							ordinary selector grants do not grant native-spending authority.
 						</li>
 						<li>
 							Wallet calls have no target allowlist. The owner's signature binds the complete call list. A delegated signer is checked

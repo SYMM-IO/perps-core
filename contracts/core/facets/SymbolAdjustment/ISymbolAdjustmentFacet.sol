@@ -84,6 +84,8 @@ interface ISymbolAdjustmentFacet {
 		uint256 newOpenedPrice
 	);
 	event PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId);
+	/// @notice The position was restated, but its pending close price could not be represented in the new units.
+	event CloseRequestCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId, uint256 closeId);
 	event PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId);
 	event StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId);
 	event RestatementFinalized(uint256 indexed symbolId, uint256 epoch);
