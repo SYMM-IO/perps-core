@@ -8,6 +8,7 @@ import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
 import { deployComponentTask } from "./deployComponent.js"
 import { diamondTask } from "./diamond.js"
+import { disputedSettlementTask } from "./disputedSettlement.js"
 import { feeDistributorTask } from "./feeDistributor.js"
 import { executeGovernanceHandoverTask } from "./governanceHandover.js"
 import { enableBigBlocksTask, disableBigBlocksTask } from "./hyperevm.js"
@@ -37,6 +38,7 @@ export const deployTasks = [
 	deployAllTask,
 	deployComponentTask,
 	diamondTask,
+	disputedSettlementTask,
 	disableBigBlocksTask,
 	enableBigBlocksTask,
 	feeDistributorTask,

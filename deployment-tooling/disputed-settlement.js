@@ -16,6 +16,9 @@ export const plain = value => JSON.parse(json(value));
 export const SOURCE_FILES = [
 	"deployment-tooling/disputed-settlement.js",
 	"tasks/deploy/disputedSettlement.ts",
+	"tasks/deploy/governanceActions.ts",
+	"tasks/deploy/executionGuard.ts",
+	"tasks/deploy/tx.ts",
 	"cli/tasks/disputed-settlement.js",
 	"abis/symmio.json",
 	"abis/accountLayer.json",
@@ -254,6 +257,7 @@ export function buildPlan(input, s, iface) {
 		// Round each per-market signed component toward zero; unallocated dust stays with Party A.
 		const calculated = [...markets.entries()].map(([symbolId, m]) => ({
 			symbolId,
+			recorded: m,
 			pnl: (m.pnl * BigInt(bps.pnlBps)) / 10000n,
 			funding: (m.funding * BigInt(bps.fundingBps)) / 10000n,
 			cva: (m.cva * BigInt(bps.cvaBps)) / 10000n,
@@ -266,7 +270,7 @@ export function buildPlan(input, s, iface) {
 		const credit = paid.pnl + paid.funding + paid.cva;
 		check(credit >= 0n, "A Party B debit requires a separate solvency review");
 		accumulated += BigInt(st.expectedAmount);
-		totals.push(plain({ partyB: party.address, recorded: sum, ...paid, credit }));
+		totals.push(plain({ partyB: party.address, recorded: sum, markets: calculated, ...paid, credit }));
 		for (const market of calculated) {
 			const symbolId = market.symbolId;
 			rows.push([party.address, input.partyA, symbolId, String(market.pnl + market.cva), String(market.funding), "0"]);
@@ -333,6 +337,7 @@ export function buildPlan(input, s, iface) {
 		total,
 		residual,
 		originalLiquidatorFee: s.detail.liquidationFee,
+		liquidatorBasisAmount: feeBasis,
 		liquidatorFee,
 		actions,
 	});
@@ -387,9 +392,10 @@ export function validateStage(plan, s, completed = []) {
 		const expected = { ...b.detail, disputed: !taken, liquidationFee: taken ? "0" : b.detail.liquidationFee };
 		check(digest(s.detail) === digest(expected), "Liquidation ID or economics changed since review");
 		check(s.virtual.isExists && sameAddress(s.virtual.parentAccount, b.virtual.parentAccount), "Virtual account changed");
+		if (taken) check(s.takeover.liquidationId === plan.liquidationId, "Takeover liquidation ID changed");
 	} else {
 		check(
-			!s.detail.disputed && s.detail.liquidationId === "0x" && !s.virtual.isExists,
+			!s.detail.disputed && s.detail.liquidationId === "0x" && s.takeover.liquidationId === "0x" && !s.virtual.isExists,
 			"Final liquidation state or virtual-account cleanup is incomplete",
 		);
 	}
@@ -397,8 +403,8 @@ export function validateStage(plan, s, completed = []) {
 		BigInt(s.allocated) === (finalized ? 0n : BigInt(b.allocated) - (paid ? BigInt(plan.total) : 0n)),
 		"Party A allocation differs from confirmed settlement",
 	);
-	// Other users may change a solver/parent balance between transactions. Their exact deltas
-	// are proven against each operation's fresh pre/post snapshots by the runtime.
+	// Other users may change a solver/parent balance between transactions. The runtime
+	// verifies exact transaction-local account credits and the parent transfer in receipt events.
 	check(s.parties.length === b.parties.length, "Party B list changed");
 	for (let i = 0; i < s.parties.length; i++) {
 		const p = s.parties[i],

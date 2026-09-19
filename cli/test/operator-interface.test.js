@@ -75,7 +75,8 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 18);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 19);
+	assert.equal(entries.find(item => item.id === "maintenance.disputed-settlement").risk, "transaction");
 	const zeroRecovery = entries.find(item => item.id === "maintenance.hyperevm-zero-balance-recovery");
 	assert.deepEqual(zeroRecovery.supportedNetworks, ["hyperevm"]);
 	assert.equal(zeroRecovery.risk, "transaction");

@@ -1,0 +1,16 @@
+{
+	"schema": 1,
+	"policy": "configured-liquidation-shares-v1",
+	"network": "arbitrum",
+	"chainId": 42161,
+	"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+	"accountLayer": "0x573310d1D6ec18cB21E1aB949414470D9bf5c24E",
+	"collateral": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+	"operator": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+	"partyA": "0x652b2e3e3850801ed22c600b13535fbcf93b2664",
+	"shares": {
+		"solver": { "pnlBps": 10000, "fundingBps": 10000, "cvaBps": 10000 },
+		"liquidator": { "basis": "remainderAfterSolver", "shareBps": 0, "recipient": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94" },
+		"remainder": "parent"
+	}
+}

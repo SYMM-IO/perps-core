@@ -21,6 +21,7 @@ import { ownershipAcceptanceAction, roleGrantAction } from "../signer/safe-batch
 import { createAccountInstantUpgradeTask } from "./account-instant-upgrade.js";
 import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.js";
+import { createDisputedSettlementTask } from "./disputed-settlement.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
 import { createHyperEvmZeroRecoveryTask } from "./hyperevm-zero-recovery.js";
 import { createLfUpdateTask } from "./lf-update.js";
@@ -1312,6 +1313,7 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 });
 
 const MAINTENANCE_TASKS = [
+	createDisputedSettlementTask(common),
 	createLfUpdateTask(common),
 	createHyperEvmZeroRecoveryTask(common),
 	createArbitrumRoundingUpgradeTask(common),
