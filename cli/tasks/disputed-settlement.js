@@ -93,6 +93,8 @@ export function settlementPreview(plan) {
 		`Liquidation: ${plan.liquidationId}; observed block: ${plan.baseline.blockNumber}`,
 		`Collateral: ${plan.baseline.collateral}; internal accounting uses 18 decimals.`,
 		`Input share rules:\n${json(plan.input.shares)}`,
+		`Calculated solver amounts across all counterparties:\nPnL (${plan.input.shares.solver.pnlBps / 100}%): ${amount(plan.solverAmounts.pnl)}\nFunding (${plan.input.shares.solver.fundingBps / 100}%): ${amount(plan.solverAmounts.funding)}\nCVA (${plan.input.shares.solver.cvaBps / 100}%): ${amount(plan.solverAmounts.cva)}\nSolver total: ${amount(plan.solverTotal)}`,
+		...(plan.input.shares.solver.expectedAmounts ? ["All three solver amounts exactly match the expectedAmounts in the input file."] : []),
 		...plan.totals.map(t =>
 			[
 				`Solver ${t.partyB}:`,
@@ -104,6 +106,7 @@ export function settlementPreview(plan) {
 			].join("\n"),
 		),
 		`Original recorded liquidation fee: ${amount(plan.originalLiquidatorFee)}.\nLiquidator formula: ${plan.input.shares.liquidator.basis} (${amount(plan.liquidatorBasisAmount)}) × ${plan.input.shares.liquidator.shareBps}/10000 = ${amount(plan.liquidatorFee)}${BigInt(plan.liquidatorFee) > 0n ? ` to ${plan.input.shares.liquidator.recipient}` : " (explicitly disabled by the input file)"}. Rounds down to a raw accounting unit.`,
+		`Liquidator share (${plan.input.shares.liquidator.shareBps / 100}%): ${amount(plan.liquidatorFee)}${plan.input.shares.liquidator.expectedAmount !== undefined ? "; exactly matches expectedAmount in the input file" : ""}.`,
 		`Parent ${plan.baseline.virtual.parentAccount}: ${amount(plan.baseline.allocated)} − solver ${amount(plan.solverTotal)} − liquidator ${amount(plan.liquidatorFee)} = ${amount(plan.residual)}.`,
 		"These move internal collateral balances. CVA is classified as realizedPnl and a liquidator payout as platformFee by the explicit-settlement interface.",
 		"Each transaction is simulated with eth_call and estimated from the admin address immediately before signing. These are sequential transactions; takeover remains active if interrupted.",
@@ -116,7 +119,7 @@ export function settlementPreview(plan) {
 export function createDisputedSettlementTask(common) {
 	return common({
 		id: "maintenance.disputed-settlement",
-		version: 2,
+		version: 3,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Settle a disputed account using Clearing House",

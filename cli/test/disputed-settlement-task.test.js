@@ -80,6 +80,22 @@ test("admin preview shows exact formulas, parent, chain, signer, target and ever
 		assert(preview.includes(value), value);
 });
 
+test("admin preview pairs each percentage with its actual amount and confirms the input matches", () => {
+	const f = settlementFixture();
+	f.input.shares.solver.expectedAmounts = { pnl: "2.493108170448664277", funding: "0.053876144664567485", cva: "0.895588429244244328" };
+	f.input.shares.liquidator.expectedAmount = "0.000000000000000000";
+	const preview = settlementPreview(f.plan());
+	for (const value of [
+		"PnL (100%): 2.493108170448664277",
+		"Funding (100%): 0.053876144664567485",
+		"CVA (100%): 0.895588429244244328",
+		"Liquidator share (0%): 0.0",
+		"All three solver amounts exactly match",
+		"exactly matches expectedAmount",
+	])
+		assert(preview.includes(value), value);
+});
+
 test("cancellation preserves an unknown pre-signing outcome without inventing a transaction", async t => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "dispute-cancel-"));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));

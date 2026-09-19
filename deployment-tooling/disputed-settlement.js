@@ -1,4 +1,4 @@
-import { Contract, Interface, ZeroAddress, getAddress, id, keccak256, zeroPadValue } from "ethers";
+import { Contract, Interface, ZeroAddress, formatUnits, getAddress, id, keccak256, parseUnits, zeroPadValue } from "ethers";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,6 +25,16 @@ export const SOURCE_FILES = [
 ];
 export const sourceDigest = root => digest(SOURCE_FILES.map(file => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 
+function inputAmount(value, label, signed = true) {
+	check(
+		typeof value === "string" && /^-?(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(value),
+		`${label} must be a decimal string with at most 18 decimal places`,
+	);
+	const raw = parseUnits(value, 18);
+	check(signed || raw >= 0n, `${label} cannot be negative`);
+	return raw;
+}
+
 export function validateInput(input) {
 	check(input.schema === 1 && input.policy === POLICY, "Unsupported settlement input or payout policy");
 	check(Number.isSafeInteger(input.chainId) && input.chainId > 0, "Invalid chain ID");
@@ -44,6 +54,15 @@ export function validateInput(input) {
 	}))
 		check(Number.isInteger(value) && value >= 0 && value <= 10000, `${name} must be an integer from 0 to 10000 (basis points)`);
 	check(["recordedLiquidationFee", "remainderAfterSolver"].includes(shares.liquidator.basis), "Choose the liquidator share basis explicitly");
+	if (shares.solver.expectedAmounts !== undefined) {
+		const amounts = shares.solver.expectedAmounts;
+		check(
+			amounts && Object.keys(amounts).length === 3 && ["pnl", "funding", "cva"].every(key => Object.hasOwn(amounts, key)),
+			"Solver expectedAmounts must contain pnl, funding and cva",
+		);
+		for (const component of ["pnl", "funding", "cva"]) inputAmount(amounts[component], `Solver expected ${component}`, component !== "cva");
+	}
+	if (shares.liquidator.expectedAmount !== undefined) inputAmount(shares.liquidator.expectedAmount, "Liquidator expected amount", false);
 	if (shares.liquidator.shareBps > 0) {
 		const recipient = getAddress(shares.liquidator.recipient);
 		check(
@@ -278,12 +297,28 @@ export function buildPlan(input, s, iface) {
 		}
 	}
 	check(accumulated === BigInt(s.detail.partyAAccumulatedUpnl), "Pending settlements do not cover the account accumulated uPNL");
+	const solverAmounts = Object.fromEntries(
+		["pnl", "funding", "cva"].map(component => [component, totals.reduce((sum, t) => sum + BigInt(t[component]), 0n)]),
+	);
+	if (input.shares.solver.expectedAmounts !== undefined)
+		for (const [component, calculated] of Object.entries(solverAmounts)) {
+			const expected = input.shares.solver.expectedAmounts[component];
+			check(
+				calculated === inputAmount(expected, `Solver expected ${component}`),
+				`Solver ${component} calculates to ${formatUnits(calculated, 18)} but the input expects ${expected}; review the amounts and percentages`,
+			);
+		}
 	const solverTotal = totals.reduce((sum, t) => sum + BigInt(t.credit), 0n),
 		available = BigInt(s.allocated) - solverTotal;
 	check(available >= 0n, "Account collateral cannot cover configured solver shares; refusing to change them automatically");
 	const feeBasis = input.shares.liquidator.basis === "recordedLiquidationFee" ? BigInt(s.detail.liquidationFee) : available;
 	const liquidatorFee = (feeBasis * BigInt(input.shares.liquidator.shareBps)) / 10000n;
 	check(liquidatorFee <= available, "Configured liquidator share exceeds the remaining collateral; review the fee basis or percentage");
+	if (input.shares.liquidator.expectedAmount !== undefined)
+		check(
+			liquidatorFee === inputAmount(input.shares.liquidator.expectedAmount, "Liquidator expected amount", false),
+			`Liquidator share calculates to ${formatUnits(liquidatorFee, 18)} but the input expects ${input.shares.liquidator.expectedAmount}; review the amount and percentage`,
+		);
 	if (liquidatorFee > 0n) {
 		check(s.feeRecipient && !s.feeRecipient.registeredB && !s.feeRecipient.liquidated, "Invalid liquidator recipient state");
 		rows.push([input.shares.liquidator.recipient, ZeroAddress, "0", "0", "0", String(liquidatorFee)]);
@@ -333,6 +368,7 @@ export function buildPlan(input, s, iface) {
 		baseline: s,
 		liquidationId: s.detail.liquidationId,
 		totals,
+		solverAmounts,
 		solverTotal,
 		total,
 		residual,
