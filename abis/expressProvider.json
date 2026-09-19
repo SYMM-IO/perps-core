@@ -1,1208 +1,5 @@
 [
     {
-        "inputs": [],
-        "name": "AccelerateCooldownElapsed",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "AccelerateOfferExpired",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "AccelerateOnlyFromStandardAccepted",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "AccelerationFeeExceedsMaximum",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ArrayLengthMismatch",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "CreditLineNotConfigured",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "CreditLinePaused",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "DebtAlreadyActivated",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "DebtAlreadyReserved",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "DebtExceedsAbsoluteCap",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "DebtExceedsPercentCap",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "DuplicateValidator",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ECDSAInvalidSignature",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "length",
-                "type": "uint256"
-            }
-        ],
-        "name": "ECDSAInvalidSignatureLength",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bytes32",
-                "name": "s",
-                "type": "bytes32"
-            }
-        ],
-        "name": "ECDSAInvalidSignatureS",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "FeesExceedExpressAmount",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "FundingSplitExceedsExpress",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InsufficientAffiliateBalance",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InsufficientGeneralBalance",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InsufficientValidatorSignatures",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidAccelerateNonce",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidAccelerateSigner",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidAddressBytesLength",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidValidator",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "MuonSignatureExpired",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "NoDebtForRequest",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "PartsMismatch",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "Paused",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "Reentrancy",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "token",
-                "type": "address"
-            }
-        ],
-        "name": "SafeERC20FailedOperation",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "StaleValidatorApproval",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "StandardAlreadyFinalized",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "UserBlacklisted",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "UserSuspended",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ValidatorApprovalExpired",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "VirtualProviderMustBeZero",
-        "type": "error"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "DebtActivated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "DebtReserved",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "affiliateAmount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "creditAmount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "generalAmount",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawAccelerated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawLocked",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawProcessed",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawUnlockedAndProcessed",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "id",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "amount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "int256",
-                        "name": "chainId",
-                        "type": "int256"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "receiver",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "virtualProvider",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "expressProvider",
-                        "type": "address"
-                    }
-                ],
-                "internalType": "struct WithdrawReceiverPart[]",
-                "name": "parts",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "bytes",
-                "name": "accelerateOfferData",
-                "type": "bytes"
-            },
-            {
-                "internalType": "bytes",
-                "name": "validatorData",
-                "type": "bytes"
-            },
-            {
-                "internalType": "bytes",
-                "name": "creditDataRaw",
-                "type": "bytes"
-            }
-        ],
-        "name": "accelerateWithdraw",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "CreditNotSupportedForStandard",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "FeeMismatch",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidAffiliate",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidCollateral",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidNonce",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidOptionType",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidPostPayoutRollback",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidProvider",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidSigner",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidStatusForComplete",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidStatusForStandard",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "InvalidStatusForSuspend",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "NotAccepted",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "OfferExpired",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "OnlySymmio",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "OperatorFeeMismatch",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "StaleWithdrawSlot",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "UnsupportedAccount",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "UserFeeExceedsMaximum",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ValidatorsRequiredForSameTx",
-        "type": "error"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "BadDebtAccrued",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "DebtCancelled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "DebtSettled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "GeneralBadDebtAccrued",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint8",
-                "name": "optionType",
-                "type": "uint8"
-            }
-        ],
-        "name": "WithdrawAccepted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawCancelled",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawFinalized",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "user",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "uint256",
-                "name": "requestId",
-                "type": "uint256"
-            }
-        ],
-        "name": "WithdrawSuspended",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "id",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "user",
-                        "type": "address"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "id",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "amount",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "int256",
-                                "name": "chainId",
-                                "type": "int256"
-                            },
-                            {
-                                "internalType": "bytes",
-                                "name": "receiver",
-                                "type": "bytes"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "virtualProvider",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "expressProvider",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct WithdrawReceiverPart[]",
-                        "name": "parts",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "cooldownEndTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum WithdrawStatus",
-                        "name": "status",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "speedUp",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isCooldownModified",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "provider",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isPureVirtual",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "providerData",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalVirtualAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "advancedAmount",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct WithdrawRequest",
-                "name": "withdrawRequest",
-                "type": "tuple"
-            }
-        ],
-        "name": "onWithdrawCancelRequest",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "id",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "user",
-                        "type": "address"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "id",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "amount",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "int256",
-                                "name": "chainId",
-                                "type": "int256"
-                            },
-                            {
-                                "internalType": "bytes",
-                                "name": "receiver",
-                                "type": "bytes"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "virtualProvider",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "expressProvider",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct WithdrawReceiverPart[]",
-                        "name": "parts",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "cooldownEndTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum WithdrawStatus",
-                        "name": "status",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "speedUp",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isCooldownModified",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "provider",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isPureVirtual",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "providerData",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalVirtualAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "advancedAmount",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct WithdrawRequest",
-                "name": "withdrawRequest",
-                "type": "tuple"
-            }
-        ],
-        "name": "onWithdrawComplete",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "id",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "user",
-                        "type": "address"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "id",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "amount",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "int256",
-                                "name": "chainId",
-                                "type": "int256"
-                            },
-                            {
-                                "internalType": "bytes",
-                                "name": "receiver",
-                                "type": "bytes"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "virtualProvider",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "expressProvider",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct WithdrawReceiverPart[]",
-                        "name": "parts",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "cooldownEndTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum WithdrawStatus",
-                        "name": "status",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "speedUp",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isCooldownModified",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "provider",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isPureVirtual",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "providerData",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalVirtualAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "advancedAmount",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct WithdrawRequest",
-                "name": "withdrawRequest",
-                "type": "tuple"
-            },
-            {
-                "internalType": "address",
-                "name": "callbackCollateral",
-                "type": "address"
-            }
-        ],
-        "name": "onWithdrawRequest",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint256",
-                        "name": "id",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "user",
-                        "type": "address"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "id",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "amount",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "int256",
-                                "name": "chainId",
-                                "type": "int256"
-                            },
-                            {
-                                "internalType": "bytes",
-                                "name": "receiver",
-                                "type": "bytes"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "virtualProvider",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "expressProvider",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct WithdrawReceiverPart[]",
-                        "name": "parts",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "timestamp",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "cooldownEndTime",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "enum WithdrawStatus",
-                        "name": "status",
-                        "type": "uint8"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "speedUp",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isCooldownModified",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "provider",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bool",
-                        "name": "isPureVirtual",
-                        "type": "bool"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "providerData",
-                        "type": "bytes"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "totalVirtualAmount",
-                        "type": "uint256"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "advancedAmount",
-                        "type": "uint256"
-                    }
-                ],
-                "internalType": "struct WithdrawRequest",
-                "name": "withdrawRequest",
-                "type": "tuple"
-            }
-        ],
-        "name": "onWithdrawSuspend",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "address",
@@ -2182,6 +979,27 @@
     {
         "inputs": [],
         "name": "NoOperatorFeesToClaim",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "Paused",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "Reentrancy",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            }
+        ],
+        "name": "SafeERC20FailedOperation",
         "type": "error"
     },
     {
@@ -3480,6 +2298,997 @@
     },
     {
         "inputs": [],
+        "name": "ArrayLengthMismatch",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "CreditLineNotConfigured",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "CreditLinePaused",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "CreditNotSupportedForStandard",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DebtAlreadyActivated",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DebtAlreadyReserved",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DebtExceedsAbsoluteCap",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DebtExceedsPercentCap",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DuplicateValidator",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ECDSAInvalidSignature",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "length",
+                "type": "uint256"
+            }
+        ],
+        "name": "ECDSAInvalidSignatureLength",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "s",
+                "type": "bytes32"
+            }
+        ],
+        "name": "ECDSAInvalidSignatureS",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "FeeMismatch",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "FeesExceedExpressAmount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "FundingSplitExceedsExpress",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InsufficientAffiliateBalance",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InsufficientGeneralBalance",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InsufficientValidatorSignatures",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidAddressBytesLength",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidAffiliate",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidCollateral",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidNonce",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidOptionType",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidPostPayoutRollback",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidProvider",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidSigner",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidStatusForComplete",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidStatusForStandard",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidStatusForSuspend",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidValidator",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "MuonSignatureExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "NoDebtForRequest",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "NotAccepted",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "OfferExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "OnlySymmio",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "OperatorFeeMismatch",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "PartsMismatch",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "StaleValidatorApproval",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "StaleWithdrawSlot",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "UnsupportedAccount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "UserBlacklisted",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "UserFeeExceedsMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ValidatorApprovalExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ValidatorsRequiredForSameTx",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "VirtualProviderMustBeZero",
+        "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "BadDebtAccrued",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "DebtActivated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "DebtCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "DebtReserved",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "DebtSettled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "GeneralBadDebtAccrued",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint8",
+                "name": "optionType",
+                "type": "uint8"
+            }
+        ],
+        "name": "WithdrawAccepted",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawCancelled",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawFinalized",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawProcessed",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawSuspended",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "user",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "chainId",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "receiver",
+                                "type": "bytes"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "virtualProvider",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "expressProvider",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct WithdrawReceiverPart[]",
+                        "name": "parts",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cooldownEndTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum WithdrawStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "speedUp",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isCooldownModified",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "provider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPureVirtual",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "providerData",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalVirtualAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "advancedAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WithdrawRequest",
+                "name": "withdrawRequest",
+                "type": "tuple"
+            }
+        ],
+        "name": "onWithdrawCancelRequest",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "user",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "chainId",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "receiver",
+                                "type": "bytes"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "virtualProvider",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "expressProvider",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct WithdrawReceiverPart[]",
+                        "name": "parts",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cooldownEndTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum WithdrawStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "speedUp",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isCooldownModified",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "provider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPureVirtual",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "providerData",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalVirtualAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "advancedAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WithdrawRequest",
+                "name": "withdrawRequest",
+                "type": "tuple"
+            }
+        ],
+        "name": "onWithdrawComplete",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "user",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "chainId",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "receiver",
+                                "type": "bytes"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "virtualProvider",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "expressProvider",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct WithdrawReceiverPart[]",
+                        "name": "parts",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cooldownEndTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum WithdrawStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "speedUp",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isCooldownModified",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "provider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPureVirtual",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "providerData",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalVirtualAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "advancedAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WithdrawRequest",
+                "name": "withdrawRequest",
+                "type": "tuple"
+            },
+            {
+                "internalType": "address",
+                "name": "callbackCollateral",
+                "type": "address"
+            }
+        ],
+        "name": "onWithdrawRequest",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "user",
+                        "type": "address"
+                    },
+                    {
+                        "components": [
+                            {
+                                "internalType": "uint256",
+                                "name": "id",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "amount",
+                                "type": "uint256"
+                            },
+                            {
+                                "internalType": "int256",
+                                "name": "chainId",
+                                "type": "int256"
+                            },
+                            {
+                                "internalType": "bytes",
+                                "name": "receiver",
+                                "type": "bytes"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "virtualProvider",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "address",
+                                "name": "expressProvider",
+                                "type": "address"
+                            }
+                        ],
+                        "internalType": "struct WithdrawReceiverPart[]",
+                        "name": "parts",
+                        "type": "tuple[]"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "cooldownEndTime",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "enum WithdrawStatus",
+                        "name": "status",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "speedUp",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isCooldownModified",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "provider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPureVirtual",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "providerData",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalVirtualAmount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "advancedAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WithdrawRequest",
+                "name": "withdrawRequest",
+                "type": "tuple"
+            }
+        ],
+        "name": "onWithdrawSuspend",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "NotFinalized",
         "type": "error"
     },
@@ -3492,6 +3301,49 @@
         "inputs": [],
         "name": "TooEarly",
         "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "UserSuspended",
+        "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawLocked",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawUnlockedAndProcessed",
+        "type": "event"
     },
     {
         "inputs": [
@@ -3623,18 +3475,151 @@
     },
     {
         "inputs": [],
-        "name": "DebtNotActivated",
+        "name": "AccelerateCooldownElapsed",
         "type": "error"
     },
     {
         "inputs": [],
-        "name": "AlreadyInitialized",
+        "name": "AccelerateOfferExpired",
         "type": "error"
     },
     {
         "inputs": [],
-        "name": "InvalidAccountLayer",
+        "name": "AccelerateOnlyFromStandardAccepted",
         "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "AccelerationFeeExceedsMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidAccelerateNonce",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidAccelerateSigner",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "StandardAlreadyFinalized",
+        "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "affiliateAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "creditAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "generalAmount",
+                "type": "uint256"
+            }
+        ],
+        "name": "WithdrawAccelerated",
+        "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "requestId",
+                "type": "uint256"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "amount",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "chainId",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "bytes",
+                        "name": "receiver",
+                        "type": "bytes"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "virtualProvider",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "expressProvider",
+                        "type": "address"
+                    }
+                ],
+                "internalType": "struct WithdrawReceiverPart[]",
+                "name": "parts",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "bytes",
+                "name": "accelerateOfferData",
+                "type": "bytes"
+            },
+            {
+                "internalType": "bytes",
+                "name": "validatorData",
+                "type": "bytes"
+            },
+            {
+                "internalType": "bytes",
+                "name": "creditDataRaw",
+                "type": "bytes"
+            }
+        ],
+        "name": "accelerateWithdraw",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
         "inputs": [],
@@ -3804,5 +3789,20 @@
         ],
         "stateMutability": "view",
         "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "DebtNotActivated",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "AlreadyInitialized",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidAccountLayer",
+        "type": "error"
     }
 ]

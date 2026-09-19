@@ -215,6 +215,8 @@ interface IGaslessLayer {
 	error WalletOperationForPartyBUnsupported();
 	error InvalidWalletOperationSigner(address expectedOwner, address actualSigner);
 	error WalletDelegationMissing(address delegator, address delegate, bytes4 selector);
+	error DelegatedWalletValueNotAllowed(uint256 callIndex, uint256 value);
+	error InvalidWalletDelegationCallData();
 	error InvalidWalletExecuteSelector(bytes4 selector);
 	error UnsupportedFeeQuoteCall(bytes4 selector);
 	error UnexpectedNativeValue(uint256 value);
