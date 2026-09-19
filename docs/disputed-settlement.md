@@ -13,11 +13,17 @@ The prefilled [Arbitrum case file](../tasks/config/disputed-settlement.arbitrum-
   "solver": {
     "pnlBps": 10000,
     "fundingBps": 10000,
-    "cvaBps": 10000
+    "cvaBps": 10000,
+    "expectedAmounts": {
+      "pnl": "2.493108170448664277",
+      "funding": "0.053876144664567485",
+      "cva": "0.895588429244244328"
+    }
   },
   "liquidator": {
     "basis": "remainderAfterSolver",
     "shareBps": 0,
+    "expectedAmount": "0.000000000000000000",
     "recipient": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
   },
   "remainder": "parent"
@@ -25,6 +31,10 @@ The prefilled [Arbitrum case file](../tasks/config/disputed-settlement.arbitrum-
 ```
 
 `10000` basis points means 100%; `2500` means 25%; `0` means zero. The filled policy credits 100% of recorded solver PnL, funding and CVA, disables the liquidator/operator fee, and returns the remainder to the virtual account's parent. These are explicit administrator-approved distribution rules, not an automatic conclusion that every disputed case should use these percentages.
+
+The input also records the **actual expected payout amounts**. `solver.expectedAmounts` contains each component's total across all solvers and markets, after applying its percentage and per-market rounding. `liquidator.expectedAmount` contains the fee after applying its percentage. Write them as decimal strings with at most 18 decimal places, preserving precision. These values assert the calculation; they do not override it. Every supplied amount must match the live calculation exactly before a transaction plan is created. Changing a percentage therefore requires reviewing the corresponding expected amount too.
+
+The expected amount fields are optional for other cases that need dynamic calculation. If `solver.expectedAmounts` is supplied, all three components are required. The filled Arbitrum file includes them all, using the earlier inspection's values below. The admin review displays each percentage beside its calculated amount and states whether the expected input values match. A mismatch requires investigation and a reviewed input update; the script never silently overwrites it.
 
 For each solver and market, the calculation is:
 
