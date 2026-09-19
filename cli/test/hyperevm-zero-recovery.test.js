@@ -14,7 +14,7 @@ import {
 	recoveryEvent,
 	recoveryAction,
 } from "../../deployment-tooling/hyperevm-zero-recovery.js";
-import { createHyperEvmZeroRecoveryTask } from "../tasks/hyperevm-zero-recovery.js";
+import { createHyperEvmZeroRecoveryTask, PUBLIC_RPC, runRecoveryPhase } from "../tasks/hyperevm-zero-recovery.js";
 import { ZeroAddress, keccak256 } from "ethers";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -142,6 +142,7 @@ test("prepare defaults to no fork and never asks for archive credentials", async
 	const input = await task.prepare({
 		root,
 		ui: {
+			select: async () => "custom",
 			confirm: async p => {
 				assert.equal(p.initialValue, false);
 				return false;
@@ -158,6 +159,48 @@ test("prepare defaults to no fork and never asks for archive credentials", async
 	assert.equal(prompts.length, 1);
 	validateInput(JSON.parse(fs.readFileSync(input.input)), root);
 });
+for (const forkEnabled of [false, true])
+	test(`public RPC needs no credentials and keeps the optional archive separate (fork: ${forkEnabled})`, async t => {
+		const root = fixture(t),
+			task = createHyperEvmZeroRecoveryTask(v => v),
+			prompts = [];
+		const input = await task.prepare({
+			root,
+			ui: {
+				confirm: async () => forkEnabled,
+				select: async p => {
+					assert.equal(p.initialValue, "public");
+					return "public";
+				},
+				text: async p => {
+					prompts.push(p.message);
+					return p.initialValue;
+				},
+				note: () => {},
+			},
+		});
+		assert.equal(input.rpcKey, PUBLIC_RPC.key);
+		assert.equal(prompts.length, forkEnabled ? 1 : 0);
+		assert.equal(input.archiveRpcKey, forkEnabled ? "RPC_HYPEREVM_ARCHIVE" : undefined);
+		validateInput(JSON.parse(fs.readFileSync(input.input)), root);
+		fs.writeFileSync(input.output, JSON.stringify({ inputDigest: input.inputDigest }));
+		let called = false;
+		await runRecoveryPhase(
+			{
+				runProcess: async (_command, _args, { env }) => {
+					called = true;
+					assert.equal(env[PUBLIC_RPC.key], "https://rpc.hyperliquid.xyz/evm");
+					assert.equal(env.RPC_HYPEREVM, undefined);
+					assert.equal(env.SYMMIO_RECOVERY_RPC_KEY, PUBLIC_RPC.key);
+					assert.equal(env.SYMMIO_RECOVERY_ARCHIVE_KEY, input.archiveRpcKey || "");
+					assert.equal(env.SYMMIO_RECOVERY_EXECUTE, "false");
+				},
+			},
+			input,
+			"inspect",
+		);
+		assert.equal(called, true);
+	});
 test("local recovery tests cannot add mock transactions to the live task journal", async t => {
 	const root = fixture(t),
 		task = createHyperEvmZeroRecoveryTask(v => v),
@@ -218,6 +261,7 @@ test("resume completes after recovery verification, cleanup and summary without 
 			}
 		},
 		runProcess: async (_exe, args, { env }) => {
+			assert.equal(env[PUBLIC_RPC.key], undefined);
 			assert.equal(env.SYMMIO_RECOVERY_ARCHIVE_KEY, "");
 			assert.equal(env.SYMMIO_RECOVERY_EXECUTE, "false");
 			const phase = args[args.indexOf("--phase") + 1];

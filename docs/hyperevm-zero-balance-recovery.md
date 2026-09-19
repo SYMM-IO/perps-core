@@ -27,7 +27,7 @@ The frozen storage declaration comes from v0.8.5 commit `6aace1560476374dc7002e6
 ## Operator flow
 
 1. Choose whether to run an optional fork rehearsal. **Default: no fork.** No archive endpoint is requested or used when skipped.
-2. Select RPC and deployment wallet references. The deployment wallet is separate from the Core owner and recipient Safe.
+2. Choose the public Hyperliquid RPC (default) or a custom RPC keystore reference, then select the deployment wallet. The deployment wallet is separate from the Core owner and recipient Safe.
 3. Compile the isolated artifact and run its local contract and operation tests.
 4. Read Core ownership, effective recovery-role administration, pause flags, persistent signer, collateral decimals, selector map, facet runtime hashes, Safe owners/threshold and raw balances.
 5. Confirm the recipient address in the operator prompt.
@@ -44,7 +44,9 @@ The workflow never changes pause flags to make recovery succeed. Any unexpected 
 
 ## Credentials
 
-The normal flow needs the `RPC_HYPEREVM` and `ETHERSCAN_APIKEY` Hardhat configuration variables. Wallet selection supports the existing keystore, transient private-key and Ledger modes. No ambient deployment wallet or `.env` fallback is loaded by the isolated configuration.
+The public RPC option supplies [Hyperliquid's mainnet endpoint](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/hyperevm), `https://rpc.hyperliquid.xyz/evm`, under the reserved `RPC_HYPEREVM_PUBLIC` reference. It needs no RPC credentials and leaves saved custom-provider entries unchanged. Custom RPC selection uses `RPC_HYPEREVM` by default, or another chosen key name. There is no automatic fallback between providers.
+
+Source publication needs `ETHERSCAN_APIKEY`. Wallet selection supports the existing keystore, transient private-key and Ledger modes. No ambient deployment wallet or `.env` fallback is loaded by the isolated configuration.
 
 Configure missing encrypted references through Hardhat's keystore, for example:
 
@@ -53,7 +55,7 @@ npx hardhat keystore set RPC_HYPEREVM --config hardhat.recovery.config.ts
 npx hardhat keystore set ETHERSCAN_APIKEY --config hardhat.recovery.config.ts
 ```
 
-Enter values in the secure prompt. Task inputs store key names only. A custom RPC key name can be chosen in the form.
+Enter values in the secure prompt. Task inputs store key names only. Configure `RPC_HYPEREVM` only when choosing a custom provider; do not configure the reserved `RPC_HYPEREVM_PUBLIC` key in the keystore.
 
 For an optional fork, additionally configure a real archive endpoint under `RPC_HYPEREVM_ARCHIVE` (or another selected key name). The public HyperEVM endpoint [supports latest state](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/hyperevm/json-rpc) and is unsuitable as a historical fork source. The optional path probes historical code, pins a block/hash and compares fork balances against the archive snapshot before any rehearsal mutations.
 
