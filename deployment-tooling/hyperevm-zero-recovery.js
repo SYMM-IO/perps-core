@@ -11,6 +11,7 @@ export const TARGET = Object.freeze({
 	collateral: "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
 	legacyAccountFacet: "0xb6c0FD8B8721ECfb8De7782B9565DE5c8A5C468B",
 });
+export const EXECUTION = "ledger-owner-v1";
 export const ROLE = id("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
 export const ARTIFACT = "contracts/patches/hyperevm-v085/ZeroBalanceRecoveryFacet085.sol:ZeroBalanceRecoveryFacet085";
 export const CONFIG = "hardhat.recovery.config.ts";
@@ -52,7 +53,7 @@ export const selectorMap = facets => Object.fromEntries(facets.flatMap(f => [...
 export const sameAddress = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
 
 export function validateInput(input, root) {
-	if (digest(input.target) !== digest(TARGET) || input.schema !== 1)
+	if (digest(input.target) !== digest(TARGET) || input.schema !== 2 || input.execution !== EXECUTION)
 		throw new Error("Recovery target changed; this task is only for the reviewed HyperEVM v0.8.5 Core");
 	if (typeof input.forkEnabled !== "boolean") throw new Error("Choose whether to run the optional fork rehearsal");
 	for (const key of [input.rpcKey, ...(input.forkEnabled ? [input.archiveRpcKey] : [])])
@@ -129,13 +130,14 @@ export function recoveryEvent(receipt) {
 	if (events.length !== 1) throw new Error("Expected exactly one recovery event emitted by Core");
 	const e = events[0].args;
 	if (
-		!sameAddress(e.operator, TARGET.recipient) ||
+		!sameAddress(e.operator, TARGET.owner) ||
 		!sameAddress(e.recipient, TARGET.recipient) ||
 		e.amount <= 0n ||
 		e.recipientBalanceAfter - e.recipientBalanceBefore !== e.amount
 	)
 		throw new Error("Recovery event recipient, operator or exact balance arithmetic is invalid");
 	return {
+		operator: e.operator,
 		amount: e.amount.toString(),
 		zeroBefore: e.amount.toString(),
 		zeroAfter: "0",

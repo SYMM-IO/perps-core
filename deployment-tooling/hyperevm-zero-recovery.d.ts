@@ -1,4 +1,5 @@
 export const TARGET: { chainId: number; core: string; recipient: string; owner: string; collateral: string; legacyAccountFacet: string }
+export const EXECUTION: string
 export const ROLE: string
 export const ARTIFACT: string
 export const CONFIG: string
@@ -18,6 +19,7 @@ export function requireRecipientConfirmation(confirmation: any): void
 export function planCut(baseline: any, current: any, facet: string): any[]
 export function requireRehearsal(report: any, input: any, artifact: any): void
 export function recoveryEvent(receipt: any): {
+	operator: string
 	amount: string
 	zeroBefore: string
 	zeroAfter: string
