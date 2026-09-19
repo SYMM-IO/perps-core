@@ -1,6 +1,7 @@
 import { normalizeDeploymentSummary, renderDeploymentTerminal } from "../deployment-tooling/deployment-report.js";
 import { resolveNetwork } from "./lib/context.js";
 import * as defaultRunner from "./task-runner.js";
+import { recoverySignerLines } from "./tasks/hyperevm-zero-recovery.js";
 import * as clack from "@clack/prompts";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -239,11 +240,13 @@ function taskSummary(state, current, startedAt, detail, rawLines, activity = {})
 function activeDescription(active) {
 	if (!active) return "No active task. Completed deployment reports remain in history and are never treated as active.";
 	const complete = active.completedSteps?.length || 0;
-	const signerLines = Object.entries(active.signing || {}).flatMap(([role, signer]) => {
-		if (!signer) return [];
-		const identity = signer.safeAddress || signer.address || signer.key || "local node";
-		return [`${role === "transaction" ? "Signer" : "Governance"}: ${signer.mode} • ${identity}`];
-	});
+	const signerLines =
+		recoverySignerLines(active) ??
+		Object.entries(active.signing || {}).flatMap(([role, signer]) => {
+			if (!signer) return [];
+			const identity = signer.safeAddress || signer.address || signer.key || "local node";
+			return [`${role === "transaction" ? "Signer" : "Governance"}: ${signer.mode} • ${identity}`];
+		});
 	return [
 		`${active.title}`,
 		`${active.status} • ${complete}/${active.plan?.length || 0} steps • ${active.network || "no network"}`,

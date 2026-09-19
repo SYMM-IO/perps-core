@@ -108,6 +108,23 @@ async function resumeHash(ctx, input, label) {
 	if (!hash) return ctx.wait("Resolve the interrupted transaction before continuing. No automatic resend is allowed.");
 	return hash;
 }
+// Display the upcoming operator separately from the immutable deployment signer history.
+export function recoverySignerLines(active) {
+	if (active.taskId !== "maintenance.hyperevm-zero-balance-recovery" || active.taskVersion !== 4) return null;
+	const deployment = active.signing?.transaction;
+	const selection = active.signing?.governance || active.input?.signer || (deployment?.mode === SIGNER_MODES.LEDGER ? deployment : null);
+	const ready = selection?.mode === SIGNER_MODES.LEDGER && sameAddress(selection.address, TARGET.owner);
+	const lines = [
+		ready
+			? `Signer for remaining transactions: Ledger • ${TARGET.owner}`
+			: `Required signer: Ledger • ${TARGET.owner} (${selection ? "configuration mismatch" : "selection pending"})`,
+	];
+	if (selection && !ready) lines.push(`Configured signer: ${selection.mode} • ${selection.address || selection.key || "unknown"}`);
+	if (active.completedSteps?.includes("deploy") && deployment && deployment.mode !== SIGNER_MODES.LEDGER)
+		lines.push(`Completed deployment signer: ${deployment.mode} • ${deployment.address || deployment.key}`);
+	return lines;
+}
+
 export function createHyperEvmZeroRecoveryTask(common) {
 	return common({
 		id: "maintenance.hyperevm-zero-balance-recovery",
