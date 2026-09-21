@@ -23,7 +23,7 @@
 			"basis": "remainderAfterSolver",
 			"shareBps": 0,
 			"expectedAmount": "0.000000000000000000",
-			"recipient": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
+			"recipient": "0xCfB0a84674229500836e662C229530a98bCE11Cc"
 		},
 		"remainder": "parent"
 	}
