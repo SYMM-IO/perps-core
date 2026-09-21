@@ -85,6 +85,31 @@ a report-bound existing Core. FeeDistributor, MultiAccount, and Multicall remain
 only until their live workflows meet this runbook's full safety contract. Primitive
 diamonds, verifier pieces, fake stablecoin, and CREATE2 factory are hidden dependencies.
 
+Liquidator deployments through **SymmioLiquidator**, a full-system recipe with
+`liquidator.mode = "deploy"`, and the local-only `deploy:symmioLiquidator` task set these
+values on the proxy's connected Core:
+
+| Field        | Value                    |
+| ------------ | ------------------------ |
+| `name`       | `Protocol Liquidator V2` |
+| `brandColor` | `#327bba`                |
+| `metadata`   | `""` (empty string)      |
+
+Setup uses `setAffiliateMetadata(proxyAddress, values)`, waits for its receipt, and verifies
+all three values with `getEntityMetadata(proxyAddress)` before reporting success. It does
+not register the proxy as an affiliate. The standalone signer must hold Core's
+`AFFILIATE_MANAGER_ROLE`; being a role admin alone is insufficient. Full-system deployment
+grants that role temporarily to its setup signer and removes it during the existing
+deployer privilege cleanup when governance is a different account.
+
+Plan-only runs send no transactions. If metadata setup fails, the task fails and retains
+the deployed proxy for retry: full-system deployment uses its existing checkpoint, and
+the standalone operator task saves a chain/Core/admin-bound proxy record in its run
+directory. Rehearsal and execution use separate records. Direct script operators can
+resume with `LIQUIDATOR_ADDRESS=<proxy>`; the local-only task accepts
+`--liquidator-address <proxy>`. Keep the same persistent chain state when resuming. Exact
+metadata already stored is verified without sending another metadata transaction.
+
 A PartyB deployment requires `partyB.operators` as a non-empty address list. The deployment
 grants each listed account `TRUSTED_ROLE` and verifies the grants on-chain. The PartyB
 `signer` is optional. When omitted, deployment leaves `signer()` at `address(0)`, so ERC-1271
