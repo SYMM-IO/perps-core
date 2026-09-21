@@ -668,7 +668,8 @@ DEPLOY_TASKS.push(
 		category: "deploy",
 		risk: "transaction",
 		title: "SymmioLiquidator",
-		description: "Deploy the guarded liquidator proxy and wire Core roles, including HyperEVM big-block cleanup.",
+		description:
+			"Deploy the guarded liquidator proxy, wire Core roles and verify Protocol Liquidator V2 metadata, including HyperEVM big-block cleanup.",
 		supportedNetworks: ["localhost", "hyperevm", "fork-hyperevm"],
 		inputs: ["network", "symmio", "admin", "operators", "typed chain confirmation"],
 		artifacts: ["transaction journal", "liquidator deployment record"],
@@ -681,17 +682,21 @@ DEPLOY_TASKS.push(
 			...(input.network === "hyperevm"
 				? [
 						{ id: "fork-rehearsal", phase: "rehearsal", title: "Deploy and wire the liquidator on a matching HyperEVM fork" },
-						{ id: "rehearsal-review", phase: "rehearsal", title: "Review fork receipts and role checks" },
+						{ id: "rehearsal-review", phase: "rehearsal", title: "Review fork receipts, roles and metadata" },
 						{ id: "network-confirmation", phase: "authorization", title: "Type the live HyperEVM chain ID" },
 					]
 				: []),
-			{ id: "execute", phase: "execution", title: "Deploy, wire roles and restore big blocks" },
+			{ id: "execute", phase: "execution", title: "Deploy, wire roles, verify metadata and restore big blocks" },
 		],
 		run: async (ctx, input) => {
 			const env = {
 				SYMMIO_ADDRESS: input.symmio,
 				ADMIN_PUBLIC_KEY: input.admin,
 				OPERATORS: input.operators,
+				EXECUTE: "false",
+				CONFIRM_CHAIN_ID: "",
+				LIQUIDATOR_ADDRESS: "",
+				LIQUIDATOR_RESUME_FILE: path.join(path.dirname(ctx.state.logPath), "liquidator-execute.json"),
 			};
 			await ctx.step("compile", "Compile the exact production source", () =>
 				ctx.runProcess("./node_modules/.bin/hardhat", ["--build-profile", "production", "build"]),
@@ -707,14 +712,19 @@ DEPLOY_TASKS.push(
 						"./node_modules/.bin/hardhat",
 						["run", "--no-compile", "scripts/deployLiquidator.ts", "--network", "fork-hyperevm"],
 						{
-							env: { ...env, EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) },
+							env: {
+								...env,
+								EXECUTE: "true",
+								CONFIRM_CHAIN_ID: String(input.chainId),
+								LIQUIDATOR_RESUME_FILE: path.join(path.dirname(ctx.state.logPath), "liquidator-rehearsal.json"),
+							},
 						},
 					),
 				);
-				await ctx.step("rehearsal-review", "Review fork receipts and role checks", async () => {
+				await ctx.step("rehearsal-review", "Review fork receipts, roles and metadata", async () => {
 					if (
 						!(await ctx.ui.confirm({
-							message: "Fork deployment and role checks passed. Continue toward live execution?",
+							message: "Fork deployment, role and metadata checks passed. Continue toward live execution?",
 							initialValue: false,
 						}))
 					) {
@@ -731,7 +741,7 @@ DEPLOY_TASKS.push(
 					ctx.checkpoint();
 				});
 			}
-			await ctx.step("execute", "Deploy, wire roles and restore big blocks", async () => {
+			await ctx.step("execute", "Deploy, wire roles, verify metadata and restore big blocks", async () => {
 				if (input.network !== "hyperevm") {
 					const proceed = await ctx.ui.confirm({ message: "Run the local/fork liquidator deployment now?", initialValue: true });
 					if (!proceed) ctx.requestPause();
