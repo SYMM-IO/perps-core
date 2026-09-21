@@ -4,6 +4,7 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
+import { AccountLayerFacetNames } from "../../utils/deploymentManifest.js"
 import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { inspectGaslessLayerPostState } from "./componentDeployment.js"
@@ -515,7 +516,7 @@ interface VerificationResult {
 // FacetNames covers the facets cut in by deploy:diamond; DiamondCutFacet is deployed
 // with the Diamond itself and is not in that list, hence the +1.
 const EXPECTED_CORE_FACETS = FacetNames.length + 1
-const EXPECTED_ACCOUNTLAYER_FACETS = 8
+const EXPECTED_ACCOUNTLAYER_FACETS = AccountLayerFacetNames.length + 1
 const CORE_ADMIN_ROLES = [
 	"DEFAULT_ADMIN_ROLE",
 	"SYMBOL_MANAGER_ROLE",
