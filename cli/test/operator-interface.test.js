@@ -240,6 +240,7 @@ test("full deployment plans give every contract batch entry a unique stable id",
 	const liveItems = productionPlan.find(step => step.id === "execute").items;
 	assert.ok(liveItems.some(item => item.startsWith("live.party-b.grant-trusted-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
+	assert.ok(liveItems.includes("live.liquidator.set-core-metadata"));
 	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-partyb-liquidator-role"));

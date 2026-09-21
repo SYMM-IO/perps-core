@@ -24,6 +24,7 @@ import {
 } from "./constants.js"
 import { verificationProviderForChain } from "./explorer.js"
 import { getConnection } from "./helpers.js"
+import { verifyLiquidatorMetadata } from "./liquidatorMetadata.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
 	assertGeneralDeploymentMuonPermissions,
@@ -2075,6 +2076,15 @@ async function verifyLiquidatorFull(
 		}
 	} catch (e: any) {
 		pushAndLog(results, { category: cat, check: "Symmio address", status: "fail", message: e.message?.slice(0, 120) })
+	}
+
+	try {
+		const core = await liquidator.symmioAddress()
+		const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
+		await verifyLiquidatorMetadata(view, liquidatorAddress)
+		pushAndLog(results, { category: cat, check: "Core liquidator metadata", status: "pass" })
+	} catch (e: any) {
+		pushAndLog(results, { category: cat, check: "Core liquidator metadata", status: "fail", message: e.message })
 	}
 
 	// Pause state

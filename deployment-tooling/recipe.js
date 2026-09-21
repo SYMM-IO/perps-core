@@ -1030,6 +1030,13 @@ export function createDeploymentPlan(recipeValue, { only } = {}) {
 			recipe.liquidator.mode === "deploy"
 				? [
 						{ id: "deploy-proxy", target: "SymmioLiquidator", operation: "deploy" },
+						{
+							id: "set-core-metadata",
+							target: "core",
+							operation: "setAffiliateMetadata",
+							role: "AFFILIATE_MANAGER_ROLE",
+							metadata: { name: "Protocol Liquidator V2", brandColor: "#327bba", metadata: "" },
+						},
 						...recipe.liquidator.operators.map(operator => ({
 							id: `grant-operator-${operator.toLowerCase()}`,
 							target: "SymmioLiquidator",
