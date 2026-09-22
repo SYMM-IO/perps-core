@@ -291,7 +291,8 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 					</p>
 					<h2 id="price-only-deprecation-flag">Price-only deprecation flag</h2>
 					<p>
-						An address with <code>PROTOCOL_CONFIG_ROLE</code> can require the new snapshot flow for future liquidation starts by calling:
+						An address with <code>MIGRATION_ROLE</code> can require the new snapshot flow for future liquidation starts by calling this on
+						<code>PauseControlFacet</code>:
 					</p>
 					<pre><code class="language-solidity">setLegacyPartyALiquidationDeprecated(true)
 </code></pre>

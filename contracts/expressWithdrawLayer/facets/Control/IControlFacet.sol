@@ -64,7 +64,9 @@ interface IControlFacet is IControlEvents, IDiamondAccessControl {
 
 	function setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration) external;
 
-	function setCreditLinePaused(address affiliate, bool paused) external;
+	function pauseCreditLine(address affiliate) external;
+
+	function unpauseCreditLine(address affiliate) external;
 
 	function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external;
 
@@ -112,7 +114,9 @@ interface IControlFacet is IControlEvents, IDiamondAccessControl {
 
 	function clearRequestDebt(address affiliate, address user, uint256 requestId) external;
 
-	function setPaused(bool value) external;
+	function pause() external;
+
+	function unpause() external;
 
 	function repayCreditBadDebt(address affiliate, uint256 amount) external;
 }

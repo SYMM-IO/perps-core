@@ -180,23 +180,27 @@ interface SystemDeploymentReport {
  * right after setAdmin and revoked again by revokeDeployerPrivileges.
  *
  * Derived from the onlyRole modifiers on the ControlFacet functions setup calls:
- *   PROTOCOL_CONFIG_ROLE   balanceLimitPerUser, maxWithdrawParts, liquidatorShare,
+ *   PROTOCOL_CONFIG_ROLE   liquidatorShare
+ *   PROTOCOL_LIMITS_ROLE   balanceLimitPerUser, maxWithdrawParts,
  *                          pendingQuotesValidLength, maxPartyAConnectionLimit
  *   COOLDOWN_ADMIN_ROLE    deallocate/settlement/forceClose/forceCancel cooldowns,
  *                          deallocateDebounceTime, liquidationTimeout
  *   FEE_ADMIN_ROLE         setInvalidBridgedAmountsPool, setDefaultFeeCollector,
  *                          liquidation insurance and soft-liquidation receivers
  *   INTEGRATION_ADMIN_ROLE registerHook
- *   PARTY_B_MANAGER_ROLE   registerPartyB, setADLEnabled
+ *   PARTY_B_MANAGER_ROLE   setADLEnabled
+ *   PARTY_B_REGISTRAR_ROLE registerPartyB
  *   MUON_SETTER_ROLE       setMuonIds, setMuonConfig
  *   PROVIDER_ADMIN_ROLE   registerExpressProvider
  */
 export const DEPLOYER_SETUP_ROLES = [
 	"PROTOCOL_CONFIG_ROLE",
+	"PROTOCOL_LIMITS_ROLE",
 	"COOLDOWN_ADMIN_ROLE",
 	"FEE_ADMIN_ROLE",
 	"INTEGRATION_ADMIN_ROLE",
 	"PARTY_B_MANAGER_ROLE",
+	"PARTY_B_REGISTRAR_ROLE",
 	"MUON_SETTER_ROLE",
 	"PROVIDER_ADMIN_ROLE",
 ]
@@ -207,6 +211,41 @@ export const DEPLOYER_SETUP_ROLES = [
  *   SETTER_ROLE    setWhitelistedSymmioCore, setSymmioFeeReceiver
  *   APPROVER_ROLE  approveAffiliate
  */
+/**
+ * Every core Diamond role granted to config.admin at setup. Kept in sync with
+ * LibAccessibility.sol by test/parallel/RoleManifest.test.ts.
+ */
+export const CORE_ADMIN_ROLES = [
+	"SYMBOL_MANAGER_ROLE",
+	"SYMBOL_LISTING_ROLE",
+	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
+	"PARTY_B_MANAGER_ROLE",
+	"PARTY_B_REGISTRAR_ROLE",
+	"SUSPENDER_ROLE",
+	"DISPUTE_ROLE",
+	"AFFILIATE_MANAGER_ROLE",
+	"AFFILIATE_REGISTRAR_ROLE",
+	"ENTITY_METADATA_MANAGER_ROLE",
+	"MUON_SETTER_ROLE",
+	"LIQUIDATOR_ROLE",
+	"PARTYB_LIQUIDATOR_ROLE",
+	"INSTANT_LAYER_ROLE",
+	"PROTOCOL_CONFIG_ROLE",
+	"PROTOCOL_LIMITS_ROLE",
+	"FEE_ADMIN_ROLE",
+	"COOLDOWN_ADMIN_ROLE",
+	"PROVIDER_ADMIN_ROLE",
+	"INTEGRATION_ADMIN_ROLE",
+	"BRIDGE_MANAGER_ROLE",
+	"SIGNER_ADMIN_ROLE",
+	"EMERGENCY_ADMIN_ROLE",
+	"UNSUSPENDER_ROLE",
+	"MIGRATION_ROLE",
+	"SUSPENDED_FUNDS_WITHDRAWER_ROLE",
+	"FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE",
+]
+
 export const ACCOUNTLAYER_DEPLOYER_SETUP_ROLES = ["SETTER_ROLE", "APPROVER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]
 
 interface DeployedContracts {
@@ -2142,33 +2181,7 @@ async function setupSystem(
 	})
 
 	// Grant roles to admin on Diamond (batch)
-	const diamondRoles = [
-		"SYMBOL_MANAGER_ROLE",
-		"PAUSER_ROLE",
-		"UNPAUSER_ROLE",
-		"PARTY_B_MANAGER_ROLE",
-		"SUSPENDER_ROLE",
-		"DISPUTE_ROLE",
-		"AFFILIATE_MANAGER_ROLE",
-		"ENTITY_METADATA_MANAGER_ROLE",
-		"MUON_SETTER_ROLE",
-		"LIQUIDATOR_ROLE",
-		"PARTYB_LIQUIDATOR_ROLE",
-		"DEALLOCATE_COOLDOWN_SETTER_ROLE",
-		"INSTANT_LAYER_ROLE",
-		"PROTOCOL_CONFIG_ROLE",
-		"FEE_ADMIN_ROLE",
-		"COOLDOWN_ADMIN_ROLE",
-		"PROVIDER_ADMIN_ROLE",
-		"INTEGRATION_ADMIN_ROLE",
-		"BRIDGE_MANAGER_ROLE",
-		"SIGNER_ADMIN_ROLE",
-		"EMERGENCY_ADMIN_ROLE",
-		"UNSUSPENDER_ROLE",
-		"MIGRATION_ROLE",
-		"SUSPENDED_FUNDS_WITHDRAWER_ROLE",
-		"FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE",
-	]
+	const diamondRoles = CORE_ADMIN_ROLES
 	await checkpointedBatch(checkpoint, "setup.diamondRoles", diamondRoles, "Granting roles to admin on Diamond", async role => {
 		await send(controlFacet.connect(deployer).grantRole(config.admin, roleHash(role)), "grantRole")
 	})
@@ -2177,6 +2190,7 @@ async function setupSystem(
 	await checkpointedStep(checkpoint, "setup.alRolesOnDiamond", "Granting roles to AccountLayerDiamond on Diamond", async () => {
 		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("SIGNER_ADMIN_ROLE")), "grantRole")
 		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_MANAGER_ROLE")), "grantRole")
+		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("AFFILIATE_REGISTRAR_ROLE")), "grantRole")
 		await send(controlFacet.connect(deployer).grantRole(deployedContracts.accountLayerDiamond!, roleHash("BALANCE_SETTLER_ROLE")), "grantRole")
 	})
 
@@ -2575,6 +2589,7 @@ async function setupSystem(
 
 	await checkpointedStep(checkpoint, "setup.ilGrantSetterRole", "Granting SETTER_ROLE on InstantLayer to admin", async () => {
 		await send(instantLayer.connect(deployer).grantRole(roleHash("SETTER_ROLE"), config.admin), "grantRole")
+		await send(instantLayer.connect(deployer).grantRole(roleHash("TEMPLATE_MANAGER_ROLE"), config.admin), "grantRole")
 	})
 
 	await checkpointedStep(checkpoint, "setup.ilGrantOperatorRole", "Granting OPERATOR_ROLE on InstantLayer to admin", async () => {
@@ -2645,6 +2660,7 @@ async function setupSystem(
 
 		await checkpointedStep(checkpoint, "setup.pbManagerRole", "Granting MANAGER_ROLE to admin on SymmioPartyB", async () => {
 			await send(symmioPartyB.connect(deployer).grantRole(roleHash("MANAGER_ROLE"), config.admin), "grantRole")
+			await send(symmioPartyB.connect(deployer).grantRole(roleHash("MULTICAST_WHITELIST_ROLE"), config.admin), "grantRole")
 		})
 
 		await checkpointedStep(checkpoint, "setup.pbSetterRole", "Granting SETTER_ROLE to admin on SymmioPartyB", async () => {
@@ -3053,12 +3069,12 @@ async function revokeDeployerPrivileges(
 		{
 			label: "InstantLayer",
 			address: deployedContracts.instantLayer,
-			roles: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "OPERATOR_ROLE"],
+			roles: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "TEMPLATE_MANAGER_ROLE", "OPERATOR_ROLE"],
 		},
 		{
 			label: "SymmioPartyB",
 			address: deployedContracts.symmioPartyB,
-			roles: ["DEFAULT_ADMIN_ROLE", "TRUSTED_ROLE", "MANAGER_ROLE", "SETTER_ROLE"],
+			roles: ["DEFAULT_ADMIN_ROLE", "TRUSTED_ROLE", "MANAGER_ROLE", "MULTICAST_WHITELIST_ROLE", "SETTER_ROLE"],
 		},
 	]
 
