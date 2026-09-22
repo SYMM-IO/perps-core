@@ -926,7 +926,10 @@ else:
 									<td>Outstanding close request</td>
 									<td>
 										When <code>quantityToClose</code> is nonzero, scales it and recalculates <code>requestedClosePrice</code> to
-										preserve the requested close notional as closely as rounding permits.
+										preserve the requested close notional as closely as rounding permits. If the converted close price exceeds
+										uint256, cancels only that close request: clears its quantity and price, returns the quote to
+										<code>OPENED</code>, and emits <code>CloseRequestCancelledByAdjustment</code>. The underlying position is
+										restated normally; amount-underflow checks still apply.
 									</td>
 								</tr>
 							</tbody>
@@ -1249,10 +1252,12 @@ signedHash = keccak256(abi.encode(domain, payloadHash, priceBases)); // bytes32,
 					</aside>
 					<p>
 						The views do not filter by quote status. When the selected factor is not <code>1e18</code>, they use the same conversion and
-						underflow checks as preview. A fully closed quote reverts because its converted quantity is not greater than its converted
-						closed amount; amount-rounding underflows can also revert. The array getter is atomic, so one non-convertible ID reverts the
-						entire batch. Use bounded batches with a single-ID fallback, and use raw <code>getQuote</code> for closed history or any
-						record that cannot be converted.
+						underflow checks as preview. An unrepresentable close price is shown with zero close quantity and price and
+						<code>OPENED</code> status, without changing storage; its stored status timestamp is retained until physical restatement. A
+						fully closed quote reverts because its converted quantity is not greater than its converted closed amount; amount-rounding
+						underflows can also revert. The array getter is atomic, so one non-convertible ID reverts the entire batch. Use bounded
+						batches with a single-ID fallback, and use raw <code>getQuote</code> for closed history or any record that cannot be
+						converted.
 					</p>
 					<p>
 						The venue-unit view also returns the current epoch, freeze status, and <code>storedInVenueUnits</code>. That last flag means
@@ -2205,6 +2210,7 @@ RestatementAborted(uint256 indexed symbolId, uint256 epoch)
 QuoteAdjusted(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor,
               uint256 oldQuantity, uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)
 PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId)
+CloseRequestCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId, uint256 closeId)
 PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId)
 StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId)
 RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
