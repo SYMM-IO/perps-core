@@ -6,7 +6,14 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import {
+	AccountStorage,
+	LiquidationDetail,
+	LiquidationSettlementState,
+	LiquidationPartyBSymbolKey,
+	LiquidationPartyBSymbolSnapshot,
+	ForceCloseDetail
+} from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
@@ -416,6 +423,29 @@ contract ViewFacet is IViewFacet {
 			states[i] = AccountStorage.layout().settlementStates[partyA][partyBs[i]];
 		}
 		return states;
+	}
+
+	/// @notice Returns the recorded PartyB-symbol snapshots of a PartyA snapshot liquidation.
+	/// @dev Reads `liquidationPartyBSymbolSnapshots[partyA][liquidationId][partyB][symbolId]` for each key, preserving input order.
+	///      Unset entries return `isSet = false` with zero values; use `isSet` rather than zero values to detect them.
+	///      The requested `liquidationId` is read as-is, so the result does not prove that liquidation is still active.
+	///      There is no batch-size limit; callers bound the array to their RPC gas budget.
+	/// @param partyA The address of Party A.
+	/// @param liquidationId The signed liquidation identifier.
+	/// @param keys The (partyB, symbolId) pairs to look up.
+	/// @return snapshots One snapshot per key, where `snapshots[i]` corresponds to `keys[i]`.
+	function getPartyALiquidationSnapshots(
+		address partyA,
+		bytes calldata liquidationId,
+		LiquidationPartyBSymbolKey[] calldata keys
+	) external view returns (LiquidationPartyBSymbolSnapshot[] memory snapshots) {
+		mapping(address => mapping(uint256 => LiquidationPartyBSymbolSnapshot)) storage liquidationSnapshots = AccountStorage
+			.layout()
+			.liquidationPartyBSymbolSnapshots[partyA][liquidationId];
+		snapshots = new LiquidationPartyBSymbolSnapshot[](keys.length);
+		for (uint256 i = 0; i < keys.length; i++) {
+			snapshots[i] = liquidationSnapshots[keys[i].partyB][keys[i].symbolId];
+		}
 	}
 
 	/// @notice Returns an array of bridge transactions associated with a bridge.

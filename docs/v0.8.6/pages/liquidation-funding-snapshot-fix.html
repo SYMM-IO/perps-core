@@ -44,6 +44,7 @@
 				<a class="toc-link level-2" href="#impact">Impact</a>
 				<a class="toc-link level-2" href="#new-muon-payload">New Muon payload</a>
 				<a class="toc-link level-2" href="#snapshot-storage-model">Snapshot storage model</a>
+				<a class="toc-link level-2" href="#reading-recorded-snapshots">Reading recorded snapshots</a>
 				<a class="toc-link level-2" href="#method-order-before-and-now">Method order before and now</a>
 				<a class="toc-link level-2" href="#new-settlement-behavior">New settlement behavior</a>
 				<a class="toc-link level-2" href="#price-only-deprecation-flag">Price-only deprecation flag</a>
@@ -196,6 +197,42 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
 						The snapshot facet emits <code>SetPartyALiquidationSnapshot</code> with <code>partyBs</code>, <code>symbolIds</code>,
 						<code>prices</code>, and cumulative funding arrays. It also emits the existing <code>SetSymbolsPrices</code> event for
 						compatibility with existing liquidation indexers.
+					</p>
+					<h2 id="reading-recorded-snapshots">Reading recorded snapshots</h2>
+					<p>
+						A liquidator that retries a snapshot chunk needs to know which PartyB-symbol states are already recorded on-chain, and whether
+						the stored values match the payload it is about to submit. <code>ViewFacet</code> exposes the mapping directly so this no
+						longer requires scanning <code>SetPartyALiquidationSnapshot</code> events:
+					</p>
+					<pre><code class="language-solidity">struct LiquidationPartyBSymbolKey {
+    address partyB;
+    uint256 symbolId;
+}
+
+function getPartyALiquidationSnapshots(
+    address partyA,
+    bytes calldata liquidationId,
+    LiquidationPartyBSymbolKey[] calldata keys
+) external view returns (LiquidationPartyBSymbolSnapshot[] memory snapshots);
+</code></pre>
+					<p>The view reads <code>liquidationPartyBSymbolSnapshots[partyA][liquidationId][partyB][symbolId]</code> for each key.</p>
+					<ul>
+						<li><code>snapshots[i]</code> corresponds to <code>keys[i]</code>. Nothing is filtered, sorted, or deduplicated.</li>
+						<li>
+							An unset entry returns <code>isSet = false</code> with zero values and never reverts. A recorded entry can legitimately
+							hold a zero price or zero funding, so callers must use <code>isSet</code> rather than zero checks.
+						</li>
+						<li>
+							The requested <code>liquidationId</code> is read as-is, even when a different liquidation is active for that PartyA. The
+							result does not prove the requested liquidation is still active; check that separately.
+						</li>
+						<li>No role is required and the view stays available while the protocol is paused.</li>
+						<li>There is no batch-size limit. Callers bound the key array to their RPC gas budget.</li>
+					</ul>
+					<p>
+						Because the Muon signature covers the complete <code>states</code> array, a partially recorded chunk cannot be trimmed and
+						resubmitted. The intended use is to skip a signed chunk only when every entry is set and its price and both funding values
+						match the signed payload exactly, and otherwise submit the whole chunk again.
 					</p>
 					<h2 id="method-order-before-and-now">Method order before and now</h2>
 					<p>The liquidation phases stay the same. What changes in v0.8.6 is the setup and price/funding source.</p>
