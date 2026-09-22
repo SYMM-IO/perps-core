@@ -8388,6 +8388,31 @@
 			{
 				"indexed": true,
 				"internalType": "uint256",
+				"name": "quoteId",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "symbolId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "closeId",
+				"type": "uint256"
+			}
+		],
+		"name": "CloseRequestCancelledByAdjustment",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
 				"name": "nonce",
 				"type": "uint256"
 			}
