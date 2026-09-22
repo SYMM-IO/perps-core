@@ -10685,6 +10685,69 @@
                 "internalType": "address",
                 "name": "partyA",
                 "type": "address"
+            },
+            {
+                "internalType": "bytes",
+                "name": "liquidationId",
+                "type": "bytes"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "address",
+                        "name": "partyB",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "symbolId",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct LiquidationPartyBSymbolKey[]",
+                "name": "keys",
+                "type": "tuple[]"
+            }
+        ],
+        "name": "getPartyALiquidationSnapshots",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "bool",
+                        "name": "isSet",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "price",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "cumulativeLongFee",
+                        "type": "int256"
+                    },
+                    {
+                        "internalType": "int256",
+                        "name": "cumulativeShortFee",
+                        "type": "int256"
+                    }
+                ],
+                "internalType": "struct LiquidationPartyBSymbolSnapshot[]",
+                "name": "snapshots",
+                "type": "tuple[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
             }
         ],
         "name": "getPartyATakeoverDetails",

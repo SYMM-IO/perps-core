@@ -121,6 +121,12 @@ struct LiquidationPartyBSymbolSnapshot {
 	int256 cumulativeShortFee;
 }
 
+/// @notice Lookup key for one PartyB-symbol snapshot inside a PartyA snapshot liquidation.
+struct LiquidationPartyBSymbolKey {
+	address partyB;
+	uint256 symbolId;
+}
+
 /// @title AccountStorage
 /// @notice All account balance and state data for PartyAs and PartyBs
 /// @dev The heart of the accounting system. Every balance, locked amount, and account state

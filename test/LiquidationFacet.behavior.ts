@@ -1561,6 +1561,150 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			await expect(user.liquidatePositions([1, hedger2QuoteId])).to.not.be.reverted
 		})
 
+		describe("getPartyALiquidationSnapshots", async function () {
+			const liquidationId = "0x10"
+			const otherLiquidationId = "0x11"
+
+			const startSnapshotLiquidation = async (states: any[]) => {
+				const price = decimal(8n)
+				const quoteIds = [1n]
+				const fundingDebt = await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds)
+				const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingDebt
+				const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingDebt
+				const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+				const liquidationSig = await getDummyLiquidationSig(liquidationId, upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+
+				await context.partyALiquidationSnapshotFacet
+					.connect(context.signers.liquidator)
+					.liquidatePartyAWithSnapshot(user.address, buildLiquidationSnapshotSig(liquidationSig, []))
+				if (states.length > 0) {
+					await context.partyALiquidationSnapshotFacet
+						.connect(context.signers.liquidator)
+						.setSymbolsPriceWithSnapshot(user.address, buildLiquidationSnapshotSig(liquidationSig, states))
+				}
+			}
+
+			const expectUnset = (snapshot: any) => {
+				expect(snapshot.isSet).to.equal(false)
+				expect(snapshot.price).to.equal(0n)
+				expect(snapshot.cumulativeLongFee).to.equal(0n)
+				expect(snapshot.cumulativeShortFee).to.equal(0n)
+			}
+
+			const expectMatches = (snapshot: any, state: any) => {
+				expect(snapshot.isSet).to.equal(true)
+				expect(snapshot.price).to.equal(state.price)
+				expect(snapshot.cumulativeLongFee).to.equal(state.cumulativeLongFee)
+				expect(snapshot.cumulativeShortFee).to.equal(state.cumulativeShortFee)
+			}
+
+			it("Should return an empty array for empty input", async function () {
+				const snapshots = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [])
+				expect(snapshots.length).to.equal(0)
+			})
+
+			it("Should return unset entries without reverting when nothing is recorded", async function () {
+				const snapshots = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [
+					{ partyB: context.signers.hedger.address, symbolId: 1n },
+					{ partyB: context.signers.hedger2.address, symbolId: 2n },
+				])
+				expect(snapshots.length).to.equal(2)
+				expectUnset(snapshots[0])
+				expectUnset(snapshots[1])
+			})
+
+			it("Should return recorded entries in input order alongside unset entries", async function () {
+				const hedgerState = await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, decimal(8n))
+				const hedger2State = { ...(await getSignedLiquidationSnapshotState(context.signers.hedger2.address, 1n, decimal(9n))), symbolId: 2n }
+				await startSnapshotLiquidation([hedgerState, hedger2State])
+
+				const snapshots = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [
+					{ partyB: context.signers.hedger2.address, symbolId: 2n },
+					{ partyB: context.signers.hedger.address, symbolId: 2n },
+					{ partyB: context.signers.hedger.address, symbolId: 1n },
+				])
+				expect(snapshots.length).to.equal(3)
+				expectMatches(snapshots[0], hedger2State)
+				expectUnset(snapshots[1])
+				expectMatches(snapshots[2], hedgerState)
+			})
+
+			it("Should report zero price and zero funding as set", async function () {
+				const zeroState = { partyB: context.signers.hedger.address, symbolId: 1n, price: 0n, cumulativeLongFee: 0n, cumulativeShortFee: 0n }
+				await startSnapshotLiquidation([zeroState])
+
+				const snapshots = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [
+					{ partyB: context.signers.hedger.address, symbolId: 1n },
+				])
+				expectMatches(snapshots[0], zeroState)
+			})
+
+			it("Should round-trip negative funding values", async function () {
+				const negativeState = {
+					partyB: context.signers.hedger.address,
+					symbolId: 1n,
+					price: decimal(8n),
+					cumulativeLongFee: -decimal(3n),
+					cumulativeShortFee: -decimal(7n, 17),
+				}
+				await startSnapshotLiquidation([negativeState])
+
+				const snapshots = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [
+					{ partyB: context.signers.hedger.address, symbolId: 1n },
+				])
+				expectMatches(snapshots[0], negativeState)
+			})
+
+			it("Should return the same result at every position for duplicate keys", async function () {
+				const hedgerState = await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, decimal(8n))
+				await startSnapshotLiquidation([hedgerState])
+
+				const key = { partyB: context.signers.hedger.address, symbolId: 1n }
+				const unsetKey = { partyB: context.signers.hedger2.address, symbolId: 1n }
+				const snapshots = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [key, unsetKey, key, key])
+				expect(snapshots.length).to.equal(4)
+				expectMatches(snapshots[0], hedgerState)
+				expectUnset(snapshots[1])
+				expectMatches(snapshots[2], hedgerState)
+				expectMatches(snapshots[3], hedgerState)
+			})
+
+			it("Should isolate data across PartyAs, liquidation IDs, and PartyB-symbol pairs", async function () {
+				const hedgerState = await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, decimal(8n))
+				await startSnapshotLiquidation([hedgerState])
+				const key = { partyB: context.signers.hedger.address, symbolId: 1n }
+
+				const recorded = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [key])
+				expectMatches(recorded[0], hedgerState)
+
+				const otherPartyA = await context.viewFacet.getPartyALiquidationSnapshots(context.signers.user2.address, liquidationId, [key])
+				expectUnset(otherPartyA[0])
+
+				const otherLiquidation = await context.viewFacet.getPartyALiquidationSnapshots(user.address, otherLiquidationId, [key])
+				expectUnset(otherLiquidation[0])
+
+				const otherPairs = await context.viewFacet.getPartyALiquidationSnapshots(user.address, liquidationId, [
+					{ partyB: context.signers.hedger2.address, symbolId: 1n },
+					{ partyB: context.signers.hedger.address, symbolId: 2n },
+				])
+				expectUnset(otherPairs[0])
+				expectUnset(otherPairs[1])
+			})
+
+			it("Should stay readable while paused and from a non-privileged caller", async function () {
+				const hedgerState = await getSignedLiquidationSnapshotState(context.signers.hedger.address, 1n, decimal(8n))
+				await startSnapshotLiquidation([hedgerState])
+
+				await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+				await context.pauseControlFacet.connect(context.signers.admin).pauseLiquidation()
+
+				const snapshots = await context.viewFacet
+					.connect(context.signers.user2)
+					.getPartyALiquidationSnapshots(user.address, liquidationId, [{ partyB: context.signers.hedger.address, symbolId: 1n }])
+				expectMatches(snapshots[0], hedgerState)
+			})
+		})
+
 		it("Should use each signed PartyB-symbol state price without same-symbol consistency checks", async function () {
 			await context.accountFacet.connect(context.signers.user).allocate(decimal(200n))
 
