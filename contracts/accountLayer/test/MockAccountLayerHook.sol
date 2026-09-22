@@ -194,6 +194,16 @@ contract MockAccountLayerHook {
 				})
 			);
 		}
+
+		// Execute callback if configured
+		if (shouldExecuteForAccount[selector] && accountLayer != address(0)) {
+			bytes memory callData = executeForAccountCallData[selector];
+			if (callData.length > 0) {
+				ICoreFacetCallback(accountLayer).executeForAccount(callData);
+				executeForAccountCallCount++;
+				lastExecuteForAccountSuccess = true;
+			}
+		}
 	}
 
 	/**

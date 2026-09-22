@@ -2301,6 +2301,7 @@ export function shouldBehaveLikeAccountLayer(): void {
 				onAccountCreation: IAccountLayerHook__factory.createInterface().getFunction("onAccountCreation").selector,
 				onVirtualAccountCreation: IAccountLayerHook__factory.createInterface().getFunction("onVirtualAccountCreation").selector,
 				onVirtualAccountDeletion: IAccountLayerHook__factory.createInterface().getFunction("onVirtualAccountDeletion").selector,
+				onSubAccountDeletion: IAccountLayerHook__factory.createInterface().getFunction("onSubAccountDeletion").selector,
 				onSubAccountOwnershipTransfer: IAccountLayerHook__factory.createInterface().getFunction("onSubAccountOwnershipTransfer").selector,
 				onCall: IAccountLayerHook__factory.createInterface().getFunction("onCall").selector,
 			}
@@ -2796,6 +2797,25 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
 
 					await expect(context.alCoreFacet.executeForAccount(bindCallData)).to.be.revertedWithCustomError(context.alCoreFacet, "NoActiveHookContext")
+				})
+
+				it("should prohibit executeForAccount during onSubAccountDeletion", async () => {
+					const affiliateAddress = await context.accountManager.getAddress()
+					const bindToPartyBSelector = context.bindingFacet.interface.getFunction("bindToPartyB").selector
+					await context.alControlFacet.setHookAllowedSelectors(affiliateAddress, [bindToPartyBSelector], true)
+
+					const bindCallData = context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [context.signers.hedger.address])
+					await hookContract.setExecuteForAccountCallback(HOOK_SELECTORS.onSubAccountDeletion, bindCallData, true)
+
+					const emptyAccountData = [createSubAccountData("DELETION_CALLBACK_ACCOUNT", 0)]
+					await context.alCoreFacet.connect(context.signers.user).createSubAccounts(affiliateAddress, emptyAccountData)
+					const accounts = await context.alViewFacet.getUserSubAccountsAddresses(context.signers.user.address, 0, 100)
+					const emptyAccount = accounts[accounts.length - 1]
+					const reason = context.alCoreFacet.interface.encodeErrorResult("ExecuteForAccountNotAllowedDuringSubAccountDeletion")
+
+					await expect(context.alCoreFacet.connect(context.signers.user).deleteSubAccount(emptyAccount))
+						.to.be.revertedWithCustomError(context.alCoreFacet, "HookFailed")
+						.withArgs(reason)
 				})
 
 				it("should revert when a downstream contract tries to use active hook context", async () => {
