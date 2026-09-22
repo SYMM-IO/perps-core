@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { Quote } from "../storages/QuoteStorage.sol";
+import { Quote, QuoteStatus } from "../storages/QuoteStorage.sol";
 
 struct QuoteAdjustmentData {
 	uint256 factor;
@@ -77,13 +77,21 @@ library LibQuoteAdjustment {
 		result.requestedClosePrice = quote.requestedClosePrice;
 		if (quote.quantityToClose > 0) {
 			require(result.quantityToClose > 0, "SymbolAdjustmentFacet: Close amount underflow");
-			result.requestedClosePrice = _scalePrice(quote.quantityToClose, quote.requestedClosePrice, result.quantityToClose);
+			// An unrepresentable user close intent must not prevent conversion of the underlying position.
+			(uint256 high, ) = Math.mul512(quote.quantityToClose, quote.requestedClosePrice);
+			if (high >= result.quantityToClose) {
+				result.quantityToClose = 0;
+				result.requestedClosePrice = 0;
+			} else {
+				result.requestedClosePrice = _scalePrice(quote.quantityToClose, quote.requestedClosePrice, result.quantityToClose);
+			}
 		}
 	}
 
 	function toVenueUnits(Quote memory quote, uint256 factor) internal pure returns (Quote memory) {
 		if (factor == 1e18) return quote;
 		QuoteAdjustmentData memory result = preview(quote, factor);
+		if (quote.quantityToClose > 0 && result.quantityToClose == 0) quote.quoteStatus = QuoteStatus.OPENED;
 		quote.quantity = result.quantity;
 		quote.openedPrice = result.openedPrice;
 		quote.initialOpenedPrice = result.initialOpenedPrice;
