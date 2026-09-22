@@ -102,7 +102,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 
 	/// @notice Registers a new Party B (market maker/hedger) into the system, allowing them to respond to quotes from Party A users.
 	/// @param partyB The address to register as Party B.
-	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_REGISTRAR_ROLE) {
 		checkZeroAddress(partyB);
 		require(!MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is already registered");
 		MAStorage.layout().partyBStatus[partyB] = true;
@@ -121,7 +121,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	///      Only use this if a PartyB address was registered by mistake and needs immediate removal
 	///      (e.g., within minutes, before any positions or balances exist).
 	///      To prevent a PartyB from opening new positions while preserving correct fund routing,
-	///      use setPartyBOpenPositionsPaused() in PauseControlFacet instead.
+	///      use pausePartyBOpenPositionsFor() in PauseControlFacet instead.
 	function deregisterPartyB(address partyB, uint256 index) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		checkZeroAddress(partyB);
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
@@ -198,7 +198,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 
 	/// @notice Registers a new affiliate (frontend partner) into the system.
 	/// @param affiliate The address to register as an affiliate.
-	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
+	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_REGISTRAR_ROLE) {
 		require(!MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Address is already registered");
 		MAStorage.layout().affiliateStatus[affiliate] = true;
 		emit RegisterAffiliate(affiliate);
@@ -249,15 +249,15 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	}
 
 	/// @notice Sets metadata through the legacy Party B-specific interface.
-	/// @dev Kept for backward compatibility with integrations authorized through PARTY_B_MANAGER_ROLE.
-	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+	/// @dev Kept for backward compatibility with integrations authorized through PARTY_B_REGISTRAR_ROLE.
+	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_REGISTRAR_ROLE) {
 		MAStorage.layout().entitiesMetadata[partyB] = metadata;
 		emit SetEntityMetadata(partyB, metadata);
 	}
 
 	/// @notice Sets metadata through the legacy affiliate-specific interface.
-	/// @dev Kept for backward compatibility with integrations authorized through AFFILIATE_MANAGER_ROLE.
-	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
+	/// @dev Kept for backward compatibility with integrations authorized through AFFILIATE_REGISTRAR_ROLE.
+	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_REGISTRAR_ROLE) {
 		MAStorage.layout().entitiesMetadata[affiliate] = metadata;
 		emit SetEntityMetadata(affiliate, metadata);
 	}
@@ -308,7 +308,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 
 	/// @notice Sets the maximum number of pending (unaccepted) quotes a Party A can have at once.
 	/// @param pendingQuotesValidLength The maximum number of pending quotes allowed per user.
-	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		emit SetPendingQuotesValidLength(MAStorage.layout().pendingQuotesValidLength, pendingQuotesValidLength);
 		MAStorage.layout().pendingQuotesValidLength = pendingQuotesValidLength;
 	}
@@ -534,7 +534,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 
 	/// @notice Sets the maximum number of Party B connections a single Party A can have simultaneously.
 	/// @param maxLimit The maximum number of Party Bs a Party A can be connected to at once.
-	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
 		MAStorage.layout().maxPartyAConnectionLimit = maxLimit;
 		emit SetMaxPartyAConnectionLimit(maxLimit);
@@ -549,7 +549,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 
 	/// @notice Sets the maximum collateral balance a single user can hold in the protocol. Used for risk management.
 	/// @param balanceLimitPerUser The maximum collateral amount (in collateral token units) a user can deposit.
-	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		emit SetBalanceLimitPerUser(balanceLimitPerUser);
 		GlobalAppStorage.layout().balanceLimitPerUser = balanceLimitPerUser;
 	}
@@ -560,22 +560,6 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		emit SetCrossPartyBModeActivated(appLayout.crossPartyBModeActivated, activated);
 		appLayout.crossPartyBModeActivated = activated;
-	}
-
-	/// @notice Enables or disables the legacy deallocate function. When deprecated, users must use safeDeallocate.
-	/// @param deprecated True to deprecate legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
-	function setLegacyDeallocateDeprecated(bool deprecated) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		emit SetLegacyDeallocateDeprecated(appLayout.legacyDeallocateDeprecated, deprecated);
-		appLayout.legacyDeallocateDeprecated = deprecated;
-	}
-
-	/// @notice Enables or disables legacy PartyA liquidation pricing. When deprecated, liquidators must use signed PartyB-symbol state.
-	/// @param deprecated True to deprecate legacy PartyA liquidation entrypoints, false to allow them.
-	function setLegacyPartyALiquidationDeprecated(bool deprecated) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		emit SetLegacyPartyALiquidationDeprecated(appLayout.legacyPartyALiquidationDeprecated, deprecated);
-		appLayout.legacyPartyALiquidationDeprecated = deprecated;
 	}
 
 	/// @notice Registers a bridge contract.
@@ -662,7 +646,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 
 	/// @notice Sets the maximum number of partial withdrawals allowed. Withdrawals can be split to manage liquidity.
 	/// @param _maxWithdrawParts The maximum number of parts a single withdrawal can be divided into.
-	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.maxWithdrawParts = _maxWithdrawParts;
 		emit SetMaxWithdrawParts(_maxWithdrawParts);
@@ -786,7 +770,7 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	///      The solver must fund the cross bucket by allocating to address(0) after enabling.
 	/// @param partyB The address of the Party B to configure.
 	/// @param enabled True to enable cross partyB mode, false to disable.
-	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "ControlFacet: Cross feature disabled");
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
 		MAStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;

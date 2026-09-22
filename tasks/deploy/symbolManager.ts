@@ -15,6 +15,7 @@ import { deployContract, type VanityContext } from "./vanityDeploy.js"
 // to proxy symbol CRUD + force-close-gap-ratio calls. Kept here as plain strings
 // so they match exactly what LibAccessibility.sol hashes at runtime.
 const CORE_ROLE_SYMBOL_MANAGER = "SYMBOL_MANAGER_ROLE"
+const CORE_ROLE_SYMBOL_LISTING = "SYMBOL_LISTING_ROLE"
 const CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN = "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"
 
 // Operator roles on the SymbolManager contract itself (from SymmioSymbolManager.sol)
@@ -167,7 +168,7 @@ export async function grantSymbolManagerDiamondRoles(hre: any, { symmioAddress: 
 	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", symmioAddress)
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
 
-	const rolesToGrant = [CORE_ROLE_SYMBOL_MANAGER, CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN]
+	const rolesToGrant = [CORE_ROLE_SYMBOL_MANAGER, CORE_ROLE_SYMBOL_LISTING, CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN]
 
 	let granted = 0
 	let skipped = 0

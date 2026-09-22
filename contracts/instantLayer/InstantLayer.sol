@@ -70,8 +70,11 @@ interface ISymmio {
 contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/* ═══════════════════════════════ ROLES ═══════════════════════════════ */
 
-	/// @notice Role identifier for managing contract configuration and templates
+	/// @notice Role identifier for managing contract configuration (routing, whitelists, PartyB enrollment, delegation policy)
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+
+	/// @notice Role identifier for adding and activating templates
+	bytes32 public constant TEMPLATE_MANAGER_ROLE = keccak256("TEMPLATE_MANAGER_ROLE");
 
 	/// @notice Role identifier for executing operations and templates
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
@@ -500,6 +503,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 		// Grant initial roles to the admin (REVOKER_ROLE must be granted separately)
 		_grantRole(DEFAULT_ADMIN_ROLE, _admin);
 		_grantRole(SETTER_ROLE, _admin);
+		_grantRole(TEMPLATE_MANAGER_ROLE, _admin);
 		_grantRole(OPERATOR_ROLE, _admin);
 
 		revocationCooldown = 10 minutes;
@@ -680,7 +684,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// - Operation 0: Swap tokens (returns amount out)
 	/// - Operation 1: Stake tokens (uses amount from operation 0)
 	/// Operation 1 would have insertionPoint=[36], sourceIndex=[0], and sourceOffset=[0]
-	function addTemplate(string calldata name, Operation[] calldata operations) external onlyRole(SETTER_ROLE) {
+	function addTemplate(string calldata name, Operation[] calldata operations) external onlyRole(TEMPLATE_MANAGER_ROLE) {
 		if (operations.length == 0) revert EmptyTemplate();
 
 		uint256 templateId = nextTemplateId++;
@@ -708,7 +712,7 @@ contract InstantLayer is AccessControlEnumerable, ReentrancyGuard, EIP712 {
 	/// @dev    Disabled templates cannot be executed.
 	/// @param templateId ID of the template to update
 	/// @param active     Whether the template should be active
-	function setTemplateActive(uint256 templateId, bool active) external onlyRole(SETTER_ROLE) {
+	function setTemplateActive(uint256 templateId, bool active) external onlyRole(TEMPLATE_MANAGER_ROLE) {
 		if (templateId >= nextTemplateId) revert InvalidTemplate(templateId);
 		templates[templateId].active = active;
 		emit TemplateUpdated(templateId, active);

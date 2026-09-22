@@ -22,8 +22,14 @@ export interface TemplateSnapshot {
 	operations: TemplateOperation[]
 }
 
-export type InstantLayerRoleName = "DEFAULT_ADMIN_ROLE" | "SETTER_ROLE" | "OPERATOR_ROLE" | "REVOKER_ROLE"
-export const INSTANT_LAYER_ROLE_NAMES: readonly InstantLayerRoleName[] = ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "OPERATOR_ROLE", "REVOKER_ROLE"]
+export type InstantLayerRoleName = "DEFAULT_ADMIN_ROLE" | "SETTER_ROLE" | "TEMPLATE_MANAGER_ROLE" | "OPERATOR_ROLE" | "REVOKER_ROLE"
+export const INSTANT_LAYER_ROLE_NAMES: readonly InstantLayerRoleName[] = [
+	"DEFAULT_ADMIN_ROLE",
+	"SETTER_ROLE",
+	"TEMPLATE_MANAGER_ROLE",
+	"OPERATOR_ROLE",
+	"REVOKER_ROLE",
+]
 
 export interface InstantLayerSnapshot {
 	address: string
@@ -418,5 +424,5 @@ const EMPTY_SNAPSHOT: InstantLayerSnapshot = {
 	whitelistedTargets: [],
 	registeredPartyBs: [],
 	templates: [],
-	roles: { DEFAULT_ADMIN_ROLE: [], SETTER_ROLE: [], OPERATOR_ROLE: [], REVOKER_ROLE: [] },
+	roles: { DEFAULT_ADMIN_ROLE: [], SETTER_ROLE: [], TEMPLATE_MANAGER_ROLE: [], OPERATOR_ROLE: [], REVOKER_ROLE: [] },
 }

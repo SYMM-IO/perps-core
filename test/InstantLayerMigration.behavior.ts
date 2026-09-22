@@ -145,7 +145,7 @@ describe("InstantLayer migration rehearsal", function () {
 		expect(await newInstantLayer.revocationCooldown()).to.equal(await context.instantLayer.revocationCooldown())
 
 		// Handed over: the Safe holds every role, the deployer none
-		for (const r of [ethers.ZeroHash, role("SETTER_ROLE"), role("OPERATOR_ROLE"), role("REVOKER_ROLE")]) {
+		for (const r of [ethers.ZeroHash, role("SETTER_ROLE"), role("TEMPLATE_MANAGER_ROLE"), role("OPERATOR_ROLE"), role("REVOKER_ROLE")]) {
 			expect(await newInstantLayer.hasRole(r, safe.address), r).to.be.true
 			expect(await newInstantLayer.hasRole(r, deployer.address), r).to.be.false
 		}

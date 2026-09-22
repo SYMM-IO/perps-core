@@ -32,6 +32,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+	bytes32 public constant MULTICAST_WHITELIST_ROLE = keccak256("MULTICAST_WHITELIST_ROLE");
 	/// @dev The Symmio CORE diamond's INSTANT_LAYER_ROLE. The InstantLayer holds this role on core, so checking the
 	///      direct caller against it authorizes only the real InstantLayer -- not arbitrary code running during a batch.
 	bytes32 private constant CORE_INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
@@ -62,6 +63,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(TRUSTED_ROLE, admin);
 		_grantRole(MANAGER_ROLE, admin);
+		_grantRole(MULTICAST_WHITELIST_ROLE, admin);
 		symmioAddress = symmioAddress_;
 	}
 
@@ -105,7 +107,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @notice Allows or disallows Party B to call a method from a specific contract
 	/// @param addr The address to set the state for
 	/// @param state The state to set for the address
-	function setMulticastWhitelist(address addr, bool state) external onlyRole(MANAGER_ROLE) {
+	function setMulticastWhitelist(address addr, bool state) external onlyRole(MULTICAST_WHITELIST_ROLE) {
 		require(addr != address(this), "SymmioPartyB: Invalid address");
 		multicastWhitelist[addr] = state;
 		emit SetMulticastWhitelist(addr, state);

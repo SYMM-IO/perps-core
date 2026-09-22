@@ -39,7 +39,13 @@ function snapshot(overrides: Partial<InstantLayerSnapshot> = {}): InstantLayerSn
 			{ id: 0n, name: "InstantOpen", active: true, instantOpenMode: true, operations: [emptyOp, emptyOp] },
 			{ id: 1n, name: "InstantClose", active: true, instantOpenMode: false, operations: [emptyOp] },
 		],
-		roles: { DEFAULT_ADMIN_ROLE: [SAFE], SETTER_ROLE: [SAFE], OPERATOR_ROLE: [GASLESS, SAFE, PARTY_B], REVOKER_ROLE: [SAFE] },
+		roles: {
+			DEFAULT_ADMIN_ROLE: [SAFE],
+			SETTER_ROLE: [SAFE],
+			TEMPLATE_MANAGER_ROLE: [SAFE],
+			OPERATOR_ROLE: [GASLESS, SAFE, PARTY_B],
+			REVOKER_ROLE: [SAFE],
+		},
 		...overrides,
 	}
 }
@@ -99,7 +105,15 @@ test("replay plan refuses a snapshot whose old layer still counts the deployer a
 	assert.throws(
 		() =>
 			buildInstantLayerReplayPlan(
-				snapshot({ roles: { DEFAULT_ADMIN_ROLE: [SAFE, DEPLOYER], SETTER_ROLE: [SAFE], OPERATOR_ROLE: [SAFE], REVOKER_ROLE: [SAFE] } }),
+				snapshot({
+					roles: {
+						DEFAULT_ADMIN_ROLE: [SAFE, DEPLOYER],
+						SETTER_ROLE: [SAFE],
+						TEMPLATE_MANAGER_ROLE: [SAFE],
+						OPERATOR_ROLE: [SAFE],
+						REVOKER_ROLE: [SAFE],
+					},
+				}),
 				{
 					deployer: DEPLOYER,
 					safe: SAFE,
@@ -185,7 +199,7 @@ test("configuration comparison is empty for a faithful replacement and names eve
 		whitelistedTargets: [CORE],
 		registeredPartyBs: [],
 		templates: [{ id: 0n, name: "InstantOpen", active: false, instantOpenMode: true, operations: [emptyOp, emptyOp] }],
-		roles: { DEFAULT_ADMIN_ROLE: [SAFE], SETTER_ROLE: [SAFE, DEPLOYER], OPERATOR_ROLE: [SAFE, PARTY_B], REVOKER_ROLE: [] },
+		roles: { DEFAULT_ADMIN_ROLE: [SAFE], SETTER_ROLE: [SAFE, DEPLOYER], TEMPLATE_MANAGER_ROLE: [], OPERATOR_ROLE: [SAFE, PARTY_B], REVOKER_ROLE: [] },
 	})
 	const differences = compareInstantLayerConfiguration(old, drifted)
 	for (const needle of [
@@ -197,6 +211,7 @@ test("configuration comparison is empty for a faithful replacement and names eve
 		"template 0",
 		"template 1",
 		"SETTER_ROLE",
+		"TEMPLATE_MANAGER_ROLE",
 		"OPERATOR_ROLE",
 		"REVOKER_ROLE",
 	]) {

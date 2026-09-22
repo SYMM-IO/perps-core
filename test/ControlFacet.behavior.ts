@@ -13,9 +13,14 @@ const { keccak256 } = sha3
 
 const DISPUTE_ROLE = `0x${keccak256("DISPUTE_ROLE")}`
 const PARTY_B_MANAGER_ROLE = `0x${keccak256("PARTY_B_MANAGER_ROLE")}`
+const PARTY_B_REGISTRAR_ROLE = `0x${keccak256("PARTY_B_REGISTRAR_ROLE")}`
 const AFFILIATE_MANAGER_ROLE = `0x${keccak256("AFFILIATE_MANAGER_ROLE")}`
+const AFFILIATE_REGISTRAR_ROLE = `0x${keccak256("AFFILIATE_REGISTRAR_ROLE")}`
 const ENTITY_METADATA_MANAGER_ROLE = `0x${keccak256("ENTITY_METADATA_MANAGER_ROLE")}`
 const SYMBOL_MANAGER_ROLE = `0x${keccak256("SYMBOL_MANAGER_ROLE")}`
+const SYMBOL_LISTING_ROLE = `0x${keccak256("SYMBOL_LISTING_ROLE")}`
+const PROTOCOL_CONFIG_ROLE = `0x${keccak256("PROTOCOL_CONFIG_ROLE")}`
+const PROTOCOL_LIMITS_ROLE = `0x${keccak256("PROTOCOL_LIMITS_ROLE")}`
 const SUSPENDER_ROLE = `0x${keccak256("SUSPENDER_ROLE")}`
 const PAUSER_ROLE = `0x${keccak256("PAUSER_ROLE")}`
 const UNPAUSER_ROLE = `0x${keccak256("UNPAUSER_ROLE")}`
@@ -46,11 +51,16 @@ export function shouldBehaveLikeControlFacet(): void {
 		await context.controlFacet.connect(context.signers.admin).transferOwnership(await owner.getAddress())
 		await context.controlFacet.connect(owner).setAdmin(await owner.getAddress())
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PARTY_B_MANAGER_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PARTY_B_REGISTRAR_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SYMBOL_MANAGER_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SYMBOL_LISTING_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PROTOCOL_CONFIG_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PROTOCOL_LIMITS_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SUSPENDER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), UNPAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), AFFILIATE_MANAGER_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), AFFILIATE_REGISTRAR_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), ENTITY_METADATA_MANAGER_ROLE)
 		// New V2 roles
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), FEE_ADMIN_ROLE)
@@ -165,6 +175,88 @@ export function shouldBehaveLikeControlFacet(): void {
 				"ControlFacet: Address is already registered",
 			)
 		})
+
+		it("Should require PARTY_B_REGISTRAR_ROLE rather than PARTY_B_MANAGER_ROLE", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PARTY_B_MANAGER_ROLE)
+			await expect(context.controlFacet.connect(user2).registerPartyB(await hedger3.getAddress())).to.be.revertedWith("Accessibility: Must have role")
+			await expect(
+				context.controlFacet.connect(user2).setPartyBMetadata(await hedger.getAddress(), { name: "x", brandColor: "", metadata: "" }),
+			).to.be.revertedWith("Accessibility: Must have role")
+
+			await context.controlFacet.connect(owner).grantRole(await hedger2.getAddress(), PARTY_B_REGISTRAR_ROLE)
+			await expect(context.controlFacet.connect(hedger2).registerPartyB(await hedger3.getAddress())).to.not.reverted
+			await expect(context.controlFacet.connect(hedger2).deregisterPartyB(await hedger3.getAddress(), 2)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+		})
+	})
+
+	describe("role split boundaries", () => {
+		it("AFFILIATE_REGISTRAR_ROLE registers and sets metadata but cannot deregister or set the fee collector", async function () {
+			const affiliate = await hedger3.getAddress()
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), AFFILIATE_REGISTRAR_ROLE)
+			await expect(context.controlFacet.connect(user2).registerAffiliate(affiliate)).to.not.reverted
+			await expect(context.controlFacet.connect(user2).setAffiliateMetadata(affiliate, { name: "a", brandColor: "", metadata: "" })).to.not.reverted
+			await expect(context.controlFacet.connect(user2).deregisterAffiliate(affiliate)).to.be.revertedWith("Accessibility: Must have role")
+			await expect(context.controlFacet.connect(user2).setFeeCollector(affiliate, await user2.getAddress())).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+
+			await context.controlFacet.connect(owner).grantRole(await hedger2.getAddress(), AFFILIATE_MANAGER_ROLE)
+			await expect(context.controlFacet.connect(hedger2).registerAffiliate(await hedger2.getAddress())).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+			await expect(context.controlFacet.connect(hedger2).deregisterAffiliate(affiliate)).to.not.reverted
+		})
+
+		it("SYMBOL_LISTING_ROLE lists symbols and sets trading fees but cannot change leverage", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), SYMBOL_LISTING_ROLE)
+			await expect(
+				context.symbolControlFacet
+					.connect(user2)
+					.addSymbol("ETHUSDT", parseEther("5"), parseEther("0.01"), parseEther("0.01"), parseEther("100"), 28800, 900),
+			).to.not.reverted
+			await expect(context.symbolControlFacet.connect(user2).setSymbolTradingFee(1, parseEther("0.002"))).to.not.reverted
+			await expect(context.symbolControlFacet.connect(user2).setSymbolValidationState(1, false)).to.not.reverted
+			await expect(context.symbolControlFacet.connect(user2).setSymbolMaxLeverage(1, parseEther("50"))).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+
+			await context.controlFacet.connect(owner).grantRole(await hedger2.getAddress(), SYMBOL_MANAGER_ROLE)
+			await expect(context.symbolControlFacet.connect(hedger2).setSymbolTradingFee(1, parseEther("0.001"))).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+			await expect(context.symbolControlFacet.connect(hedger2).setSymbolMaxLeverage(1, parseEther("50"))).to.not.reverted
+		})
+
+		it("PROTOCOL_LIMITS_ROLE tunes limits but not liquidatorShare; PROTOCOL_CONFIG_ROLE is the reverse", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PROTOCOL_LIMITS_ROLE)
+			await expect(context.controlFacet.connect(user2).setBalanceLimitPerUser(parseEther("1000"))).to.not.reverted
+			await expect(context.controlFacet.connect(user2).setMaxWithdrawParts(5)).to.not.reverted
+			await expect(context.controlFacet.connect(user2).setPendingQuotesValidLength(10)).to.not.reverted
+			await expect(context.controlFacet.connect(user2).setMaxPartyAConnectionLimit(10)).to.not.reverted
+			await expect(context.controlFacet.connect(user2).setLiquidatorShare(parseEther("0.1"))).to.be.revertedWith("Accessibility: Must have role")
+
+			await context.controlFacet.connect(owner).grantRole(await hedger2.getAddress(), PROTOCOL_CONFIG_ROLE)
+			await expect(context.controlFacet.connect(hedger2).setBalanceLimitPerUser(parseEther("1000"))).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+			await expect(context.controlFacet.connect(hedger2).setLiquidatorShare(parseEther("0.1"))).to.not.reverted
+		})
+
+		it("Legacy deprecation switches require MIGRATION_ROLE and live on PauseControlFacet", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PROTOCOL_CONFIG_ROLE)
+			await expect(context.pauseControlFacet.connect(user2).setLegacyDeallocateDeprecated(true)).to.be.revertedWith("Accessibility: Must have role")
+			await expect(context.pauseControlFacet.connect(user2).setLegacyPartyALiquidationDeprecated(true)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+			await expect(context.pauseControlFacet.connect(owner).setLegacyDeallocateDeprecated(true))
+				.to.emit(context.pauseControlFacet, "SetLegacyDeallocateDeprecated")
+				.withArgs(false, true)
+			await expect(context.pauseControlFacet.connect(owner).setLegacyPartyALiquidationDeprecated(true))
+				.to.emit(context.pauseControlFacet, "SetLegacyPartyALiquidationDeprecated")
+				.withArgs(false, true)
+		})
 	})
 
 	describe("deregisterPartyB", () => {
@@ -222,9 +314,9 @@ export function shouldBehaveLikeControlFacet(): void {
 			)
 		})
 
-		it("keeps the legacy setters with their original role checks", async function () {
-			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PARTY_B_MANAGER_ROLE)
-			await context.controlFacet.connect(owner).grantRole(await hedger3.getAddress(), AFFILIATE_MANAGER_ROLE)
+		it("keeps the legacy setters with their registrar role checks", async function () {
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PARTY_B_REGISTRAR_ROLE)
+			await context.controlFacet.connect(owner).grantRole(await hedger3.getAddress(), AFFILIATE_REGISTRAR_ROLE)
 
 			await expect(context.controlFacet.connect(user2).setPartyBMetadata(await hedger.getAddress(), metadata)).to.not.be.reverted
 			await expect(context.controlFacet.connect(user2).setAffiliateMetadata(await hedger.getAddress(), metadata)).to.be.revertedWith(
@@ -619,20 +711,37 @@ export function shouldBehaveLikeControlFacet(): void {
 		})
 	})
 
-	describe("setPartyBOpenPositionsPaused", () => {
-		it("Should set and unset per-PartyB open positions pause", async function () {
+	describe("pausePartyBOpenPositionsFor / unpausePartyBOpenPositionsFor", () => {
+		it("Should pause with PAUSER_ROLE and unpause with UNPAUSER_ROLE", async function () {
 			const hedgerAddress = context.signers.hedger.address
 			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(false)
 
-			await expect(context.pauseControlFacet.connect(owner).setPartyBOpenPositionsPaused(hedgerAddress, true)).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).pausePartyBOpenPositionsFor(hedgerAddress))
+				.to.emit(context.pauseControlFacet, "SetPartyBOpenPositionsPausedForPartyB")
+				.withArgs(hedgerAddress, true)
 			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(true)
 
-			await expect(context.pauseControlFacet.connect(owner).setPartyBOpenPositionsPaused(hedgerAddress, false)).to.not.reverted
+			await expect(context.pauseControlFacet.connect(owner).unpausePartyBOpenPositionsFor(hedgerAddress))
+				.to.emit(context.pauseControlFacet, "SetPartyBOpenPositionsPausedForPartyB")
+				.withArgs(hedgerAddress, false)
 			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(false)
 		})
 
+		it("Should not let a pause-only holder unpause", async function () {
+			const hedgerAddress = context.signers.hedger.address
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PAUSER_ROLE)
+			await expect(context.pauseControlFacet.connect(user2).pausePartyBOpenPositionsFor(hedgerAddress)).to.not.reverted
+			await expect(context.pauseControlFacet.connect(user2).unpausePartyBOpenPositionsFor(hedgerAddress)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(true)
+		})
+
 		it("Should revert on zero address", async function () {
-			await expect(context.pauseControlFacet.connect(owner).setPartyBOpenPositionsPaused(ZeroAddress, true)).to.be.revertedWith(
+			await expect(context.pauseControlFacet.connect(owner).pausePartyBOpenPositionsFor(ZeroAddress)).to.be.revertedWith(
+				"PauseControlFacet: Zero address",
+			)
+			await expect(context.pauseControlFacet.connect(owner).unpausePartyBOpenPositionsFor(ZeroAddress)).to.be.revertedWith(
 				"PauseControlFacet: Zero address",
 			)
 		})

@@ -142,6 +142,7 @@ export type ExpressRoleName =
 	| "UNLOCK_ROLE"
 	| "WITHDRAWER_ROLE"
 	| "PAUSER_ROLE"
+	| "UNPAUSER_ROLE"
 
 export interface ExpressAffiliateRecipe {
 	address: string

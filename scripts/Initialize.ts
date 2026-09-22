@@ -52,6 +52,22 @@ export async function initialize(): Promise<RunContext> {
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SYMBOL_MANAGER_ROLE"))),
 	)
 	await runTx(
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SYMBOL_LISTING_ROLE"))),
+	)
+	await runTx(
+		context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PARTY_B_REGISTRAR_ROLE"))),
+	)
+	await runTx(
+		context.controlFacet
+			.connect(context.signers.admin)
+			.grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("AFFILIATE_REGISTRAR_ROLE"))),
+	)
+	await runTx(
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PROTOCOL_LIMITS_ROLE"))),
+	)
+	await runTx(
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SETTER_ROLE"))),
 	)
 	await runTx(

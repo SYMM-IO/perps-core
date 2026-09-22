@@ -1764,7 +1764,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
 			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
 
-			await context.controlFacet.connect(context.signers.admin).setLegacyPartyALiquidationDeprecated(true)
+			await context.pauseControlFacet.connect(context.signers.admin).setLegacyPartyALiquidationDeprecated(true)
 			expect(await context.viewFacet.isLegacyPartyALiquidationDeprecated()).to.equal(true)
 
 			await expect(
@@ -1796,7 +1796,7 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const liquidationSig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
 
 			await context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA(user.address, liquidationSig)
-			await context.controlFacet.connect(context.signers.admin).setLegacyPartyALiquidationDeprecated(true)
+			await context.pauseControlFacet.connect(context.signers.admin).setLegacyPartyALiquidationDeprecated(true)
 
 			await expect(context.partyALiquidationFacet.connect(context.signers.liquidator).setSymbolsPrice(user.address, liquidationSig)).to.not.be
 				.reverted
