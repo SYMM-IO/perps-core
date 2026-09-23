@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, Signer, concat, dataSlice, getBytes, id, isError, randomBytes, toBeHex, type BlockTag } from "ethers"
+import { Contract, Signer, concat, dataSlice, getBytes, id, isError, randomBytes, toBeHex, type BlockTag } from "ethers"
 
 export type GaslessFeePayment = {
 	account: string
@@ -134,7 +134,14 @@ export const cappedNativeGasTopUpTypes = {
 	],
 }
 
-/** A capped top-up signature cannot be stripped into a legacy signature: it signs a different EIP-712 type. */
+/** Passed as the relay's `maxTotalCharge` when the user signed the uncapped `NativeGasTopUpRequest` type. */
+export const UNCAPPED_NATIVE_GAS_TOP_UP_CHARGE = (1n << 256n) - 1n
+
+/**
+ * Signs `CappedNativeGasTopUpRequest`. Relay it as `relayNativeGasTopUp(request, maxTotalCharge, signature)`; the cap is a
+ * separate argument so the signature reaches the signer untouched, which lets ERC-1271 accounts validate their own formats.
+ * A capped signature cannot be replayed as an uncapped one: it signs a different EIP-712 type.
+ */
 export async function signCappedNativeGasTopUp(
 	signer: Signer,
 	gateway: Contract,
@@ -144,10 +151,9 @@ export async function signCappedNativeGasTopUp(
 	const provider = gateway.runner?.provider
 	if (!provider) throw new Error("A provider is required to read the signing chain ID")
 	const { chainId } = await provider.getNetwork()
-	const signature = await signer.signTypedData(
+	return signer.signTypedData(
 		{ name: "GaslessGateway", version: "1", chainId, verifyingContract: await gateway.getAddress() },
 		cappedNativeGasTopUpTypes,
 		{ ...request, maxTotalCharge },
 	)
-	return AbiCoder.defaultAbiCoder().encode(["uint256", "bytes"], [maxTotalCharge, signature])
 }

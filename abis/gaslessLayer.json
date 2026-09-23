@@ -2487,6 +2487,11 @@
                 "type": "tuple"
             },
             {
+                "internalType": "uint256",
+                "name": "maxTotalCharge",
+                "type": "uint256"
+            },
+            {
                 "internalType": "bytes",
                 "name": "signature",
                 "type": "bytes"

@@ -348,8 +348,17 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<h2 id="native-top-ups">Native gas top-ups</h2>
 					<p>
 						A user signs <code>NativeGasTopUpRequest</code> with the payer account, recipient wallet, collateral budget, minimum native
-						amount, nonce, and deadline. The relayer supplies the native currency as <code>msg.value</code>. Gasless Layer checks the
-						signature and sends that value only to the signed recipient.
+						amount, nonce, and deadline. The relayer supplies the native currency as <code>msg.value</code> and calls
+						<code>relayNativeGasTopUp(request, maxTotalCharge, signature)</code>, passing <code>type(uint256).max</code> as the cap for
+						this uncapped type. Gasless Layer checks the signature and sends that value only to the signed recipient.
+					</p>
+					<p>
+						The signer may be an externally owned account or an ERC-1271 smart account, such as a Coinbase Smart Wallet or an EIP-7702
+						delegated account. The signature bytes are handed to the signer unchanged, so variable-length smart-account formats are
+						accepted on the same footing as 65-byte ECDSA signatures. Wallet operations and InstantLayer operations already validate
+						signers the same way. The smart account must produce the ERC-1271 signature for the supplied digest according to its own
+						policy. Coinbase Smart Wallet, for example, wraps that digest in its account-specific replay-safe EIP-712 domain before the
+						owner signs it; merely wrapping the owner's raw Gasless digest signature is not valid.
 					</p>
 					<p>
 						The actual native amount must meet <code>minNativeAmountOut</code> and must not exceed <code>maxNativeGasTopUpAmount</code>.
@@ -773,10 +782,12 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 						For native top-ups, use <code>signCappedNativeGasTopUp(signer, gateway, request, maxTotalCharge)</code>. The maximum includes
 						the collateral exchanged for native gas and the top-up fee, both in 18 decimals. It signs
 						<code>CappedNativeGasTopUpRequest</code>, which has the existing request fields followed by
-						<code>uint256 maxTotalCharge</code>, using the existing <code>GaslessGateway</code> version <code>1</code> domain. Pass the
-						returned <code>abi.encode(maxTotalCharge, signature)</code> as the existing relay's signature argument. Stripping that
-						envelope does not produce a valid legacy signature. A zero limit permits sponsorship only; exhaustion then reverts instead of
-						charging.
+						<code>uint256 maxTotalCharge</code>, using the existing <code>GaslessGateway</code> version <code>1</code> domain. Relay it as
+						<code>relayNativeGasTopUp(request, maxTotalCharge, signature)</code>. The cap is a separate relay argument, never packed into
+						the signature bytes, so smart accounts can validate their own signature formats. Relaying a capped signature with a different
+						cap, or with <code>type(uint256).max</code> as if it were uncapped, verifies against a different digest and is rejected. For a
+						smart account, use its wallet SDK or account-aware signer to sign this typed request so any account-specific ERC-1271 envelope
+						is applied. A zero limit permits sponsorship only; exhaustion then reverts instead of charging.
 					</p>
 					<p>
 						For unsigned deposit settlement, admin recovery or direct owner withdrawals, the submitting account can call

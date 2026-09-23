@@ -225,9 +225,12 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @dev The payer is sponsored while its daily native allowance covers the request. Once exhausted,
 	///      the configured policy either reverts or charges the signed collateral amount plus the top-up fee through core.
 	///      GaslessNativeGasTopUpLib checks the signature, consumes the nonce, records sponsorship, and transfers native gas.
+	///      `maxTotalCharge` selects the signed type: type(uint256).max verifies the uncapped NativeGasTopUpRequest, any other
+	///      value verifies CappedNativeGasTopUpRequest with that cap. The signer may be an EOA or an ERC-1271 account.
 	///      The linked library keeps the implementation below EIP-170.
 	function relayNativeGasTopUp(
 		IGaslessLayer.NativeGasTopUpRequest calldata request,
+		uint256 maxTotalCharge,
 		bytes calldata signature
 	) external payable override onlyRole(RELAYER_ROLE) nonReentrant {
 		GaslessNativeGasTopUpLib.NativeGasTopUpResult memory topUp = GaslessNativeGasTopUpLib.relayNativeGasTopUp(
@@ -240,6 +243,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			maxNativeGasTopUpAmount,
 			nativeGasTopUpFeeBps,
 			request,
+			maxTotalCharge,
 			signature
 		);
 		if (topUp.sponsored) emit DailyNativeGasSponsored(topUp.payer, msg.value, topUp.sponsoredUsedToday, topUp.sponsoredLimit);
