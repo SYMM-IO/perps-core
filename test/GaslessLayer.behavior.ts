@@ -3,7 +3,13 @@ import { network } from "hardhat"
 import { rejects } from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
-import { gaslessFeeLimitSalt, quoteGaslessFee, signCappedNativeGasTopUp } from "../scripts/gaslessLayer/fee-quote.js"
+import {
+	cappedNativeGasTopUpTypes,
+	gaslessFeeLimitSalt,
+	quoteGaslessFee,
+	signCappedNativeGasTopUp,
+	UNCAPPED_NATIVE_GAS_TOP_UP_CHARGE,
+} from "../scripts/gaslessLayer/fee-quote.js"
 import { GOLDEN_WALLET_INITCODE_HASH, walletSalt, predictWalletAddress } from "../scripts/gaslessLayer/gasless-wallet.js"
 import { deployGaslessLayerLibraries, gaslessLayerFactoryOptions } from "../scripts/gaslessLayer/layer-libraries.js"
 
@@ -12,6 +18,7 @@ const OTHER_SELECTOR = "0x22222222"
 const WALLET_EXECUTION_SENTINEL_SELECTOR = "0x1dccecab" // bytes4(keccak256("GASLESS_WALLET_EXECUTION"))
 const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000"
 const EIP_170_DEPLOYED_BYTECODE_LIMIT = 24576
+const UNCAPPED = UNCAPPED_NATIVE_GAS_TOP_UP_CHARGE
 
 describe("GaslessLayer bytecode budget", () => {
 	it("keeps the implementation deployable under the EIP-170 size limit", () => {
@@ -1901,7 +1908,7 @@ describe("GaslessLayer", () => {
 		const signature = await signNativeTopUp(user, request)
 		const before = await ethers.provider.getBalance(user.address)
 
-		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut })
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut })
 
 		await expect(tx)
 			.to.emit(gateway, "NativeGasTopUpRelayed")
@@ -1921,22 +1928,26 @@ describe("GaslessLayer", () => {
 		const strangerSignature = await signNativeTopUp(stranger, request)
 
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(request, strangerSignature, { value: request.minNativeAmountOut }),
+			gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, strangerSignature, { value: request.minNativeAmountOut }),
 		).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
 
 		const expired = makeNativeTopUpRequest({ deadline: 1n })
-		await expect(gateway.connect(relayer).relayNativeGasTopUp(expired, await signNativeTopUp(user, expired), { value: expired.minNativeAmountOut }))
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(expired, UNCAPPED, await signNativeTopUp(user, expired), { value: expired.minNativeAmountOut }),
+		)
 			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpExpired")
 			.withArgs(1)
 
 		const wrongNonce = makeNativeTopUpRequest({ nonce: 7n })
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(wrongNonce, await signNativeTopUp(user, wrongNonce), { value: wrongNonce.minNativeAmountOut }),
+			gateway
+				.connect(relayer)
+				.relayNativeGasTopUp(wrongNonce, UNCAPPED, await signNativeTopUp(user, wrongNonce), { value: wrongNonce.minNativeAmountOut }),
 		)
 			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpNonceMismatch")
 			.withArgs(user.address, 0, 7)
 
-		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut - 1n }))
+		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut - 1n }))
 			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpAmountBelowMin")
 			.withArgs(request.minNativeAmountOut - 1n, request.minNativeAmountOut)
 	})
@@ -1945,21 +1956,21 @@ describe("GaslessLayer", () => {
 		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("1"), false)
 		const zeroRecipient = makeNativeTopUpRequest({ recipientWallet: ethers.ZeroAddress })
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(zeroRecipient, await signNativeTopUp(user, zeroRecipient), {
+			gateway.connect(relayer).relayNativeGasTopUp(zeroRecipient, UNCAPPED, await signNativeTopUp(user, zeroRecipient), {
 				value: zeroRecipient.minNativeAmountOut,
 			}),
 		).to.be.revertedWithCustomError(gateway, "ZeroAddress")
 
 		const zeroCollateral = makeNativeTopUpRequest({ collateralAmount: 0n })
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(zeroCollateral, await signNativeTopUp(user, zeroCollateral), {
+			gateway.connect(relayer).relayNativeGasTopUp(zeroCollateral, UNCAPPED, await signNativeTopUp(user, zeroCollateral), {
 				value: zeroCollateral.minNativeAmountOut,
 			}),
 		).to.be.revertedWithCustomError(gateway, "NativeGasTopUpCollateralAmountZero")
 
 		const zeroNativeOut = makeNativeTopUpRequest({ minNativeAmountOut: 0n })
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(zeroNativeOut, await signNativeTopUp(user, zeroNativeOut), { value: 0 }),
+			gateway.connect(relayer).relayNativeGasTopUp(zeroNativeOut, UNCAPPED, await signNativeTopUp(user, zeroNativeOut), { value: 0 }),
 		).to.be.revertedWithCustomError(gateway, "NativeGasTopUpAmountZero")
 	})
 
@@ -1969,7 +1980,7 @@ describe("GaslessLayer", () => {
 		const request = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.004") })
 		const actualNativeOut = ethers.parseEther("0.006")
 
-		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, await signNativeTopUp(user, request), { value: actualNativeOut }))
+		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: actualNativeOut }))
 			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpAmountExceedsMax")
 			.withArgs(actualNativeOut, ethers.parseEther("0.005"))
 	})
@@ -1977,16 +1988,18 @@ describe("GaslessLayer", () => {
 	it("relayNativeGasTopUp: reverts above the sponsored daily native limit in block mode", async () => {
 		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.015"), true)
 		const first = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.01") })
-		await gateway.connect(relayer).relayNativeGasTopUp(first, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
+		await gateway.connect(relayer).relayNativeGasTopUp(first, UNCAPPED, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
 
 		const second = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.006"), nonce: 1n })
-		await expect(gateway.connect(relayer).relayNativeGasTopUp(second, await signNativeTopUp(user, second), { value: second.minNativeAmountOut }))
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(second, UNCAPPED, await signNativeTopUp(user, second), { value: second.minNativeAmountOut }),
+		)
 			.to.be.revertedWithCustomError(gateway, "DailySponsoredNativeLimitExceeded")
 			.withArgs(user.address, ethers.parseEther("0.015"))
 
 		await ethers.provider.send("evm_increaseTime", [86400])
 		await ethers.provider.send("evm_mine", [])
-		await gateway.connect(relayer).relayNativeGasTopUp(second, await signNativeTopUp(user, second), { value: second.minNativeAmountOut })
+		await gateway.connect(relayer).relayNativeGasTopUp(second, UNCAPPED, await signNativeTopUp(user, second), { value: second.minNativeAmountOut })
 		expect(await gateway.topUpNonces(user.address)).to.equal(2)
 	})
 
@@ -1994,7 +2007,9 @@ describe("GaslessLayer", () => {
 		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.015"), false)
 		await gateway.connect(admin).setNativeGasTopUpFeeBps(3)
 		const first = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.01") })
-		const firstTx = await gateway.connect(relayer).relayNativeGasTopUp(first, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
+		const firstTx = await gateway
+			.connect(relayer)
+			.relayNativeGasTopUp(first, UNCAPPED, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
 		await expect(firstTx)
 			.to.emit(gateway, "DailyNativeGasSponsored")
 			.withArgs(user.address, first.minNativeAmountOut, first.minNativeAmountOut, ethers.parseEther("0.015"))
@@ -2003,7 +2018,7 @@ describe("GaslessLayer", () => {
 		const second = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.006"), nonce: 1n, collateralAmount: u("100") })
 		const feeAmount = nativeTopUpFee(second.collateralAmount, 3n)
 		const totalCharge = second.collateralAmount + feeAmount
-		const tx = await gateway.connect(relayer).relayNativeGasTopUp(second, await signNativeTopUp(user, second), {
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(second, UNCAPPED, await signNativeTopUp(user, second), {
 			value: second.minNativeAmountOut,
 		})
 
@@ -2026,7 +2041,7 @@ describe("GaslessLayer", () => {
 		expect(quote.feeAmount18).to.equal(feeAmount)
 		expect(quote.totalCollateralCharge18).to.equal(totalCharge)
 
-		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, await signNativeTopUp(user, request), {
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), {
 			value: request.minNativeAmountOut,
 		})
 
@@ -2046,7 +2061,7 @@ describe("GaslessLayer", () => {
 		const request = makeNativeTopUpRequest({ payerAccount: virtualAccount, minNativeAmountOut: ethers.parseEther("0.012") })
 		const tx = await gateway
 			.connect(relayer)
-			.relayNativeGasTopUp(request, await signNativeTopUp(user, request), { value: request.minNativeAmountOut })
+			.relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: request.minNativeAmountOut })
 
 		await expect(tx)
 			.to.emit(gateway, "NativeGasTopUpRelayed")
@@ -2057,7 +2072,9 @@ describe("GaslessLayer", () => {
 
 		const overLimit = makeNativeTopUpRequest({ payerAccount: virtualAccount, minNativeAmountOut: ethers.parseEther("0.009"), nonce: 1n })
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(overLimit, await signNativeTopUp(user, overLimit), { value: overLimit.minNativeAmountOut }),
+			gateway
+				.connect(relayer)
+				.relayNativeGasTopUp(overLimit, UNCAPPED, await signNativeTopUp(user, overLimit), { value: overLimit.minNativeAmountOut }),
 		)
 			.to.be.revertedWithCustomError(gateway, "DailySponsoredNativeLimitExceeded")
 			.withArgs(subAccount, ethers.parseEther("0.02"))
@@ -2071,12 +2088,149 @@ describe("GaslessLayer", () => {
 		const feeAmount = u("0.03")
 		const totalCharge = u("100.03")
 
-		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut })
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut })
 
 		await expect(tx)
 			.to.emit(gateway, "NativeGasTopUpRelayed")
 			.withArgs(relayer.address, user.address, user.address, user.address, request.minNativeAmountOut, request.collateralAmount, totalCharge)
 		expect(await core.operationalFeesCharged(user.address)).to.equal(totalCharge)
+	})
+
+	describe("smart-account signers (ERC-1271)", () => {
+		// Coinbase Smart Wallet first wraps the application digest in its own account-specific EIP-712
+		// replay-safe domain. Its owner signs that outer digest, which is then carried in SignatureWrapper.
+		// ABI-encoded with a 65-byte owner signature, the wrapper is 224 bytes.
+		const COINBASE_WRAPPED_SIGNATURE_LENGTH = 224
+		const coinbaseMessageTypes = { CoinbaseSmartWalletMessage: [{ name: "hash", type: "bytes32" }] }
+		let smartAccount: any, smartAccountAddr: string
+
+		beforeEach(async () => {
+			const SmartAccount = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockSmartAccount.sol:MockSmartAccount")
+			smartAccount = await SmartAccount.deploy(user.address)
+			smartAccountAddr = await smartAccount.getAddress()
+		})
+
+		const wrap = (rawSignature: string) =>
+			ethers.AbiCoder.defaultAbiCoder().encode(["tuple(uint256 ownerIndex, bytes signatureData)"], [{ ownerIndex: 0n, signatureData: rawSignature }])
+
+		async function signAsSmartAccount(hash: string) {
+			const domain = {
+				name: "Coinbase Smart Wallet",
+				version: "1",
+				chainId: (await ethers.provider.getNetwork()).chainId,
+				verifyingContract: smartAccountAddr,
+			}
+			const replaySafeHash = ethers.TypedDataEncoder.hash(domain, coinbaseMessageTypes, { hash })
+			expect(await smartAccount.replaySafeHash(hash)).to.equal(replaySafeHash)
+			return wrap(await user.signTypedData(domain, coinbaseMessageTypes, { hash }))
+		}
+
+		async function signSmartAccountNativeTopUp(request: any, maxTotalCharge?: bigint) {
+			const capped = maxTotalCharge !== undefined
+			const types = capped ? cappedNativeGasTopUpTypes : nativeTopUpTypes
+			const value = capped ? { ...request, maxTotalCharge } : request
+			const hash = ethers.TypedDataEncoder.hash(await gatewayDomain(), types, value)
+			return signAsSmartAccount(hash)
+		}
+
+		async function smartAccountWalletOp() {
+			const target = await deployWalletTarget()
+			const walletAddr = await gateway.getGaslessWalletAddress(smartAccountAddr, 0n)
+			const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+			const marker = ethers.id("erc1271 wallet op")
+			const calls = [{ target: await target.getAddress(), value: 0n, data: target.interface.encodeFunctionData("record", [marker]) }]
+			const op = {
+				signer: smartAccountAddr,
+				target: walletAddr,
+				callData: walletExecuteData(wallet.interface, calls),
+				signerAccount: { addr: smartAccountAddr, isPartyB: false },
+				flexFields: [],
+				maxUses: 1,
+				replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+			}
+			return { op, target, marker }
+		}
+
+		it("wallet operation: accepts the smart account's wrapped signature and executes on its wallet", async () => {
+			const { op, target, marker } = await smartAccountWalletOp()
+			const signature = await signAsSmartAccount(await gateway.getWalletOperationHash(op))
+			expect(ethers.getBytes(signature).length).to.equal(COINBASE_WRAPPED_SIGNATURE_LENGTH)
+
+			expect(await gateway.isValidWalletOperationSignature(op, signature)).to.equal(true)
+			await gateway.connect(relayer).relayInstantBatch([op], [signature], [[]], [[]], [0n])
+			expect(await target.lastMarker()).to.equal(marker)
+			expect(await gateway.walletOperationNonces(smartAccountAddr, 0n, smartAccountAddr)).to.equal(1)
+		})
+
+		it("wallet operation: rejects a bare ECDSA signature the smart account does not recognise", async () => {
+			const { op } = await smartAccountWalletOp()
+			const bare = await signWalletOperation(user, op)
+
+			expect(await gateway.isValidWalletOperationSignature(op, bare)).to.equal(false)
+			await expect(gateway.connect(relayer).relayInstantBatch([op], [bare], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+				gateway,
+				"InvalidWalletOperationSignature",
+			)
+		})
+
+		it("relayNativeGasTopUp: accepts the smart account's wrapped signature for an uncapped request", async () => {
+			await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr })
+			const signature = await signSmartAccountNativeTopUp(request)
+			expect(ethers.getBytes(signature).length).to.equal(COINBASE_WRAPPED_SIGNATURE_LENGTH)
+
+			const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut })
+
+			await expect(tx)
+				.to.emit(gateway, "NativeGasTopUpRelayed")
+				.withArgs(relayer.address, smartAccountAddr, smartAccountAddr, smartAccountAddr, request.minNativeAmountOut, request.collateralAmount, 0)
+			expect(await gateway.topUpNonces(smartAccountAddr)).to.equal(1)
+		})
+
+		it("relayNativeGasTopUp: rejects a bare ECDSA signature the smart account does not recognise", async () => {
+			await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr })
+			const bare = await signNativeTopUp(user, request)
+
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, bare, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+		})
+
+		it("relayNativeGasTopUp: rejects an owner signature wrapped without the account replay-safe domain", async () => {
+			await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr })
+			const signature = wrap(await signNativeTopUp(user, request))
+
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+		})
+
+		it("relayNativeGasTopUp: enforces a signed fee cap carried outside the smart account's signature", async () => {
+			const coreUnits = (amount: string) => ethers.parseUnits(amount, 18)
+			await gateway.connect(admin).setNativeGasTopUpConfig(0, false)
+			await gateway.connect(admin).setNativeGasTopUpFeeBps(100)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr, collateralAmount: coreUnits("10") })
+			const max = coreUnits("10.1")
+			const signature = await signSmartAccountNativeTopUp(request, max)
+
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, max + 1n, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+
+			await gateway.connect(admin).setNativeGasTopUpFeeBps(200)
+			await expect(gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut }))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("10.2"), max)
+
+			await gateway.connect(admin).setNativeGasTopUpFeeBps(100)
+			await gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut })
+			expect(await core.operationalFeesCharged(smartAccountAddr)).to.equal(max)
+		})
 	})
 
 	it("setNativeGasTopUpFeeBps: rejects rates above 100%", async () => {
@@ -2093,7 +2247,7 @@ describe("GaslessLayer", () => {
 		const before = await ethers.provider.getBalance(user.address)
 
 		await expect(
-			gateway.connect(relayer).relayNativeGasTopUp(request, await signNativeTopUp(user, request), { value: request.minNativeAmountOut }),
+			gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: request.minNativeAmountOut }),
 		).to.be.revertedWith("MockCore: charge failed")
 		expect(await ethers.provider.getBalance(user.address)).to.equal(before)
 		expect(await gateway.topUpNonces(user.address)).to.equal(0)
@@ -2105,14 +2259,18 @@ describe("GaslessLayer", () => {
 		const rejectingReceiver = await RejectNativeReceiver.deploy()
 		const request = makeNativeTopUpRequest({ recipientWallet: await rejectingReceiver.getAddress() })
 
-		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, await signNativeTopUp(user, request), { value: request.minNativeAmountOut }))
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: request.minNativeAmountOut }),
+		)
 			.to.be.revertedWithCustomError(gateway, "NativeGasTransferFailed")
 			.withArgs(await rejectingReceiver.getAddress(), request.minNativeAmountOut)
 
 		expect(await gateway.topUpNonces(user.address)).to.equal(0)
 
 		const retry = makeNativeTopUpRequest()
-		const retryTx = await gateway.connect(relayer).relayNativeGasTopUp(retry, await signNativeTopUp(user, retry), { value: retry.minNativeAmountOut })
+		const retryTx = await gateway
+			.connect(relayer)
+			.relayNativeGasTopUp(retry, UNCAPPED, await signNativeTopUp(user, retry), { value: retry.minNativeAmountOut })
 		await expect(retryTx)
 			.to.emit(gateway, "DailyNativeGasSponsored")
 			.withArgs(user.address, retry.minNativeAmountOut, retry.minNativeAmountOut, ethers.parseEther("1"))
@@ -2818,7 +2976,7 @@ describe("GaslessLayer", () => {
 		await expect(
 			gateway
 				.connect(stranger)
-				.relayNativeGasTopUp(topUpRequest, await signNativeTopUp(user, topUpRequest), { value: topUpRequest.minNativeAmountOut }),
+				.relayNativeGasTopUp(topUpRequest, UNCAPPED, await signNativeTopUp(user, topUpRequest), { value: topUpRequest.minNativeAmountOut }),
 		).to.be.revert(ethers)
 		await expect(gateway.connect(stranger).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("x"))).to.be.revert(ethers)
 		await expect(gateway.connect(stranger).settleDepositToExistingAccount(user.address, 0n, sub)).to.be.revert(ethers)
@@ -3205,7 +3363,7 @@ describe("GaslessLayer", () => {
 			await gateway.setNativeGasTopUpFeeBps(125)
 			const request = makeNativeTopUpRequest({ collateralAmount: coreUnits("8") })
 			const signature = await signCappedNativeGasTopUp(user, gateway, request, coreUnits("8.1"))
-			const data = encode("relayNativeGasTopUp", [request, signature])
+			const data = encode("relayNativeGasTopUp", [request, coreUnits("8.1"), signature])
 			const exact = await quote(data, "exact", request.minNativeAmountOut)
 			expect(exact.totalFee18).to.equal(coreUnits("0.1"))
 			expect(exact.totalDebit18).to.equal(coreUnits("8.1"))
@@ -3218,7 +3376,7 @@ describe("GaslessLayer", () => {
 			expect(sponsored.totalDebit18).to.equal(0n)
 			expect((await quote(data, "preview", request.minNativeAmountOut)).nativeSponsored).to.equal(true)
 			expect((await gateway.dailyNativeSponsorUsage(user.address)).amount).to.equal(0n)
-			await gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut })
+			await gateway.connect(relayer).relayNativeGasTopUp(request, coreUnits("8.1"), signature, { value: request.minNativeAmountOut })
 			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
 		})
 
@@ -3327,9 +3485,9 @@ describe("GaslessLayer", () => {
 			const second = makeNativeTopUpRequest({ nonce: 1n })
 			await gateway.setNativeGasTopUpConfig(first.minNativeAmountOut, false)
 			const signature = await signCappedNativeGasTopUp(user, gateway, second, 0n)
-			await gateway.connect(relayer).relayNativeGasTopUp(first, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
+			await gateway.connect(relayer).relayNativeGasTopUp(first, UNCAPPED, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
 			await expect(
-				gateway.connect(relayer).relayNativeGasTopUp(second, signature, { value: second.minNativeAmountOut }),
+				gateway.connect(relayer).relayNativeGasTopUp(second, 0n, signature, { value: second.minNativeAmountOut }),
 			).to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
 			expect(await gateway.topUpNonces(user.address)).to.equal(1n)
 		})
@@ -3339,23 +3497,21 @@ describe("GaslessLayer", () => {
 			const request = makeNativeTopUpRequest({ collateralAmount: coreUnits("10") })
 			const max = coreUnits("10.1")
 			const signature = await signCappedNativeGasTopUp(user, gateway, request, max)
-			const [, raw] = ethers.AbiCoder.defaultAbiCoder().decode(["uint256", "bytes"], signature)
-			await expect(gateway.connect(relayer).relayNativeGasTopUp(request, raw, { value: request.minNativeAmountOut })).to.be.revertedWithCustomError(
-				gateway,
-				"InvalidNativeGasTopUpSignature",
-			)
-			const altered = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "bytes"], [max + 1n, raw])
+			// Relaying a capped signature as uncapped, or with a different cap, verifies against a different digest.
 			await expect(
-				gateway.connect(relayer).relayNativeGasTopUp(request, altered, { value: request.minNativeAmountOut }),
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, max + 1n, signature, { value: request.minNativeAmountOut }),
 			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
 			await gateway.setNativeGasTopUpFeeBps(200)
-			await expect(gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut }))
+			await expect(gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut }))
 				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
 				.withArgs(coreUnits("10.2"), max)
 			expect(await gateway.topUpNonces(user.address)).to.equal(0n)
 			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
 			await gateway.setNativeGasTopUpFeeBps(100)
-			await gateway.connect(relayer).relayNativeGasTopUp(request, signature, { value: request.minNativeAmountOut })
+			await gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut })
 			expect(await core.operationalFeesCharged(user.address)).to.equal(max)
 		})
 	})

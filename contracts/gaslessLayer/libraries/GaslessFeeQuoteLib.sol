@@ -58,7 +58,10 @@ library GaslessFeeQuoteLib {
 			);
 			_operations(config, quote, ops, new uint256[](ops.length), true);
 		} else if (selector == IGaslessLayer.relayNativeGasTopUp.selector) {
-			(IGaslessLayer.NativeGasTopUpRequest memory request, ) = abi.decode(callData[4:], (IGaslessLayer.NativeGasTopUpRequest, bytes));
+			(IGaslessLayer.NativeGasTopUpRequest memory request, , ) = abi.decode(
+				callData[4:],
+				(IGaslessLayer.NativeGasTopUpRequest, uint256, bytes)
+			);
 			_native(config, quote, request, nativeAmount);
 		} else {
 			_wallet(config, quote, callData, selector);

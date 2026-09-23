@@ -80,7 +80,8 @@ interface IGaslessLayer {
 		bytes[][] calldata flexFillerSignatures
 	) external returns (bytes[] memory);
 
-	function relayNativeGasTopUp(NativeGasTopUpRequest calldata request, bytes calldata signature) external payable;
+	/// @param maxTotalCharge Signed 18-decimal cap on collateral plus fee, or type(uint256).max for an uncapped NativeGasTopUpRequest.
+	function relayNativeGasTopUp(NativeGasTopUpRequest calldata request, uint256 maxTotalCharge, bytes calldata signature) external payable;
 
 	function settleDepositToNewAccount(
 		address owner,
