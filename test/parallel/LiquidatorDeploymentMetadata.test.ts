@@ -22,7 +22,7 @@ async function fixture() {
 	const control = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
 	const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	await (await control.setAdmin(admin.address)).wait()
-	await (await control.grantRole(admin.address, ethers.id("AFFILIATE_MANAGER_ROLE"))).wait()
+	await (await control.grantRole(admin.address, ethers.id("AFFILIATE_REGISTRAR_ROLE"))).wait()
 	return { admin, operator, other, core, control, view }
 }
 
@@ -98,8 +98,9 @@ describe("liquidator deployment metadata", function () {
 				maxBuffer: 8 * 1024 * 1024,
 			},
 		)
+		expect(result.error, `${result.stdout}\n${result.stderr}`).to.equal(undefined)
 		expect(result.status, `${result.error || ""}\n${result.stdout}\n${result.stderr}`).to.equal(0)
-		expect(result.stdout).to.include("FULL_SYSTEM_METADATA_RESUME_VERIFIED")
+		expect(result.stdout, `${result.stdout}\n${result.stderr}`).to.include("FULL_SYSTEM_METADATA_RESUME_VERIFIED")
 	})
 
 	it("sends no transactions or resume writes in plan-only mode", async function () {
@@ -115,11 +116,12 @@ describe("liquidator deployment metadata", function () {
 		await expect(runStandaloneLiquidator(hre)).to.be.rejectedWith("CONFIRM_CHAIN_ID=31337")
 		expect(getDeploymentTransactionJournal()).to.have.length(0)
 	})
-	it("requires the exact affiliate manager role before a new standalone deployment", async function () {
-		await (await context.control.revokeRole(context.admin.address, ethers.id("AFFILIATE_MANAGER_ROLE"))).wait()
-		expect(await context.view.isRoleAdmin(context.admin.address, ethers.id("AFFILIATE_MANAGER_ROLE"))).to.equal(true)
+	it("requires the exact affiliate registrar role before a new standalone deployment", async function () {
+		await (await context.control.revokeRole(context.admin.address, ethers.id("AFFILIATE_REGISTRAR_ROLE"))).wait()
+		await (await context.control.grantRole(context.admin.address, ethers.id("AFFILIATE_MANAGER_ROLE"))).wait()
+		expect(await context.view.isRoleAdmin(context.admin.address, ethers.id("AFFILIATE_REGISTRAR_ROLE"))).to.equal(true)
 		execute()
-		await expect(runStandaloneLiquidator(hre)).to.be.rejectedWith("must hold AFFILIATE_MANAGER_ROLE")
+		await expect(runStandaloneLiquidator(hre)).to.be.rejectedWith("must hold AFFILIATE_REGISTRAR_ROLE")
 		expect(getDeploymentTransactionJournal()).to.have.length(0)
 	})
 	it("confirms exact proxy metadata and retains operator/Core wiring without affiliate registration", async function () {
@@ -190,14 +192,14 @@ describe("liquidator deployment metadata", function () {
 		try {
 			const args = { symmioAddress: context.core, admin: context.admin.address, checkpoint, logData: false }
 			const liquidator = await deploySymmioLiquidator(hre, args)
-			await expect(ensureLiquidatorMetadata(ethers, liquidator, context.core, context.other)).to.be.rejectedWith("must hold AFFILIATE_MANAGER_ROLE")
+			await expect(ensureLiquidatorMetadata(ethers, liquidator, context.core, context.other)).to.be.rejectedWith("must hold AFFILIATE_REGISTRAR_ROLE")
 			const nonce = await ethers.provider.getTransactionCount(context.admin.address)
 			const resumed = await deploySymmioLiquidator(hre, args)
 			expect(await resumed.getAddress()).to.equal(await liquidator.getAddress())
 			expect(await ethers.provider.getTransactionCount(context.admin.address)).to.equal(nonce)
 			await ensureLiquidatorMetadata(ethers, resumed, context.core, context.admin)
 			await verifyLiquidatorMetadata(context.view, await resumed.getAddress())
-			expect(DEPLOYER_SETUP_ROLES).to.include("AFFILIATE_MANAGER_ROLE")
+			expect(DEPLOYER_SETUP_ROLES).to.include("AFFILIATE_REGISTRAR_ROLE")
 		} finally {
 			fs.rmSync(getCheckpointPath(checkpoint.chainId), { force: true })
 		}

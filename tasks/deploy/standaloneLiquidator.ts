@@ -69,7 +69,7 @@ export async function runStandaloneLiquidator(hre: any): Promise<void> {
 	console.log(`  Admin:       ${admin}`)
 	console.log(`  Liquidator:  ${resumeAddress ?? "deploy new proxy"}`)
 	console.log(`  Operators:   ${operators.length > 0 ? operators.join(", ") : "none"}`)
-	console.log(`  Metadata:    ${JSON.stringify(LIQUIDATOR_METADATA)} via setAffiliateMetadata (AFFILIATE_MANAGER_ROLE)`)
+	console.log(`  Metadata:    ${JSON.stringify(LIQUIDATOR_METADATA)} via setAffiliateMetadata (AFFILIATE_REGISTRAR_ROLE)`)
 	console.log(`  Mode:        ${execute ? "EXECUTE" : "PLAN ONLY"}`)
 	if (!execute) {
 		console.log(`\nPlan complete. Review it, then rerun with EXECUTE=true CONFIRM_CHAIN_ID=${chainId}.`)

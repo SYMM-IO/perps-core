@@ -193,6 +193,7 @@ interface SystemDeploymentReport {
  *   PARTY_B_REGISTRAR_ROLE registerPartyB
  *   MUON_SETTER_ROLE       setMuonIds, setMuonConfig
  *   PROVIDER_ADMIN_ROLE   registerExpressProvider
+ *   AFFILIATE_REGISTRAR_ROLE setAffiliateMetadata for the liquidator
  */
 export const DEPLOYER_SETUP_ROLES = [
 	"PROTOCOL_CONFIG_ROLE",
@@ -204,7 +205,7 @@ export const DEPLOYER_SETUP_ROLES = [
 	"PARTY_B_REGISTRAR_ROLE",
 	"MUON_SETTER_ROLE",
 	"PROVIDER_ADMIN_ROLE",
-	"AFFILIATE_MANAGER_ROLE",
+	"AFFILIATE_REGISTRAR_ROLE",
 ]
 
 /**
