@@ -12,6 +12,9 @@ import { MAStorage } from "../../storages/MAStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 
 library LibPartyALiquidationShared {
+	/// @notice One raw unit for price PnL rounding and two for funding rounding per starting position.
+	uint256 internal constant LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION = 3;
+
 	function startPartyALiquidation(
 		address partyA,
 		bytes memory liquidationId,
@@ -36,6 +39,8 @@ library LibPartyALiquidationShared {
 		int256 liquidationAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(upnl, liquidationAllocatedBalance, partyA);
 		require(liquidationAvailableBalance < 0, "LiquidationFacet: PartyA is solvent");
 
+		maLayout.liquidationStartNonce += 1;
+		emit SharedEvents.LiquidationStartNonceIncremented(maLayout.liquidationStartNonce);
 		maLayout.liquidationStatus[partyA] = true;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA] = LiquidationDetail({
@@ -54,6 +59,7 @@ library LibPartyALiquidationShared {
 		accountLayout.liquidators[partyA].push(msg.sender);
 		uint256 positionsCount = QuoteStorage.layout().partyAPositionsCount[partyA];
 		accountLayout.liquidationStartPositionCounts[partyA] = positionsCount;
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 
 		// Classify liquidation severity and cap the liquidator fee.
 		LiquidationDetail storage detail = accountLayout.liquidationDetails[partyA];

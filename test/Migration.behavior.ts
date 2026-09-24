@@ -274,14 +274,22 @@ export function shouldBehaveLikeMigration(): void {
 			await context.controlFacet.connect(context.signers.admin).setCrossPartyBModeActivated(true)
 		})
 
-		it("Should allow only MIGRATION_ROLE to call setCrossPartyB", async function () {
+		it("Should allow only PARTY_B_MANAGER_ROLE to call setCrossPartyB", async function () {
 			const partyB = await hedger.getAddress()
 
 			await expect(context.controlFacet.connect(context.signers.user).setCrossPartyB(partyB, true)).to.be.revertedWith(
 				"Accessibility: Must have role",
 			)
 
-			// Admin should be able to call it (has MIGRATION_ROLE)
+			// MIGRATION_ROLE alone is no longer enough
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.user.address, ethers.keccak256(toUtf8Bytes("MIGRATION_ROLE")))
+			await expect(context.controlFacet.connect(context.signers.user).setCrossPartyB(partyB, true)).to.be.revertedWith(
+				"Accessibility: Must have role",
+			)
+
+			// Admin should be able to call it (has PARTY_B_MANAGER_ROLE)
 			await expect(context.controlFacet.connect(context.signers.admin).setCrossPartyB(partyB, true)).to.not.be.reverted
 		})
 

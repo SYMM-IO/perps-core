@@ -156,10 +156,6 @@ interface IControlFacet is IControlEvents, IExecutionContextFacet, IDiamondAcces
 
 	function setPartyBBindable(address partyB, bool bindable) external;
 
-	function setLegacyDeallocateDeprecated(bool deprecated) external;
-
-	function setLegacyPartyALiquidationDeprecated(bool deprecated) external;
-
 	function setCrossPartyBModeActivated(bool activated) external;
 
 	function setCrossPartyB(address partyB, bool enabled) external;

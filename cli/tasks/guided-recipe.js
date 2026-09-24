@@ -44,6 +44,7 @@ const EXPRESS_ROLES = Object.freeze([
 	"UNLOCK_ROLE",
 	"WITHDRAWER_ROLE",
 	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
 ]);
 
 const PROTOCOL_FIELDS = Object.freeze([

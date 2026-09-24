@@ -2,6 +2,7 @@
 pragma solidity 0.8.36;
 
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import { ITimelockFacet } from "../../accountLayer/facets/Timelock/ITimelockFacet.sol";
 
 import { GaslessWallet } from "../GaslessWallet.sol";
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
@@ -112,7 +113,7 @@ library GaslessWalletExecutionLib {
 		_assertWalletTarget(owner, signedOp.target, walletId);
 		_verifyAndConsumeWalletOperationReplay(walletOperationNonces, signedOp, signature);
 		GaslessWallet.Call[] memory calls = _decodeWalletExecuteCalls(signedOp.callData);
-		_assertWalletAuthority(IInstantLayer(instantLayer), signedOp, owner, canonicalAccount, calls);
+		_assertWalletAuthority(IInstantLayer(instantLayer), accountLayer, signedOp, owner, canonicalAccount, calls);
 
 		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		execution = WalletExecutionResult({
@@ -236,6 +237,7 @@ library GaslessWalletExecutionLib {
 
 	function _assertWalletAuthority(
 		IInstantLayer instantLayer,
+		address accountLayer,
 		IInstantLayer.SignedOperation calldata signedOp,
 		address owner,
 		address canonicalAccount,
@@ -245,8 +247,36 @@ library GaslessWalletExecutionLib {
 
 		_assertInstantDelegation(instantLayer, canonicalAccount, signedOp.signer, WALLET_EXECUTION_SENTINEL_SELECTOR);
 		for (uint256 i = 0; i < calls.length; i++) {
-			bytes4 selector = _selectorFromMemory(calls[i].data);
+			if (calls[i].value != 0) revert IGaslessLayer.DelegatedWalletValueNotAllowed(i, calls[i].value);
+			bytes4 selector = _delegatedSelector(accountLayer, calls[i]);
 			_assertInstantDelegation(instantLayer, canonicalAccount, signedOp.signer, selector);
+		}
+	}
+
+	/// @dev Match InstantLayer authorization: AccountLayer timelock wrappers carry approvals, not operation authority.
+	function _delegatedSelector(address accountLayer, GaslessWallet.Call memory walletCall) private pure returns (bytes4 selector) {
+		bytes memory callData = walletCall.data;
+		selector = _selectorFromMemory(callData);
+		uint256 start;
+		uint256 length = callData.length;
+		while (walletCall.target == accountLayer && selector == ITimelockFacet.executeTimelockOp.selector) {
+			if (length < 68) revert IGaslessLayer.InvalidWalletDelegationCallData();
+			uint256 innerOffset;
+			assembly ("memory-safe") {
+				innerOffset := mload(add(callData, add(start, 68)))
+			}
+			if (innerOffset > length - 36) revert IGaslessLayer.InvalidWalletDelegationCallData();
+			uint256 dataPos = start + 36 + innerOffset;
+			uint256 innerLength;
+			assembly ("memory-safe") {
+				innerLength := mload(add(callData, dataPos))
+			}
+			if (innerLength < 4 || innerLength > length - 36 - innerOffset) revert IGaslessLayer.InvalidWalletDelegationCallData();
+			start = dataPos;
+			length = innerLength;
+			assembly ("memory-safe") {
+				selector := mload(add(callData, add(start, 32)))
+			}
 		}
 	}
 

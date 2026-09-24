@@ -274,7 +274,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		const hedgerAddress = await hedger.getAddress()
 
 		// Pause only this specific PartyB
-		await context.pauseControlFacet.connect(context.signers.admin).setPartyBOpenPositionsPaused(hedgerAddress, true)
+		await context.pauseControlFacet.connect(context.signers.admin).pausePartyBOpenPositionsFor(hedgerAddress)
 
 		// lockQuote should fail for the paused PartyB
 		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("PartyBFacet: PartyB open positions paused")
@@ -290,7 +290,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		await expect(hedger2.lockQuote(quote3JustSent.id)).to.not.be.reverted
 
 		// Unpause and verify the original PartyB can lock quotes again
-		await context.pauseControlFacet.connect(context.signers.admin).setPartyBOpenPositionsPaused(hedgerAddress, false)
+		await context.pauseControlFacet.connect(context.signers.admin).unpausePartyBOpenPositionsFor(hedgerAddress)
 		const newQuote = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await expect(hedger.lockQuote(newQuote.id)).to.not.be.reverted
 	})

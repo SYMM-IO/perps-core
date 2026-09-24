@@ -56,7 +56,7 @@ library PartyBLiquidationFacetImpl {
 
 		for (uint256 i = 0; i < priceSig.quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[priceSig.quoteIds[i]];
-			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+			LibSymbolAdjustment.requireCurrentLiquidationSignature(quote.symbolId, priceSig.timestamp);
 			quote.requireOpenPosition();
 			require(quote.partyA == partyA && quote.partyB == partyB, "LiquidationFacet: Invalid party");
 
@@ -67,7 +67,7 @@ library PartyBLiquidationFacetImpl {
 
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 
-			uint256 liquidationPrice = priceSig.prices[i];
+			uint256 liquidationPrice = LibSymbolAdjustment.liquidationPriceInStoredUnits(quote, priceSig.prices[i]);
 			LibQuote.closePositionFully(quote.id, liquidationPrice);
 			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 

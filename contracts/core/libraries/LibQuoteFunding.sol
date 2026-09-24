@@ -6,10 +6,11 @@ pragma solidity >=0.8.18;
 
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibFundingRate } from "./LibFundingRate.sol";
+import { LibSymbolAdjustmentFunding } from "./LibSymbolAdjustmentFunding.sol";
 import { LibQuote } from "./LibQuote.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
 import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
-import { FundingStorage, FundingFee } from "../storages/FundingStorage.sol";
+import { FundingFee } from "../storages/FundingStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { IFundingRateEvents } from "../facets/FundingRate/IFundingRateEvents.sol";
 
@@ -29,7 +30,8 @@ library LibQuoteFunding {
 	/// @return fee The net funding fee (positive = trader pays, negative = trader receives)
 	function getAccumulatedFundingFeeAt(uint256 quoteId, uint256 timestamp) public view returns (int256 fee) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		FundingFee memory fundingFee = getFundingFeeAt(quote.symbolId, quote.partyB, timestamp);
+		FundingFee memory fundingFee;
+		(fundingFee, timestamp) = getFundingFeeAt(quote.symbolId, quote.partyB, timestamp);
 
 		// Early exit conditions:
 		// 1. No epoch duration set (accumulated funding not active)
@@ -37,14 +39,8 @@ library LibQuoteFunding {
 		if (fundingFee.startEpoch == 0 && fundingFee.startEpochTimeStamp == 0) return 0;
 		if (timestamp <= quote.lastFundingPaymentTimestamp) return 0;
 
-		// Calculate epochs in the weighted average
-		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdateAt(fundingFee, timestamp);
-		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
-
-		int256 beforeWeightedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
-		int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
-		int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
-		int256 currentFee = snapshot + (beforeWeightedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
+		(int256 cumulativeLongFee, int256 cumulativeShortFee) = LibFundingRate.cumulativeRatesAt(fundingFee, timestamp);
+		int256 currentFee = quote.positionType == PositionType.LONG ? cumulativeLongFee : cumulativeShortFee;
 
 		// Subtract already paid amount
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (currentFee - quote.accumulatedPaidFunding)) / 1e18;
@@ -63,14 +59,15 @@ library LibQuoteFunding {
 		fee = (int256(LibQuote.quoteOpenAmount(quote)) * (cumulativeFee - quote.accumulatedPaidFunding)) / 1e18;
 	}
 
-	function getFundingFeeAt(uint256 symbolId, address partyB, uint256 timestamp) internal view returns (FundingFee memory fundingFee) {
-		FundingStorage.Layout storage fundingLayout = FundingStorage.layout();
-		FundingFee storage currentFundingFee = fundingLayout.fundingFees[symbolId][partyB];
-
+	function getFundingFeeAt(
+		uint256 symbolId,
+		address partyB,
+		uint256 timestamp
+	) internal view returns (FundingFee memory fundingFee, uint256 effectiveTimestamp) {
+		(fundingFee, effectiveTimestamp) = LibSymbolAdjustmentFunding.effectiveFundingFeeAt(symbolId, partyB, timestamp);
 		FundingFee memory zeroFundingFee;
-		if (currentFundingFee.epochDuration == 0) return currentFundingFee;
-		if (timestamp < currentFundingFee.startEpochTimeStamp) return zeroFundingFee;
-		return currentFundingFee;
+		if (fundingFee.epochDuration == 0) return (fundingFee, effectiveTimestamp);
+		if (effectiveTimestamp < fundingFee.startEpochTimeStamp) return (zeroFundingFee, effectiveTimestamp);
 	}
 
 	/// @notice Charges accumulated funding fee for a position
@@ -137,20 +134,15 @@ library LibQuoteFunding {
 	/// @param quoteId The quote ID to update the accumulated paid funding for
 	function updateAccumulatedPaidFunding(uint256 quoteId) public {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		FundingFee storage fundingFee = FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB];
+		(FundingFee memory fundingFee, uint256 effectiveTimestamp) = LibSymbolAdjustmentFunding.effectiveFundingFeeAt(
+			quote.symbolId,
+			quote.partyB,
+			block.timestamp
+		);
 
 		if (fundingFee.epochDuration > 0) {
-			uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
-			uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
-
-			int256 accumulatedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
-			int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
-			int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
-
-			quote.accumulatedPaidFunding =
-				snapshot +
-				(accumulatedRate * int256(epochsBeforeLastUpdate)) +
-				(currentRate * int256(epochsSinceLastUpdate));
+			(int256 cumulativeLongFee, int256 cumulativeShortFee) = LibFundingRate.cumulativeRatesAt(fundingFee, effectiveTimestamp);
+			quote.accumulatedPaidFunding = quote.positionType == PositionType.LONG ? cumulativeLongFee : cumulativeShortFee;
 		}
 	}
 }

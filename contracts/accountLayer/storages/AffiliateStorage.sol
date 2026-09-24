@@ -107,6 +107,8 @@ struct HookContext {
 	address symmioCore;
 	bool isActive;
 	address activeHook;
+	/// @dev Packed into the same storage slot as isActive and activeHook.
+	bytes4 activeHookSelector;
 }
 
 /// @title AffiliateStorage

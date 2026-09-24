@@ -93,6 +93,11 @@
     },
     {
         "inputs": [],
+        "name": "ExecuteForAccountNotAllowedDuringSubAccountDeletion",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "ExpectedPause",
         "type": "error"
     },

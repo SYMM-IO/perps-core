@@ -38,23 +38,25 @@ describe("GaslessLayer wallet API", () => {
 		const abi = new Interface(artifact.abi)
 		for (const name of [
 			"relayWalletBatch",
+			"relayGrantBatchDelegationBySig",
 			"getWalletAddress",
 			"settleWalletDepositToNewAccount",
 			"settleWalletDepositToExistingAccount",
 			"recoverWalletNonCollateralToken",
 			"getAccountOperationalFeeForWallets",
+			"getAccountOperationalFee",
 			"getWalletOperationNonce",
 			"walletNonces",
 		]) {
 			expect(abi.getFunction(name), name).to.equal(null)
 		}
+		expect(abi.getEvent("DelegationBySigRelayed")).to.equal(null)
 		const expectedInputs: Record<string, string[]> = {
 			relayInstantBatch: ["signedOps", "signatures", "fills", "flexFillerSignatures", "walletIds"],
 			getGaslessWalletAddress: ["owner", "walletId"],
 			settleDepositToNewAccount: ["owner", "walletId", "affiliate", "accountData"],
 			settleDepositToExistingAccount: ["owner", "walletId", "subAccount"],
 			recoverNonCollateralToken: ["owner", "walletId", "token", "recipient"],
-			getAccountOperationalFee: ["account", "signedOps", "walletIds"],
 			walletOperationNonces: ["owner", "walletId", "signerAccount"],
 		}
 		for (const [name, inputs] of Object.entries(expectedInputs)) {

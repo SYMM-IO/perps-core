@@ -1667,7 +1667,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 
 		it("Should block legacy deallocate when disabled", async function () {
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			await context.pauseControlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
 			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(true)
 			await expect(
 				context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig()),
@@ -1676,7 +1676,7 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should allow safeDeallocate when legacy is disabled", async function () {
 			const userAddress = await context.signers.user.getAddress()
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			await context.pauseControlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
 
 			await context.accountFacet
 				.connect(context.signers.user)
@@ -1688,8 +1688,8 @@ export function shouldBehaveLikeAccountFacet(): void {
 
 		it("Should re-enable legacy deallocate", async function () {
 			const userAddress = await context.signers.user.getAddress()
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
-			await context.controlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(false)
+			await context.pauseControlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(true)
+			await context.pauseControlFacet.connect(context.signers.admin).setLegacyDeallocateDeprecated(false)
 			expect(await context.viewFacet.isLegacyDeallocateDeprecated()).to.equal(false)
 
 			await context.accountFacet.connect(context.signers.user).deallocate(BALANCES.DEALLOCATE_AMOUNT, await getDummySingleUpnlSig())

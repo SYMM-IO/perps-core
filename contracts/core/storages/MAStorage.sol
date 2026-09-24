@@ -168,6 +168,10 @@ library MAStorage {
 		/// @dev A zero receiver clears the override and falls back to `solverFeeReceivers`, then to the Party B itself.
 		///      The tag is caller-chosen; short labels can be right-padded ASCII, longer ones hashed off-chain.
 		mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag;
+		/// @notice Monotonic sequence incremented whenever a new PartyA, isolated PartyB, or cross PartyB liquidation starts.
+		/// @dev Symbol Adjustment uses this as a global optimistic lock: Operations reads it with its off-chain liquidation
+		///      snapshot and supplies the expected value to startRestatement. Appended for storage-layout compatibility.
+		uint256 liquidationStartNonce;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

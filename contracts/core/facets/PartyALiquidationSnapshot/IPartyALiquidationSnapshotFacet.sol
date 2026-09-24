@@ -10,8 +10,10 @@ import { LiquidationSnapshotSig } from "../../storages/MuonStorage.sol";
 interface IPartyALiquidationSnapshotFacet is IPartyALiquidationEvents {
 	function liquidatePartyAWithSnapshot(address partyA, LiquidationSnapshotSig memory liquidationSig) external;
 
+	/// @dev During an open restatement, snapshot prices use venue units and the signature must strictly postdate the window.
 	function setSymbolsPriceWithSnapshot(address partyA, LiquidationSnapshotSig memory liquidationSig) external;
 
+	/// @dev During an open restatement, snapshot prices use venue units and the signature must strictly postdate the window.
 	function singleStepLiquidatePartyAWithSnapshot(
 		address partyA,
 		LiquidationSnapshotSig memory liquidationSig,

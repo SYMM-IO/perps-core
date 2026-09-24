@@ -2427,9 +2427,9 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 		it("should pause and unpause credit line", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, affiliate } = fixture
-			await expressProvider.setCreditLinePaused(affiliate, true)
+			await expressProvider.pauseCreditLine(affiliate)
 			expect(await expressProvider.creditLinePaused(affiliate)).to.be.true
-			await expressProvider.setCreditLinePaused(affiliate, false)
+			await expressProvider.unpauseCreditLine(affiliate)
 			expect(await expressProvider.creditLinePaused(affiliate)).to.be.false
 		})
 
@@ -2449,7 +2449,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const withdrawAmount = 500n * 10n ** 18n
 			const creditAmount = 200n * 10n ** 18n
 
-			await expressProvider.setCreditLinePaused(affiliate, true)
+			await expressProvider.pauseCreditLine(affiliate)
 
 			const parts = [
 				{
@@ -2557,7 +2557,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
 			expect(await expressProvider.creditLineReservedDebt(affiliate)).to.equal(creditAmount)
 
-			await expressProvider.setCreditLinePaused(affiliate, true)
+			await expressProvider.pauseCreditLine(affiliate)
 			await time.increase(21)
 
 			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revert(ethers) // CreditLinePaused
@@ -2705,7 +2705,8 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			const fixture = await deployFixture()
 			const { expressProvider, affiliate, user } = fixture
 			await expect(expressProvider.connect(user).setCreditLineProtocolConfig(affiliate, 100n, 100n)).to.be.revert(ethers)
-			await expect(expressProvider.connect(user).setCreditLinePaused(affiliate, true)).to.be.revert(ethers)
+			await expect(expressProvider.connect(user).pauseCreditLine(affiliate)).to.be.revert(ethers)
+			await expect(expressProvider.connect(user).unpauseCreditLine(affiliate)).to.be.revert(ethers)
 			await expect(expressProvider.connect(user).setCreditLineBlacklisted(affiliate, user.address, true)).to.be.revert(ethers)
 		})
 	})

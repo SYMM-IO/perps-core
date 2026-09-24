@@ -13,6 +13,7 @@ import { LibConnections } from "./LibConnections.sol";
 import { LibPartyBState } from "./extensions/LibPartyBState.sol";
 import { LibSigner } from "./LibSigner.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 
 library LibPartyBQuoteActions {
 	using LockedValuesOps for LockedValues;
@@ -27,6 +28,8 @@ library LibPartyBQuoteActions {
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+		LibSymbolAdjustment.requirePendingQuoteCurrent(quote);
 		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
 		require(
 			quote.affiliate == address(0) || GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] == 0,

@@ -2,9 +2,6 @@
 pragma solidity 0.8.36;
 
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { GaslessWallet } from "../GaslessWallet.sol";
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
 import { IInstantLayer } from "../interfaces/IInstantLayer.sol";
 import { ISymmioCore } from "../interfaces/ISymmioCore.sol";
@@ -19,8 +16,6 @@ interface IGaslessFeeConfig {
 	function accountLayer() external view returns (address);
 	function collateralToken() external view returns (address);
 	function depositFee() external view returns (uint256);
-	function minimumDeposit() external view returns (uint256);
-	function treasury() external view returns (address);
 	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address);
 	function getWalletCreationFee(address owner, uint256 walletId) external view returns (uint256);
 	function walletCreationFee() external view returns (uint256);
@@ -37,128 +32,7 @@ interface IGaslessFeeConfig {
 
 /// @notice Shared frontend quote dispatch and atomic simulation using the actual fee collection paths.
 library GaslessFeeQuoteLib {
-	using SafeERC20 for IERC20;
-
-	/// @notice Collect a first-deployment fee and withdraw funds in gateway proxy context.
-	/// @dev The gateway validates the request and derives the caller's wallet before this delegatecall.
-	function withdrawWalletFunds(
-		uint256 walletId,
-		address wallet,
-		address token,
-		address recipient,
-		uint256 amount,
-		uint256 creationFee
-	) external returns (uint256 withdrawnAmount) {
-		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
-		GaslessWallet qWallet = GaslessWallet(payable(wallet));
-		address collateral = config.collateralToken();
-		if (creationFee > 0) {
-			qWallet.transfer(collateral, config.treasury(), creationFee);
-			emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
-		}
-		_recordWalletPayment(collateral, wallet, 0, creationFee);
-		withdrawnAmount = amount;
-		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? wallet.balance : IERC20(token).balanceOf(wallet);
-		if (withdrawnAmount == 0) revert IGaslessLayer.WalletWithdrawalAmountZero();
-		qWallet.transfer(token, recipient, withdrawnAmount);
-		emit IGaslessLayer.WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
-	}
-
-	/// @notice Sweep wallet collateral and collect deposit/creation fees in gateway proxy context.
-	/// @dev The gateway deploys the wallet and determines its creation fee before calling this library.
-	function sweepDepositAndCollectFee(
-		address owner,
-		address wallet,
-		uint256 creationFee
-	) external returns (uint256 netDeposit, uint256 collectedDepositFee) {
-		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
-		address token = config.collateralToken();
-		uint256 grossDeposit = GaslessWallet(payable(wallet)).sweepTokenBalance(token, address(this));
-		uint256 minimum = config.minimumDeposit();
-		if (grossDeposit < minimum) revert IGaslessLayer.DepositAmountBelowMinimum(grossDeposit, minimum);
-		collectedDepositFee = config.depositFee();
-		uint256 totalFees = collectedDepositFee + creationFee;
-		if (grossDeposit <= totalFees) revert IGaslessLayer.DepositAmountNotAboveFees(grossDeposit, totalFees);
-		if (totalFees > 0) IERC20(token).safeTransfer(config.treasury(), totalFees);
-		if (collectedDepositFee > 0) emit IGaslessLayer.DepositFeeCollected(owner, config.treasury(), collectedDepositFee);
-		if (creationFee > 0) emit IGaslessLayer.WalletCreationFeeCollected(wallet, wallet, creationFee);
-		_recordWalletPayment(token, wallet, collectedDepositFee, creationFee);
-		netDeposit = grossDeposit - totalFees;
-	}
-
-	/// @notice Preserve the original account-specific quote, including its approval-only special case and quota flag.
-	function accountOperationalFee(
-		address account,
-		IInstantLayer.SignedOperation[] calldata signedOps,
-		uint256[] calldata walletIds
-	) external view returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
-		if (walletIds.length != signedOps.length) revert IGaslessLayer.ArrayLengthMismatch();
-		IGaslessFeeConfig config = IGaslessFeeConfig(address(this));
-		ISymmioAccountLayer accounts = ISymmioAccountLayer(config.accountLayer());
-		address billingAccount = GaslessBillingIdentity.resolveBillingAccount(accounts, account);
-		uint256 limit = config.dailyFreeOpsLimit();
-		uint256 freeRemaining = limit > 0 ? config.dailyFreeOpsRemaining(billingAccount) : 0;
-		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](signedOps.length);
-		uint256[] memory creations = new uint256[](signedOps.length);
-		uint256 count;
-		bool blocked;
-		for (uint256 i; i < signedOps.length; i++) {
-			// Decode and validate every target before handling quota, including other accounts' operations.
-			bytes4[] memory selectors = GaslessWalletExecutionLib.quoteOperationalFeeSelectors(address(accounts), signedOps[i], walletIds[i]);
-			if (
-				config.walletCreationFee() > 0 &&
-				signedOps[i].target.code.length == 0 &&
-				GaslessWalletExecutionLib.isWalletOperation(address(accounts), signedOps[i], walletIds[i])
-			) {
-				creations[i] = config.walletCreationFee();
-				for (uint256 j; j < i; j++) {
-					if (creations[j] > 0 && signedOps[j].target == signedOps[i].target) {
-						creations[i] = 0;
-						break;
-					}
-				}
-			}
-			if (GaslessBillingIdentity.resolveBillingAccount(accounts, signedOps[i].signerAccount.addr) != billingAccount) continue;
-			bool free = freeRemaining > 0;
-			if (free) {
-				freeRemaining--;
-				freeOpsApplied++;
-			}
-			if (!free && limit > 0 && config.revertWhenFreeQuotaExhausted()) blocked = true;
-			uint256 base;
-			if (!free) for (uint256 j; j < selectors.length; j++) base += config.getBaseOperationalFee(selectors[j]);
-			bytes4 selector = signedOps[i].callData.length < 4 ? bytes4(0) : bytes4(signedOps[i].callData[:4]);
-			if (
-				signedOps.length == 1 &&
-				signedOps[i].target == config.core() &&
-				signedOps[i].flexFields.length == 0 &&
-				(selector == ISymmioCore.approveOperationalFee.selector || selector == ISymmioCore.approveOperationalFeeWithMultiplier.selector)
-			) {
-				amountDue18 = GaslessOperationalFeeLib.postApprovalOperationalFee(
-					config.core(),
-					billingAccount,
-					address(this),
-					signedOps[i].callData,
-					base
-				);
-				continue;
-			}
-			uint256 creation = creations[i] == 0 ? 0 : creations[i] * 10 ** (18 - IERC20Metadata(config.collateralToken()).decimals());
-			ops[count++] = GaslessOperationalFeeLib.OpBilling(signedOps[i].signerAccount.addr, billingAccount, base, creation);
-		}
-		if (blocked) return (0, freeOpsApplied, true);
-		assembly ("memory-safe") {
-			mstore(ops, count)
-		}
-		(, uint256[] memory fees) = GaslessOperationalFeeLib.planOperationalFees(config.core(), address(accounts), ops);
-		for (uint256 i; i < fees.length; i++) amountDue18 += fees[i];
-	}
-
 	function recordWalletPayment(address token, address wallet, uint256 deposit, uint256 creation) external {
-		_recordWalletPayment(token, wallet, deposit, creation);
-	}
-
-	function _recordWalletPayment(address token, address wallet, uint256 deposit, uint256 creation) private {
 		if (!GaslessFeeAccounting.state().active) return;
 		uint256 scale = 10 ** (18 - IERC20Metadata(token).decimals());
 		GaslessFeeAccounting.record(
@@ -183,14 +57,11 @@ library GaslessFeeQuoteLib {
 				(uint256, IInstantLayer.SignedOperation[], bytes[], bytes[][], bytes[][])
 			);
 			_operations(config, quote, ops, new uint256[](ops.length), true);
-		} else if (selector == IGaslessLayer.relayGrantBatchDelegationBySig.selector) {
-			(IInstantLayer.SignedDelegation memory delegation, ) = abi.decode(callData[4:], (IInstantLayer.SignedDelegation, bytes));
-			IInstantLayer.SignedOperation[] memory ops = new IInstantLayer.SignedOperation[](1);
-			ops[0].signerAccount = delegation.delegationInfo.account;
-			ops[0].callData = abi.encodePacked(IInstantLayer.grantBatchDelegationBySig.selector);
-			_operations(config, quote, ops, new uint256[](1), true);
 		} else if (selector == IGaslessLayer.relayNativeGasTopUp.selector) {
-			(IGaslessLayer.NativeGasTopUpRequest memory request, ) = abi.decode(callData[4:], (IGaslessLayer.NativeGasTopUpRequest, bytes));
+			(IGaslessLayer.NativeGasTopUpRequest memory request, , ) = abi.decode(
+				callData[4:],
+				(IGaslessLayer.NativeGasTopUpRequest, uint256, bytes)
+			);
 			_native(config, quote, request, nativeAmount);
 		} else {
 			_wallet(config, quote, callData, selector);
@@ -286,6 +157,24 @@ library GaslessFeeQuoteLib {
 			else for (uint256 j; j < selectors.length; j++) ops[i].baseFee += config.getBaseOperationalFee(selectors[j]);
 		}
 		(address[] memory payers, uint256[] memory fees) = GaslessOperationalFeeLib.planOperationalFees(config.core(), address(accounts), ops);
+		// Preserve approval-only pricing before signatures or allowance are available.
+		// This estimates the billing parent's charge; simulation resolves any post-execution VA fallback.
+		bytes4 selector = signedOps[0].callData.length < 4 ? bytes4(0) : bytes4(signedOps[0].callData);
+		if (
+			n == 1 &&
+			signedOps[0].target == config.core() &&
+			signedOps[0].flexFields.length == 0 &&
+			(selector == ISymmioCore.approveOperationalFee.selector || selector == ISymmioCore.approveOperationalFeeWithMultiplier.selector)
+		) {
+			payers[0] = ops[0].billingParent;
+			fees[0] = GaslessOperationalFeeLib.postApprovalOperationalFee(
+				config.core(),
+				ops[0].billingParent,
+				address(this),
+				signedOps[0].callData,
+				ops[0].baseFee
+			);
+		}
 		q.payments = new IGaslessLayer.FeePayment[](n);
 		for (uint256 i; i < n; i++) {
 			q.payments[i] = IGaslessLayer.FeePayment(
@@ -386,7 +275,6 @@ library GaslessFeeQuoteLib {
 		if (
 			selector != IGaslessLayer.relayInstantBatch.selector &&
 			selector != IGaslessLayer.relayInstantTemplate.selector &&
-			selector != IGaslessLayer.relayGrantBatchDelegationBySig.selector &&
 			selector != IGaslessLayer.relayNativeGasTopUp.selector &&
 			selector != IGaslessLayer.settleDepositToNewAccount.selector &&
 			selector != IGaslessLayer.settleDepositToExistingAccount.selector &&

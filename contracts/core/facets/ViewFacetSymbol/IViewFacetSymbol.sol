@@ -49,6 +49,8 @@ interface IViewFacetSymbol {
 
 	function getConnectedPartyBsWithSymbolCounts(address partyA) external view returns (PartyBSymbolCount[] memory);
 
+	function getLiquidationStartNonce() external view returns (uint256);
+
 	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory);
 
 	function getCumulativeFactor(uint256 symbolId) external view returns (uint256);
@@ -61,6 +63,10 @@ interface IViewFacetSymbol {
 	) external view returns (ISymbolAdjustmentFacet.QuoteAdjustmentPreview memory preview);
 
 	function isSymbolFrozen(uint256 symbolId) external view returns (bool);
+
+	function getPendingQuoteIdCutoff(uint256 symbolId) external view returns (uint256);
+
+	function isPendingQuoteStale(uint256 quoteId) external view returns (bool);
 
 	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
 

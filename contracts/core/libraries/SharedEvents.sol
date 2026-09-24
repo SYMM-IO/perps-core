@@ -73,6 +73,9 @@ library SharedEvents {
 	///      configured payout address and is derivable from `charger`.
 	event OperationalFeeCharged(address indexed payer, address indexed charger, address receiver, uint256 amount);
 
+	/// @notice Emitted after a successful liquidation start increments the global optimistic-lock sequence.
+	event LiquidationStartNonceIncremented(uint256 indexed nonce);
+
 	event TradeVolumeRecorded(
 		uint256 quoteId,
 		uint256 amount,

@@ -103,6 +103,22 @@
         "inputs": [
             {
                 "internalType": "uint256",
+                "name": "callIndex",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "value",
+                "type": "uint256"
+            }
+        ],
+        "name": "DelegatedWalletValueNotAllowed",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
                 "name": "amount",
                 "type": "uint256"
             },
@@ -307,6 +323,11 @@
     {
         "inputs": [],
         "name": "InvalidNativeGasTopUpSignature",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "InvalidWalletDelegationCallData",
         "type": "error"
     },
     {
@@ -692,49 +713,6 @@
             }
         ],
         "name": "DefaultSelectorFeeUpdated",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "relayer",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "delegatorAccount",
-                "type": "address"
-            },
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "payer",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "delegate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "selectorCount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "fee18",
-                "type": "uint256"
-            }
-        ],
-        "name": "DelegationBySigRelayed",
         "type": "event"
     },
     {
@@ -1602,128 +1580,6 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "address",
-                        "name": "signer",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "address",
-                        "name": "target",
-                        "type": "address"
-                    },
-                    {
-                        "internalType": "bytes",
-                        "name": "callData",
-                        "type": "bytes"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "address",
-                                "name": "addr",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "bool",
-                                "name": "isPartyB",
-                                "type": "bool"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.Account",
-                        "name": "signerAccount",
-                        "type": "tuple"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "offset",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "length",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "authorizedFlexFiller",
-                                "type": "address"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.FlexField[]",
-                        "name": "flexFields",
-                        "type": "tuple[]"
-                    },
-                    {
-                        "internalType": "uint256",
-                        "name": "maxUses",
-                        "type": "uint256"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "nonce",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "deadline",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "bytes32",
-                                "name": "salt",
-                                "type": "bytes32"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.ReplayAttackHeader",
-                        "name": "replayAttackHeader",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct IInstantLayer.SignedOperation[]",
-                "name": "signedOps",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "uint256[]",
-                "name": "walletIds",
-                "type": "uint256[]"
-            }
-        ],
-        "name": "getAccountOperationalFee",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "amountDue18",
-                "type": "uint256"
-            },
-            {
-                "internalType": "uint256",
-                "name": "freeOpsApplied",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bool",
-                "name": "wouldBlockOnQuota",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "bytes4",
                 "name": "selector",
                 "type": "bytes4"
@@ -2352,87 +2208,6 @@
             {
                 "components": [
                     {
-                        "components": [
-                            {
-                                "components": [
-                                    {
-                                        "internalType": "address",
-                                        "name": "addr",
-                                        "type": "address"
-                                    },
-                                    {
-                                        "internalType": "bool",
-                                        "name": "isPartyB",
-                                        "type": "bool"
-                                    }
-                                ],
-                                "internalType": "struct IInstantLayer.Account",
-                                "name": "account",
-                                "type": "tuple"
-                            },
-                            {
-                                "internalType": "address",
-                                "name": "delegatedSigner",
-                                "type": "address"
-                            },
-                            {
-                                "internalType": "bytes4[]",
-                                "name": "selectors",
-                                "type": "bytes4[]"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "expiryTimestamp",
-                                "type": "uint256"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.DelegationInfo",
-                        "name": "delegationInfo",
-                        "type": "tuple"
-                    },
-                    {
-                        "components": [
-                            {
-                                "internalType": "uint256",
-                                "name": "nonce",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "uint256",
-                                "name": "deadline",
-                                "type": "uint256"
-                            },
-                            {
-                                "internalType": "bytes32",
-                                "name": "salt",
-                                "type": "bytes32"
-                            }
-                        ],
-                        "internalType": "struct IInstantLayer.ReplayAttackHeader",
-                        "name": "replayAttackHeader",
-                        "type": "tuple"
-                    }
-                ],
-                "internalType": "struct IInstantLayer.SignedDelegation",
-                "name": "signedDelegation",
-                "type": "tuple"
-            },
-            {
-                "internalType": "bytes",
-                "name": "signature",
-                "type": "bytes"
-            }
-        ],
-        "name": "relayGrantBatchDelegationBySig",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
                         "internalType": "address",
                         "name": "signer",
                         "type": "address"
@@ -2710,6 +2485,11 @@
                 "internalType": "struct IGaslessLayer.NativeGasTopUpRequest",
                 "name": "request",
                 "type": "tuple"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxTotalCharge",
+                "type": "uint256"
             },
             {
                 "internalType": "bytes",

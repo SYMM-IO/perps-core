@@ -54,6 +54,7 @@ library LibPartyALiquidationLegacySetup {
 	}
 
 	/// @notice Sets symbol prices for a legacy liquidation.
+	/// @dev During an open restatement, prices are venue-basis values and the signature must strictly postdate the window.
 	function setSymbolsPrice(address partyA, LiquidationSig memory liquidationSig) public {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -67,12 +68,14 @@ library LibPartyALiquidationLegacySetup {
 		LibPartyALiquidationShared.validateLiquidationPriceSetup(partyA, liquidationSig.liquidationId);
 		uint256 liquidationTimestamp = accountLayout.liquidationDetails[partyA].timestamp;
 		for (uint256 index = 0; index < liquidationSig.symbolIds.length; index++) {
-			LibSymbolAdjustment.requireNotFrozen(liquidationSig.symbolIds[index]);
+			LibSymbolAdjustment.requireCurrentLiquidationSignature(liquidationSig.symbolIds[index], liquidationSig.timestamp);
+			LibSymbolAdjustment.recordRestatementMutation(liquidationSig.symbolIds[index]);
 			accountLayout.symbolsPrices[partyA][liquidationSig.symbolIds[index]] = Price(liquidationSig.prices[index], liquidationTimestamp);
 		}
 	}
 
 	/// @notice Sets symbol prices for a legacy deferred liquidation.
+	/// @dev During an open restatement, prices are venue-basis values and the signature must strictly postdate the window.
 	function deferredSetSymbolsPrice(address partyA, DeferredLiquidationSig memory liquidationSig) public {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -86,7 +89,8 @@ library LibPartyALiquidationLegacySetup {
 		LibPartyALiquidationShared.validateLiquidationPriceSetup(partyA, liquidationSig.liquidationId);
 		uint256 liquidationTimestamp = accountLayout.liquidationDetails[partyA].timestamp;
 		for (uint256 index = 0; index < liquidationSig.symbolIds.length; index++) {
-			LibSymbolAdjustment.requireNotFrozen(liquidationSig.symbolIds[index]);
+			LibSymbolAdjustment.requireCurrentLiquidationSignature(liquidationSig.symbolIds[index], liquidationSig.timestamp);
+			LibSymbolAdjustment.recordRestatementMutation(liquidationSig.symbolIds[index]);
 			accountLayout.symbolsPrices[partyA][liquidationSig.symbolIds[index]] = Price(liquidationSig.prices[index], liquidationTimestamp);
 		}
 	}

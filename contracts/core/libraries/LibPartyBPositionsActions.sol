@@ -93,6 +93,7 @@ library LibPartyBPositionsActions {
 		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
 		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
+		LibSymbolAdjustment.requirePendingQuoteCurrent(quote);
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 
 		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();

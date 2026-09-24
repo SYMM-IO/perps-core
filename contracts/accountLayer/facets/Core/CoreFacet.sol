@@ -393,6 +393,9 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 		if (!ctx.isActive) revert NoActiveHookContext();
 		if (msg.sender != ctx.activeHook) revert UnauthorizedHookCaller();
+		if (ctx.activeHookSelector == IAccountLayerHook.onSubAccountDeletion.selector) {
+			revert ExecuteForAccountNotAllowedDuringSubAccountDeletion();
+		}
 
 		// Validate selector is whitelisted for this affiliate
 		bytes4 selector = bytes4(callData[:4]);

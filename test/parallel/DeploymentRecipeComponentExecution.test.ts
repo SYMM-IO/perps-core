@@ -547,7 +547,7 @@ describe("deployment recipe standalone component execution", function () {
 		const control = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/Control/ControlFacet.sol:ControlFacet", express.report.address!)
 		const view = await ethers.getContractAt("contracts/expressWithdrawLayer/facets/View/ViewFacet.sol:ViewFacet", express.report.address!)
 		// The deployer must retain no privilege once the final admin holds the Init roles.
-		for (const role of ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"]) {
+		for (const role of ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]) {
 			const hash = ethers.keccak256(ethers.toUtf8Bytes(role))
 			expect(await view["hasRole(address,bytes32)"](futureAdmin.address, hash), `${role} for admin`).to.equal(true)
 			expect(await view["hasRole(address,bytes32)"](deployer.address, hash), `${role} for deployer`).to.equal(false)
@@ -851,6 +851,9 @@ describe("deployment recipe standalone component execution", function () {
 		// already-deployed core and InstantLayer.
 		await context.controlFacet.connect(deployer).grantRole(finalAdmin.address, partyBManagerRole)
 		await context.controlFacet.connect(deployer).revokeRole(deployer.address, partyBManagerRole)
+		const partyBRegistrarRole = ethers.keccak256(ethers.toUtf8Bytes("PARTY_B_REGISTRAR_ROLE"))
+		await context.controlFacet.connect(deployer).grantRole(finalAdmin.address, partyBRegistrarRole)
+		await context.controlFacet.connect(deployer).revokeRole(deployer.address, partyBRegistrarRole)
 		await context.instantLayer.connect(deployer).grantRole(instantSetterRole, finalAdmin.address)
 		await context.instantLayer.connect(deployer).revokeRole(instantSetterRole, deployer.address)
 		expect(await context.viewFacet.hasRole(deployer.address, partyBManagerRole)).to.equal(false)
@@ -925,6 +928,7 @@ describe("deployment recipe standalone component execution", function () {
 			await partyB.DEFAULT_ADMIN_ROLE(),
 			ethers.keccak256(ethers.toUtf8Bytes("TRUSTED_ROLE")),
 			ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")),
+			ethers.keccak256(ethers.toUtf8Bytes("MULTICAST_WHITELIST_ROLE")),
 			ethers.keccak256(ethers.toUtf8Bytes("SETTER_ROLE")),
 			ethers.keccak256(ethers.toUtf8Bytes("PAUSER_ROLE")),
 			ethers.keccak256(ethers.toUtf8Bytes("UNPAUSER_ROLE")),

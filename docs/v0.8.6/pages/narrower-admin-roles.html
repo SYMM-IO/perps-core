@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Several admin roles bundled routine operations with powers of much higher sensitivity. v0.8.6 splits them so each role holder receives only the level of authority its job needs, and makes every pause role strictly one-directional."
+		/>
+		<title>Narrower Admin Roles - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#why">Why</a>
+				<a class="toc-link level-2" href="#core-roles">Core roles</a>
+				<a class="toc-link level-2" href="#pause-only-entry-points">Pause-only entry points</a>
+				<a class="toc-link level-2" href="#other-contracts">ExpressProvider, InstantLayer, SymmioPartyB</a>
+				<a class="toc-link level-2" href="#upgrade-notes">Upgrade notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Narrower Admin Roles</h1>
+							<p class="hero-copy">
+								Roles that mixed routine operations with high-sensitivity powers are split, and every pause role is now strictly
+								one-directional.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Several administrative roles covered functions with very different sensitivity levels. The same role that registered a new
+						PartyB could also deregister it and slash its pledge. The same role that listed a symbol could also change its leverage and
+						run a corporate-action restatement. A pause role could both pause and resume. v0.8.6 introduces narrower roles for the routine
+						end of each bundle, moves a few functions to the role that matches their sensitivity, and replaces every bool-argument pause
+						setter with a separate pause and unpause entry point.
+					</p>
+
+					<h2 id="why">Why</h2>
+					<p>
+						Access control is only useful when a role can be granted to the operator who needs it without also handing over powers that
+						operator should not have. Bundled roles force one of two bad outcomes: either routine work waits on the holders of the most
+						sensitive keys, or those keys are handed out widely because someone needs one small part of the role. Narrowing the roles lets
+						each holder receive exactly the level of authority its job needs. It also lets an emergency responder hold a pause role
+						outright, because pausing can no longer be turned into resuming with the same permission.
+					</p>
+
+					<h2 id="core-roles">Core roles</h2>
+					<p>
+						Four roles are added to <code>LibAccessibility</code>. Each split is strict: the original role no longer covers the moved
+						functions.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>New role</th>
+									<th>Functions it now gates</th>
+									<th>What stays with the original role</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>PARTY_B_REGISTRAR_ROLE</code></td>
+									<td><code>registerPartyB</code>, <code>setPartyBMetadata</code></td>
+									<td>
+										<code>PARTY_B_MANAGER_ROLE</code> keeps deregistration, solver-fee receivers, pledge withdrawal and slashing,
+										ADL, strict deallocation, bindable, and the liquidation overshoot rate. <code>setCrossPartyB</code> moves here
+										from <code>MIGRATION_ROLE</code> because it is per-solver configuration, not a migration step.
+									</td>
+								</tr>
+								<tr>
+									<td><code>SYMBOL_LISTING_ROLE</code></td>
+									<td>
+										<code>addSymbol</code>, <code>addSymbols</code>, <code>addSymbolsWithType</code>,
+										<code>setSymbolValidationState</code>, <code>setSymbolTypes</code>, <code>setSymbolTradingFee</code>
+									</td>
+									<td>
+										<code>SYMBOL_MANAGER_ROLE</code> keeps max leverage, acceptable values, the notional liquidation-fee floor,
+										funding state, and the whole adjustment and restatement flow.
+									</td>
+								</tr>
+								<tr>
+									<td><code>AFFILIATE_REGISTRAR_ROLE</code></td>
+									<td><code>registerAffiliate</code>, <code>setAffiliateMetadata</code></td>
+									<td>
+										<code>AFFILIATE_MANAGER_ROLE</code> keeps deregistration, the fee collector, and affiliate shutdown
+										scheduling.
+									</td>
+								</tr>
+								<tr>
+									<td><code>PROTOCOL_LIMITS_ROLE</code></td>
+									<td>
+										<code>setBalanceLimitPerUser</code>, <code>setMaxPartyAConnectionLimit</code>,
+										<code>setMaxWithdrawParts</code>,
+										<code>setPendingQuotesValidLength</code>
+									</td>
+									<td>
+										<code>PROTOCOL_CONFIG_ROLE</code> keeps <code>setLiquidatorShare</code> and
+										<code>setForceClosePricePenalty</code>, which change liquidation and force-close economics rather than
+										operational limits.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						<code>setLegacyDeallocateDeprecated</code> and <code>setLegacyPartyALiquidationDeprecated</code> are migration switches, so
+						they now require <code>MIGRATION_ROLE</code> and live on <code>PauseControlFacet</code> next to the other deprecation
+						switches. Their selectors are removed from <code>ControlFacet</code>.
+					</p>
+
+					<h2 id="pause-only-entry-points">Pause-only entry points</h2>
+					<p>
+						A bool-argument setter under a pause role lets the same holder both stop and resume. That defeats the purpose of a separate
+						<code>UNPAUSER_ROLE</code>. The remaining two-way setters are replaced:
+					</p>
+					<pre><code class="language-solidity">// Core PauseControlFacet
+// removed: setPartyBOpenPositionsPaused(address partyB, bool status)
+function pausePartyBOpenPositionsFor(address partyB) external;   // PAUSER_ROLE
+function unpausePartyBOpenPositionsFor(address partyB) external; // UNPAUSER_ROLE
+
+// ExpressProvider ControlFacet
+// removed: setPaused(bool value), setCreditLinePaused(address affiliate, bool paused)
+function pause() external;                                // PAUSER_ROLE
+function unpause() external;                              // UNPAUSER_ROLE (new)
+function pauseCreditLine(address affiliate) external;     // PAUSER_ROLE or SETTER_ROLE
+function unpauseCreditLine(address affiliate) external;   // SETTER_ROLE</code></pre>
+					<p>
+						The existing events are kept: <code>SetPartyBOpenPositionsPausedForPartyB</code>, <code>PausedUpdated</code>, and
+						<code>CreditLinePausedUpdated</code> are emitted with the corresponding boolean, so indexers do not change.
+					</p>
+
+					<h2 id="other-contracts">ExpressProvider, InstantLayer, SymmioPartyB</h2>
+					<ul>
+						<li>
+							<strong>ExpressProvider</strong> gains <code>UNPAUSER_ROLE</code>. <code>Init.init</code> grants it to the initial admin
+							alongside <code>PAUSER_ROLE</code>.
+						</li>
+						<li>
+							<strong>InstantLayer</strong> gains <code>TEMPLATE_MANAGER_ROLE</code>, which gates <code>addTemplate</code> and
+							<code>setTemplateActive</code>. <code>SETTER_ROLE</code> keeps AccountLayer routing, the target whitelist, PartyB
+							enrollment, instant-open mode, transient context, and the revocation cooldown. The constructor grants the new role to the
+							initial admin. InstantLayer is immutable, so this takes effect at the next redeploy.
+						</li>
+						<li>
+							<strong>SymmioPartyB</strong> gains <code>MULTICAST_WHITELIST_ROLE</code>, which gates <code>setMulticastWhitelist</code>.
+							<code>MANAGER_ROLE</code> keeps ERC20 withdrawal and restricted core calls. <code>initialize</code> grants the new role to
+							the initial admin. The change adds a constant only, so the UUPS storage layout is unchanged.
+						</li>
+					</ul>
+
+					<h2 id="upgrade-notes">Upgrade notes</h2>
+					<p>
+						The facet cut on an existing core deployment replaces <code>ControlFacet</code>, <code>SymbolControlFacet</code>, and
+						<code>PauseControlFacet</code>. Afterwards:
+					</p>
+					<ul>
+						<li>
+							Grant the four new core roles to whichever accounts currently rely on the parent role for the moved functions. In
+							particular, the AccountLayer diamond needs <code>AFFILIATE_REGISTRAR_ROLE</code> because affiliate approval calls
+							<code>registerAffiliate</code>, and a <code>SymmioSymbolManager</code> needs <code>SYMBOL_LISTING_ROLE</code> because it
+							proxies symbol listing and trading-fee updates.
+						</li>
+						<li>
+							Grant <code>PARTY_B_MANAGER_ROLE</code> to any account that calls <code>setCrossPartyB</code> and previously relied on
+							<code>MIGRATION_ROLE</code>.
+						</li>
+						<li>
+							On an upgraded ExpressProvider, grant <code>UNPAUSER_ROLE</code> explicitly. <code>Init.init</code> does not run again, so
+							nothing grants it during the cut.
+						</li>
+						<li>
+							Update tooling that called the removed selectors. Deployment scripts, the recipe schema, and the verification manifests in
+							this repository already know the new names.
+						</li>
+					</ul>
+					<aside class="callout callout-note">
+						<strong>Role names are hashed strings.</strong> Nothing links the deployment scripts to <code>LibAccessibility</code> at
+						compile time, so a new test asserts that the role list in <code>deployAll</code> and the verification manifest match the
+						constants in the library.
+					</aside>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 documentation.</span>
+		</footer>
+	</body>
+</html>

@@ -457,7 +457,8 @@ await (await accountLayer._call(root, [op1, op2])).wait()</code></pre>
 						The batch functions also check the timelock on each inner Core call. <code>_callWithMargin</code> checks the margin addition
 						against the timelock for <code>addMarginToNextVA</code>. A Core call requested by an active affiliate hook through
 						<code>executeForAccount</code> is checked against that Core call's exact calldata and the active account family's policy.
-						Setup and clearing follow the policy-change rules described above.
+						Calls to <code>executeForAccount</code> are prohibited during <code>onSubAccountDeletion</code>. Setup and clearing follow the
+						policy-change rules described above.
 					</p>
 					<p>
 						<code>depositForAccount</code>, <code>depositAndAllocateForAccount</code>, and <code>editAccountName</code> have no timelock

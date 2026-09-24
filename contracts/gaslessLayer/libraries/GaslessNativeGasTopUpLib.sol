@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.36;
 
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 import { IGaslessLayer } from "../interfaces/IGaslessLayer.sol";
 import { ISymmioCore } from "../interfaces/ISymmioCore.sol";
@@ -16,6 +16,8 @@ import { GaslessFeeAccounting } from "./GaslessFeeAccounting.sol";
 ///      The gateway proxy is the EIP-712 verifying contract, sends the native funds, and holds the updated storage.
 library GaslessNativeGasTopUpLib {
 	uint256 internal constant FEE_MULTIPLIER_BASE = 10000;
+	/// @dev Passed as `maxTotalCharge` when the user signed the uncapped NativeGasTopUpRequest type.
+	uint256 internal constant UNCAPPED_TOTAL_CHARGE = type(uint256).max;
 	bytes32 internal constant NATIVE_GAS_TOP_UP_TYPEHASH = keccak256(
 		"NativeGasTopUpRequest(address payerAccount,address recipientWallet,uint256 collateralAmount,uint256 minNativeAmountOut,uint256 nonce,uint256 deadline)"
 	);
@@ -43,6 +45,7 @@ library GaslessNativeGasTopUpLib {
 		uint256 maxNativeGasTopUpAmount,
 		uint256 nativeGasTopUpFeeBps,
 		IGaslessLayer.NativeGasTopUpRequest calldata request,
+		uint256 maxTotalCharge,
 		bytes calldata signature
 	) external returns (NativeGasTopUpResult memory result) {
 		if (request.recipientWallet == address(0)) revert IGaslessLayer.ZeroAddress();
@@ -54,7 +57,7 @@ library GaslessNativeGasTopUpLib {
 
 		ISymmioAccountLayer accountLayerContract = ISymmioAccountLayer(accountLayer);
 		address payer = _resolveBillingAccount(accountLayerContract, request.payerAccount);
-		uint256 maxTotalCharge = _verifyNativeGasTopUpSignature(accountLayerContract, request, payer, signature);
+		_verifyNativeGasTopUpSignature(accountLayerContract, request, payer, maxTotalCharge, signature);
 		_consumeTopUpNonce(topUpNonces, request);
 
 		(bool sponsored, uint256 sponsoredUsedToday) = _useSponsoredNativeGas(
@@ -128,18 +131,29 @@ library GaslessNativeGasTopUpLib {
 		}
 	}
 
+	/// @dev The cap travels as an explicit argument rather than inside the signature bytes, so the signature is passed
+	///      to the signer untouched. That lets smart accounts validate their own variable-length formats through ERC-1271.
 	function _verifyNativeGasTopUpSignature(
 		ISymmioAccountLayer accountLayer,
 		IGaslessLayer.NativeGasTopUpRequest calldata request,
 		address payer,
+		uint256 maxTotalCharge,
 		bytes calldata signature
-	) internal view returns (uint256 maximum) {
-		maximum = type(uint256).max;
-		bytes32 digest;
-		bytes memory rawSignature;
-		if (signature.length > 65) {
-			(maximum, rawSignature) = abi.decode(signature, (uint256, bytes));
-			digest = GaslessLayerDomain.hashTypedData(
+	) internal view {
+		bytes32 digest =
+			maxTotalCharge == UNCAPPED_TOTAL_CHARGE ? _nativeGasTopUpDigest(request) : _cappedNativeGasTopUpDigest(request, maxTotalCharge);
+		address expectedSigner = _expectedNativeGasTopUpSigner(accountLayer, request.payerAccount, payer);
+		if (!SignatureChecker.isValidSignatureNowCalldata(expectedSigner, digest, signature)) {
+			revert IGaslessLayer.InvalidNativeGasTopUpSignature();
+		}
+	}
+
+	function _cappedNativeGasTopUpDigest(
+		IGaslessLayer.NativeGasTopUpRequest calldata request,
+		uint256 maxTotalCharge
+	) internal view returns (bytes32) {
+		return
+			GaslessLayerDomain.hashTypedData(
 				keccak256(
 					abi.encode(
 						CAPPED_NATIVE_GAS_TOP_UP_TYPEHASH,
@@ -149,18 +163,10 @@ library GaslessNativeGasTopUpLib {
 						request.minNativeAmountOut,
 						request.nonce,
 						request.deadline,
-						maximum
+						maxTotalCharge
 					)
 				)
 			);
-		} else {
-			digest = _nativeGasTopUpDigest(request);
-			rawSignature = signature;
-		}
-		address recovered = ECDSA.recover(digest, rawSignature);
-		if (recovered != _expectedNativeGasTopUpSigner(accountLayer, request.payerAccount, payer)) {
-			revert IGaslessLayer.InvalidNativeGasTopUpSignature();
-		}
 	}
 
 	// ─────────────────────────── Storage ──────────────────────────

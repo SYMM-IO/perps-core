@@ -25,6 +25,8 @@ library LibPartyALiquidationSnapshotSetup {
 	}
 
 	/// @notice Applies Muon-signed snapshot prices/funding state for an in-progress PartyA liquidation.
+	/// @dev During an open restatement, prices are venue-basis values from a signature strictly newer than the window;
+	///      cumulative funding fields remain in Core's cumulative funding basis.
 	function setSymbolsPriceWithSnapshot(address partyA, LiquidationSnapshotSig memory liquidationSig) public {
 		LibMuonLiquidation.verifyLiquidationSnapshotSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		_requireHistoricalLiquidationFields(liquidationSig);
@@ -33,6 +35,8 @@ library LibPartyALiquidationSnapshotSetup {
 	}
 
 	/// @notice Verifies a signed liquidation snapshot, starts liquidation, and applies its signed price/funding state.
+	/// @dev During an open restatement, prices are venue-basis values from a signature strictly newer than the window;
+	///      cumulative funding fields remain in Core's cumulative funding basis.
 	function startAndSetSymbolsPriceWithSnapshot(address partyA, LiquidationSnapshotSig memory liquidationSig) public {
 		LibMuonLiquidation.verifyLiquidationSnapshotSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		_requireHistoricalLiquidationFields(liquidationSig);
@@ -64,7 +68,8 @@ library LibPartyALiquidationSnapshotSetup {
 		LibPartyALiquidationShared.validateLiquidationPriceSetup(partyA, liquidationSig.liquidationId);
 
 		for (uint256 index = 0; index < liquidationSig.states.length; index++) {
-			LibSymbolAdjustment.requireNotFrozen(liquidationSig.states[index].symbolId);
+			LibSymbolAdjustment.requireCurrentLiquidationSignature(liquidationSig.states[index].symbolId, liquidationSig.timestamp);
+			LibSymbolAdjustment.recordRestatementMutation(liquidationSig.states[index].symbolId);
 			accountLayout.liquidationPartyBSymbolSnapshots[partyA][liquidationSig.liquidationId][liquidationSig.states[index].partyB][
 				liquidationSig.states[index].symbolId
 			] = LiquidationPartyBSymbolSnapshot({

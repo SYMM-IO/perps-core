@@ -34,9 +34,10 @@ const EXPRESS_ROLES = [
 	"UNLOCK_ROLE",
 	"WITHDRAWER_ROLE",
 	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
 ];
 /** Roles Init grants to the configured admin; the deployment proves them rather than re-granting. */
-const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE"];
+const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"];
 const BPS_DENOMINATOR = 10000;
 const VANITY_HEX = /^[0-9a-fA-F]{1,8}$/;
 const UINT256_MAX = (BigInt(1) << BigInt(256)) - BigInt(1);

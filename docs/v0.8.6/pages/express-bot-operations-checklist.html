@@ -4271,7 +4271,7 @@ Step 2D: Bot sees: WithdrawFinalized(user, reqId) at T+43200
 							<tbody>
 								<tr>
 									<td><code>CreditLinePaused</code></td>
-									<td><code>setCreditLinePaused(affiliate, true)</code> was called</td>
+									<td><code>pauseCreditLine(affiliate)</code> was called</td>
 									<td>Wait for unpause or omit credit</td>
 								</tr>
 								<tr>
@@ -4919,7 +4919,7 @@ Setup:
     Option A: Alice, 2,000 USDC (creditAmount=500)
     Option B: Bob,   3,000 USDC (creditAmount=1,000)
 
-Step 1: Admin calls: setCreditLinePaused(0xAffiliate, true) or
+Step 1: Admin calls: pauseCreditLine(0xAffiliate) or
          setCreditLineAffiliateConfig(0xAffiliate, ...) with reduced caps
   On-chain state changes:
     Credit line for 0xAffiliate is now paused or has lower caps
@@ -5292,7 +5292,8 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
     SETTER --&gt;|set* config| EP
     WITHDRAWER --&gt;|withdraw pools| EP
     FEE_CLAIMER --&gt;|claim fees| EP
-    PAUSER --&gt;|setPaused| EP
+    PAUSER --&gt;|pause| EP
+    UNPAUSER --&gt;|unpause| EP
 </code></pre>
 					<h3 id="17-2-expressprovider-roles">17.2 ExpressProvider roles</h3>
 					<div class="table-wrap">
@@ -5365,13 +5366,19 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
 									<td><code>PAUSER_ROLE</code></td>
 									<td><code>keccak256("PAUSER_ROLE")</code></td>
 									<td>Emergency operator/multisig</td>
-									<td><code>setPaused</code></td>
+									<td><code>pause</code>, <code>pauseCreditLine</code></td>
+								</tr>
+								<tr>
+									<td><code>UNPAUSER_ROLE</code></td>
+									<td><code>keccak256("UNPAUSER_ROLE")</code></td>
+									<td>Admin multisig</td>
+									<td><code>unpause</code></td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
 					<aside class="callout callout-warning">
-						<strong>Global pause:</strong> <code>setPaused(true)</code> blocks acceptance, processing, lock/unlock, acceleration, pool
+						<strong>Global pause:</strong> <code>pause()</code> blocks acceptance, processing, lock/unlock, acceleration, pool
 						deposits/withdrawals, fee claims, affiliate self-cap changes, and credit bad-debt repayment. SYMMIO completion, cancellation,
 						and suspension callbacks remain callable, as do owner/admin recovery and configuration functions.
 					</aside>
@@ -5408,8 +5415,8 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
 									<td>Set affiliate-level debt caps for an affiliate</td>
 								</tr>
 								<tr>
-									<td><code>setCreditLinePaused(affiliate, paused)</code></td>
-									<td><code>SETTER_ROLE</code></td>
+									<td><code>pauseCreditLine(affiliate)</code> / <code>unpauseCreditLine(affiliate)</code></td>
+									<td><code>SETTER_ROLE</code> (pause also accepts <code>PAUSER_ROLE</code>)</td>
 									<td>Pause/unpause credit line reservations and activation for an affiliate</td>
 								</tr>
 								<tr>

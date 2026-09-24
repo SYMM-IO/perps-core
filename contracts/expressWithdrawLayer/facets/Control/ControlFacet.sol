@@ -190,10 +190,20 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 		return cl.capChangeFeeAmount;
 	}
 
-	function setCreditLinePaused(address affiliate, bool paused) external {
+	/// @notice Pauses one affiliate's credit line. PAUSER_ROLE is accepted so responders can stop advances without SETTER_ROLE.
+	function pauseCreditLine(address affiliate) external {
+		if (!LibAccessControl.hasRole(msg.sender, LibAccessControl.PAUSER_ROLE)) {
+			LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
+		}
+		CreditLineStorage.layout().affiliates[affiliate].paused = true;
+		emit CreditLinePausedUpdated(affiliate, true);
+	}
+
+	/// @notice Resumes one affiliate's credit line.
+	function unpauseCreditLine(address affiliate) external {
 		LibAccessControl.enforceRole(LibAccessControl.SETTER_ROLE);
-		CreditLineStorage.layout().affiliates[affiliate].paused = paused;
-		emit CreditLinePausedUpdated(affiliate, paused);
+		CreditLineStorage.layout().affiliates[affiliate].paused = false;
+		emit CreditLinePausedUpdated(affiliate, false);
 	}
 
 	function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external {
@@ -364,10 +374,17 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 	}
 
 	/// @notice PAUSER_ROLE kill switch
-	function setPaused(bool value) external {
+	function pause() external {
 		LibAccessControl.enforceRole(LibAccessControl.PAUSER_ROLE);
-		GlobalStorage.layout().paused = value;
-		emit PausedUpdated(value);
+		GlobalStorage.layout().paused = true;
+		emit PausedUpdated(true);
+	}
+
+	/// @notice Resumes the provider after a pause
+	function unpause() external {
+		LibAccessControl.enforceRole(LibAccessControl.UNPAUSER_ROLE);
+		GlobalStorage.layout().paused = false;
+		emit PausedUpdated(false);
 	}
 
 	/// @notice Owner-only. Zeros a stuck per-request credit debt entry and decrements

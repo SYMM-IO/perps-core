@@ -438,8 +438,11 @@ describe("GaslessLayer onboarding scenario", function () {
 		}
 		const signature = await user.signTypedData({ ...domain, name: "GaslessGateway", verifyingContract: gatewayAddr }, walletTypes, bridgeOp)
 		const receiverBefore = await context.collateral.balanceOf(sessionKey.address)
-		const quote = await gateway.getAccountOperationalFee(subAccount, [bridgeOp], [withdrawalId])
-		expect(quote.amountDue18).to.equal(OP_FEE * 2n + creationFee)
+		const quote = await gateway.previewFeeQuote(
+			gateway.interface.encodeFunctionData("relayInstantBatch", [[bridgeOp], [signature], [], [], [withdrawalId]]),
+			0,
+		)
+		expect(quote.totalFee18).to.equal(OP_FEE * 2n + creationFee)
 		const exact = await quoteGaslessFee({
 			gateway,
 			mode: "exact",
