@@ -48,7 +48,7 @@ const proxy = failed.contracts.symmioLiquidator.address
 const core = failed.contracts.diamond!.diamond!.address
 const [deployer] = await ethers.getSigners()
 const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
-assert.equal(await view.hasRole(deployer.address, ethers.id("AFFILIATE_MANAGER_ROLE")), true)
+assert.equal(await view.hasRole(deployer.address, ethers.id("AFFILIATE_REGISTRAR_ROLE")), true)
 const creations = failed
 	.transactions!.filter(tx => tx.deployment)
 	.map(tx => tx.hash)
@@ -59,9 +59,9 @@ assert.equal(resumed.contracts.symmioLiquidator!.address, proxy)
 assert.deepEqual([...new Set(resumed.transactions!.filter(tx => tx.deployment).map(tx => tx.hash))].sort(), [...new Set(creations)])
 assert.deepEqual(Array.from(await view.getEntityMetadata(proxy)), Object.values(LIQUIDATOR_METADATA))
 assert.equal(await view.isAffiliate(proxy), false)
-assert.equal(await view.hasRole(deployer.address, ethers.id("AFFILIATE_MANAGER_ROLE")), false)
+assert.equal(await view.hasRole(deployer.address, ethers.id("AFFILIATE_REGISTRAR_ROLE")), false)
 const admin = activeDeploymentRecipe!.recipe.governance.admin
-assert.equal(await view.hasRole(admin, ethers.id("AFFILIATE_MANAGER_ROLE")), true)
+assert.equal(await view.hasRole(admin, ethers.id("AFFILIATE_REGISTRAR_ROLE")), true)
 const liquidator = await ethers.getContractAt("SymmioLiquidator", proxy)
 assert.equal(await liquidator.hasRole(await liquidator.DEFAULT_ADMIN_ROLE(), admin), true)
 assert.equal(await liquidator.hasRole(await liquidator.DEFAULT_ADMIN_ROLE(), deployer.address), false)

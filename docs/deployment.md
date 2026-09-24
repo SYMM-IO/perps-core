@@ -98,7 +98,7 @@ values on the proxy's connected Core:
 Setup uses `setAffiliateMetadata(proxyAddress, values)`, waits for its receipt, and verifies
 all three values with `getEntityMetadata(proxyAddress)` before reporting success. It does
 not register the proxy as an affiliate. The standalone signer must hold Core's
-`AFFILIATE_MANAGER_ROLE`; being a role admin alone is insufficient. Full-system deployment
+`AFFILIATE_REGISTRAR_ROLE`; being a role admin alone is insufficient. Full-system deployment
 grants that role temporarily to its setup signer and removes it during the existing
 deployer privilege cleanup when governance is a different account.
 

@@ -6,8 +6,8 @@ export const LIQUIDATOR_METADATA = Object.freeze({ name: "Protocol Liquidator V2
 
 export async function requireLiquidatorMetadataAuthority(coreView: any, signer: Signer): Promise<void> {
 	const caller = await signer.getAddress()
-	if (!(await coreView.hasRole(caller, id("AFFILIATE_MANAGER_ROLE")))) {
-		throw new Error(`Signer ${caller} must hold AFFILIATE_MANAGER_ROLE on the connected Core to set liquidator metadata`)
+	if (!(await coreView.hasRole(caller, id("AFFILIATE_REGISTRAR_ROLE")))) {
+		throw new Error(`Signer ${caller} must hold AFFILIATE_REGISTRAR_ROLE on the connected Core to set liquidator metadata`)
 	}
 }
 
