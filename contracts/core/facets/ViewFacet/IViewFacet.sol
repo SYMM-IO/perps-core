@@ -4,7 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LiquidationDetail, LiquidationSettlementState } from "../../storages/AccountStorage.sol";
+import {
+	LiquidationDetail,
+	LiquidationSettlementState,
+	LiquidationPartyBSymbolKey,
+	LiquidationPartyBSymbolSnapshot
+} from "../../storages/AccountStorage.sol";
 import { CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
@@ -93,6 +98,12 @@ interface IViewFacet is IDiamondAccessControlView {
 	function getInvalidBridgedAmountsPool() external view returns (address);
 
 	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (LiquidationSettlementState[] memory);
+
+	function getPartyALiquidationSnapshots(
+		address partyA,
+		bytes calldata liquidationId,
+		LiquidationPartyBSymbolKey[] calldata keys
+	) external view returns (LiquidationPartyBSymbolSnapshot[] memory snapshots);
 
 	// Role
 	function hasRole(address user, bytes32 role) external view returns (bool);

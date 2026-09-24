@@ -371,7 +371,7 @@ export async function migrateInstantLayer(options: MigrateInstantLayerOptions): 
 			transactionsSent++
 		}
 	}
-	for (const name of ["SETTER_ROLE", "OPERATOR_ROLE", "REVOKER_ROLE", "DEFAULT_ADMIN_ROLE"] as const) {
+	for (const name of ["SETTER_ROLE", "TEMPLATE_MANAGER_ROLE", "OPERATOR_ROLE", "REVOKER_ROLE", "DEFAULT_ADMIN_ROLE"] as const) {
 		if (await il.hasRole(roleHash(name), deployerAddress)) {
 			await send(il.renounceRole(roleHash(name), deployerAddress), `renounceRole(${name}, deployer)`)
 			transactionsSent++

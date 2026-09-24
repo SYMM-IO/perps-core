@@ -345,8 +345,8 @@ event AffiliateWithdraw(address indexed affiliate, address indexed recipient, ui
 							absolute and BPS checks must pass when their effective value is nonzero.
 						</li>
 						<li>
-							<strong>Pause</strong>: <code>setCreditLinePaused(affiliate, true)</code> disables all new credit reservations and blocks
-							activation of already-reserved, not-yet-paid credit for an affiliate.
+							<strong>Pause</strong>: <code>pauseCreditLine(affiliate)</code> disables all new credit reservations and blocks activation
+							of already-reserved, not-yet-paid credit for an affiliate.
 						</li>
 						<li>
 							<strong>Blacklist</strong>: <code>setCreditLineBlacklisted(affiliate, user, true)</code> blocks a specific user from using
@@ -1661,7 +1661,10 @@ event OperatorFeesClaimed(address indexed affiliate, address indexed recipient, 
 								<tr>
 									<td><code>PAUSER_ROLE</code></td>
 									<td>Emergency operator/multisig</td>
-									<td>Set the ExpressProvider-wide user-mutation pause with <code>setPaused</code></td>
+									<td>
+										Set the ExpressProvider-wide user-mutation pause with <code>pause</code>; <code>UNPAUSER_ROLE</code> lifts it
+										with <code>unpause</code>
+									</td>
 								</tr>
 							</tbody>
 						</table>
@@ -2134,7 +2137,8 @@ function setCreditLineAffiliateConfig(
 ) external;                                                                // Setter only
 function setCapChangeFeeConfig(address feeToken, uint256 feeAmount, address feeReceiver) external; // Setter only
 function setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration) external; // Setter only
-function setCreditLinePaused(address affiliate, bool paused) external;     // Setter only
+function pauseCreditLine(address affiliate) external;                     // Setter or PAUSER_ROLE
+function unpauseCreditLine(address affiliate) external;                   // Setter only
 function setCreditLineBlacklisted(address affiliate, address user, bool blacklisted) external; // Setter only
 
 // Affiliate self-service cap change (msg.sender is the affiliate; increases may consume quota or pay a fee)
@@ -2162,7 +2166,8 @@ function acceptOwnership() external;
 function cancelOwnershipTransfer() external;
 
 // Pause and recovery
-function setPaused(bool value) external; // PAUSER_ROLE
+function pause() external;   // PAUSER_ROLE
+function unpause() external; // UNPAUSER_ROLE
 function rescueTokens(address token, address to, uint256 amount) external; // Owner only
 function clearRequestDebt(address affiliate, address user, uint256 requestId) external; // Owner only
 function repayCreditBadDebt(address affiliate, uint256 amount) external; // Permissionless payer

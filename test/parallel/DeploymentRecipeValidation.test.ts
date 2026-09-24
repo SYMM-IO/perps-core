@@ -169,6 +169,6 @@ describe("deployment recipe task validation", function () {
 			error = caught
 		}
 		expect(String(error)).to.include("AUTHORITY_MISSING")
-		expect(String(error)).to.include("PARTY_B_MANAGER_ROLE")
+		expect(String(error)).to.include("PARTY_B_REGISTRAR_ROLE")
 	})
 })

@@ -946,8 +946,7 @@
 
 	const scaleDown = (amount, factor) => (amount * factor) / ADJUSTMENT_SCALE;
 
-	const convertAmountPricePair = (amount, price, factor) => {
-		const adjustedAmount = scaleDown(amount, factor);
+	const convertAmountPricePair = (amount, price, factor, adjustedAmount = scaleDown(amount, factor)) => {
 		if (adjustedAmount === 0n) return { adjustedAmount, adjustedPrice: 0n, oldNotional: amount * price, newNotional: 0n, dust: 0n };
 		const adjustedPrice = price === 0n ? 0n : (amount * price) / adjustedAmount;
 		const oldNotional = amount * price;
@@ -1030,6 +1029,10 @@
 				result.innerHTML = `<ul class="tool-warnings"><li>A stored quote has a nonzero <code>quantity</code>.</li></ul>`;
 				return;
 			}
+			if (closedAmount > quantity) {
+				result.innerHTML = `<ul class="tool-warnings"><li><code>closedAmount</code> cannot exceed <code>quantity</code>.</li></ul>`;
+				return;
+			}
 
 			const prospectiveFactor = (activeFactor * eventFactor) / ADJUSTMENT_SCALE;
 			if (prospectiveFactor === 0n) {
@@ -1039,30 +1042,32 @@
 
 			// Adjusted-price route: external prices are lifted onto the stored quote basis.
 			const adjustedMark = scaleDown(venuePrice, prospectiveFactor);
-			const venueQuantity = scaleDown(quantity, prospectiveFactor);
+			const storedOpenAmount = quantity - closedAmount;
+			const venueOpenAmount = scaleDown(storedOpenAmount, prospectiveFactor);
 			const venueClosedAmount = scaleDown(closedAmount, prospectiveFactor);
-			const venueOpenFromParts = venueQuantity - venueClosedAmount;
-			const venueOpenDirect = scaleDown(quantity - closedAmount, prospectiveFactor);
-			const upnlRaw = (quantity - closedAmount) * (venuePrice - openedPrice);
-			const upnlAdjusted = (quantity - closedAmount) * (adjustedMark - openedPrice);
+			const venueQuantity = venueOpenAmount + venueClosedAmount;
+			const legacyVenueQuantity = scaleDown(quantity, prospectiveFactor);
+			const legacyVenueOpenAmount = legacyVenueQuantity - venueClosedAmount;
+			const upnlRaw = storedOpenAmount * (venuePrice - openedPrice);
+			const upnlAdjusted = storedOpenAmount * (adjustedMark - openedPrice);
 
 			// Physical route: a direct restatement converts by the prospective factor.
-			const position = convertAmountPricePair(quantity, openedPrice, prospectiveFactor);
+			const position = convertAmountPricePair(quantity, openedPrice, prospectiveFactor, venueQuantity);
 			const closed = convertAmountPricePair(closedAmount, avgClosedPrice, prospectiveFactor);
 			const closeRequest = convertAmountPricePair(quantityToClose, requestedClosePrice, prospectiveFactor);
 
 			const rejections = [];
 			if (position.adjustedAmount === 0n)
 				rejections.push(
-					`The whole position vanishes: <code>floor(${escapeHtml(formatBigInt(quantity))} &times; factor) = 0</code>. Core will not store a zero-quantity position.`,
+					`The whole position vanishes: converted open amount plus converted closed amount is <code>0</code>. Core will not store a zero-quantity position.`,
 				);
 			if (closedAmount > 0n && closed.adjustedAmount === 0n)
 				rejections.push(
 					`Recorded closed quantity vanishes: <code>floor(${escapeHtml(formatBigInt(closedAmount))} &times; factor) = 0</code>. Core will not erase closed history.`,
 				);
-			if (position.adjustedAmount > 0n && position.adjustedAmount <= closed.adjustedAmount)
+			if (venueOpenAmount === 0n)
 				rejections.push(
-					`No open quantity survives: converted quantity <code>${escapeHtml(formatBigInt(position.adjustedAmount))}</code> is not greater than converted closed amount <code>${escapeHtml(formatBigInt(closed.adjustedAmount))}</code>.`,
+					`No open quantity survives: <code>floor((${escapeHtml(formatBigInt(quantity))} - ${escapeHtml(formatBigInt(closedAmount))}) &times; factor) = 0</code>. Core will not manufacture open size from total-quantity rounding.`,
 				);
 			if (quantityToClose > 0n && closeRequest.adjustedAmount === 0n)
 				rejections.push(
@@ -1074,13 +1079,13 @@
 			const rateMagnitude = fundingRate < 0n ? -fundingRate : fundingRate;
 			const restoredMagnitude = (rateMagnitude * ADJUSTMENT_SCALE) / prospectiveFactor;
 			const restoredRate = fundingRate < 0n ? -restoredMagnitude : restoredMagnitude;
-			const fundingBefore = quantity * fundingRate;
-			const fundingAfter = position.adjustedAmount * restoredRate;
+			const fundingBefore = storedOpenAmount * fundingRate;
+			const fundingAfter = venueOpenAmount * restoredRate;
 
 			const notes = [];
-			if (venueOpenFromParts !== venueOpenDirect)
+			if (legacyVenueOpenAmount !== venueOpenAmount)
 				notes.push(
-					`The venue-unit view scales total and closed amounts separately, so its open amount is <code>${escapeHtml(formatBigInt(venueOpenFromParts))}</code> while scaling the stored open amount directly gives <code>${escapeHtml(formatBigInt(venueOpenDirect))}</code>. That one-wei gap is expected.`,
+					`The old independent-total method would produce open amount <code>${escapeHtml(formatBigInt(legacyVenueOpenAmount))}</code>. Core instead scales the actual stored open amount to <code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> and reconstructs quantity, preventing that ${escapeHtml(formatBigInt(legacyVenueOpenAmount - venueOpenAmount))}-wei carry from changing position size.`,
 				);
 			if (restatable && totalDust > 0n)
 				notes.push(
@@ -1110,7 +1115,7 @@
 					<code>${escapeHtml(formatBigInt(upnlAdjusted))}</code>.
 					<code>getQuoteInVenueUnits</code> reports quantity <code>${escapeHtml(formatBigInt(venueQuantity))}</code>,
 					closed amount <code>${escapeHtml(formatBigInt(venueClosedAmount))}</code>, and open amount
-					<code>${escapeHtml(formatBigInt(venueOpenFromParts))}</code> for display only.
+					<code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> for display only.
 				</p>
 				<p class="eyebrow">Physical route &mdash; storage rewritten</p>
 				<div class="table-wrap">

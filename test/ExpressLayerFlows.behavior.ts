@@ -4407,53 +4407,79 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 
 	describe("Global pause kill switch", function () {
 		const PAUSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PAUSER_ROLE"))
+		const UNPAUSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("UNPAUSER_ROLE"))
 
-		it("setPaused flips the flag and emits PausedUpdated", async function () {
+		it("pause and unpause flip the flag and emit PausedUpdated", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, deployer } = fixture
 			expect(await expressProvider.paused()).to.equal(false)
 
-			await expect(expressProvider.connect(deployer).setPaused(true)).to.emit(expressProvider, "PausedUpdated").withArgs(true)
+			await expect(expressProvider.connect(deployer).pause()).to.emit(expressProvider, "PausedUpdated").withArgs(true)
 			expect(await expressProvider.paused()).to.equal(true)
 
-			await expect(expressProvider.connect(deployer).setPaused(false)).to.emit(expressProvider, "PausedUpdated").withArgs(false)
+			await expect(expressProvider.connect(deployer).unpause()).to.emit(expressProvider, "PausedUpdated").withArgs(false)
 			expect(await expressProvider.paused()).to.equal(false)
 		})
 
-		it("setPaused rejects callers without PAUSER_ROLE", async function () {
+		it("pause rejects callers without PAUSER_ROLE and unpause rejects callers without UNPAUSER_ROLE", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider } = fixture
-			await expect(expressProvider.connect(user).setPaused(true)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+			await expect(expressProvider.connect(user).pause()).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+			await expect(expressProvider.connect(user).unpause()).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
 			expect(await expressProvider.paused()).to.equal(false)
 		})
 
-		it("setPaused emits PausedUpdated on every call (no idempotency check)", async function () {
+		it("pause and unpause emit PausedUpdated on every call (no idempotency check)", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, deployer } = fixture
 
-			await expect(expressProvider.connect(deployer).setPaused(false)).to.emit(expressProvider, "PausedUpdated").withArgs(false)
+			await expect(expressProvider.connect(deployer).unpause()).to.emit(expressProvider, "PausedUpdated").withArgs(false)
 			expect(await expressProvider.paused()).to.equal(false)
 
-			await expect(expressProvider.connect(deployer).setPaused(true)).to.emit(expressProvider, "PausedUpdated").withArgs(true)
+			await expect(expressProvider.connect(deployer).pause()).to.emit(expressProvider, "PausedUpdated").withArgs(true)
 			expect(await expressProvider.paused()).to.equal(true)
 
-			await expect(expressProvider.connect(deployer).setPaused(true)).to.emit(expressProvider, "PausedUpdated").withArgs(true)
+			await expect(expressProvider.connect(deployer).pause()).to.emit(expressProvider, "PausedUpdated").withArgs(true)
 			expect(await expressProvider.paused()).to.equal(true)
 		})
 
-		it("PAUSER_ROLE can be granted to and revoked from non-admin accounts", async function () {
+		it("a PAUSER_ROLE-only holder can pause but not unpause", async function () {
 			const fixture = await deployFixture()
 			const { expressProvider, deployer, affiliateOwner } = fixture
 
-			await expect(expressProvider.connect(affiliateOwner).setPaused(true)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+			await expect(expressProvider.connect(affiliateOwner).pause()).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
 
 			await expressProvider.connect(deployer)["grantRole(address,bytes32)"](affiliateOwner.address, PAUSER_ROLE)
-			await expressProvider.connect(affiliateOwner).setPaused(true)
+			await expressProvider.connect(affiliateOwner).pause()
 			expect(await expressProvider.paused()).to.equal(true)
+			await expect(expressProvider.connect(affiliateOwner).unpause()).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+
+			await expressProvider.connect(deployer)["grantRole(address,bytes32)"](affiliateOwner.address, UNPAUSER_ROLE)
+			await expressProvider.connect(affiliateOwner).unpause()
+			expect(await expressProvider.paused()).to.equal(false)
 
 			await expressProvider.connect(deployer)["revokeRole(address,bytes32)"](affiliateOwner.address, PAUSER_ROLE)
-			await expect(expressProvider.connect(affiliateOwner).setPaused(false)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
-			expect(await expressProvider.paused()).to.equal(true)
+			await expect(expressProvider.connect(affiliateOwner).pause()).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+		})
+
+		it("a PAUSER_ROLE-only holder can pause a credit line but not resume it", async function () {
+			const fixture = await deployFixture()
+			const { expressProvider, deployer, affiliate, affiliateOwner } = fixture
+
+			await expect(expressProvider.connect(affiliateOwner).pauseCreditLine(affiliate)).to.be.revertedWithCustomError(expressProvider, "AccessDenied")
+			await expressProvider.connect(deployer)["grantRole(address,bytes32)"](affiliateOwner.address, PAUSER_ROLE)
+			await expect(expressProvider.connect(affiliateOwner).pauseCreditLine(affiliate))
+				.to.emit(expressProvider, "CreditLinePausedUpdated")
+				.withArgs(affiliate, true)
+			expect(await expressProvider.creditLinePaused(affiliate)).to.equal(true)
+			await expect(expressProvider.connect(affiliateOwner).unpauseCreditLine(affiliate)).to.be.revertedWithCustomError(
+				expressProvider,
+				"AccessDenied",
+			)
+			await expect(expressProvider.connect(deployer).unpauseCreditLine(affiliate))
+				.to.emit(expressProvider, "CreditLinePausedUpdated")
+				.withArgs(affiliate, false)
+			expect(await expressProvider.creditLinePaused(affiliate)).to.equal(false)
 		})
 
 		it("pause blocks onWithdrawRequest; user's core balance is fully restored by the revert", async function () {
@@ -4463,7 +4489,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const userBalBefore = await context.viewFacet.balanceOf(user.address)
 			const lockedBefore = await context.viewFacet.getWithdrawLockedBalance()
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			const withdrawAmount = 500n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
@@ -4509,7 +4535,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { parts: parts2, requestId: id2 } = await acceptWindowed(fixture)
 			await expressProvider.connect(locker).lockWithdraw(user.address, id2)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await expect(expressProvider.connect(operator).processWithdraw(user.address, id1, parts1)).to.be.revertedWithCustomError(
 				expressProvider,
@@ -4530,7 +4556,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { user, expressProvider, deployer } = fixture
 			const { parts, requestId } = await acceptStandard(fixture)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await expect(expressProvider.connect(user).accelerateWithdraw(user.address, requestId, parts, "0x", "0x", "0x")).to.be.revertedWithCustomError(
 				expressProvider,
@@ -4545,7 +4571,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await collateral.mint(deployer.address, 100n * 10n ** 18n)
 			await collateral.connect(deployer).approve(await expressProvider.getAddress(), 100n * 10n ** 18n)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await expect(expressProvider.connect(deployer).depositToGeneral(1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
 			await expect(expressProvider.connect(deployer).depositToAffiliate(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
@@ -4563,7 +4589,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { expressProvider, deployer, affiliateOwner } = fixture
 
 			await expressProvider.connect(deployer).setCreditLineProtocolConfig(affiliateOwner.address, 1000n * 10n ** 18n, 0)
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await expect(expressProvider.connect(affiliateOwner).setMyCreditLineConfig(500n * 10n ** 18n, 0)).to.be.revertedWithCustomError(
 				expressProvider,
@@ -4578,7 +4604,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const affiliateAmount = 200n * 10n ** 18n
 			const { requestId } = await acceptWindowed(fixture, { affiliateAmount })
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await context.withdrawFacet.connect(user).requestCancelWithdraw(requestId)
 
@@ -4645,7 +4671,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_mine", [])
 			await expressProvider.connect(fixture.operator).processWithdraw(user.address, requestId, parts)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
 			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
@@ -4664,7 +4690,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_increaseTime", [12 * 3600])
 			await ethers.provider.send("evm_mine", [])
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await context.withdrawFacet.finalizeWithdrawRequest(user.address, requestId)
 			const info = await expressProvider.getWithdrawInfo(user.address, requestId)
@@ -4683,7 +4709,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await ethers.provider.send("evm_mine", [])
 			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await ethers.provider.send("evm_increaseTime", [12 * 3600])
 			await ethers.provider.send("evm_mine", [])
@@ -4701,7 +4727,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const { parts, requestId, withdrawAmount } = await acceptWindowed(fixture)
 			const receiverBefore = await collateral.balanceOf(receiver.address)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 			await ethers.provider.send("evm_increaseTime", [21])
 			await ethers.provider.send("evm_mine", [])
 			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
@@ -4709,7 +4735,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				"Paused",
 			)
 
-			await expressProvider.connect(deployer).setPaused(false)
+			await expressProvider.connect(deployer).unpause()
 			expect(await expressProvider.paused()).to.equal(false)
 
 			await expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)
@@ -4754,7 +4780,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, pd)
 			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			const stuck = 555n * 10n ** 18n
 			await collateral.mint(deployer.address, stuck)
@@ -4772,7 +4798,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			const fixture = await deployFixture()
 			const { expressProvider, deployer, affiliate } = fixture
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			expect(await expressProvider.generalBalance()).to.be.a("bigint")
 			expect(await expressProvider.lockedGeneralBalance()).to.be.a("bigint")
@@ -5233,7 +5259,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 				withdrawAmount: 7000n * 10n ** 18n,
 			})
 
-			await expressProvider.connect(deployer).setPaused(true)
+			await expressProvider.connect(deployer).pause()
 
 			await expect(expressProvider.connect(deployer).repayCreditBadDebt(affiliate, 1n)).to.be.revertedWithCustomError(expressProvider, "Paused")
 		})

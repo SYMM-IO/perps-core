@@ -4,7 +4,6 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
-import { AccountLayerFacetNames } from "../../utils/deploymentManifest.js"
 import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { inspectGaslessLayerPostState } from "./componentDeployment.js"
@@ -517,23 +516,26 @@ interface VerificationResult {
 // FacetNames covers the facets cut in by deploy:diamond; DiamondCutFacet is deployed
 // with the Diamond itself and is not in that list, hence the +1.
 const EXPECTED_CORE_FACETS = FacetNames.length + 1
-const EXPECTED_ACCOUNTLAYER_FACETS = AccountLayerFacetNames.length + 1
-const CORE_ADMIN_ROLES = [
+const EXPECTED_ACCOUNTLAYER_FACETS = 8
+export const CORE_ADMIN_ROLES = [
 	"DEFAULT_ADMIN_ROLE",
 	"SYMBOL_MANAGER_ROLE",
+	"SYMBOL_LISTING_ROLE",
 	"PAUSER_ROLE",
 	"UNPAUSER_ROLE",
 	"PARTY_B_MANAGER_ROLE",
+	"PARTY_B_REGISTRAR_ROLE",
 	"SUSPENDER_ROLE",
 	"DISPUTE_ROLE",
 	"AFFILIATE_MANAGER_ROLE",
+	"AFFILIATE_REGISTRAR_ROLE",
 	"ENTITY_METADATA_MANAGER_ROLE",
 	"MUON_SETTER_ROLE",
 	"LIQUIDATOR_ROLE",
 	"PARTYB_LIQUIDATOR_ROLE",
-	"DEALLOCATE_COOLDOWN_SETTER_ROLE",
 	"INSTANT_LAYER_ROLE",
 	"PROTOCOL_CONFIG_ROLE",
+	"PROTOCOL_LIMITS_ROLE",
 	"FEE_ADMIN_ROLE",
 	"COOLDOWN_ADMIN_ROLE",
 	"PROVIDER_ADMIN_ROLE",
@@ -546,7 +548,7 @@ const CORE_ADMIN_ROLES = [
 	"SUSPENDED_FUNDS_WITHDRAWER_ROLE",
 	"FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE",
 ]
-const CORE_PRIVILEGED_ROLES = [
+export const CORE_PRIVILEGED_ROLES = [
 	...CORE_ADMIN_ROLES,
 	"WITHDRAW_SPEED_UP_ROLE",
 	"SOFT_LIQUIDATOR_ROLE",
@@ -563,9 +565,17 @@ const ACCOUNTLAYER_PRIVILEGED_ROLES = [
 	"DISTRIBUTOR_ROLE",
 	"ACCOUNT_CREATOR_ROLE",
 ]
-const INSTANTLAYER_ADMIN_ROLES = ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "OPERATOR_ROLE", "REVOKER_ROLE"]
+const INSTANTLAYER_ADMIN_ROLES = ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "TEMPLATE_MANAGER_ROLE", "OPERATOR_ROLE", "REVOKER_ROLE"]
 const INSTANTLAYER_PRIVILEGED_ROLES = [...INSTANTLAYER_ADMIN_ROLES]
-const PARTYB_ADMIN_ROLES = ["DEFAULT_ADMIN_ROLE", "TRUSTED_ROLE", "MANAGER_ROLE", "SETTER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]
+const PARTYB_ADMIN_ROLES = [
+	"DEFAULT_ADMIN_ROLE",
+	"TRUSTED_ROLE",
+	"MANAGER_ROLE",
+	"MULTICAST_WHITELIST_ROLE",
+	"SETTER_ROLE",
+	"PAUSER_ROLE",
+	"UNPAUSER_ROLE",
+]
 const ACCOUNTLAYER_FACET_NAMES = [
 	"contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet",
 	"contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet",

@@ -207,6 +207,7 @@ export async function inspectPartyBPostState(
 		defaultAdminRole,
 		trustedRole,
 		roleHash("MANAGER_ROLE"),
+		roleHash("MULTICAST_WHITELIST_ROLE"),
 		roleHash("SETTER_ROLE"),
 		roleHash("PAUSER_ROLE"),
 		roleHash("UNPAUSER_ROLE"),
@@ -289,7 +290,7 @@ export async function inspectSymbolManagerPostState(
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 	const defaultAdminRole = await contract.DEFAULT_ADMIN_ROLE()
 	const operatorRoles = [await contract.SYMBOL_ADDER_ROLE(), await contract.SYMBOL_REMOVER_ROLE()]
-	const coreRoles = ["SYMBOL_MANAGER_ROLE", "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"]
+	const coreRoles = ["SYMBOL_MANAGER_ROLE", "SYMBOL_LISTING_ROLE", "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"]
 	const [runtimeCode, boundCore, adminRole, ...roleStates] = await Promise.all([
 		ethers.provider.getCode(address),
 		contract.symmioAddress(),
@@ -353,7 +354,7 @@ export interface ExpressProviderResolvedConfig {
 }
 
 /** Roles Init grants to whoever it is initialized with — here, the deployer. DEFAULT_ADMIN_ROLE stays last so revocation cannot strand narrower roles. */
-const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE", "DEFAULT_ADMIN_ROLE"]
+const EXPRESS_INIT_ADMIN_ROLES = ["SETTER_ROLE", "FEE_CLAIMER_ROLE", "WITHDRAWER_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE", "DEFAULT_ADMIN_ROLE"]
 
 async function expressRoleReader(ethers: any, address: string, view: any): Promise<(user: string, role: string) => Promise<boolean>> {
 	const loupe = await ethers.getContractAt("IDiamondLoupe", address)
@@ -1010,10 +1011,13 @@ export async function assertComponentDeploymentAuthority(
 	const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 
 	if (component === "partyB") {
-		const managerRole = roleHash("PARTY_B_MANAGER_ROLE")
-		const [deployerCanManagePartyB, adminCanManagePartyB] = await Promise.all([view.hasRole(deployer, managerRole), view.hasRole(admin, managerRole)])
+		const registrarRole = roleHash("PARTY_B_REGISTRAR_ROLE")
+		const [deployerCanManagePartyB, adminCanManagePartyB] = await Promise.all([
+			view.hasRole(deployer, registrarRole),
+			view.hasRole(admin, registrarRole),
+		])
 		if (!deployerCanManagePartyB && !adminCanManagePartyB) {
-			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core PARTY_B_MANAGER_ROLE`)
+			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core PARTY_B_REGISTRAR_ROLE`)
 		}
 		const instantLayer = await ethers.getContractAt("InstantLayer", coreReport.addresses.instantLayer)
 		const setterRole = await instantLayer.SETTER_ROLE()
@@ -1028,7 +1032,7 @@ export async function assertComponentDeploymentAuthority(
 	}
 
 	if (component === "symbolManager") {
-		for (const role of ["SYMBOL_MANAGER_ROLE", "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"]) {
+		for (const role of ["SYMBOL_MANAGER_ROLE", "SYMBOL_LISTING_ROLE", "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"]) {
 			const hash = roleHash(role)
 			const [deployerCanAdmin, adminCanAdmin] = await Promise.all([view.isRoleAdmin(deployer, hash), view.isRoleAdmin(admin, hash)])
 			if (!deployerCanAdmin && !adminCanAdmin) {
@@ -1119,6 +1123,7 @@ async function executePartyB(
 		{ name: "DEFAULT_ADMIN_ROLE", hash: defaultAdminRole },
 		{ name: "TRUSTED_ROLE", hash: roleHash("TRUSTED_ROLE") },
 		{ name: "MANAGER_ROLE", hash: roleHash("MANAGER_ROLE") },
+		{ name: "MULTICAST_WHITELIST_ROLE", hash: roleHash("MULTICAST_WHITELIST_ROLE") },
 		{ name: "SETTER_ROLE", hash: roleHash("SETTER_ROLE") },
 		{ name: "PAUSER_ROLE", hash: roleHash("PAUSER_ROLE") },
 		{ name: "UNPAUSER_ROLE", hash: roleHash("UNPAUSER_ROLE") },
@@ -1161,9 +1166,10 @@ async function executePartyB(
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
 	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress)
 	const manualActions: SafeManualAction[] = []
+	const partyBRegistrarRole = roleHash("PARTY_B_REGISTRAR_ROLE")
 	const partyBManagerRole = roleHash("PARTY_B_MANAGER_ROLE")
 	if (!(await coreView.isPartyB(address))) {
-		if (await coreView.hasRole(deployer.address, partyBManagerRole)) {
+		if (await coreView.hasRole(deployer.address, partyBRegistrarRole)) {
 			await send(coreControl.connect(deployer).registerPartyB(address), "register standalone PartyB on core")
 		} else {
 			manualActions.push(
@@ -1202,7 +1208,7 @@ async function executePartyB(
 	// The deployer is initial admin solely so a standalone run can finish PartyB-local
 	// configuration. Strip every privilege only after the final admin roles are proven.
 	if (admin.toLowerCase() !== deployer.address.toLowerCase()) {
-		const rolesToRenounce = [defaultAdminRole, trustedRole, roleHash("MANAGER_ROLE"), setterRole]
+		const rolesToRenounce = [defaultAdminRole, trustedRole, roleHash("MANAGER_ROLE"), roleHash("MULTICAST_WHITELIST_ROLE"), setterRole]
 		for (const role of rolesToRenounce) {
 			if (!(await contract.hasRole(role, admin))) throw new Error(`Refusing to renounce deployer role ${role}: final admin ${admin} does not hold it`)
 		}
@@ -1262,7 +1268,7 @@ async function executeSymbolManager(
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
-	const coreRoles = ["SYMBOL_MANAGER_ROLE", "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"]
+	const coreRoles = ["SYMBOL_MANAGER_ROLE", "SYMBOL_LISTING_ROLE", "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"]
 	const manualActions: SafeManualAction[] = []
 	for (const role of coreRoles) {
 		const hash = roleHash(role)

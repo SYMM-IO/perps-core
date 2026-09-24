@@ -80,9 +80,8 @@ interface IGaslessLayer {
 		bytes[][] calldata flexFillerSignatures
 	) external returns (bytes[] memory);
 
-	function relayGrantBatchDelegationBySig(IInstantLayer.SignedDelegation calldata signedDelegation, bytes calldata signature) external;
-
-	function relayNativeGasTopUp(NativeGasTopUpRequest calldata request, bytes calldata signature) external payable;
+	/// @param maxTotalCharge Signed 18-decimal cap on collateral plus fee, or type(uint256).max for an uncapped NativeGasTopUpRequest.
+	function relayNativeGasTopUp(NativeGasTopUpRequest calldata request, uint256 maxTotalCharge, bytes calldata signature) external payable;
 
 	function settleDepositToNewAccount(
 		address owner,
@@ -124,25 +123,11 @@ interface IGaslessLayer {
 
 	function getBaseOperationalFee(bytes4 selector) external view returns (uint256 amount18);
 
-	function getAccountOperationalFee(
-		address account,
-		IInstantLayer.SignedOperation[] calldata signedOps,
-		uint256[] calldata walletIds
-	) external view returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota);
-
 	// ────────────────────────── Events ────────────────────────────
 
 	// Payers are read from the per-op OperationalFeeRouted events in the same receipt.
 	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 totalFee18);
 	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 totalFee18);
-	event DelegationBySigRelayed(
-		address indexed relayer,
-		address indexed delegatorAccount,
-		address indexed payer,
-		address delegate,
-		uint256 selectorCount,
-		uint256 fee18
-	);
 	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount18);
 	/// @notice Deposit fee in collateral-token units, attributed to the wallet owner.
 	event DepositFeeCollected(address indexed owner, address indexed treasury, uint256 amount);
@@ -231,6 +216,8 @@ interface IGaslessLayer {
 	error WalletOperationForPartyBUnsupported();
 	error InvalidWalletOperationSigner(address expectedOwner, address actualSigner);
 	error WalletDelegationMissing(address delegator, address delegate, bytes4 selector);
+	error DelegatedWalletValueNotAllowed(uint256 callIndex, uint256 value);
+	error InvalidWalletDelegationCallData();
 	error InvalidWalletExecuteSelector(bytes4 selector);
 	error UnsupportedFeeQuoteCall(bytes4 selector);
 	error UnexpectedNativeValue(uint256 value);

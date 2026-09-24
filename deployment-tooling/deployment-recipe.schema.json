@@ -684,7 +684,8 @@
 						"FEE_CLAIMER_ROLE": { "$ref": "#/$defs/expressRole" },
 						"UNLOCK_ROLE": { "$ref": "#/$defs/expressRole" },
 						"WITHDRAWER_ROLE": { "$ref": "#/$defs/expressRole" },
-						"PAUSER_ROLE": { "$ref": "#/$defs/expressRole" }
+						"PAUSER_ROLE": { "$ref": "#/$defs/expressRole" },
+						"UNPAUSER_ROLE": { "$ref": "#/$defs/expressRole" }
 					}
 				},
 				"affiliates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expressAffiliate" } }

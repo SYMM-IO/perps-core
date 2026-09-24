@@ -35,11 +35,6 @@ interface IInstantLayer {
 		ReplayAttackHeader replayAttackHeader;
 	}
 
-	struct SignedDelegation {
-		DelegationInfo delegationInfo;
-		ReplayAttackHeader replayAttackHeader;
-	}
-
 	struct DelegationInfo {
 		Account account;
 		address delegatedSigner;
@@ -65,11 +60,6 @@ interface IInstantLayer {
 		bytes[][] calldata fills,
 		bytes[][] calldata flexFillerSignatures
 	) external returns (bytes[] memory results);
-
-	/// @notice Grant batch delegation permissions through an owner signature.
-	/// @dev Separate from executeBatch/executeTemplate: the InstantLayer validates the SignedDelegation
-	///      EIP-712 payload and updates delegation nonce/storage directly.
-	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external;
 
 	/// @notice Grant delegation permissions for `info.account` to `info.delegatedSigner`.
 	/// @dev The gateway does not call this directly. Integrators encode it in an owner-signed SignedOperation

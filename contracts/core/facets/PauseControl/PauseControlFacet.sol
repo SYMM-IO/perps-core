@@ -162,15 +162,22 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		AccountStorage.layout().suspendedAddresses[user] = false;
 	}
 
-	/// @notice Pauses or unpauses a specific Party B from opening new positions (lockQuote + openPosition).
+	/// @notice Pauses a specific Party B from opening new positions (lockQuote + openPosition).
 	/// @dev Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still close positions,
 	///      deallocate funds, and receive correct fund routing in ClearingHouse distributions.
-	/// @param partyB The address of the Party B to pause/unpause.
-	/// @param status True to block new position opening, false to allow.
-	function setPartyBOpenPositionsPaused(address partyB, bool status) external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	/// @param partyB The address of the Party B to pause.
+	function pausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.PAUSER_ROLE) {
 		require(partyB != address(0), "PauseControlFacet: Zero address");
-		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = status;
-		emit SetPartyBOpenPositionsPausedForPartyB(partyB, status);
+		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = true;
+		emit SetPartyBOpenPositionsPausedForPartyB(partyB, true);
+	}
+
+	/// @notice Allows a previously paused Party B to open new positions again.
+	/// @param partyB The address of the Party B to unpause.
+	function unpausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		require(partyB != address(0), "PauseControlFacet: Zero address");
+		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = false;
+		emit SetPartyBOpenPositionsPausedForPartyB(partyB, false);
 	}
 
 	/// @notice Sets the emergency status for multiple Party B addresses, enabling or disabling their emergency mode operations.
@@ -182,6 +189,22 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 			GlobalAppStorage.layout().partyBEmergencyStatus[partyBs[i]] = status;
 			emit SetPartyBEmergencyStatus(partyBs[i], status);
 		}
+	}
+
+	/// @notice Enables or disables the legacy deallocate function. When deprecated, users must use safeDeallocate.
+	/// @param deprecated True to deprecate legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
+	function setLegacyDeallocateDeprecated(bool deprecated) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyDeallocateDeprecated(appLayout.legacyDeallocateDeprecated, deprecated);
+		appLayout.legacyDeallocateDeprecated = deprecated;
+	}
+
+	/// @notice Enables or disables legacy PartyA liquidation pricing. When deprecated, liquidators must use signed PartyB-symbol state.
+	/// @param deprecated True to deprecate legacy PartyA liquidation entrypoints, false to allow them.
+	function setLegacyPartyALiquidationDeprecated(bool deprecated) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyPartyALiquidationDeprecated(appLayout.legacyPartyALiquidationDeprecated, deprecated);
+		appLayout.legacyPartyALiquidationDeprecated = deprecated;
 	}
 
 	/// @notice Deprecates the legacy withdrawal mechanism, forcing users to use the new withdrawal system.

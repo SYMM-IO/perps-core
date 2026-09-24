@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Explains the bounded PartyA liquidation rounding allowance and the exact funding aggregate updates and repair path that make the bound safe."
+		/>
+		<title>Liquidation Rounding and Funding Aggregate Repair - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#rounding">Why liquidation totals can differ</a>
+				<a class="toc-link level-2" href="#settlement">Applying the cap at settlement</a>
+				<a class="toc-link level-2" href="#funding">Why partial closes left dust</a>
+				<a class="toc-link level-2" href="#exact-notional">Exact Muon PnL input</a>
+				<a class="toc-link level-2" href="#repair">Repairing existing groups</a>
+				<a class="toc-link level-2" href="#rollout">Safe rollout</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Liquidation Rounding and Funding Aggregate Repair</h1>
+							<p class="hero-copy">
+								Tiny calculation differences should not stop a liquidation. v0.8.6 handles those differences and fixes funding totals
+								that became inaccurate after partial closes.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						When an account does not have enough funds to keep its positions open, liquidation closes them and settles what each party
+						owes. Muon, the external service that reports profit and loss, calculates a total from groups of positions. The contract
+						calculates each position separately and adds the results.
+					</p>
+					<p>
+						Both calculations use tiny whole-number accounting units. If division leaves a fraction of a unit, that fraction is dropped.
+						This is rounding. Dropping fractions before adding the results can give a slightly different total from adding first. Even
+						with the same prices and positions, the totals can differ by a few units. Previously, even a one-unit difference could stop
+						the liquidation and require manual resolution.
+					</p>
+					<p>
+						v0.8.6 accepts only a tiny difference, limited by how many positions the account had when liquidation started. When both
+						calculations agree on who owes money, settlement uses the smaller amount: for example, 100 instead of 101 accounting units,
+						not whole tokens. If they disagree on who owes the net payment, that payment is zero. Larger differences still require a
+						dispute to be resolved.
+					</p>
+					<p>
+						The update also fixes how saved funding totals change when part of a position closes, provides a one-time repair for totals
+						that are already wrong, and gives Muon exact position values to calculate from.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Before resuming activity:</strong> repair incorrect saved funding totals and update Muon's calculation. The small
+						allowance is safe only when both use the correct underlying values.
+					</aside>
+
+					<h2 id="rounding">Why liquidation totals can differ</h2>
+					<p>
+						Integer division truncates toward zero: it removes the fractional part, so <code>cut(4.8) = 4</code> and
+						<code>cut(−4.8) = −4</code>. Consider two values with decimals that the contract cannot store:
+					</p>
+					<pre><code>Quote-by-quote: cut(4.8) + cut(5.8) = 4 + 5 = 9
+Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
+					<p>
+						The difference comes from when each calculation truncates; it does not imply incorrect price or funding data. Price PnL can
+						lose less than one unit per quote, and funding can lose less than two. This gives a maximum of three raw units for each
+						position, provided the stored totals and Muon inputs are exact.
+					</p>
+					<p>
+						The position count is saved at liquidation start, so closing positions in several batches cannot shrink or grow the limit. The
+						final settlement amount is the smaller magnitude when both calculations agree on its direction. For example, losses of 100 and
+						101 settle at 100. No separate payment is created for the difference or assigned to another account.
+					</p>
+
+					<h2 id="settlement">Applying the cap at settlement</h2>
+					<p>
+						Closing a position removes its PartyB connection as soon as that pair has no open positions or pending quotes. Pending-quote
+						cleanup follows the same rule. A saved settlement does not keep an empty connection alive. Once the final position closes, the
+						contract checks the rounding bound and records the target UPNL and the signed reduction still needed. PartyB settlement
+						amounts are not changed in the position-closing transaction.
+					</p>
+					<p>
+						<code>settlePartyALiquidation</code> and its snapshot variant use the PartyB addresses supplied by the caller. Before paying
+						each pending settlement, the contract reduces its expected amount toward zero and reduces its actual amount in the same
+						direction without crossing zero. Existing OVERDUE haircuts and funding classification still apply. Only buckets with the
+						needed sign consume the reduction, in caller-supplied order; it is not a proportional split between PartyBs.
+					</p>
+					<pre><code>Muon loss = 100; quote loss = 102; reduction needed = 2
+First settlement:  quote payment 1  becomes 0; reduction left = 1
+Second settlement: quote payment 101 becomes 100; reduction left = 0
+Total paid = 100; liquidation can finish</code></pre>
+					<p>
+						Partial batches carry only the remaining reduction in <code>partyALiquidationRoundingReduction</code>. Empty batches do not
+						consume it; unknown, duplicate, or already-settled PartyBs revert the transaction. Normal finalization requires every PartyB
+						settlement and the whole reduction to be consumed. Positive PartyB reserves remain conservative until payment, then their
+						contributions are released as usual. No new rounding event, vault transfer, or permanent counter is introduced.
+					</p>
+					<p>
+						If positive signed UPNL overstated PartyA's deferred credit, that credit is corrected once when the target is recorded after
+						the final position closes. The deduction is <code>min(deferred balance, signed UPNL - target UPNL)</code>: a zero balance
+						stays zero, and an insufficient balance is reduced only to zero without reverting liquidation. A dispute-role override cancels
+						the unconsumed automatic reduction and uses the supplied amounts; Clearing House takeover also cancels the unconsumed
+						reduction. Neither path reverses payments already made. A new liquidation starts with no pending reduction, and normal
+						completion clears it.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Keep the settlement PartyB list independently.</strong> Liquidators must retain the PartyBs from the liquidated quotes
+						or their indexed events. Do not rebuild the settlement list from <code>getConnectedPartyBs</code> after positions close: empty
+						connections have already been removed, while their saved settlement records still need payment.
+					</aside>
+
+					<h2 id="funding">Why partial closes left dust</h2>
+					<p>
+						A funding group stores the sum of each open quote's contribution, truncated toward zero. The old close path truncated each
+						closed slice independently. The truncated slices did not always add up to the original contribution: a 60% close followed by a
+						40% close could leave one raw unit after the position reached zero.
+					</p>
+					<pre><code>Old behavior: remove cut(closed amount × funding)
+New behavior: remove cut(old open amount × funding)
+                   − cut(new open amount × funding)</code></pre>
+					<p>
+						The new calculation makes the stored value exactly match the remaining quote after every partial close. When the last position
+						in a pair or global PartyB group closes, its funding total is also set to zero. Reopening the same group then starts without
+						old dust.
+					</p>
+
+					<h2 id="exact-notional">Exact Muon PnL input</h2>
+					<p>
+						The original UPNL views return an average open price. Dividing notional by amount to calculate that average can drop a
+						remainder. Multiplying the truncated average by the amount later cannot restore it.
+					</p>
+					<pre><code>Old LONG price PnL: (price − truncated average) × amount / 1e18
+New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
+					<p>
+						v0.8.6 adds three views: <code>getPartyAExactNotionalUpnlData</code>, <code>getPartyBExactNotionalUpnlData</code>, and
+						<code>getPartyBGlobalExactNotionalUpnlData</code>. They return the stored <code>aggregatedNotional</code>. The old views
+						remain unchanged for existing readers. The corresponding Muon implementation must enable the exact-notional path for contract
+						addresses listed in <code>MUON_EXACT_NOTIONAL_CONTRACTS</code>.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Muon compatibility with v0.8.5.</strong> These views do not exist in v0.8.5 contracts, so Muon cannot call them on
+						those deployments. It needs to calculate the exact inputs itself, for example by reading all open quotes at the same block and
+						summing <code>(quantity − closedAmount) × openedPrice</code> for each PartyA/PartyB/symbol/direction group. Use exact integer
+						arithmetic without dividing each product first; do not reconstruct notional from the rounded average price. Enable the new
+						getter path only for deployments that actually expose the v0.8.6 views.
+					</aside>
+					<p>
+						Muon must calculate each funded group once and add that result to total UPNL and, when negative, to total unrealized loss.
+						Using the same result prevents the two signed fields from disagreeing because of different truncation.
+					</p>
+					<aside class="callout callout-note">
+						<strong>OVERDUE safety.</strong> A rounding-sized mismatch can make a calculated loss reduction one unit larger than a quote's
+						loss. The reduction is now capped at that quote's loss, so the liquidation reaches the normal dispute check instead of
+						reverting.
+					</aside>
+
+					<h2 id="repair">Repairing existing groups</h2>
+					<p>
+						Fixing future partial closes does not correct funding totals that are already wrong. We therefore make a one-time repair of
+						the affected groups, so their saved totals match the positions that are still open.
+					</p>
+					<p>
+						While the protocol is paused, a script reads the open quotes in manageable pages and recalculates the totals using the same
+						arithmetic as the contract. Doing this work off chain avoids running out of transaction gas when a group contains many quotes.
+					</p>
+					<p>
+						An authorized operator reviews the results and submits them through <code>resyncAggregateFunding</code>. This corrects the
+						affected PartyA/PartyB funding totals and PartyB's overall funding total; it does not change positions or transfer money. The
+						contract rejects the repair if the checked values changed in the meantime. After verifying the repaired totals, activity can
+						resume with the new rules keeping them accurate.
+					</p>
+
+					<h2 id="rollout">Safe rollout</h2>
+					<p>
+						Plan the upgrade against the target diamond's deployed state. Deployments already running the v0.8.6 rounding release have the
+						three-unit allowance and liquidation-start position count; this update does not introduce or enable them.
+					</p>
+					<p>
+						The settlement-time cap appends one mapping to <code>AccountStorage.Layout</code> without changing public function signatures
+						or existing storage offsets. Finish all active PartyA liquidations, including takeovers, on the previous implementation before
+						upgrading this flow. An in-progress liquidation may contain retained connections or already-adjusted buckets from the old
+						implementation; this update does not migrate that intermediate state. The shared liquidation-start helper also changes, so
+						rebuild and relink both legacy and snapshot setup paths together with settlement and Clearing House callers.
+					</p>
+					<p>
+						The deployment scope includes <code>MigrationFacet</code>, <code>ViewFacetAggregate</code>, and <code>ViewFacetQuote</code>,
+						plus the funding and liquidation changes in <code>PartyBBatchActionsFacet</code>, <code>PartyBLiquidationFacet</code>,
+						<code>PartyBPositionActionsFacetImpl</code>, <code>SymbolAdjustmentFacet</code>, <code>ClearingHouseFacetImpl</code>,
+						<code>LibQuoteClose</code>, <code>LibForceActions</code>, and <code>LibPartyALiquidationProcess</code>. Changes to internal
+						funding helpers are compiled into their callers, so a source-file list alone is not a complete deployment list.
+					</p>
+					<p>
+						Build the final deployment list from the compiled bytecode and artifact <code>linkReferences</code>. If a linked library gets
+						a new address, relink and redeploy every caller, including callers of those callers. This includes
+						<code>ClearingHouseFacet</code>, <code>ForceActionsFacet</code>, <code>ForceCloseStepsFacet</code>, <code>PartyAFacet</code>,
+						both PartyA liquidation facets, <code>PartyBEmergencyActionsFacet</code>, <code>PartyBExecutionFacet</code>,
+						<code>PartyBPositionActionsFacet</code>, and <code>PartyBQuoteActionsFacet</code>. Deploy library dependencies before their
+						callers, then update the diamond's facet mappings.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Check selectors before building the cut.</strong> Query <code>facetAddress(bytes4)</code> through the diamond loupe
+						for each function signature. Use <code>Add</code> for an absent selector and <code>Replace</code> for an existing selector
+						that must point to an updated facet. Only use <code>Remove</code> for a deployed selector that is intentionally retired.
+						Removing an absent selector reverts the whole cut. Check the target deployment rather than assuming that every function in Git
+						was deployed.
+					</aside>
+					<ol>
+						<li>
+							Record the target chain, diamond address, deployed facets, and library addresses. Prepare the complete deployment and
+							selector plan above, then rehearse the upgrade and repair against a recent fork of that deployment.
+						</li>
+						<li>
+							Identify the funding groups that need repair and finish active PartyA and PartyB liquidations involving them before the
+							global pause. The repair rejects liquidating parties, and a global pause also blocks liquidation settlement. If a
+							liquidation cannot finish, resolve it through the existing dispute or Clearing House flow before repairing its groups.
+						</li>
+						<li>
+							Globally pause the protocol and confirm that the affected accounts are no longer liquidating. Deploy the updated libraries
+							and dependent facets, refresh the target's selector inventory, and apply the reviewed diamond cut. Verify its facet
+							mappings, the repair function, and the exact-notional getters before calculating repairs.
+						</li>
+						<li>
+							Use the repair script to calculate the correct totals without submitting changes. Review the proposed corrections and keep
+							the protocol paused throughout the calculation and repair.
+						</li>
+						<li>Apply the approved repairs in manageable batches, then verify the corrected totals before unpausing.</li>
+						<li>
+							Activate the corresponding Muon implementation, add the deployed chain and diamond address to
+							<code>MUON_EXACT_NOTIONAL_CONTRACTS</code>, then restart Muon.
+						</li>
+						<li>Verify repaired funding totals and exact-notional Muon calculations, then resume affected actions.</li>
+					</ol>
+					<p>
+						When the fixed allowance accepts a difference, both parties settle using the smaller same-direction amount. The discarded
+						difference is not a payment and is not emitted or assigned to a vault or account. Only the unapplied reduction is stored
+						temporarily while settlement batches are in progress.
+					</p>
+				</article>
+			</main>
+		</div>
+	</body>
+</html>

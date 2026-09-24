@@ -32,7 +32,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		uint256 maxLeverage,
 		uint256 fundingRateEpochDuration,
 		uint256 fundingRateWindowTime
-	) public onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	) public onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		require(fundingRateWindowTime < fundingRateEpochDuration / 2, "SymbolControlFacet: High window time");
 		require(tradingFee <= 1e18, "SymbolControlFacet: High default fee");
 		uint256 lastId = ++SymbolStorage.layout().lastId;
@@ -62,7 +62,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Batch adds multiple trading symbols with their category types in a single transaction for gas efficiency.
 	/// @param symbolsWithType Array of SymbolWithType structs containing symbol parameters and their category types.
-	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		for (uint256 i; i < symbolsWithType.length; i++) {
 			addSymbol(
 				symbolsWithType[i].name,
@@ -80,7 +80,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Batch adds multiple trading symbols in a single transaction for gas efficiency.
 	/// @param symbols Array of Symbol structs containing the parameters for each symbol to add.
-	function addSymbols(Symbol[] memory symbols) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function addSymbols(Symbol[] memory symbols) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		for (uint256 i; i < symbols.length; i++) {
 			addSymbol(
 				symbols[i].name,
@@ -114,7 +114,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Enables or disables trading for a symbol. Invalid symbols cannot be used for new quotes.
 	/// @param symbolId The unique identifier of the symbol to update.
 	/// @param isValid True to enable trading on this symbol, false to disable new positions.
-	function setSymbolValidationState(uint256 symbolId, bool isValid) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function setSymbolValidationState(uint256 symbolId, bool isValid) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
 		emit SetSymbolValidationState(symbolId, symbolLayout.symbols[symbolId].isValid, isValid);
@@ -224,7 +224,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Updates the base trading fee for a specific symbol. This fee applies when no affiliate-specific fee exists.
 	/// @param symbolId The unique identifier of the symbol to update.
 	/// @param tradingFee The new base trading fee percentage (in 1e18 precision).
-	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
 		emit SetSymbolTradingFee(symbolId, symbolLayout.symbols[symbolId].tradingFee, tradingFee);
@@ -244,7 +244,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Batch updates the category types for multiple symbols in a single transaction.
 	/// @param symbolIds Array of symbol identifiers to update.
 	/// @param symbolTypes Array of category identifiers corresponding to each symbol (must match symbolIds length).
-	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		require(symbolIds.length == symbolTypes.length, "SymbolControlFacet: Array length mismatch");
 		for (uint256 i = 0; i < symbolIds.length; i++) {
 			setSymbolTypeInternal(symbolIds[i], symbolTypes[i]);

@@ -27,10 +27,6 @@ contract MockInstantLayer is IInstantLayer {
 	uint256 public lastDelegationSelectorCount;
 	bytes4 public lastDelegationFirstSelector;
 	uint256 public lastDelegationExpiry;
-	uint256 public lastDelegationNonce;
-	uint256 public lastDelegationDeadline;
-	bytes32 public lastDelegationSalt;
-	bytes public lastDelegationSignature;
 	mapping(address => mapping(address => mapping(bytes4 => uint256))) public delegations;
 
 	error NotExecutor();
@@ -113,25 +109,6 @@ contract MockInstantLayer is IInstantLayer {
 			}
 		}
 		emit InstantOperationsExecuted(signedOps.length);
-	}
-
-	function grantBatchDelegationBySig(SignedDelegation calldata signedDelegation, bytes calldata signature) external {
-		if (forceDelegationFailure) revert ForcedDelegationFailure();
-		DelegationInfo calldata info = signedDelegation.delegationInfo;
-		lastDelegationAccount = info.account.addr;
-		lastDelegationIsPartyB = info.account.isPartyB;
-		lastDelegationDelegate = info.delegatedSigner;
-		lastDelegationSelectorCount = info.selectors.length;
-		lastDelegationFirstSelector = info.selectors.length == 0 ? bytes4(0) : info.selectors[0];
-		lastDelegationExpiry = info.expiryTimestamp;
-		lastDelegationNonce = signedDelegation.replayAttackHeader.nonce;
-		lastDelegationDeadline = signedDelegation.replayAttackHeader.deadline;
-		lastDelegationSalt = signedDelegation.replayAttackHeader.salt;
-		lastDelegationSignature = signature;
-
-		for (uint256 i = 0; i < info.selectors.length; i++) {
-			delegations[info.account.addr][info.delegatedSigner][info.selectors[i]] = info.expiryTimestamp;
-		}
 	}
 
 	/// @notice Mirrors the real InstantLayer's delegation-grant surface: a self-targeted signed

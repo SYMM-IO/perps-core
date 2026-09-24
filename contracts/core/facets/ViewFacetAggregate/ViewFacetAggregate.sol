@@ -195,7 +195,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		if (start + size > totalLength) size = totalLength - start;
 
 		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
+		for (uint256 i = 0; i < size;) {
 			result[i] = activeSymbols[start + i];
 			unchecked {
 				++i;
@@ -235,7 +235,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		if (start + size > totalLength) size = totalLength - start;
 
 		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
+		for (uint256 i = 0; i < size;) {
 			result[i] = activeSymbols[start + i];
 			unchecked {
 				++i;
@@ -257,7 +257,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		if (start + size > totalLength) size = totalLength - start;
 
 		uint256[] memory result = new uint256[](size);
-		for (uint256 i = 0; i < size; ) {
+		for (uint256 i = 0; i < size;) {
 			result[i] = activeSymbols[start + i];
 			unchecked {
 				++i;
@@ -286,7 +286,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
@@ -339,7 +339,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
@@ -396,7 +396,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedPositionBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
@@ -453,7 +453,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -502,7 +502,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -550,7 +550,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new AggregatedFundingDebtBySymbol[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			if (aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG].aggregatedAmount > 0) {
@@ -599,7 +599,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new UpnlData[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -658,7 +658,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new UpnlData[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -716,7 +716,7 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 		results = new UpnlData[](size * 2);
 		uint256 count;
 
-		for (uint256 i = start; i < start + size; ) {
+		for (uint256 i = start; i < start + size;) {
 			uint256 symbolId = activeSymbols[i];
 
 			// LONG position data
@@ -739,6 +739,164 @@ contract ViewFacetAggregate is IViewFacetAggregate {
 					positionType: PositionType.SHORT,
 					aggregatedAmount: shortPos.aggregatedAmount,
 					avgOpenPrice: shortPos.aggregatedNotional / shortPos.aggregatedAmount,
+					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked {
+				++i;
+			}
+		}
+
+		assembly ("memory-safe") {
+			mstore(results, count)
+		}
+	}
+
+	/// @notice Returns paginated exact-notional UPNL data for partyA with a specific partyB
+	/// @dev LONG UPNL: (price * aggregatedAmount - aggregatedNotional) / 1e18 - fundingDebt.
+	///      SHORT UPNL: (aggregatedNotional - price * aggregatedAmount) / 1e18 - fundingDebt.
+	function getPartyAExactNotionalUpnlData(
+		address partyA,
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (ExactNotionalUpnlData[] memory results) {
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB];
+		if (activeSymbols.length <= start || size == 0) return new ExactNotionalUpnlData[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
+
+		results = new ExactNotionalUpnlData[](size * 2);
+		uint256 count;
+
+		for (uint256 i = start; i < start + size;) {
+			uint256 symbolId = activeSymbols[i];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
+				PositionType.LONG
+			];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = ExactNotionalUpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedAmount: longPos.aggregatedAmount,
+					aggregatedNotional: longPos.aggregatedNotional,
+					fundingDebt: LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, PositionType.LONG)
+				});
+			}
+
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyAAggregatedPositionsPerPartyB[partyA][partyB][symbolId][
+				PositionType.SHORT
+			];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = ExactNotionalUpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedAmount: shortPos.aggregatedAmount,
+					aggregatedNotional: shortPos.aggregatedNotional,
+					fundingDebt: LibAggregateFunding.getPartyAAggregateFundingDebt(partyA, partyB, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked {
+				++i;
+			}
+		}
+
+		assembly ("memory-safe") {
+			mstore(results, count)
+		}
+	}
+
+	/// @notice Returns paginated exact-notional UPNL data for partyB with a specific partyA
+	/// @dev The returned funding debt is already expressed from partyB's side.
+	function getPartyBExactNotionalUpnlData(
+		address partyB,
+		address partyA,
+		uint256 start,
+		uint256 size
+	) external view returns (ExactNotionalUpnlData[] memory results) {
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbolsPerPartyA[partyB][partyA];
+		if (activeSymbols.length <= start || size == 0) return new ExactNotionalUpnlData[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
+
+		results = new ExactNotionalUpnlData[](size * 2);
+		uint256 count;
+
+		for (uint256 i = start; i < start + size;) {
+			uint256 symbolId = activeSymbols[i];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
+				PositionType.LONG
+			];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = ExactNotionalUpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedAmount: longPos.aggregatedAmount,
+					aggregatedNotional: longPos.aggregatedNotional,
+					fundingDebt: LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, PositionType.LONG)
+				});
+			}
+
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositionsPerPartyA[partyB][partyA][symbolId][
+				PositionType.SHORT
+			];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = ExactNotionalUpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedAmount: shortPos.aggregatedAmount,
+					aggregatedNotional: shortPos.aggregatedNotional,
+					fundingDebt: LibAggregateFunding.getPartyBAggregateFundingDebt(partyB, partyA, symbolId, PositionType.SHORT)
+				});
+			}
+
+			unchecked {
+				++i;
+			}
+		}
+
+		assembly ("memory-safe") {
+			mstore(results, count)
+		}
+	}
+
+	/// @notice Returns paginated global exact-notional UPNL data for partyB
+	/// @dev Aggregates across all partyAs and returns funding debt from partyB's side.
+	function getPartyBGlobalExactNotionalUpnlData(
+		address partyB,
+		uint256 start,
+		uint256 size
+	) external view returns (ExactNotionalUpnlData[] memory results) {
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		uint256[] storage activeSymbols = aggregatedLayout.partyBActiveSymbols[partyB];
+		if (activeSymbols.length <= start || size == 0) return new ExactNotionalUpnlData[](0);
+		if (start + size > activeSymbols.length) size = activeSymbols.length - start;
+
+		results = new ExactNotionalUpnlData[](size * 2);
+		uint256 count;
+
+		for (uint256 i = start; i < start + size;) {
+			uint256 symbolId = activeSymbols[i];
+			PartiesAggregatedPositions storage longPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.LONG];
+			if (longPos.aggregatedAmount > 0) {
+				results[count++] = ExactNotionalUpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.LONG,
+					aggregatedAmount: longPos.aggregatedAmount,
+					aggregatedNotional: longPos.aggregatedNotional,
+					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.LONG)
+				});
+			}
+
+			PartiesAggregatedPositions storage shortPos = aggregatedLayout.partyBAggregatedPositions[partyB][symbolId][PositionType.SHORT];
+			if (shortPos.aggregatedAmount > 0) {
+				results[count++] = ExactNotionalUpnlData({
+					symbolId: symbolId,
+					positionType: PositionType.SHORT,
+					aggregatedAmount: shortPos.aggregatedAmount,
+					aggregatedNotional: shortPos.aggregatedNotional,
 					fundingDebt: LibAggregateFunding.getPartyBGlobalAggregateFundingDebt(partyB, symbolId, PositionType.SHORT)
 				});
 			}

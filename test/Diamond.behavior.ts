@@ -94,20 +94,23 @@ export function shouldBehaveLikeDiamond(): void {
 		expect(await context.diamondLoupeFacet.facetAddress(legacySendQuoteSelector)).to.equal(ethers.ZeroAddress)
 	})
 
-	it("exposes only the count-free startRestatement selector", async function () {
+	it("exposes only the liquidation-nonce-protected startRestatement selector", async function () {
 		const context: RunContext = this.context
 		const legacySelector = ethers.id("startRestatement(uint256,uint256,uint256)").slice(0, 10)
-		const currentSelector = ethers.id("startRestatement(uint256)").slice(0, 10)
+		const unprotectedSelector = ethers.id("startRestatement(uint256)").slice(0, 10)
+		const currentSelector = ethers.id("startRestatement(uint256,uint256)").slice(0, 10)
 
 		expect(await context.diamondLoupeFacet.facetAddress(legacySelector)).to.equal(ethers.ZeroAddress)
+		expect(await context.diamondLoupeFacet.facetAddress(unprotectedSelector)).to.equal(ethers.ZeroAddress)
 		expect(await context.diamondLoupeFacet.facetAddress(currentSelector)).to.not.equal(ethers.ZeroAddress)
 	})
 
 	it("routes every Symbol Adjustment read through ViewFacetSymbol", async function () {
 		const context: RunContext = this.context
 		const symbolViewAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("getSymbol(uint256)").slice(0, 10))
-		const symbolAdjustmentAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("startRestatement(uint256)").slice(0, 10))
+		const symbolAdjustmentAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("startRestatement(uint256,uint256)").slice(0, 10))
 		const readSignatures = [
+			"getLiquidationStartNonce()",
 			"getSymbolAdjustment(uint256)",
 			"getCumulativeFactor(uint256)",
 			"getProspectiveCumulativeFactor(uint256)",
@@ -147,6 +150,29 @@ export function shouldBehaveLikeDiamond(): void {
 		expect(existingFinalField).to.be.greaterThan(-1)
 		expect(inventoryCheckpoints).to.be.greaterThan(existingFinalField)
 		expect(inventoryTotals).to.be.greaterThan(inventoryCheckpoints)
+	})
+
+	it("appends crystallize-and-restart rates after the existing funding checkpoint fields", function () {
+		const source = readFileSync("contracts/core/storages/SymbolAdjustmentStorage.sol", "utf8")
+		const checkpointStart = source.indexOf("struct FundingRateCheckpoint")
+		const existingFinalField = source.indexOf("uint256 restatementEpoch", checkpointStart)
+		const restatedLongRate = source.indexOf("int256 restatedLongRate", checkpointStart)
+		const restatedShortRate = source.indexOf("int256 restatedShortRate", checkpointStart)
+		const checkpointEnd = source.indexOf("struct RestatementInventoryCheckpoint", checkpointStart)
+
+		expect(checkpointStart).to.be.greaterThan(-1)
+		expect(restatedLongRate).to.be.greaterThan(existingFinalField)
+		expect(restatedShortRate).to.be.greaterThan(restatedLongRate)
+		expect(checkpointEnd).to.be.greaterThan(restatedShortRate)
+	})
+
+	it("appends the liquidation start nonce after the existing MA layout", function () {
+		const source = readFileSync("contracts/core/storages/MAStorage.sol", "utf8")
+		const existingFinalField = source.indexOf("mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag")
+		const liquidationStartNonce = source.indexOf("uint256 liquidationStartNonce")
+
+		expect(existingFinalField).to.be.greaterThan(-1)
+		expect(liquidationStartNonce).to.be.greaterThan(existingFinalField)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {

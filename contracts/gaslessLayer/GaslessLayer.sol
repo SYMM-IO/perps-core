@@ -221,31 +221,16 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		emit InstantTemplateRelayed(msg.sender, templateId, signedOps.length, totalFee);
 	}
 
-	/// @notice Relay a user-signed InstantLayer delegation and charge one fee or consume one free operation.
-	/// @dev Calls InstantLayer's standalone grantBatchDelegationBySig. Owner-signed grants can also use relayInstantBatch.
-	///      The delegation account pays, with virtual accounts billed through their parent as for other InstantLayer operations.
-	///      Each relay uses one free operation when available, regardless of the number of selectors granted.
-	function relayGrantBatchDelegationBySig(
-		IInstantLayer.SignedDelegation calldata signedDelegation,
-		bytes calldata signature
-	) external override onlyRole(RELAYER_ROLE) nonReentrant {
-		IInstantLayer.DelegationInfo calldata info = signedDelegation.delegationInfo;
-		address delegatorAccount = info.account.addr;
-		(address payer, uint256 fee) = _collectOneOperationalFee(delegatorAccount, IInstantLayer.grantBatchDelegationBySig.selector);
-		GaslessFeeLimits.check(signedDelegation.replayAttackHeader.salt, fee);
-
-		instantLayer.grantBatchDelegationBySig(signedDelegation, signature);
-
-		emit DelegationBySigRelayed(msg.sender, delegatorAccount, payer, info.delegatedSigner, info.selectors.length, fee);
-	}
-
 	/// @notice Relay a user-signed native gas top-up funded by the relayer's `msg.value`.
 	/// @dev The payer is sponsored while its daily native allowance covers the request. Once exhausted,
 	///      the configured policy either reverts or charges the signed collateral amount plus the top-up fee through core.
 	///      GaslessNativeGasTopUpLib checks the signature, consumes the nonce, records sponsorship, and transfers native gas.
+	///      `maxTotalCharge` selects the signed type: type(uint256).max verifies the uncapped NativeGasTopUpRequest, any other
+	///      value verifies CappedNativeGasTopUpRequest with that cap. The signer may be an EOA or an ERC-1271 account.
 	///      The linked library keeps the implementation below EIP-170.
 	function relayNativeGasTopUp(
 		IGaslessLayer.NativeGasTopUpRequest calldata request,
+		uint256 maxTotalCharge,
 		bytes calldata signature
 	) external payable override onlyRole(RELAYER_ROLE) nonReentrant {
 		GaslessNativeGasTopUpLib.NativeGasTopUpResult memory topUp = GaslessNativeGasTopUpLib.relayNativeGasTopUp(
@@ -258,6 +243,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			maxNativeGasTopUpAmount,
 			nativeGasTopUpFeeBps,
 			request,
+			maxTotalCharge,
 			signature
 		);
 		if (topUp.sponsored) emit DailyNativeGasSponsored(topUp.payer, msg.value, topUp.sponsoredUsedToday, topUp.sponsoredLimit);
@@ -343,8 +329,12 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	) external override nonReentrant returns (uint256 withdrawnAmount) {
 		if (recipient == address(0)) revert ZeroAddress();
 		if (amount == 0) revert WalletWithdrawalAmountZero();
-		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(msg.sender, walletId);
-		return GaslessFeeQuoteLib.withdrawWalletFunds(walletId, address(wallet), token, recipient, amount, deployed ? walletCreationFee : 0);
+		GaslessWallet wallet = _getWalletAndCollectCreationFee(msg.sender, walletId);
+		withdrawnAmount = amount;
+		if (amount == type(uint256).max) withdrawnAmount = token == address(0) ? address(wallet).balance : IERC20(token).balanceOf(address(wallet));
+		if (withdrawnAmount == 0) revert WalletWithdrawalAmountZero();
+		wallet.transfer(token, recipient, withdrawnAmount);
+		emit WalletFundsWithdrawn(msg.sender, walletId, token, recipient, withdrawnAmount);
 	}
 
 	// ═══════════════════════ Wallet Views ════════════════════════
@@ -509,25 +499,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		amount18 = _baseSelectorFee(selector);
 	}
 
-	/// @notice Quote account fees for InstantLayer and indexed GaslessWallet operations.
-	/// @dev Targets are checked and calls decoded before applying quotas, even for operations covered by the free quota.
-	///      Includes one flat creation fee per undeployed wallet, even when its operation uses the free quota.
-	///      Billing uses the parent's quota and quotes the signer VA's fee when the parent cannot pay.
-	///      An approval-only quote uses the parent's post-approval multiplier; a later VA fallback can change the actual charge.
-	/// @param account Account whose operations are quoted; virtual accounts resolve to their billing parent.
-	/// @param signedOps Operations to identify and price; only the requested billing account's operations contribute to the quote.
-	/// @param walletIds Wallet index per operation; use zero for InstantLayer operations or the original wallet.
-	/// @return amountDue18 Total quoted collateral charge in 18 decimals; zero when fully waived or blocked by the quota policy.
-	/// @return freeOpsApplied Number of the billing account's operations covered by its remaining daily quota.
-	/// @return wouldBlockOnQuota Whether execution would exceed the daily quota in block mode.
-	function getAccountOperationalFee(
-		address account,
-		IInstantLayer.SignedOperation[] calldata signedOps,
-		uint256[] calldata walletIds
-	) external view override returns (uint256 amountDue18, uint256 freeOpsApplied, bool wouldBlockOnQuota) {
-		return GaslessFeeQuoteLib.accountOperationalFee(account, signedOps, walletIds);
-	}
-
 	// ═══════════════════════ Admin Recovery ═══════════════════════
 
 	function setTreasury(address treasury_) external onlyRole(CONFIG_ADMIN_ROLE) {
@@ -562,17 +533,39 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	) external override onlyRole(CONFIG_ADMIN_ROLE) nonReentrant returns (uint256 amount) {
 		if (token == collateralToken) revert CollateralRecoveryDisabled();
 		if (recipient == address(0)) revert ZeroAddress();
-		(GaslessWallet qWallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
-		amount = qWallet.sweepTokenBalance(token, recipient);
-		emit WalletNonCollateralTokenRecovered(address(qWallet), token, recipient, amount);
+		(GaslessWallet wallet, ) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		amount = wallet.sweepTokenBalance(token, recipient);
+		emit WalletNonCollateralTokenRecovered(address(wallet), token, recipient, amount);
+	}
+
+	/// @dev Owner withdrawals pay first-deployment fees from the wallet's collateral.
+	function _getWalletAndCollectCreationFee(address owner, uint256 walletId) internal returns (GaslessWallet) {
+		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		uint256 creationFee = deployed ? walletCreationFee : 0;
+		if (creationFee > 0) {
+			wallet.transfer(collateralToken, treasury, creationFee);
+			emit WalletCreationFeeCollected(address(wallet), address(wallet), creationFee);
+		}
+		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(wallet), 0, creationFee);
+		return wallet;
 	}
 
 	// ═══════════════════════ Internal: Deposits ═══════════════════════
 
 	/// @dev Enforce the gross minimum, then deduct the deposit fee and any fee for deploying this wallet.
 	function _sweepDepositAndCollectFee(address owner, uint256 walletId) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
-		(GaslessWallet qWallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
-		return GaslessFeeQuoteLib.sweepDepositAndCollectFee(owner, address(qWallet), deployed ? walletCreationFee : 0);
+		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
+		uint256 creationFee = deployed ? walletCreationFee : 0;
+		uint256 grossDeposit = wallet.sweepTokenBalance(collateralToken, address(this));
+		if (grossDeposit < minimumDeposit) revert DepositAmountBelowMinimum(grossDeposit, minimumDeposit);
+		collectedDepositFee = depositFee;
+		uint256 totalFees = collectedDepositFee + creationFee;
+		if (grossDeposit <= totalFees) revert DepositAmountNotAboveFees(grossDeposit, totalFees);
+		if (totalFees > 0) IERC20(collateralToken).safeTransfer(treasury, totalFees);
+		if (collectedDepositFee > 0) emit DepositFeeCollected(owner, treasury, collectedDepositFee);
+		if (creationFee > 0) emit WalletCreationFeeCollected(address(wallet), address(wallet), creationFee);
+		GaslessFeeQuoteLib.recordWalletPayment(collateralToken, address(wallet), collectedDepositFee, creationFee);
+		netDeposit = grossDeposit - totalFees;
 	}
 
 	function _depositCollateralToCore(address account, uint256 amount) internal {
@@ -693,21 +686,6 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		for (uint256 i = 0; i < signedOps.length; i++) selectors[i] = _instantOperationFeeSelectors(signedOps[i]);
 	}
 
-	function _collectOneOperationalFee(address signerAccount, bytes4 selector) internal returns (address payer, uint256 fee) {
-		address billingParent = _resolveBillingAccount(signerAccount);
-		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](1);
-		ops[0] = GaslessOperationalFeeLib.OpBilling({
-			signer: signerAccount,
-			billingParent: billingParent,
-			baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseSelectorFee(selector),
-			creationFee: 0
-		});
-		(uint256 totalFee, address[] memory opPayers, ) = GaslessOperationalFeeLib.settleOperationalFees(address(core), address(accountLayer), ops);
-		payer = opPayers[0];
-		fee = totalFee;
-		emit OperationalFeeRouted(signerAccount, payer, fee);
-	}
-
 	/// @dev Price the selectors captured during dispatch and resolve payers after execution.
 	///      VA signers bill their parent SubAccount, even if deleted in this batch: parentAccount remains on the
 	///      pooled record, and the parent receives the VA's returned funds. If the parent cannot pay, settlement tries
@@ -745,7 +723,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		}
 	}
 
-	// dailyFreeOpsRemaining, getAccountOperationalFee, and _useDailyFreeOp share these day and quota calculations.
+	// dailyFreeOpsRemaining and _useDailyFreeOp share these day and quota calculations.
 	// Tests check that quotes and charges agree on whether an operation is free.
 
 	/// @dev Current UTC day index (matches the packed DailyFreeOpsUsage.day).

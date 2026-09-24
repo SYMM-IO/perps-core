@@ -55,6 +55,8 @@ library ClearingHouseFacetImpl {
 		require(maLayout.crossModeEnabledForPartyB[partyB], "ClearingHouseFacet: partyB is not using cross mode");
 
 		require(LibAccount.partyBAvailableBalanceForLiquidation(upnl, partyB, address(0)) < 0, "ClearingHouseFacet: partyB is solvent");
+		maLayout.liquidationStartNonce += 1;
+		emit SharedEvents.LiquidationStartNonceIncremented(maLayout.liquidationStartNonce);
 		maLayout.partyBLiquidationTimestamp[partyB][address(0)] = timestamp;
 		chLayout.crossLiquidationDetails[partyB] = CrossLiquidationDetail({
 			liquidationId: liquidationId,
@@ -178,7 +180,8 @@ library ClearingHouseFacetImpl {
 	/// @notice Liquidates open positions during clearing house liquidation
 	/// @param subject The party being liquidated (partyB for cross, partyA for takeover)
 	/// @param quoteIds The quote IDs to liquidate
-	/// @param prices The prices to use for liquidation
+	/// @param prices The prices to use for liquidation. During an open restatement, these trusted inputs are in venue units
+	///               and Core converts each one to the corresponding quote's stored basis.
 	function liquidatePositionsForClearingHouse(
 		address subject,
 		uint256[] memory quoteIds,
@@ -201,7 +204,7 @@ library ClearingHouseFacetImpl {
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
-			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+			LibSymbolAdjustment.requireLiquidationAllowed(quote.symbolId);
 			address partyA = quote.partyA;
 			address partyB = quote.partyB;
 
@@ -216,7 +219,7 @@ library ClearingHouseFacetImpl {
 				partyB.requireNotLiquidating(partyA);
 			}
 
-			uint256 liquidationPrice = prices[i];
+			uint256 liquidationPrice = LibSymbolAdjustment.liquidationPriceInStoredUnits(quote, prices[i]);
 			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
 
 			closeIds[i] = quoteLayout.closeIds[quote.id];
@@ -329,8 +332,7 @@ library ClearingHouseFacetImpl {
 
 	/// @notice Settles the clearing house liquidation for PartyA takeover
 	/// @param partyA The partyA being settled
-	/// @param settledPartyBs PartyBs whose settlement states should be cleaned up
-	///        (includes partyBs processed by normal flow before takeover whose connections were already removed)
+	/// @param settledPartyBs All PartyBs with pending settlements from the normal liquidation flow
 	function settlePartyATakeover(address partyA, address[] memory settledPartyBs) public returns (bytes memory liquidationId) {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
@@ -346,9 +348,7 @@ library ClearingHouseFacetImpl {
 
 		liquidationId = chLayout.partyATakeoverDetails[partyA].liquidationId;
 
-		// Clear settlement states for partyBs explicitly provided by the clearing house.
-		// This is needed because the normal liquidation flow may have set settlement states
-		// for partyBs whose connections were already removed from connectedPartyBs.
+		// Clear settlement buckets supplied by the clearing house; their connections may already be gone.
 		uint256 clearedSettlements = 0;
 		for (uint256 i = 0; i < settledPartyBs.length; i++) {
 			address partyB = settledPartyBs[i];
@@ -447,6 +447,8 @@ library ClearingHouseFacetImpl {
 
 		accountLayout.liquidationDetails[partyA].disputed = false;
 		accountLayout.liquidationDetails[partyA].liquidationFee = 0;
+		// Takeover replaces normal settlement, so no unapplied automatic reduction may survive it.
+		delete accountLayout.partyALiquidationRoundingReduction[partyA];
 		delete accountLayout.liquidators[partyA];
 
 		chLayout.partyATakeoverDetails[partyA] = PartyATakeoverDetail({ liquidationId: liquidationId, deallocatedPool: 0, inProgress: true });
