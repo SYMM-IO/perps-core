@@ -273,7 +273,7 @@ event BalanceChangePartyB(
 									<td>13</td>
 									<td><code>DEFERRED_BALANCE_OUT</code></td>
 									<td>Outbound</td>
-									<td>Available PartyA allocation moves into deferred balance at liquidation start.</td>
+									<td>Allocation above the signed liquidation allocation moves into deferred balance at liquidation start.</td>
 								</tr>
 								<tr>
 									<td>14</td>
@@ -614,34 +614,36 @@ insuranceVaultCredit              = rawRemainingLf - totalLf
 					<aside class="callout callout-note">
 						<strong><code>LF_OUT</code> is not the liquidation-start fee calculation.</strong> The fee is sized from locked LF and the
 						signed-snapshot shortfall, but debited from live allocated balance; those quantities can differ by finalization. Liquidation
-						start moves <code>allocated - (lockedCva + lockedLf) + upnl</code> into deferred balance; when <code>upnl</code> is positive
-						that sweep carries off part of the LF backing, leaving less allocated than the fee. Finalization then debits only what
-						remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is the slice
-						of the starter fee still present in allocation at that moment. Read the receipt-local credit/debit gap as
+						start moves <code>allocated - liquidationAllocatedBalance</code> into deferred balance, so settlement consumes exactly the
+						signed allocation. When the signed <code>upnl</code> is positive, that allocation can be smaller than the fee: part of the fee
+						is funded by PartyA's profit, which PartyB pays in its settlement rather than through PartyA's allocation. Finalization debits
+						only what remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is
+						the slice of the starter fee still present in allocation at that moment. Read the receipt-local credit/debit gap as
 						<code>LF_IN - LF_OUT</code>; <code>LF_IN &gt; LF_OUT</code> is the signal that the clamp fired. The gap is not itself a
 						transfer event and should not be assigned to a destination.
 					</aside>
 					<aside class="callout callout-note">
 						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
-						signed snapshot by a shortfall of 0.75. Start sweeps 494.5 into deferred, leaving 1.5 allocated. The fee is
-						<code>lockedLf - shortfall</code> = 2.25, but only 1.5 is left to debit:
-						<pre><code>LF_OUT  1.50   debited from PartyA's remaining allocation
-LF_IN   2.25   credited to the liquidation starter
-gap     0.75   starter credit not matched by an allocated debit in this receipt
+						signed snapshot with 0.75 allocated (shortfall 0.75). Start moves 495.25 into deferred, leaving 0.75 allocated. The fee is
+						<code>lockedLf - shortfall</code> = 2.25, but only 0.75 is left to debit:
+						<pre><code>LF_OUT            0.75   debited from PartyA's remaining allocation
+LF_IN             2.25   credited to the liquidation starter
+CVA_IN           22.00   credited to PartyB
+REALIZED_PNL_OUT 23.50   debited from PartyB (PartyA's profit)
+DEFERRED_BALANCE_IN 495.25   returned to PartyA
 
 lockedLf = 3.00; signed-snapshot shortfall = 0.75; rawRemainingLf = 2.25
 high cap in this example means starter fee = 2.25 and insurance-vault credit = 0</code></pre>
-						None of the quantities is interchangeable: 1.50 is the allocated debit, 2.25 is what the starter earned, 0.75 is the
-						signed-snapshot shortfall and also the receipt-local credit/debit gap in this particular setup, and 3.00 is the original
-						locked LF. The balance-change ledger alone does not encode the locked amount or shortfall.
+						None of the quantities is interchangeable: 0.75 is both the allocated debit and the signed-snapshot shortfall in this setup,
+						2.25 is what the starter earned, 1.50 is the <code>LF_IN - LF_OUT</code> gap that PartyB's net payment covers, and 3.00 is the
+						original locked LF. The balance-change ledger alone does not encode the locked amount or shortfall.
 					</aside>
 					<aside class="callout callout-warning">
-						<strong>Per-account replay stays exact; cross-account conservation does not.</strong> When the clamp fires, the starter is
-						credited the full fee while PartyA is debited less, so allocated balance in that receipt is not conserved across accounts.
-						Each individual account still reconstructs exactly from its own events. This is the documented guarantee. An indexer that also
-						runs a global "credits equal debits" check must not apply it to this finalization receipt in isolation. Reconcile economic
-						value over the full liquidation lifecycle, including deferred, reimbursement, PartyB settlement, insurance-vault, and
-						signed-snapshot shortfall state; the allocated-balance events alone promise per-key replay, not global conservation.
+						<strong>Conserve across the whole liquidation, not one receipt.</strong> When the clamp fires, the starter is credited the
+						full fee while PartyA is debited less; the difference is PartyB's net settlement payment. If settlement is paginated, that
+						payment may sit in an earlier receipt, so a finalization receipt checked in isolation need not balance. Each account still
+						reconstructs exactly from its own events. An indexer that runs a global "credits equal debits" check should reconcile over the
+						full liquidation lifecycle, including deferred, reimbursement, every PartyB settlement batch, and insurance-vault state.
 					</aside>
 
 					<h3>PartyB liquidation</h3>

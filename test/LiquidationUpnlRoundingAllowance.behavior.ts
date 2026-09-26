@@ -296,14 +296,13 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 				const signedProfit = quoteProfit + reduction
 				expect(quoteProfit).to.be.greaterThan(0n)
 
-				// Seed the allocation boundary directly, then let liquidation create the deferred balance.
-				// The zero-credit case has a negative available balance, so no surplus is swept at all.
-				const surplus = deferred === 0n ? -1n : deferred
-				const allocation = balance.lockedCva + balance.lockedLf - signedProfit + surplus
-				expect(allocation).to.be.greaterThan(0n)
+				// Seed the allocation boundary directly: the signed allocation is insolvent by one unit, and
+				// `deferred` more was allocated after the signed point, which liquidation sets aside.
+				const signedAllocation = balance.lockedCva + balance.lockedLf - signedProfit - 1n
+				expect(signedAllocation).to.be.greaterThan(0n)
 				const allocationSlot = await scalarGetterSlot(context.viewFacet, "allocatedBalanceOfPartyA", [userAddr])
-				await setSignedStorage(context.diamond, allocationSlot, allocation)
-				const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: 0n })
+				await setSignedStorage(context.diamond, allocationSlot, signedAllocation + deferred)
+				const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: signedAllocation })
 				expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(deferred)
 				const hedgerBefore = await hedger.getBalanceInfo(userAddr)
 
@@ -347,7 +346,7 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			expect(hedgerAfter.allocatedBalances - hedgerBefore.allocatedBalances).to.equal(settlement.cva - signedProfit)
 		})
 
-		it("restores only the quote profit when it is smaller than the signed profit", async function () {
+		it("charges the overstated signed profit to PartyA's deferred credit", async function () {
 			const quoteId = await openLong(INCIDENT_QUANTITY)
 			await advanceEpochs(4n)
 			const balanceBefore = await user.getBalanceInfo()
@@ -356,13 +355,14 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 			const quoteProfit = await quoteLevelUpnl([quoteId], price)
 			const signedProfit = quoteProfit + 1n
 			const facet = await startLiquidation(signedProfit, price, state, { liquidationAllocatedBalance: 0n })
+			expect(await context.viewFacet.getPartyADeferredBalance(userAddr)).to.equal(balanceBefore.allocatedBalances)
 
+			// LF and CVA were sized from the signed profit but PartyB pays only the quote profit; the
+			// difference comes out of the allocation that was set aside for PartyA.
 			await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])
 			await facet.settlePartyALiquidationWithSnapshot(userAddr, [hedgerAddr])
 			const balanceAfter = await user.getBalanceInfo()
-			expect(balanceAfter.allocatedBalances).to.equal(
-				balanceBefore.allocatedBalances - balanceBefore.lockedCva - balanceBefore.lockedLf + quoteProfit,
-			)
+			expect(balanceAfter.allocatedBalances).to.equal(balanceBefore.allocatedBalances - (signedProfit - quoteProfit))
 		})
 	})
 

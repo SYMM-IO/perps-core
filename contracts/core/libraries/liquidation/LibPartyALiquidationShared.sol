@@ -27,12 +27,16 @@ library LibPartyALiquidationShared {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
-		require(accountLayout.allocatedBalances[partyA] >= liquidationAllocatedBalance, "LiquidationFacet: Invalid allocated balance");
+		uint256 allocatedBalance = accountLayout.allocatedBalances[partyA];
+		require(allocatedBalance >= liquidationAllocatedBalance, "LiquidationFacet: Invalid allocated balance");
 
-		int256 availableBalance = LibAccount.partyAAvailableBalanceForLiquidation(upnl, accountLayout.allocatedBalances[partyA], partyA);
-		if (availableBalance > 0) {
-			LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(availableBalance), SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
-			accountLayout.partyADeferredBalance[partyA] += uint256(availableBalance);
+		// The liquidation type, LF, and deficit below all come from the signed allocation, so settlement must
+		// consume exactly that allocation. Allocation added after the signed point is set aside in full and
+		// returns to PartyA at finalization; for a live signature the two balances match and nothing moves.
+		uint256 lateAllocation = allocatedBalance - liquidationAllocatedBalance;
+		if (lateAllocation > 0) {
+			LibAccount.decreasePartyAAllocatedBalance(partyA, lateAllocation, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
+			accountLayout.partyADeferredBalance[partyA] += lateAllocation;
 		}
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
