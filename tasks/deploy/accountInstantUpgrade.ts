@@ -424,16 +424,16 @@ export async function planPartyBUpgrade(ethers: any, snapshot: any, report: any,
 	for (const [partyB, rawAuthority] of Object.entries(snapshot.partyBAdmins)) {
 		const authority = lower(rawAuthority as string)
 		const contract = await ethers.getContractAt("SymmioPartyB", partyB)
-		const { manager } = await readPartyBUpgradeAuthority(ethers, partyB, authority)
+		const { whitelist, canWhitelist } = await readPartyBUpgradeAuthority(ethers, partyB, authority)
 		const trusted = await contract.hasRole(ethers.id("TRUSTED_ROLE"), instant),
 			allowed = await contract.multicastWhitelist(instant)
-		if (allowed !== !retire && !manager)
+		if (allowed !== !retire && !canWhitelist)
 			actions.push({
 				authority,
 				to: partyB,
 				value: "0",
-				data: contract.interface.encodeFunctionData("grantRole", [ethers.id("MANAGER_ROLE"), authority]),
-				description: `Grant PartyB MANAGER_ROLE to ${authority} before updating the multicast whitelist`,
+				data: contract.interface.encodeFunctionData("grantRole", [whitelist.role, authority]),
+				description: `Grant PartyB ${whitelist.name} to ${authority} before updating the multicast whitelist`,
 			})
 		if (trusted !== !retire)
 			actions.push({

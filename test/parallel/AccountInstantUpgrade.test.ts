@@ -81,7 +81,7 @@ describe("Configuration-preserving AccountLayer and InstantLayer upgrade", funct
 				await ethers.getContractFactory("LocalERC1967Proxy")
 			).deploy(impl.target, impl.interface.encodeFunctionData("initialize", [originalAdmin.address, unrelated.address]))
 			const party = await ethers.getContractAt("SymmioPartyB", proxy.target)
-			const manager = ethers.id("MANAGER_ROLE"),
+			const manager = ethers.id("MULTICAST_WHITELIST_ROLE"),
 				trusted = ethers.id("TRUSTED_ROLE")
 			await party.grantRole(ethers.ZeroHash, authority)
 			await party.grantRole(trusted, oldInstant.address)

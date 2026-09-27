@@ -17,6 +17,7 @@ import {
 } from "../../deployment-tooling/account-instant-upgrade.js"
 import { assertRoundingRuntime } from "./arbitrumRoundingUpgrade.js"
 import { logger } from "./logger.js"
+import { partyBWhitelistRole } from "./partyBWhitelistRole.js"
 
 export const lower = (address: string) => address.toLowerCase()
 export const unique = (values: string[]) => [...new Set(values.map(lower))].sort()
@@ -282,13 +283,14 @@ export async function readPartyBUpgradeAuthority(ethers: any, partyB: string, au
 	const overrides = block === undefined ? {} : { blockTag: block }
 	if (!(await contract.hasRole(ethers.ZeroHash, authority, overrides)))
 		throw new Error(`PartyB authority ${authority} lacks DEFAULT_ADMIN_ROLE on ${partyB}`)
-	const manager = await contract.hasRole(ethers.id("MANAGER_ROLE"), authority, overrides)
-	for (const name of ["TRUSTED_ROLE", ...(!manager ? ["MANAGER_ROLE"] : [])]) {
+	const whitelist = await partyBWhitelistRole(contract, overrides)
+	const canWhitelist = await contract.hasRole(whitelist.role, authority, overrides)
+	for (const name of ["TRUSTED_ROLE", ...(!canWhitelist ? [whitelist.name] : [])]) {
 		const roleAdmin = await contract.getRoleAdmin(ethers.id(name), overrides)
 		if (!(await contract.hasRole(roleAdmin, authority, overrides)))
 			throw new Error(`PartyB authority ${authority} cannot administer ${name} on ${partyB}; role admin is ${roleAdmin}`)
 	}
-	return { manager }
+	return { whitelist, canWhitelist }
 }
 
 export async function readPreservedState(ethers: any, target: any, block: number) {
