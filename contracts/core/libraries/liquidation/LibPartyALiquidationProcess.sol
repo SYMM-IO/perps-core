@@ -251,9 +251,9 @@ library LibPartyALiquidationProcess {
 		accountLayout.partyALiquidationRoundingReduction[partyA] = settledUpnl - cappedUpnl;
 		accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl = cappedUpnl;
 
-		// A positive signed uPNL can be swept into PartyA's deferred balance before quote-level
-		// settlement is known. Correct only the credit actually set aside; the deferred balance
-		// may be zero or smaller than the rounding difference.
+		// Liquidation start sized LF and CVA from the positive signed uPNL, but PartyB pays only the
+		// capped amount. Recover the difference from PartyA's deferred credit; that balance may be
+		// zero or smaller than the rounding difference.
 		if (signedUpnl > cappedUpnl && signedUpnl > 0) {
 			uint256 deferredReduction = uint256(signedUpnl - cappedUpnl);
 			accountLayout.partyADeferredBalance[partyA] -= Math.min(accountLayout.partyADeferredBalance[partyA], deferredReduction);
