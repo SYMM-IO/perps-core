@@ -7,6 +7,10 @@ pragma solidity >=0.8.18;
 import { IPledgeEvents } from "./IPledgeEvents.sol";
 
 interface IPledgeFacet is IPledgeEvents {
+	function setPledgeTokenWhitelist(address token, bool whitelisted) external;
+
+	function isPledgeTokenWhitelisted(address token) external view returns (bool);
+
 	function depositPledge(address token, uint256 amount) external;
 
 	function requestPledgeWithdraw(address token, uint256 amount, address recipient) external;
