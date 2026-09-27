@@ -38,6 +38,7 @@ import { persistSubmittedTransaction } from "./deploymentRecovery.js"
 import { resolveVerificationContractName, verificationProviderForChain } from "./explorer.js"
 import { getConnection } from "./helpers.js"
 import { deployInstantLayer } from "./instantLayer.js"
+import { partyBWhitelistRole } from "./partyBWhitelistRole.js"
 import {
 	bindDeploymentTransactionWriteAhead,
 	clearDeploymentTransactionWriteAhead,
@@ -1362,7 +1363,6 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 	const configured = resolvedInstantLayerPartyBs(ethers, input)
 	const safe = ethers.getAddress(input.governance.safe)
 	const previousAdmin = ethers.getAddress(input.governance.previousAdmin)
-	const managerRole = role(ethers, ROLE.MANAGER_ROLE)
 	const trustedRole = role(ethers, ROLE.TRUSTED_ROLE)
 	const newInstant = report.addresses.newInstantLayer
 	const { coreView } = await contractsFor(ethers, input)
@@ -1372,14 +1372,15 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 	for (const partyBAddress of configured.partyBs) {
 		if ((await ethers.provider.getCode(partyBAddress)) === "0x") throw new Error(`Configured PartyB ${partyBAddress} has no runtime bytecode`)
 		const partyB = await ethers.getContractAt("SymmioPartyB", partyBAddress)
+		const whitelist = await partyBWhitelistRole(partyB)
 		const defaultAdminRole = await partyB.DEFAULT_ADMIN_ROLE()
 		const [boundCore, coreRegistered, safeDefaultAdmin, safeManager, previousDefaultAdmin, previousManager] = await Promise.all([
 			partyB.symmioAddress(),
 			coreView.isPartyB(partyBAddress),
 			partyB.hasRole(defaultAdminRole, safe),
-			partyB.hasRole(managerRole, safe),
+			partyB.hasRole(whitelist.role, safe),
 			partyB.hasRole(defaultAdminRole, previousAdmin),
-			partyB.hasRole(managerRole, previousAdmin),
+			partyB.hasRole(whitelist.role, previousAdmin),
 		])
 		if (ethers.getAddress(boundCore) !== ethers.getAddress(input.contracts.core)) {
 			throw new Error(`Configured PartyB ${partyBAddress} is bound to Core ${boundCore}, expected ${input.contracts.core}`)
@@ -1408,7 +1409,7 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 			if (!multicastWhitelisted) {
 				if (!previousManager) {
 					throw new Error(
-						`Prior PartyB admin ${previousAdmin} does not hold MANAGER_ROLE on ${partyBAddress}; it cannot whitelist new InstantLayer ${newInstant} for multicast`,
+						`Prior PartyB admin ${previousAdmin} does not hold ${whitelist.name} on ${partyBAddress}; it cannot whitelist new InstantLayer ${newInstant} for multicast`,
 					)
 				}
 				actions.push(
@@ -1422,6 +1423,7 @@ async function inspectPartyBAuthority(ethers: any, input: ArbitrumPerpsUpgradeIn
 		}
 		parties.push({
 			address: partyBAddress,
+			whitelistRole: whitelist.name,
 			boundCore: ethers.getAddress(boundCore),
 			coreRegistered,
 			safeDefaultAdmin,
