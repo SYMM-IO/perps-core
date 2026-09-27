@@ -23789,6 +23789,19 @@
     },
     {
         "inputs": [],
+        "name": "PLEDGE_TOKEN_MANAGER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "PARTY_B_REGISTRAR_ROLE",
         "outputs": [
             {
