@@ -1495,16 +1495,15 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			).to.not.be.reverted
 		})
 
-		it("Should move current excess to deferred balance while snapshot type follows historical insolvency", async function () {
+		it("Should move allocation above the signed balance to deferred while snapshot type follows historical insolvency", async function () {
 			const userAddress = await context.signers.user.getAddress()
 			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
-			const balanceInfo = await user.getBalanceInfo()
-			const currentAllocated = balanceInfo.allocatedBalances
+			const currentAllocated = (await user.getBalanceInfo()).allocatedBalances
 			const price = decimal(4n)
 			const quoteIds = [1n]
-			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
-			const expectedDeferredBalance = currentAllocated - balanceInfo.lockedCva - balanceInfo.lockedLf + upnl
 			const historicalBalance = decimal(200n)
+			// Settlement consumes only the signed allocation; everything above it returns to PartyA in full.
+			const expectedDeferredBalance = currentAllocated - historicalBalance
 
 			await liquidatePartyAWithSnapshot(
 				[1n],
@@ -2476,10 +2475,10 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		 * break the exact-replay guarantee that BalanceChangePartyA makes.
 		 *
 		 * Setup (quote 1 is SHORT, 100 units @ 1.0, CVA 22, LF 3):
-		 *   price 0.755 puts PartyA in PROFIT, so it stays live-solvent and liquidation start sweeps the
-		 *   surplus into deferred balance, leaving only `CVA + LF - upnl` allocated -- a little over 1 token.
-		 *   The signed historical allocation is then chosen (below) so the liquidation classifies as NORMAL
-		 *   while the resulting fee lands above that remaining allocation.
+		 *   price 0.755 puts PartyA in a PROFIT larger than its CVA, so any signed allocation below
+		 *   `CVA + LF - upnl` (a little over 1 token) is insolvent yet can still classify as NORMAL with a fee
+		 *   above that signed allocation. Liquidation start sets aside everything above the signed allocation,
+		 *   so the signed allocation is all finalization can debit; PartyB's payment of the profit funds the rest.
 		 *
 		 * Demonstrates: LF_OUT < LF_IN, the difference is derivable from the same receipt, per-account
 		 * replay stays exact, and the LF leg alone does not net to zero across accounts.
@@ -2497,17 +2496,18 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - fundingFee
 			const totalUnrealizedLoss = (await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - fundingFee
 
-			// Liquidation start moves the live surplus to deferred balance, leaving exactly this behind:
+			// PartyA is insolvent at this price for any signed allocation below this boundary:
 			const balanceInfo = await user.getBalanceInfo()
-			const allocationAfterStart = balanceInfo.lockedCva + balanceInfo.lockedLf - upnl
+			const solvencyBoundary = balanceInfo.lockedCva + balanceInfo.lockedLf - upnl
 
 			// Pick the signed historical allocation so the liquidation is NORMAL *and* the resulting fee
-			// exceeds `allocationAfterStart`. Writing `A` for that value, the fee is `lockedLf - (A - signed)`,
-			// so the window is `2A - lockedLf < signed < A`; take its midpoint. Derived from live state
-			// rather than hardcoded so accrued funding cannot drift the test out of the window.
-			const signedHistoricalAllocation = (3n * allocationAfterStart - balanceInfo.lockedLf) / 2n
-			expect(signedHistoricalAllocation).to.be.greaterThan(2n * allocationAfterStart - balanceInfo.lockedLf)
-			expect(signedHistoricalAllocation).to.be.lessThan(allocationAfterStart)
+			// exceeds it. Writing `A` for the boundary, the fee is `lockedLf - (A - signed)`, which exceeds
+			// `signed` whenever `lockedLf > A`; NORMAL needs `signed > A - lockedLf`. Take a value inside that
+			// window, derived from live state so accrued funding cannot drift the test out of it.
+			const signedHistoricalAllocation = (3n * solvencyBoundary - balanceInfo.lockedLf) / 2n
+			expect(balanceInfo.lockedLf).to.be.greaterThan(solvencyBoundary)
+			expect(signedHistoricalAllocation).to.be.greaterThan(solvencyBoundary - balanceInfo.lockedLf)
+			expect(signedHistoricalAllocation).to.be.lessThan(solvencyBoundary)
 
 			// The deferred path is the one that honours the signed allocation; plain `liquidatePartyA`
 			// substitutes the live balance and so can never produce this divergence.
@@ -3171,11 +3171,10 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			expect((await user.getBalanceInfo()).allocatedBalances).to.be.equal(0n)
 		})
 
-		it("Deferred with excess: type follows signed insolvency snapshot, only excess returns to partyA", async function () {
+		it("Deferred with later allocation: type follows signed insolvency snapshot, allocation above it returns to partyA", async function () {
 			const userAddress = await context.signers.user.getAddress()
 			const expectedFees = await getTradingFeeForQuotes(context, [2n, 3n, 5n])
-			const balanceInfo = await user.getBalanceInfo()
-			const currentAllocated = balanceInfo.allocatedBalances
+			const currentAllocated = (await user.getBalanceInfo()).allocatedBalances
 
 			// Compute UPNL at a price where historical balance makes user insolvent
 			// but current balance leaves them with positive available
@@ -3184,12 +3183,12 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 			const totalUnrealizedLoss =
 				(await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
 
-			// Expected deferred excess = currentAllocated - lockedCva - lockedLf + upnl
-			const expectedDeferredBalance = currentAllocated - balanceInfo.lockedCva - balanceInfo.lockedLf + BigInt(upnl)
-
 			// Set liquidationAllocatedBalance to a LOW value (historical snapshot)
 			// so the user was insolvent at that time: 200 - 25 + (-300) = -125 < 0
 			const historicalBalance = decimal(200n)
+
+			// Settlement consumes only the signed allocation; everything above it returns to PartyA in full.
+			const expectedDeferredBalance = currentAllocated - historicalBalance
 			const sign = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, historicalBalance)
 
 			await context.partyALiquidationFacet.connect(context.signers.liquidator).deferredLiquidatePartyA(userAddress, sign)
