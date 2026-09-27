@@ -29,10 +29,11 @@ describe("Pledge token whitelist", function () {
 		)
 	})
 
-	it("requires the pledge manager role for both approval and removal", async function () {
+	it("requires the dedicated token manager role for both approval and removal", async function () {
 		const token = await context.collateral.getAddress()
 		const manager = context.signers.user
-		const role = ethers.id("PARTY_B_MANAGER_ROLE")
+		const role = ethers.id("PLEDGE_TOKEN_MANAGER_ROLE")
+		await context.controlFacet.grantRole(manager.address, ethers.id("PARTY_B_MANAGER_ROLE"))
 
 		for (const whitelisted of [true, false]) {
 			await expect(context.pledgeFacet.connect(manager).setPledgeTokenWhitelist(token, whitelisted)).to.be.revertedWith(
@@ -50,6 +51,32 @@ describe("Pledge token whitelist", function () {
 
 		await context.controlFacet.revokeRole(manager.address, role)
 		await expect(context.pledgeFacet.connect(manager).setPledgeTokenWhitelist(token, false)).to.be.revertedWith("Accessibility: Must have role")
+	})
+
+	it("keeps token whitelisting separate from withdrawal approval and slashing", async function () {
+		const token = await context.collateral.getAddress()
+		const depositor = context.signers.user
+		const tokenManager = context.signers.user2
+		const fundsManager = context.signers.hedger
+		await context.controlFacet.grantRole(tokenManager.address, ethers.id("PLEDGE_TOKEN_MANAGER_ROLE"))
+		await context.controlFacet.grantRole(fundsManager.address, ethers.id("PARTY_B_MANAGER_ROLE"))
+		await context.collateral.mint(depositor.address, 100n)
+		await context.collateral.connect(depositor).approve(context.diamond, 100n)
+		await context.pledgeFacet.connect(depositor).depositPledge(token, 100n)
+		await context.pledgeFacet.connect(depositor).requestPledgeWithdraw(token, 60n, depositor.address)
+
+		await context.pledgeFacet.connect(tokenManager).setPledgeTokenWhitelist(token, false)
+		await expect(context.pledgeFacet.connect(tokenManager).acceptPledgeWithdraw(depositor.address, 60n, token)).to.be.revertedWith(
+			"Accessibility: Must have role",
+		)
+		await expect(context.pledgeFacet.connect(tokenManager).slashPledge(depositor.address, token, 40n, depositor.address)).to.be.revertedWith(
+			"Accessibility: Must have role",
+		)
+		await expect(context.pledgeFacet.connect(fundsManager).setPledgeTokenWhitelist(token, true)).to.be.revertedWith("Accessibility: Must have role")
+
+		await context.pledgeFacet.connect(fundsManager).acceptPledgeWithdraw(depositor.address, 60n, token)
+		await context.pledgeFacet.connect(fundsManager).slashPledge(depositor.address, token, 40n, depositor.address)
+		expect(await context.collateral.balanceOf(depositor.address)).to.equal(100n)
 	})
 
 	it("rejects whitelist management through a configured signer context", async function () {

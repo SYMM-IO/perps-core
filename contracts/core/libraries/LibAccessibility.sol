@@ -13,6 +13,7 @@ library LibAccessibility {
 	bytes32 public constant EMERGENCY_ADMIN_ROLE = keccak256("EMERGENCY_ADMIN_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant PARTY_B_MANAGER_ROLE = keccak256("PARTY_B_MANAGER_ROLE");
+	bytes32 public constant PLEDGE_TOKEN_MANAGER_ROLE = keccak256("PLEDGE_TOKEN_MANAGER_ROLE");
 	bytes32 public constant PARTY_B_REGISTRAR_ROLE = keccak256("PARTY_B_REGISTRAR_ROLE");
 	bytes32 public constant AFFILIATE_MANAGER_ROLE = keccak256("AFFILIATE_MANAGER_ROLE");
 	bytes32 public constant AFFILIATE_REGISTRAR_ROLE = keccak256("AFFILIATE_REGISTRAR_ROLE");
