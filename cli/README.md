@@ -14,9 +14,9 @@ and applies resumable 3% BTC/ETH and 4% other-symbol batches. See the
 [LF update runbook](../docs/symbol-lf-update.md) for prerequisites, classification review,
 announcement timing, and transaction evidence.
 
-The fixed Arbitrum v0.8.6 production upgrade is available under **Other maintenance scripts** as **Arbitrum Perps Core v0.8.6 upgrade**. Its resumable phases and standard JSON input/report contract are documented in [the Arbitrum upgrade runbook](../docs/arbitrum-perps-upgrade.md).
+For Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, select **Other maintenance scripts → Arbitrum Vibe Core upgrade — current contracts, preserve existing layers**. The [Core upgrade runbook](../docs/arbitrum-core-upgrade.md) covers both mandatory fork rehearsals, current addresses, paused storage/funding checks, the atomic Safe batch and separate verified unpause. The older full-system and rounding/funding entries retain their historical migration targets.
 
-For the current AccountLayer/InstantLayer upgrade that preserves GaslessLayer's proxy and current on-chain values, select **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values**. See [its upgrade runbook](../docs/arbitrum-account-instant-upgrade.md) for the input JSON, eight deployments, Safe batches and separate PartyB administrator stages.
+The separate **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values** task has its own migration-specific configuration and baseline. Review those targets and [its runbook](../docs/arbitrum-account-instant-upgrade.md) before starting that migration; it is not part of the Core-only upgrade.
 
 For HyperEVM v0.8.5, select **Other maintenance scripts → HyperEVM v0.8.5 / recover the zero-address balance**. The guided flow runs local tests, asks the operator to confirm the recipient, deploys the isolated recovery facet, exports the Safe sweep, and verifies the balances and writes a recovery summary. Fork rehearsal is optional and off by default. See the [recovery runbook](../docs/hyperevm-zero-balance-recovery.md).
 
