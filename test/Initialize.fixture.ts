@@ -143,6 +143,7 @@ export async function initializeFixture(): Promise<RunContext> {
 		"PAUSER_ROLE",
 		"UNPAUSER_ROLE",
 		"PARTY_B_MANAGER_ROLE",
+		"PLEDGE_TOKEN_MANAGER_ROLE",
 		"PARTY_B_REGISTRAR_ROLE",
 		"SUSPENDER_ROLE",
 		"DISPUTE_ROLE",

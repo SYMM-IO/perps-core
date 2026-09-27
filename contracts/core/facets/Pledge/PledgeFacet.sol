@@ -16,7 +16,7 @@ contract PledgeFacet is Accessibility, Pausable, IPledgeFacet {
 	/// @notice Allows or disallows a token for new pledge deposits.
 	/// @dev Managers must review token behavior off-chain: deposits credit the requested amount,
 	///      with no transfer-fee or rebase adjustment. Removal does not restrict withdrawals or slashing.
-	function setPledgeTokenWhitelist(address token, bool whitelisted) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+	function setPledgeTokenWhitelist(address token, bool whitelisted) external onlyRole(LibAccessibility.PLEDGE_TOKEN_MANAGER_ROLE) {
 		require(token != address(0), "PledgeFacet: Zero address");
 		require(!whitelisted || token.code.length > 0, "PledgeFacet: Token has no code");
 		PledgeStorage.layout().whitelistedTokens[token] = whitelisted;
