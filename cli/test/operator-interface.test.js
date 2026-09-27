@@ -118,7 +118,7 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 19);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 20);
 	assert.equal(entries.find(item => item.id === "maintenance.disputed-settlement").risk, "transaction");
 	const zeroRecovery = entries.find(item => item.id === "maintenance.hyperevm-zero-balance-recovery");
 	assert.deepEqual(zeroRecovery.supportedNetworks, ["hyperevm"]);
@@ -134,7 +134,7 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	assert.deepEqual(productionRounding.supportedNetworks, ["arbitrum"]);
 	assert.equal(productionRounding.risk, "transaction");
 	const arbitrumUpgrade = entries.find(item => item.id === "maintenance.arbitrum-perps-upgrade");
-	assert.equal(arbitrumUpgrade.title, "Arbitrum Perps Core v0.8.6 upgrade");
+	assert.equal(arbitrumUpgrade.title, "Historical Arbitrum Perps Core v0.8.6 full-system upgrade");
 	assert.deepEqual(arbitrumUpgrade.supportedNetworks, ["arbitrum"]);
 	assert.equal(arbitrumUpgrade.risk, "transaction");
 	assert.deepEqual(

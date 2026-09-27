@@ -1,0 +1,24 @@
+{
+	"apiVersion": "operations.symm.io/arbitrum-core-upgrade-config-v1",
+	"chainId": 42161,
+	"target": {
+		"core": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
+		"collateral": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+		"accountLayer": "0x5733107211B2801Acd39933a54d482FE303c4907",
+		"instantLayer": "0x38aabc7a73523cd47c710fcdeb3b20ae02310180",
+		"signatureVerifier": "0xe8D2220Fd6D56C3f2fBDB3c7FF14FEAFA7573695",
+		"symbolManager": "0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c",
+		"gaslessLayer": "0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca",
+		"liquidator": "0xC180F4C7c6c7C6a2247073Ca7bEaEBeb00D1D23F",
+		"gaslessReceiver": "0xf023395d052b5247971aAb80791D05A16E6aCed8",
+		"partyB": "0x9be79D4977D86D440F9e1Ea0d468A58104B9b932",
+		"safe": "0x89bE952790657297ac03f1954b22B668d819D3d9"
+	},
+	"limits": {
+		"maxQuotes": 10000,
+		"maxSymbols": 1000
+	},
+	"repairAggregateFunding": true,
+	"pledgeTokens": [],
+	"allowedRemovedSelectors": ["0x9dcdbdda", "0xff363ccc"]
+}
