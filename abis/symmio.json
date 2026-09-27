@@ -12000,6 +12000,25 @@
             {
                 "indexed": true,
                 "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "whitelisted",
+                "type": "bool"
+            }
+        ],
+        "name": "PledgeTokenWhitelistUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
                 "name": "user",
                 "type": "address"
             },
@@ -12160,6 +12179,25 @@
                 "internalType": "address",
                 "name": "token",
                 "type": "address"
+            }
+        ],
+        "name": "isPledgeTokenWhitelisted",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
             },
             {
                 "internalType": "uint256",
@@ -12173,6 +12211,24 @@
             }
         ],
         "name": "requestPledgeWithdraw",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "internalType": "bool",
+                "name": "whitelisted",
+                "type": "bool"
+            }
+        ],
+        "name": "setPledgeTokenWhitelist",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
