@@ -111,6 +111,7 @@ describe("Gasless wallet delegated authority", function () {
 			context.signers.admin.address,
 			0n,
 			0n,
+			0n,
 			1n,
 		])
 		const proxy = await (

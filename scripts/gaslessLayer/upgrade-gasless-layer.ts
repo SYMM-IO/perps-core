@@ -36,7 +36,10 @@ const AccessControlABI = [
 ]
 
 const UUPSABI = ["function upgradeToAndCall(address newImplementation, bytes data) payable", "function proxiableUUID() view returns (bytes32)"]
-const GaslessConfigABI = ["function setWalletCreationFee(uint256 amount)"]
+const GaslessConfigABI = ["function setWalletCreationFee(uint256 amount)", "function setNewAccountDepositFee(uint256 amount)"]
+const DepositFeeReaderABI = ["function minimumDeposit() view returns (uint256)", "function newAccountDepositFee() view returns (uint256)"]
+// GaslessLayer storage slot of newAccountDepositFee (formerly __gap[1]); GaslessLayerInvariants.behavior.ts pins it.
+const NEW_ACCOUNT_DEPOSIT_FEE_SLOT = 21n
 
 const WalletDerivationABI = ["function getGaslessWalletAddress(address owner, uint256 walletId) view returns (address)"]
 const LegacyWalletDerivationABI = ["function getGaslessWalletAddress(address owner) view returns (address)"]
@@ -284,6 +287,36 @@ async function requireCode(provider: JsonRpcProvider, address: string, label: st
 	if (code === "0x") throw new Error(`${label} has no code at ${address}`)
 }
 
+/**
+ * Before the implementation that adds newAccountDepositFee, its slot is reserved gap storage and must be empty.
+ * Also checks the requested fee against minimumDeposit so the setter cannot revert the upgrade.
+ */
+async function checkNewAccountDepositFeeSlot(provider: JsonRpcProvider, proxy: string, requestedFee: string | undefined): Promise<void> {
+	const reader = new Contract(proxy, DepositFeeReaderABI, provider) as any
+	const hasFee = await reader.newAccountDepositFee().then(
+		() => true,
+		() => false,
+	)
+	if (!hasFee) {
+		const slotValue = BigInt(await provider.getStorage(proxy, NEW_ACCOUNT_DEPOSIT_FEE_SLOT))
+		if (slotValue !== 0n) {
+			throw new Error(`Reserved GaslessLayer slot ${NEW_ACCOUNT_DEPOSIT_FEE_SLOT} holds ${slotValue}; the storage layout is not the expected one.`)
+		}
+		if (!requestedFee) {
+			console.warn(
+				"WARNING: this upgrade adds newAccountDepositFee at zero. New-account settlements are free until it is set; " +
+					"set UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE to configure it atomically.",
+			)
+		}
+	}
+	if (requestedFee) {
+		const minimumDeposit = await reader.minimumDeposit()
+		if (minimumDeposit <= BigInt(requestedFee)) {
+			throw new Error(`UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE ${requestedFee} must be below minimumDeposit ${minimumDeposit}`)
+		}
+	}
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -453,9 +486,24 @@ async function main() {
 	const proxy = normalizeAddress(env("GASLESS_LAYER_PROXY") || DEFAULT_PROXY, "GASLESS_LAYER_PROXY")
 	const dryRun = process.env.CONFIRM_UPGRADE !== "true"
 	const upgradeWalletCreationFee = env("UPGRADE_WALLET_CREATION_FEE")
+	const upgradeNewAccountDepositFee = env("UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE")
+	if (upgradeWalletCreationFee && upgradeNewAccountDepositFee) {
+		throw new Error(
+			"Set only one of UPGRADE_WALLET_CREATION_FEE and UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE: upgradeToAndCall carries a single initialization call. " +
+				"Set the other fee with its setter after the upgrade.",
+		)
+	}
+	const configInterface = new Interface(GaslessConfigABI)
 	const upgradeCallData = upgradeWalletCreationFee
-		? new Interface(GaslessConfigABI).encodeFunctionData("setWalletCreationFee", [upgradeWalletCreationFee])
-		: "0x"
+		? configInterface.encodeFunctionData("setWalletCreationFee", [upgradeWalletCreationFee])
+		: upgradeNewAccountDepositFee
+			? configInterface.encodeFunctionData("setNewAccountDepositFee", [upgradeNewAccountDepositFee])
+			: "0x"
+	const upgradeInitialization = upgradeWalletCreationFee
+		? `wallet creation fee ${upgradeWalletCreationFee}`
+		: upgradeNewAccountDepositFee
+			? `new-account deposit fee ${upgradeNewAccountDepositFee}`
+			: "none"
 	const verifyProvider = getVerifyProvider()
 	const rpcUrl = getRpcUrl()
 	const provider = new HyperEVMRetryingProvider(rpcUrl)
@@ -474,7 +522,7 @@ async function main() {
 	console.log("Signer:               ", signerAddress)
 	console.log("Signer type:          ", process.env.USE_LEDGER === "true" ? "Ledger" : "NEW_DEPLOYER")
 	console.log("Verification:         ", boolEnv("SKIP_VERIFY") ? "skipped" : verifyProvider)
-	console.log("Upgrade initialization:", upgradeWalletCreationFee ? `wallet creation fee ${upgradeWalletCreationFee}` : "none")
+	console.log("Upgrade initialization:", upgradeInitialization)
 
 	if (chainId !== HYPEREVM_CHAIN_ID) {
 		throw new Error(`Refusing to upgrade on chain ${chainId}; expected HyperEVM chain ${HYPEREVM_CHAIN_ID}`)
@@ -504,16 +552,17 @@ async function main() {
 		if (dryRun) console.warn(`WARNING: ${message}. Execution would fail.`)
 		else throw new Error(message)
 	}
-	if (upgradeWalletCreationFee) {
+	if (upgradeWalletCreationFee || upgradeNewAccountDepositFee) {
 		const configAdminRole = await gatewayReader.CONFIG_ADMIN_ROLE()
 		const signerIsConfigAdmin = await gatewayReader.hasRole(configAdminRole, signerAddress)
 		console.log("Signer has config role:", signerIsConfigAdmin)
 		if (!signerIsConfigAdmin) {
-			const message = `Signer ${signerAddress} cannot set the wallet creation fee during the upgrade`
+			const message = `Signer ${signerAddress} cannot set the ${upgradeInitialization} during the upgrade`
 			if (dryRun) console.warn(`WARNING: ${message}. Execution would fail.`)
 			else throw new Error(message)
 		}
 	}
+	await checkNewAccountDepositFeeSlot(provider, proxy, upgradeNewAccountDepositFee)
 
 	const suppliedImplementation = env("NEW_IMPLEMENTATION")
 	if (dryRun) {
@@ -599,6 +648,13 @@ async function main() {
 	const implementationAfter = await waitForImplementation(provider, proxy, newImplementation)
 	console.log("Implementation after: ", implementationAfter)
 	await assertPostUpgradeWalletDerivation(provider, proxy, currentImplementation)
+	if (upgradeNewAccountDepositFee) {
+		const configured = await (new Contract(proxy, DepositFeeReaderABI, provider) as any).newAccountDepositFee()
+		if (configured !== BigInt(upgradeNewAccountDepositFee)) {
+			throw new Error(`newAccountDepositFee reads ${configured} after the upgrade; expected ${upgradeNewAccountDepositFee}`)
+		}
+		console.log("New-account deposit fee:", configured.toString())
+	}
 	await verifyImplementationOnExplorer(implementationAfter, linkedLibraries)
 	console.log("Upgrade complete.")
 }

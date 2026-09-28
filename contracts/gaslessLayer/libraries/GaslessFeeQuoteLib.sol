@@ -16,6 +16,7 @@ interface IGaslessFeeConfig {
 	function accountLayer() external view returns (address);
 	function collateralToken() external view returns (address);
 	function depositFee() external view returns (uint256);
+	function newAccountDepositFee() external view returns (uint256);
 	function getGaslessWalletAddress(address owner, uint256 walletId) external view returns (address);
 	function getWalletCreationFee(address owner, uint256 walletId) external view returns (uint256);
 	function walletCreationFee() external view returns (uint256);
@@ -125,6 +126,8 @@ library GaslessFeeQuoteLib {
 		ISymmioAccountLayer accounts = ISymmioAccountLayer(config.accountLayer());
 		GaslessOperationalFeeLib.OpBilling[] memory ops = new GaslessOperationalFeeLib.OpBilling[](n);
 		uint256 limit = config.dailyFreeOpsLimit();
+		// Operations that consume the free quota, matching GaslessLayer._collectOperationalFees.
+		bool[] memory usesQuota = new bool[](n);
 		for (uint256 i; i < n; i++) {
 			ops[i].signer = signedOps[i].signerAccount.addr;
 			ops[i].billingParent = GaslessBillingIdentity.resolveBillingAccount(accounts, ops[i].signer);
@@ -147,9 +150,11 @@ library GaslessFeeQuoteLib {
 				}
 			}
 			bool free;
-			if (limit > 0) {
+			// Wallet operations without calls have no selector fee and leave the quota untouched.
+			usesQuota[i] = limit > 0 && selectors.length > 0;
+			if (usesQuota[i]) {
 				uint256 preceding;
-				for (uint256 j; j < i; j++) if (ops[j].billingParent == ops[i].billingParent) preceding++;
+				for (uint256 j; j < i; j++) if (usesQuota[j] && ops[j].billingParent == ops[i].billingParent) preceding++;
 				free = preceding < config.dailyFreeOpsRemaining(ops[i].billingParent);
 				if (!free && config.revertWhenFreeQuotaExhausted()) revert IGaslessLayer.DailyFreeOpsLimitExceeded(ops[i].billingParent, limit);
 			}
@@ -255,7 +260,9 @@ library GaslessFeeQuoteLib {
 		}
 		address wallet = config.getGaslessWalletAddress(owner, walletId);
 		uint256 creation = config.getWalletCreationFee(owner, walletId);
-		uint256 deposit = withdrawal ? 0 : config.depositFee();
+		uint256 deposit;
+		if (selector == IGaslessLayer.settleDepositToNewAccount.selector) deposit = config.newAccountDepositFee();
+		else if (selector == IGaslessLayer.settleDepositToExistingAccount.selector) deposit = config.depositFee();
 		q.payments = new IGaslessLayer.FeePayment[](1);
 		uint256 scale = 10 ** (18 - q.collateralDecimals);
 		q.payments[0] = IGaslessLayer.FeePayment(

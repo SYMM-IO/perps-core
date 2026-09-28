@@ -191,6 +191,7 @@ test("GaslessLayer guided editing covers selector-specific fee overrides", async
 	const ui = {
 		text: async options => {
 			if (options.message === "GaslessLayer wallet creation fee") return "13";
+			if (options.message.startsWith("GaslessLayer new-account deposit fee")) return "17";
 			if (options.message === "Selector fee override count") return "1";
 			if (options.message === "Selector override #1") return "0x12345678";
 			if (options.message === "Selector fee amount #1") return "11";
@@ -201,6 +202,7 @@ test("GaslessLayer guided editing covers selector-specific fee overrides", async
 	};
 	assert.equal(await editGaslessLayer(ui, recipe), true);
 	assert.equal(recipe.gaslessLayer.walletCreationFee, "13");
+	assert.equal(recipe.gaslessLayer.newAccountDepositFee, "17");
 	assert.deepEqual(recipe.gaslessLayer.selectorFees, [{ selector: "0x12345678", configured: true, amount: "11" }]);
 	assert.doesNotThrow(() => validateDeploymentRecipe(recipe));
 });

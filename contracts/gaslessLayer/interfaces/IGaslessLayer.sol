@@ -129,7 +129,8 @@ interface IGaslessLayer {
 	event InstantBatchRelayed(address indexed relayer, uint256 operationCount, uint256 totalFee18);
 	event InstantTemplateRelayed(address indexed relayer, uint256 indexed templateId, uint256 operationCount, uint256 totalFee18);
 	event OperationalFeeRouted(address indexed signerAccount, address indexed payer, uint256 amount18);
-	/// @notice Deposit fee in collateral-token units, attributed to the wallet owner.
+	/// @notice Settlement fee in collateral-token units, attributed to the wallet owner.
+	/// @dev depositFee for existing-account settlement and newAccountDepositFee when settlement creates the account.
 	event DepositFeeCollected(address indexed owner, address indexed treasury, uint256 amount);
 	/// @notice Creation fee in collateral token decimals, paid from the wallet or charged to a SYMMIO billing account.
 	event WalletCreationFeeCollected(address indexed wallet, address indexed payer, uint256 amount);
@@ -144,7 +145,8 @@ interface IGaslessLayer {
 	/// @param walletId Index of the source GaslessWallet.
 	/// @param subAccount Sub-account credited with the net deposit.
 	/// @param netDeposit Collateral credited after deposit and any wallet creation fees.
-	/// @param depositFee Collateral paid to the treasury as the flat deposit fee.
+	/// @param depositFee Collateral paid to the treasury as the destination's flat settlement fee:
+	///        newAccountDepositFee for NEW_ACCOUNT, depositFee for EXISTING_ACCOUNT.
 	/// @param destination Whether settlement created the destination account or used an existing one.
 	event WalletDepositSettled(
 		address indexed owner,
@@ -164,6 +166,7 @@ interface IGaslessLayer {
 	/// @param amount Token amount recovered.
 	event WalletNonCollateralTokenRecovered(address indexed wallet, address indexed token, address indexed recipient, uint256 amount);
 	event DepositFeeConfigUpdated(uint256 depositFee, uint256 minimumDeposit);
+	event NewAccountDepositFeeUpdated(uint256 amount);
 	event DefaultSelectorFeeUpdated(uint256 amount);
 	event SelectorFeeConfigUpdated(bytes4 indexed selector, bool configured, uint256 amount);
 	event DailyFreeOpsUsed(address indexed account, uint256 opsCount, uint256 usedToday, uint256 limit);
