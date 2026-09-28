@@ -58,6 +58,8 @@ describe("GaslessLayer wallet API", () => {
 			settleDepositToExistingAccount: ["owner", "walletId", "subAccount"],
 			recoverNonCollateralToken: ["owner", "walletId", "token", "recipient"],
 			walletOperationNonces: ["owner", "walletId", "signerAccount"],
+			setDepositFeeConfig: ["depositFee_", "minimumDeposit_"],
+			setNewAccountDepositFee: ["amount"],
 		}
 		for (const [name, inputs] of Object.entries(expectedInputs)) {
 			expect(
@@ -74,6 +76,7 @@ describe("GaslessLayer wallet API", () => {
 			"instantLayer_",
 			"treasury_",
 			"depositFee_",
+			"newAccountDepositFee_",
 			"walletCreationFee_",
 			"minimumDeposit_",
 		])
@@ -86,5 +89,6 @@ describe("GaslessLayer wallet API", () => {
 			"depositFee",
 			"destination",
 		])
+		expect(abi.getEvent("NewAccountDepositFeeUpdated")!.inputs.map(input => input.name)).to.deep.equal(["amount"])
 	})
 })
