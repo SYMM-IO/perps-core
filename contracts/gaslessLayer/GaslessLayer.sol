@@ -69,7 +69,9 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 
 	// ─────────────────────────── Fees ─────────────────────────────
 
+	/// @notice Flat collateral fee for settling into an existing sub-account.
 	uint256 public depositFee;
+	/// @notice Gross collateral a settlement must sweep, on either destination path.
 	uint256 public minimumDeposit;
 	uint256 public defaultSelectorFee;
 	mapping(bytes4 => SelectorFeeConfig) public selectorFeeConfigs;
@@ -100,7 +102,11 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	/// @dev Uses the first reserved slot so existing proxy storage and wallet addresses remain unchanged.
 	uint256 public walletCreationFee;
 
-	uint256[31] private __gap;
+	/// @notice Flat collateral fee for settlements that create the destination sub-account, charged instead of depositFee.
+	/// @dev Uses the next reserved slot so existing proxy storage and wallet addresses remain unchanged.
+	uint256 public newAccountDepositFee;
+
+	uint256[30] private __gap;
 
 	// ─────────────────────── Initialization ───────────────────────
 
@@ -116,12 +122,14 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		address instantLayer_,
 		address treasury_,
 		uint256 depositFee_,
+		uint256 newAccountDepositFee_,
 		uint256 walletCreationFee_,
 		uint256 minimumDeposit_
 	) external initializer {
 		if (admin == address(0) || core_ == address(0) || accountLayer_ == address(0) || instantLayer_ == address(0) || treasury_ == address(0))
 			revert ZeroAddress();
 		if (minimumDeposit_ <= depositFee_) revert MinimumDepositNotAboveFee(minimumDeposit_, depositFee_);
+		if (minimumDeposit_ <= newAccountDepositFee_) revert MinimumDepositNotAboveFee(minimumDeposit_, newAccountDepositFee_);
 
 		__AccessControl_init();
 
@@ -134,6 +142,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		instantLayer = IInstantLayer(instantLayer_);
 		treasury = treasury_;
 		depositFee = depositFee_;
+		newAccountDepositFee = newAccountDepositFee_;
 		walletCreationFee = walletCreationFee_;
 		minimumDeposit = minimumDeposit_;
 		collateralToken = ISymmioCore(core_).getCollateral();
@@ -261,8 +270,8 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	// ═══════════════ Cross-Chain Deposit Settlement ═══════════════
 
 	/// @notice Settle collateral from the selected wallet into a new owner-held sub-account.
-	/// @dev Relayer-only. Sweeps the full collateral balance and deducts the flat fee. The relayer supplies account settings without a user signature.
-	///      Emits WalletDepositSettled for every index, including zero.
+	/// @dev Relayer-only. Sweeps the full collateral balance and deducts newAccountDepositFee instead of depositFee.
+	///      The relayer supplies account settings without a user signature. Emits WalletDepositSettled for every index, including zero.
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
 	/// @param affiliate Affiliate selected by the relayer for the new account.
@@ -276,7 +285,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	) external override onlyRole(RELAYER_ROLE) nonReentrant returns (address subAccount) {
 		if (owner == address(0)) revert ZeroAddress();
 
-		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletId);
+		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletId, newAccountDepositFee);
 
 		SubAccountCreationData[] memory accountsData = new SubAccountCreationData[](1);
 		accountsData[0] = accountData;
@@ -293,7 +302,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	}
 
 	/// @notice Settle collateral from the selected wallet into an existing owner-held sub-account.
-	/// @dev Relayer-only. The destination must belong to owner. Sweeps the full collateral balance and deducts the flat fee.
+	/// @dev Relayer-only. The destination must belong to owner. Sweeps the full collateral balance and deducts depositFee.
 	///      Emits WalletDepositSettled for every index, including zero.
 	/// @param owner Owner address used to derive the GaslessWallet address.
 	/// @param walletId Wallet index; zero selects the original wallet.
@@ -308,7 +317,7 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		address actualOwner = accountLayer.ownerOf(subAccount);
 		if (actualOwner != owner) revert AccountOwnerMismatch(subAccount, owner, actualOwner);
 
-		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletId);
+		(uint256 netDeposit, uint256 collectedDepositFee) = _sweepDepositAndCollectFee(owner, walletId, depositFee);
 		_depositCollateralToCore(subAccount, netDeposit);
 		emit WalletDepositSettled(owner, walletId, subAccount, netDeposit, collectedDepositFee, DepositDestination.EXISTING_ACCOUNT);
 	}
@@ -419,11 +428,25 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 		emit WalletCreationFeeUpdated(amount);
 	}
 
+	/// @notice Set the existing-account settlement fee and the gross minimum shared by both settlement paths.
+	/// @dev The minimum must stay above both settlement fees.
 	function setDepositFeeConfig(uint256 depositFee_, uint256 minimumDeposit_) external onlyRole(CONFIG_ADMIN_ROLE) {
 		if (minimumDeposit_ <= depositFee_) revert MinimumDepositNotAboveFee(minimumDeposit_, depositFee_);
+		uint256 newAccountFee = newAccountDepositFee;
+		if (minimumDeposit_ <= newAccountFee) revert MinimumDepositNotAboveFee(minimumDeposit_, newAccountFee);
 		depositFee = depositFee_;
 		minimumDeposit = minimumDeposit_;
 		emit DepositFeeConfigUpdated(depositFee_, minimumDeposit_);
+	}
+
+	/// @notice Set the flat fee charged instead of depositFee when settlement creates the destination sub-account.
+	/// @dev Amount uses collateral token decimals and must stay below minimumDeposit. Existing proxies read zero until set,
+	///      so upgrades should set it through upgradeToAndCall.
+	function setNewAccountDepositFee(uint256 amount) external onlyRole(CONFIG_ADMIN_ROLE) {
+		uint256 minimum = minimumDeposit;
+		if (minimum <= amount) revert MinimumDepositNotAboveFee(minimum, amount);
+		newAccountDepositFee = amount;
+		emit NewAccountDepositFeeUpdated(amount);
 	}
 
 	function setDefaultSelectorFee(uint256 amount) external onlyRole(CONFIG_ADMIN_ROLE) {
@@ -552,13 +575,17 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 
 	// ═══════════════════════ Internal: Deposits ═══════════════════════
 
-	/// @dev Enforce the gross minimum, then deduct the deposit fee and any fee for deploying this wallet.
-	function _sweepDepositAndCollectFee(address owner, uint256 walletId) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
+	/// @dev Enforce the gross minimum, then deduct the destination's settlement fee and any fee for deploying this wallet.
+	function _sweepDepositAndCollectFee(
+		address owner,
+		uint256 walletId,
+		uint256 settlementFee
+	) internal returns (uint256 netDeposit, uint256 collectedDepositFee) {
 		(GaslessWallet wallet, bool deployed) = GaslessWalletDeployerLib.getOrDeployGaslessWallet(owner, walletId);
 		uint256 creationFee = deployed ? walletCreationFee : 0;
 		uint256 grossDeposit = wallet.sweepTokenBalance(collateralToken, address(this));
 		if (grossDeposit < minimumDeposit) revert DepositAmountBelowMinimum(grossDeposit, minimumDeposit);
-		collectedDepositFee = depositFee;
+		collectedDepositFee = settlementFee;
 		uint256 totalFees = collectedDepositFee + creationFee;
 		if (grossDeposit <= totalFees) revert DepositAmountNotAboveFees(grossDeposit, totalFees);
 		if (totalFees > 0) IERC20(collateralToken).safeTransfer(treasury, totalFees);
@@ -704,10 +731,11 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 			address billingParent = _resolveBillingAccount(signer);
 			// Use the parent's free quota regardless of the eventual payer.
 			// Otherwise, pass the operation's summed selector fees to settlement.
+			// Wallet operations without calls have no selector fee, so they leave the quota for priced operations.
 			ops[i] = GaslessOperationalFeeLib.OpBilling({
 				signer: signer,
 				billingParent: billingParent,
-				baseFee: _useDailyFreeOp(billingParent) ? 0 : _baseOperationalFee(feeSelectors[i]),
+				baseFee: feeSelectors[i].length == 0 || _useDailyFreeOp(billingParent) ? 0 : _baseOperationalFee(feeSelectors[i]),
 				creationFee: _creationFeeInCoreDecimals(creationFees[i])
 			});
 		}

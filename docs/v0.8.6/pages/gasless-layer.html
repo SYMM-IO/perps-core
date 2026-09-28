@@ -248,6 +248,15 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 						deployed. The quote validates targets and decodes calls before applying quota and payer rules.
 					</p>
 					<p>
+						To deploy a wallet before it is needed, relay a wallet operation whose calldata is <code>execute([])</code>. It runs no calls
+						and moves none of the wallet's funds, so it has no selector fee and does not use the daily free-operation quota. It charges
+						only <code>walletCreationFee</code>, and only if it deploys the wallet; on an existing wallet it just consumes the nonce. A
+						delegated signer needs only the wallet-execution sentinel. The same batch can grant that sentinel and approve the fee
+						allowance before the empty executions run, because fees are collected after the whole batch. That sentinel is not limited to
+						empty calls or to one wallet: with any other selector grant, the delegate can use that selector through every wallet of the
+						owner.
+					</p>
+					<p>
 						All wallet indices, including 0, emit
 						<code>GaslessWalletDeployed</code>, <code>WalletDepositSettled</code> and <code>WalletNonCollateralTokenRecovered</code> for
 						deployment, deposit settlement and token recovery respectively. <code>WalletDepositSettled.destination</code> distinguishes a
@@ -388,11 +397,36 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						</li>
 					</ul>
 					<p>
-						Gasless Layer sends the flat <code>depositFee</code> and any <code>walletCreationFee</code> to <code>treasury</code> and
-						deposits the remainder into Core. The creation fee applies only when settlement deploys the wallet. The gross balance must
-						cover <code>minimumDeposit</code> and exceed the sum of both fees, leaving a positive net deposit.
-						<code>minimumDeposit</code> must remain greater than <code>depositFee</code>. A balance below the minimum stays at the
-						deterministic wallet until more collateral arrives, governance changes the fee policy, or the owner withdraws directly.
+						Each destination has its own flat settlement fee. <code>settleDepositToExistingAccount</code> charges <code>depositFee</code>.
+						<code>settleDepositToNewAccount</code> charges <code>newAccountDepositFee</code> instead; the two fees are never added
+						together. The new-account fee applies to every settlement that creates an account, not once per user, and the protocol keeps
+						no onboarding state. Accounts created another way and then funded through <code>settleDepositToExistingAccount</code> pay
+						<code>depositFee</code>. Selector fees, including the price of <code>createSubAccountsFor</code>, do not apply to settlement.
+					</p>
+					<p>
+						Gasless Layer sends the settlement fee and any <code>walletCreationFee</code> to <code>treasury</code> and deposits the
+						remainder into Core. The creation fee applies only when settlement deploys the wallet. The gross balance must cover
+						<code>minimumDeposit</code> and exceed the sum of both fees, leaving a positive net deposit. One
+						<code>minimumDeposit</code> applies to both destinations and must remain greater than both <code>depositFee</code> and
+						<code>newAccountDepositFee</code>. A balance below the minimum stays at the deterministic wallet until more collateral
+						arrives, governance changes the fee policy, or the owner withdraws directly.
+					</p>
+					<p>
+						A config admin sets <code>depositFee</code> and <code>minimumDeposit</code> with
+						<code>setDepositFeeConfig(depositFee, minimumDeposit)</code>, and <code>newAccountDepositFee</code> with
+						<code>setNewAccountDepositFee(amount)</code>. Both amounts use collateral token units, and each setter rejects a value that
+						would leave the minimum at or below either fee. To lower the minimum below the current new-account fee, lower that fee first.
+						<code>DepositFeeCollected</code> and <code>WalletDepositSettled.depositFee</code> report the fee applied for the destination.
+						Settlement carries no user signature, so the relayer caps its total charge with
+						<code>executeWithFeeLimit(callData, maxTotalDebit18)</code>.
+					</p>
+					<p>
+						<strong>Example:</strong> with <code>newAccountDepositFee</code> = 0.80 USDC, <code>walletCreationFee</code> = 0.10 USDC and
+						<code>depositFee</code> = 0.05 USDC, a first deposit into a new account through an undeployed wallet costs 0.90 USDC.
+						Deploying a second wallet with <code>execute([])</code> costs 0.10 USDC, for 1.00 USDC in total. Each further new wallet adds
+						0.10 USDC. Later deposits through the deployed wallet into the same account cost 0.05 USDC. Operational fees for the other
+						setup operations, such as a delegation grant or fee approval, are separate unless their selector price is zero or the free
+						quota covers them.
 					</p>
 					<aside class="callout callout-risk">
 						<strong>New-account settings are not user-signed</strong> The relayer supplies the affiliate and account settings for
@@ -451,7 +485,8 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<p>
 						The first <code>dailyFreeOpsLimit</code> operations for a billing account in each UTC day waive their base fee. A zero limit
 						means there is no free quota. After the quota, <code>revertWhenFreeQuotaExhausted</code> either blocks the relay or lets
-						normal selector pricing continue. A wallet envelope consumes one quota use even when it contains several inner calls.
+						normal selector pricing continue. A wallet envelope consumes one quota use even when it contains several inner calls. A wallet
+						envelope with no calls has no selector fee and consumes no quota use, even after the quota is exhausted.
 					</p>
 
 					<h3 id="billing-identity">Billing identity and fallback</h3>
@@ -810,9 +845,19 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 						existing proxy without reinitializing it. When an upgrade first enables creation fees, set
 						<code>UPGRADE_WALLET_CREATION_FEE</code> so <code>upgradeToAndCall</code> applies the fee in the upgrade transaction. The
 						signer must hold both the default-admin and config-admin roles. Wallet creation code, deterministic addresses, existing
-						storage slots, and existing relay signatures are preserved. Refresh the frontend ABI from
-						<code>abis/gaslessLayer.json</code> to expose the quote methods and errors.
+						storage slots, and existing relay signatures are preserved.
 					</p>
+					<p>
+						<code>newAccountDepositFee</code> occupies storage slot 21, the next reserved slot after <code>walletCreationFee</code>. New
+						proxies set it in <code>initialize</code>; deployment recipes accept the optional
+						<code>gaslessLayer.newAccountDepositFee</code> field, which defaults to <code>depositFee</code>. On an existing proxy it reads
+						zero after the upgrade, which makes new-account settlement free until it is set. Set
+						<code>UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE</code> so <code>upgradeToAndCall</code> applies it in the upgrade transaction. The
+						upgrade carries one initialization call, so the script refuses to run with both <code>UPGRADE_*</code> fees set. Before
+						upgrading, it checks that slot 21 is empty and that the fee is below <code>minimumDeposit</code>, then reads the fee back
+						afterwards.
+					</p>
+					<p>Refresh the frontend ABI from <code>abis/gaslessLayer.json</code> to expose the quote methods and errors.</p>
 					<div class="table-wrap">
 						<table>
 							<thead>
@@ -896,7 +941,7 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 								</tr>
 								<tr>
 									<td><code>WalletDepositSettled</code></td>
-									<td>Owner, wallet ID, destination SubAccount, net deposit, and flat deposit fee</td>
+									<td>Owner, wallet ID, destination SubAccount, net deposit, and the destination's flat settlement fee</td>
 								</tr>
 								<tr>
 									<td><code>WalletFundsWithdrawn</code></td>

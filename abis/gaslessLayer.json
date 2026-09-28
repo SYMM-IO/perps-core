@@ -977,6 +977,19 @@
         "anonymous": false,
         "inputs": [
             {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "NewAccountDepositFeeUpdated",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
                 "indexed": true,
                 "internalType": "address",
                 "name": "signerAccount",
@@ -1865,6 +1878,11 @@
             },
             {
                 "internalType": "uint256",
+                "name": "newAccountDepositFee_",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
                 "name": "walletCreationFee_",
                 "type": "uint256"
             },
@@ -2028,6 +2046,19 @@
     {
         "inputs": [],
         "name": "nativeGasTopUpFeeBps",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "newAccountDepositFee",
         "outputs": [
             {
                 "internalType": "uint256",
@@ -2685,6 +2716,19 @@
             }
         ],
         "name": "setNativeGasTopUpFeeBps",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "setNewAccountDepositFee",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
