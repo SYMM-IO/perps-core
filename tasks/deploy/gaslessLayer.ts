@@ -37,6 +37,7 @@ export interface GaslessLayerResolvedConfig {
 	collateral: string
 	treasury: string
 	depositFee: string
+	newAccountDepositFee: string
 	walletCreationFee: string
 	minimumDeposit: string
 	defaultSelectorFee: string
@@ -123,6 +124,7 @@ export async function deployGaslessLayer(
 		instantLayer: string
 		treasury: string
 		depositFee: string
+		newAccountDepositFee: string
 		walletCreationFee: string
 		minimumDeposit: string
 		checkpoint: DeploymentCheckpoint
@@ -163,6 +165,7 @@ export async function deployGaslessLayer(
 		input.instantLayer,
 		input.treasury,
 		input.depositFee,
+		input.newAccountDepositFee,
 		input.walletCreationFee,
 		input.minimumDeposit,
 	] as const

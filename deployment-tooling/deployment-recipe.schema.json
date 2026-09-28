@@ -590,6 +590,7 @@
 				"admin": { "$ref": "#/$defs/address" },
 				"treasury": { "$ref": "#/$defs/address" },
 				"depositFee": { "$ref": "#/$defs/uintString" },
+				"newAccountDepositFee": { "$ref": "#/$defs/uintString" },
 				"walletCreationFee": { "$ref": "#/$defs/uintString" },
 				"minimumDeposit": { "$ref": "#/$defs/uintString" },
 				"defaultSelectorFee": { "$ref": "#/$defs/uintString" },
