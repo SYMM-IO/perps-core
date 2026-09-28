@@ -18,8 +18,6 @@ For Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, select **Other maintenanc
 
 The separate **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values** task has its own migration-specific configuration and baseline. Review those targets and [its runbook](../docs/arbitrum-account-instant-upgrade.md) before starting that migration; it is not part of the Core-only upgrade.
 
-For HyperEVM v0.8.5, select **Other maintenance scripts → HyperEVM v0.8.5 / recover the zero-address balance**. The guided flow runs local tests, asks the operator to confirm the recipient, deploys the isolated recovery facet, exports the Safe sweep, and verifies the balances and writes a recovery summary. Fork rehearsal is optional and off by default. See the [recovery runbook](../docs/hyperevm-zero-balance-recovery.md).
-
 `./symmio --help` only explains how to launch the application. Every other argument and
 non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
 no generated CLI bundle.
