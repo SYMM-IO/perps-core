@@ -1648,27 +1648,27 @@ a code {
 	white-space: pre-wrap;
 }
 
-.language-solidity .tok-keyword {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-keyword {
 	color: var(--code-keyword);
 }
 
-.language-solidity .tok-type {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-type {
 	color: var(--code-type);
 }
 
-.language-solidity .tok-symbol {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-symbol {
 	color: var(--code-symbol);
 }
 
-.language-solidity .tok-string {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-string {
 	color: var(--code-string);
 }
 
-.language-solidity .tok-number {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-number {
 	color: var(--code-number);
 }
 
-.language-solidity .tok-comment {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-comment {
 	color: var(--code-comment);
 	font-style: italic;
 }
