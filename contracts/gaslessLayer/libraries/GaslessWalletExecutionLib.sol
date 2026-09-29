@@ -20,10 +20,10 @@ import { GaslessWalletDeployerLib } from "./GaslessWalletDeployerLib.sol";
 library GaslessWalletExecutionLib {
 	// ───────────────────────── Constants ──────────────────────────
 
-	bytes32 public constant WALLET_ACCOUNT_TYPEHASH = keccak256("Account(address addr,bool isPartyB)");
-	bytes32 public constant WALLET_REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
+	bytes32 internal constant WALLET_ACCOUNT_TYPEHASH = keccak256("Account(address addr,bool isPartyB)");
+	bytes32 internal constant WALLET_REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
 	// Keep the original selector so existing delegation grants remain valid.
-	bytes4 public constant WALLET_EXECUTION_SENTINEL_SELECTOR = bytes4(keccak256("GASLESSQ_WALLET_EXECUTION"));
+	bytes4 internal constant WALLET_EXECUTION_SENTINEL_SELECTOR = bytes4(keccak256("GASLESSQ_WALLET_EXECUTION"));
 	bytes32 internal constant WALLET_SIGNED_OPERATION_TYPEHASH = keccak256(
 		abi.encodePacked(
 			"SignedOperation(address signer,address target,bytes callData,Account signerAccount,ReplayAttackHeader replayAttackHeader)",

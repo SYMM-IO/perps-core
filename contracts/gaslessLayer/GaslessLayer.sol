@@ -40,10 +40,10 @@ contract GaslessLayer is IGaslessLayer, Initializable, AccessControlUpgradeable,
 	bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
 	uint256 internal constant FEE_MULTIPLIER_BASE = 10000;
 	// Integrators read these signing constants from the proxy to build wallet typed data and delegation grants.
-	// The execution library validates the resulting operations.
-	bytes32 public constant WALLET_ACCOUNT_TYPEHASH = keccak256("Account(address addr,bool isPartyB)");
-	bytes32 public constant WALLET_REPLAY_HEADER_TYPEHASH = keccak256("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)");
-	bytes4 public constant WALLET_EXECUTION_SENTINEL_SELECTOR = bytes4(keccak256("GASLESSQ_WALLET_EXECUTION"));
+	// The execution library defines them and validates the resulting operations.
+	bytes32 public constant WALLET_ACCOUNT_TYPEHASH = GaslessWalletExecutionLib.WALLET_ACCOUNT_TYPEHASH;
+	bytes32 public constant WALLET_REPLAY_HEADER_TYPEHASH = GaslessWalletExecutionLib.WALLET_REPLAY_HEADER_TYPEHASH;
+	bytes4 public constant WALLET_EXECUTION_SENTINEL_SELECTOR = GaslessWalletExecutionLib.WALLET_EXECUTION_SENTINEL_SELECTOR;
 
 	// ─────────────────────────── Types ────────────────────────────
 
