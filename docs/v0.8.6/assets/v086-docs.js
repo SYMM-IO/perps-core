@@ -1233,20 +1233,19 @@
 		"uint160",
 		"uint256",
 	]);
-	const highlightSolidity = source => {
+	// Shared tokenizer: comments, strings, numbers, then keywords, types and capitalized symbols.
+	const highlightTokens = (source, tokenPattern, keywords, types) => {
 		let html = "";
 		let index = 0;
-		const tokenPattern =
-			/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b0x[a-fA-F0-9]+\b|\b\d+(?:_\d+)*(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g;
 		for (const match of source.matchAll(tokenPattern)) {
 			const token = match[0];
 			html += escapeHtml(source.slice(index, match.index));
 			let className = "";
 			if (token.startsWith("//") || token.startsWith("/*")) className = "tok-comment";
-			else if (token.startsWith('"') || token.startsWith("'")) className = "tok-string";
+			else if (token.startsWith('"') || token.startsWith("'") || token.startsWith("`")) className = "tok-string";
 			else if (/^(0x[a-fA-F0-9]+|\d)/.test(token)) className = "tok-number";
-			else if (solidityKeywords.has(token)) className = "tok-keyword";
-			else if (solidityTypes.has(token)) className = "tok-type";
+			else if (keywords.has(token)) className = "tok-keyword";
+			else if (types.has(token)) className = "tok-type";
 			else if (/^[A-Z][A-Za-z0-9_]*$/.test(token)) className = "tok-symbol";
 			html += className ? `<span class="${className}">${escapeHtml(token)}</span>` : escapeHtml(token);
 			index = match.index + token.length;
@@ -1254,6 +1253,61 @@
 		html += escapeHtml(source.slice(index));
 		return html;
 	};
+
+	const solidityTokenPattern =
+		/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b0x[a-fA-F0-9]+\b|\b\d+(?:_\d+)*(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g;
+	const highlightSolidity = source => highlightTokens(source, solidityTokenPattern, solidityKeywords, solidityTypes);
+
+	// TypeScript and JavaScript add template strings, bigint literals (1n) and $ in identifiers.
+	const scriptTokenPattern =
+		/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b0x[a-fA-F0-9]+n?\b|\b\d+(?:_\d+)*(?:\.\d+)?n?\b|\b[A-Za-z_$][A-Za-z0-9_$]*\b)/g;
+	const scriptKeywords = new Set([
+		"as",
+		"async",
+		"await",
+		"break",
+		"case",
+		"catch",
+		"class",
+		"const",
+		"continue",
+		"default",
+		"delete",
+		"do",
+		"else",
+		"export",
+		"extends",
+		"false",
+		"finally",
+		"for",
+		"from",
+		"function",
+		"if",
+		"import",
+		"in",
+		"instanceof",
+		"interface",
+		"let",
+		"new",
+		"null",
+		"of",
+		"return",
+		"switch",
+		"this",
+		"throw",
+		"true",
+		"try",
+		"type",
+		"typeof",
+		"undefined",
+		"var",
+		"void",
+		"while",
+		"yield",
+	]);
+	const scriptTypes = new Set(["any", "bigint", "boolean", "never", "number", "object", "string", "unknown"]);
+	const scriptLanguages = ["language-typescript", "language-javascript", "language-ts", "language-js"];
+	const highlightScript = source => highlightTokens(source, scriptTokenPattern, scriptKeywords, scriptTypes);
 
 	const looksLikeSolidity = source => {
 		const trimmed = source.trim();
@@ -1293,6 +1347,8 @@
 			code.classList.add("language-solidity");
 			code.dataset.detectedLanguage = "solidity";
 			code.innerHTML = highlightSolidity(source);
+		} else if (scriptLanguages.some(language => code.classList.contains(language))) {
+			code.innerHTML = highlightScript(source);
 		}
 	});
 
