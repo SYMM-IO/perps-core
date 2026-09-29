@@ -57,6 +57,7 @@
 				<a class="toc-link level-2" href="#frontend-fee-quotes">Frontend fee quotes</a>
 				<a class="toc-link level-3" href="#fee-limits">Signed fee limits</a>
 				<a class="toc-link level-2" href="#deployment">Deployment and wiring</a>
+				<a class="toc-link level-2" href="#onboarding-guide">Onboarding guide for affiliates</a>
 				<a class="toc-link level-2" href="#integration-checklist">Integration checklist</a>
 				<a class="toc-link level-2" href="#events">Events</a>
 				<a class="toc-link level-2" href="#boundaries">Security and service boundaries</a>
@@ -834,68 +835,195 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 					</p>
 
 					<h2 id="deployment">Deployment and wiring</h2>
-					<p>
-						Gasless Layer depends on deployed Core, AccountLayer, and InstantLayer addresses. The deployment operator deploys five linked
-						libraries, then the implementation and ERC1967 proxy. It records the implementation, libraries, initializer arguments,
-						verification data, and checkpoint state so an interrupted deployment can resume.
-					</p>
-					<p>
-						The quote interface adds <code>GaslessFeeQuoteLib</code>, linked to <code>GaslessOperationalFeeLib</code> and
-						<code>GaslessWalletExecutionLib</code>. Deploy compatible updated fee libraries and the implementation, then upgrade the
-						existing proxy without reinitializing it. When an upgrade first enables creation fees, set
-						<code>UPGRADE_WALLET_CREATION_FEE</code> so <code>upgradeToAndCall</code> applies the fee in the upgrade transaction. The
-						signer must hold both the default-admin and config-admin roles. Wallet creation code, deterministic addresses, existing
-						storage slots, and existing relay signatures are preserved.
-					</p>
-					<p>
-						<code>newAccountDepositFee</code> occupies storage slot 21, the next reserved slot after <code>walletCreationFee</code>. New
-						proxies set it in <code>initialize</code>; deployment recipes accept the optional
-						<code>gaslessLayer.newAccountDepositFee</code> field, which defaults to <code>depositFee</code>. On an existing proxy it reads
-						zero after the upgrade, which makes new-account settlement free until it is set. Set
-						<code>UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE</code> so <code>upgradeToAndCall</code> applies it in the upgrade transaction. The
-						upgrade carries one initialization call, so the script refuses to run with both <code>UPGRADE_*</code> fees set. Before
-						upgrading, it checks that slot 21 is empty and that the fee is below <code>minimumDeposit</code>, then reads the fee back
-						afterwards.
-					</p>
-					<p>Refresh the frontend ABI from <code>abis/gaslessLayer.json</code> to expose the quote methods and errors.</p>
+					<p>The proxy only works once the other contracts grant it these permissions. Each missing grant fails in a specific way:</p>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>System</th>
-									<th>Required wiring</th>
-									<th>Why it is needed</th>
+									<th>Contract</th>
+									<th>Grant</th>
+									<th>Without it</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
 									<td>Gasless Layer</td>
-									<td>Final admin, <code>CONFIG_ADMIN_ROLE</code>, and declared <code>RELAYER_ROLE</code> holders</td>
-									<td>Upgrade, policy, and relay authority</td>
+									<td><code>RELAYER_ROLE</code> for each relayer, <code>CONFIG_ADMIN_ROLE</code> for fee policy</td>
+									<td>Relay and settlement calls revert; fees cannot be changed</td>
 								</tr>
 								<tr>
 									<td>Core</td>
-									<td>Register the proxy as an operational-fee charger and route its fee receiver to the treasury</td>
-									<td>Fee collection without stranding fees on the proxy</td>
+									<td>Register the proxy as an operational-fee charger</td>
+									<td>Any batch with a nonzero operational or wallet creation fee reverts</td>
+								</tr>
+								<tr>
+									<td>Core</td>
+									<td>Set the proxy's operational-fee receiver to the treasury</td>
+									<td>Relay fees accrue to the proxy's Core balance, which has no withdrawal path</td>
 								</tr>
 								<tr>
 									<td>InstantLayer</td>
-									<td>Grant the Gasless Layer proxy <code>OPERATOR_ROLE</code></td>
-									<td>Batch and template forwarding</td>
+									<td><code>OPERATOR_ROLE</code> for the proxy</td>
+									<td>Every InstantLayer batch and template relay reverts</td>
 								</tr>
 								<tr>
 									<td>AccountLayer</td>
-									<td>Grant the Gasless Layer proxy <code>ACCOUNT_CREATOR_ROLE</code></td>
-									<td><code>settleDepositToNewAccount</code></td>
+									<td><code>ACCOUNT_CREATOR_ROLE</code> for the proxy</td>
+									<td>
+										<code>settleDepositToNewAccount</code> reverts. The deployment tooling's post-deploy check does not cover this
+										grant, so verify it separately.
+									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<aside class="callout callout-important">
-						<strong>Check the AccountLayer grant separately</strong> The current Gasless Layer component post-state inspection checks Core
-						charger registration, the Core fee receiver, and InstantLayer operator authority. It does not check
-						<code>ACCOUNT_CREATOR_ROLE</code>. New-account settlement will revert until that grant exists.
-					</aside>
+					<p>
+						Upgrades replace the implementation in place through <code>upgradeToAndCall</code>, signed by a
+						<code>DEFAULT_ADMIN_ROLE</code> holder, without running the initializer again. Wallet addresses, nonces, and existing
+						signatures stay valid. A fee added by an upgrade reads zero until it is set, so set it in the same transaction:
+						<code>UPGRADE_NEW_ACCOUNT_DEPOSIT_FEE</code> or <code>UPGRADE_WALLET_CREATION_FEE</code>, one per upgrade. This also requires
+						<code>CONFIG_ADMIN_ROLE</code>.
+					</p>
+
+					<h2 id="onboarding-guide">Onboarding guide for affiliates</h2>
+					<p>
+						This is the complete flow for an affiliate front end, such as Vibe, that gives each user one wallet for deposits and one for
+						withdrawals. Wallet IDs are the affiliate's choice; the examples use wallet 0 for deposits and wallet 1 for withdrawals.
+					</p>
+					<p>
+						<strong>Goal:</strong> onboarding with both wallets costs 1.00 USDC in total, and each later deposit costs 0.05 USDC. A config
+						admin sets these fees, in collateral token units (6-decimal USDC here):
+					</p>
+					<pre><code class="language-typescript">await gateway.setNewAccountDepositFee(800_000) // 0.80 USDC per settlement that creates an account
+await gateway.setWalletCreationFee(100_000) // 0.10 USDC per wallet, once, when it is deployed
+await gateway.setDepositFeeConfig(50_000, minimumDeposit) // 0.05 USDC per settlement into an existing account
+// Price the setup operations (grant, fee approval) at zero, or let the daily free quota cover them.
+// Onboarding: 0.80 + 0.10 (deposit wallet) + 0.10 (withdrawal wallet) = 1.00 USDC.</code></pre>
+					<ol>
+						<li>
+							<p>
+								<strong>Show the deposit address.</strong> Read it from the proxy. The wallet does not need to exist yet; it can
+								receive collateral before deployment.
+							</p>
+							<pre><code class="language-typescript">const depositWallet = await gateway.getGaslessWalletAddress(owner, 0n)</code></pre>
+						</li>
+						<li>
+							<p>
+								<strong>Wait for the bridged collateral.</strong> Settle once the wallet holds at least <code>minimumDeposit</code>.
+							</p>
+							<pre><code class="language-typescript">const balance = await collateral.balanceOf(depositWallet)
+const ready = balance >= (await gateway.minimumDeposit())</code></pre>
+						</li>
+						<li>
+							<p>
+								<strong>Settle into a new account.</strong> The relayer deploys the deposit wallet, sweeps it, creates the owner's
+								SubAccount, and deposits the rest. It charges 0.90 USDC: 0.80 settlement and 0.10 wallet creation. After the preview,
+								the relayer either calls the settlement directly, which charges the fees current at execution, or wraps it in
+								<code>executeWithFeeLimit(callData, maxTotalDebit18)</code>, which reverts the whole settlement if the charge exceeds
+								the cap.
+							</p>
+							<pre><code class="language-typescript">const settle = gateway.interface.encodeFunctionData("settleDepositToNewAccount", [owner, 0n, affiliate, accountData])
+const quote = await gateway.previewFeeQuote(settle, 0) // quote.totalDebit18 == 0.90e18
+// Direct: await gateway.connect(relayer).settleDepositToNewAccount(owner, 0n, affiliate, accountData)
+// Capped at the previewed charge:
+const receipt = await (await gateway.connect(relayer).executeWithFeeLimit(settle, quote.totalDebit18)).wait()
+const settled = receipt.logs.map(log => gateway.interface.parseLog(log)).find(event => event?.name === "WalletDepositSettled")
+const subAccount = settled.args.subAccount</code></pre>
+						</li>
+						<li>
+							<p>
+								<strong>Set up the account and create the withdrawal wallet in one relayed batch.</strong> The user signs only once.
+								That signature authorizes a <a href="session-keys.html">session key</a>: a key pair the front end generates and keeps,
+								which then signs the user's operations so the user does not approve each one in their own wallet. The batch runs three
+								operations, in this order:
+							</p>
+							<ul>
+								<li>
+									<strong>Delegation grant, signed by the owner.</strong> Lets the session key act for the SubAccount (see
+									<a href="#delegation-relay">Delegation through signed operations</a>). It lists
+									<code>approveOperationalFee</code>, so the session key can approve fees, and
+									<code>WALLET_EXECUTION_SENTINEL_SELECTOR</code>, so it can operate the user's GaslessWallets, plus any trading
+									functions the front end needs. It comes first because the other two operations rely on it.
+								</li>
+								<li>
+									<strong>Fee approval, signed by the session key.</strong> Lets Gasless Layer charge the SubAccount's Core balance.
+									Fees are charged once, after the whole batch runs, so this approval already applies to this batch. It must cover
+									every fee in it: here, 0.10 USDC to deploy the withdrawal wallet.
+								</li>
+								<li>
+									<strong>Wallet creation, signed by the session key.</strong> A wallet operation on wallet 1 with no calls,
+									<code>execute([])</code>. It only deploys the wallet, so later withdrawals pay no creation fee. Add one per extra
+									wallet.
+								</li>
+							</ul>
+							<p>
+								The grant and fee approval are InstantLayer operations, signed with the <code>SymmioInstantLayer</code> EIP-712
+								domain. The wallet creation is signed with the <code>GaslessGateway</code> domain, whose verifying contract is the
+								Gasless Layer proxy. Other setup operations signed by the session key, such as binding to a solver, can go between the
+								approval and the wallet creation, as long as the grant also lists their functions.
+							</p>
+							<pre><code class="language-typescript">import { parseEther } from "ethers"
+import { gaslessFeeLimitSalt, quoteGaslessFee } from "./fee-quote"
+
+// instantOp and the encode helpers stand for the service's own SignedOperation builders.
+const grant = instantOp(owner, instantLayer, encodeGrantDelegation({
+  account: { addr: subAccount, isPartyB: false },
+  delegatedSigner: sessionKey,
+  selectors: [approveOperationalFeeSelector, await gateway.WALLET_EXECUTION_SENTINEL_SELECTOR() /*, trading selectors */],
+  expiryTimestamp,
+}), subAccount)
+const approve = instantOp(sessionKey, core, encodeApproveOperationalFee([gatewayAddress], [parseEther("0.10")]), subAccount)
+
+const createWithdrawalWallet = {
+  signer: sessionKey,
+  target: await gateway.getGaslessWalletAddress(owner, 1n),
+  callData: gaslessWallet.interface.encodeFunctionData("execute", [[]]),
+  signerAccount: { addr: subAccount, isPartyB: false },
+  flexFields: [],
+  maxUses: 1,
+  replayAttackHeader: {
+    nonce: (await gateway.walletOperationNonces(owner, 1n, subAccount)) + 1n,
+    deadline,
+    salt: gaslessFeeLimitSalt(parseEther("0.10")), // cap this operation at one creation fee
+  },
+}
+
+const ops = [grant, approve, createWithdrawalWallet]
+const walletIds = [0n, 0n, 1n] // 0 for InstantLayer operations, the wallet ID for wallet operations
+const batch = [ops, signatures, ops.map(() => []), ops.map(() => []), walletIds]
+const callData = gateway.interface.encodeFunctionData("relayInstantBatch", batch)
+const exact = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address }) // totalFee18 == 0.10e18
+await gateway.connect(relayer).relayInstantBatch(...batch)</code></pre>
+						</li>
+						<li>
+							<p>
+								<strong>Settle later deposits into the existing account.</strong> The deposit wallet already exists, so the charge is
+								0.05 USDC. As in step 3, call it directly or with a cap.
+							</p>
+							<pre><code class="language-typescript">const settleAgain = gateway.interface.encodeFunctionData("settleDepositToExistingAccount", [owner, 0n, subAccount])
+// Direct: await gateway.connect(relayer).settleDepositToExistingAccount(owner, 0n, subAccount)
+await gateway.connect(relayer).executeWithFeeLimit(settleAgain, parseEther("0.05"))</code></pre>
+						</li>
+						<li>
+							<p>
+								<strong>Withdraw through wallet 1.</strong> Name the withdrawal wallet as the Core withdrawal receiver. After the
+								withdrawal finalizes, a wallet operation moves the funds on, for example to a bridge. The wallet was deployed during
+								onboarding, so this charges no creation fee.
+							</p>
+							<pre><code class="language-typescript">const withdrawalWallet = await gateway.getGaslessWalletAddress(owner, 1n)
+const withdraw = instantOp(owner, core, withdrawFacet.interface.encodeFunctionData("initiateWithdraw", [
+  [{ id: 0, amount, chainId, receiver: withdrawalWallet, virtualProvider: ZeroAddress, expressProvider: ZeroAddress }],
+  false,
+  "0x",
+]), subAccount)
+
+// After finalization, the owner signs one wallet operation on wallet 1 (walletIds entry 1n) that approves the bridge and bridges out.
+const bridgeOut = gaslessWallet.interface.encodeFunctionData("execute", [[
+  { target: collateralAddress, value: 0n, data: collateral.interface.encodeFunctionData("approve", [bridgeAddress, amount]) },
+  { target: bridgeAddress, value: 0n, data: bridgeCallData },
+]])</code></pre>
+						</li>
+					</ol>
 
 					<h2 id="integration-checklist">Integration checklist</h2>
 					<ol>
