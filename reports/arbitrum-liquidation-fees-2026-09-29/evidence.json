@@ -1,0 +1,790 @@
+{
+	"chainId": 42161,
+	"snapshot": {
+		"block": 510021942,
+		"blockHash": "0x02108e7eaee8df4cd3411f5c780298bba7457a4c7bfb55d216132746dae88dae",
+		"timestamp": "2026-09-29T12:01:57.000Z"
+	},
+	"scope": "Lifetime liquidation rewards of the two supplied Core addresses, across historical upgrades. Gross USDC units, not USD valuation or net profit after gas.",
+	"totals": {
+		"earnedUSDC": "22678.707102419609042698",
+		"remainingUSDC": "21390.552196419609042698",
+		"withdrawnUSDC": "1288.154906"
+	},
+	"deployments": {
+		"v086": {
+			"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+			"earnedRaw": "90206616702417270904",
+			"earnedUSDC": "90.206616702417270904",
+			"allocatedRaw": "90206616702417270904",
+			"allocatedUSDC": "90.206616702417270904",
+			"freeRaw": "0",
+			"freeUSDC": "0.0",
+			"remainingRaw": "90206616702417270904",
+			"remainingUSDC": "90.206616702417270904",
+			"withdrawnRaw18": "0",
+			"withdrawnUSDC": "0.0",
+			"recipients": [
+				{
+					"address": "0xCfB0a84674229500836e662C229530a98bCE11Cc",
+					"earnedRaw": "90206616702417270904",
+					"balanceOf": "0",
+					"allocatedBalanceOfPartyA": "90206616702417270904",
+					"token": "0",
+					"earnedUSDC": "90.206616702417270904",
+					"allocatedUSDC": "90.206616702417270904",
+					"freeUSDC": "0.0",
+					"remainingUSDC": "90.206616702417270904",
+					"withdrawnUSDC": "0.0"
+				}
+			],
+			"firstLiquidation": "2026-09-10T13:06:44.000Z",
+			"lastFeeCredit": "2026-09-29T11:02:10.000Z",
+			"partyAStarted": 74,
+			"partyAStandardSettled": 73,
+			"partyASettledViaClearingHouse": 1,
+			"partyBStarted": 0,
+			"partyAFeePayingSettlements": 40,
+			"softLiquidationEvents": 0
+		},
+		"v085": {
+			"core": "0x8F06459f184553e5d04F07F868720BDaCAB39395",
+			"earnedRaw": "22588500485717191771794",
+			"earnedUSDC": "22588.500485717191771794",
+			"allocatedRaw": "21300345578808138196838",
+			"allocatedUSDC": "21300.345578808138196838",
+			"freeRaw": "909053574956",
+			"freeUSDC": "0.000000909053574956",
+			"remainingRaw": "21300345579717191771794",
+			"remainingUSDC": "21300.345579717191771794",
+			"withdrawnRaw18": "1288154906000000000000",
+			"withdrawnUSDC": "1288.154906",
+			"recipients": [
+				{
+					"address": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+					"earnedRaw": "2257940326703977452692",
+					"balanceOf": "909053574956",
+					"allocatedBalanceOfPartyA": "969785419794923877736",
+					"token": "0",
+					"earnedUSDC": "2257.940326703977452692",
+					"allocatedUSDC": "969.785419794923877736",
+					"freeUSDC": "0.000000909053574956",
+					"remainingUSDC": "969.785420703977452692",
+					"withdrawnUSDC": "1288.154906"
+				},
+				{
+					"address": "0x7ECBEB26Cf76ca8680c851336B97D4BE8521918C",
+					"earnedRaw": "20171710151820713610928",
+					"balanceOf": "0",
+					"allocatedBalanceOfPartyA": "20171710151820713610928",
+					"token": "0",
+					"earnedUSDC": "20171.710151820713610928",
+					"allocatedUSDC": "20171.710151820713610928",
+					"freeUSDC": "0.0",
+					"remainingUSDC": "20171.710151820713610928",
+					"withdrawnUSDC": "0.0"
+				},
+				{
+					"address": "0x18Ad5aA8948F2B5a571A6f7096a41df68F1301ef",
+					"earnedRaw": "46786948623514743010",
+					"balanceOf": "0",
+					"allocatedBalanceOfPartyA": "46786948623514743010",
+					"token": "0",
+					"earnedUSDC": "46.78694862351474301",
+					"allocatedUSDC": "46.78694862351474301",
+					"freeUSDC": "0.0",
+					"remainingUSDC": "46.78694862351474301",
+					"withdrawnUSDC": "0.0"
+				},
+				{
+					"address": "0x5Df743F2a8d6155d0497D434D1BB59f6F09E112a",
+					"earnedRaw": "109925959816233993210",
+					"balanceOf": "0",
+					"allocatedBalanceOfPartyA": "109925959816233993210",
+					"token": "0",
+					"earnedUSDC": "109.92595981623399321",
+					"allocatedUSDC": "109.92595981623399321",
+					"freeUSDC": "0.0",
+					"remainingUSDC": "109.92595981623399321",
+					"withdrawnUSDC": "0.0"
+				},
+				{
+					"address": "0xc587c76a41B9981977D170660C15c0aAbe56B4aA",
+					"earnedRaw": "2137098752751971954",
+					"balanceOf": "0",
+					"allocatedBalanceOfPartyA": "2137098752751971954",
+					"token": "0",
+					"earnedUSDC": "2.137098752751971954",
+					"allocatedUSDC": "2.137098752751971954",
+					"freeUSDC": "0.0",
+					"remainingUSDC": "2.137098752751971954",
+					"withdrawnUSDC": "0.0"
+				}
+			],
+			"firstLiquidation": "2024-07-08T10:14:20.000Z",
+			"lastFeeCredit": "2026-09-28T14:28:54.000Z",
+			"partyAStarted": 902,
+			"partyAStandardSettled": 902,
+			"partyASettledViaClearingHouse": 0,
+			"partyBStarted": 2,
+			"partyAFeePayingSettlements": 504,
+			"softLiquidationEvents": 0
+		}
+	},
+	"settings": {
+		"v086": {
+			"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+			"insurance": {
+				"0": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+				"1": "100000000000000000000"
+			},
+			"liquidatorShare": "100000000000000000",
+			"getCollateral": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+			"getSoftLiquidationPenaltyCollector": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+			"deallocateCooldown": "259200",
+			"isLegacyDeallocateDeprecated": false,
+			"getMinWithdrawCooldown": "0",
+			"vaultFree": "0",
+			"vaultAllocated": "0",
+			"vaultToken": "0",
+			"notionalFloor": {
+				"rate": "0",
+				"hasOverride": false
+			},
+			"facets": {
+				"getLiquidationInsuranceVaultParams": "0x90b565053bD7FA7B9d27e334b0FbE8397E6C4862",
+				"singleStepLiquidatePartyAWithSnapshot": "0x5e447F3050fff3FC38e55a3F93eB74c9d2E1a862",
+				"getSymbolMinAcceptableNotionalLFRate": "0x8c7CF955f3c066ff46794010fD801ef69cFE1861"
+			},
+			"symbolCount": 238,
+			"symbolDistribution": {
+				"3000000000000000": 238
+			}
+		},
+		"v085": {
+			"core": "0x8F06459f184553e5d04F07F868720BDaCAB39395",
+			"insurance": {
+				"0": "0xdf4188959bC1711e5B999fC527901DAAe1630C78",
+				"1": "100000000000000000000"
+			},
+			"liquidatorShare": "500000000000000000",
+			"getCollateral": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+			"getSoftLiquidationPenaltyCollector": "0xdf4188959bC1711e5B999fC527901DAAe1630C78",
+			"deallocateCooldown": "43200",
+			"isLegacyDeallocateDeprecated": false,
+			"getMinWithdrawCooldown": "43200",
+			"vaultFree": "0",
+			"vaultAllocated": "0",
+			"vaultToken": "15383932599",
+			"notionalFloor": {
+				"error": "Error: {\"code\":3,\"message\":\"execution reverted: Diamond: Function does not exist\",\"data\":\"0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000204469616d6f6e643a2046756e6374696f6e20646f6573206e6f74206578697374\"}"
+			},
+			"facets": {
+				"getLiquidationInsuranceVaultParams": "0x80707FDF1B3A5e0DD5Da295E428736bB1f728486",
+				"singleStepLiquidatePartyAWithSnapshot": "0x0000000000000000000000000000000000000000",
+				"getSymbolMinAcceptableNotionalLFRate": "0x0000000000000000000000000000000000000000"
+			},
+			"symbolCount": 3777,
+			"symbolDistribution": {
+				"30000000000000000": 10,
+				"40000000000000000": 3679,
+				"4000000000000000": 88
+			}
+		}
+	},
+	"zeroAddress": {
+		"anchor": {
+			"block": 510021942,
+			"hash": "0x02108e7eaee8df4cd3411f5c780298bba7457a4c7bfb55d216132746dae88dae"
+		},
+		"address": "0x0000000000000000000000000000000000000000",
+		"cores": {
+			"v086": {
+				"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+				"rows": [
+					{
+						"function": "balanceOf",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "allocatedBalanceOfPartyA",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "allocatedBalanceOfPartyB",
+						"args": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceOfReserveVault",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceInfoOfPartyA",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": {
+							"0": "0",
+							"1": "0",
+							"2": "0",
+							"3": "0",
+							"4": "0",
+							"5": "0",
+							"6": "0",
+							"7": "0",
+							"8": "0"
+						},
+						"returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceInfoOfPartyB",
+						"args": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000"],
+						"value": {
+							"0": "0",
+							"1": "0",
+							"2": "0",
+							"3": "0",
+							"4": "0",
+							"5": "0",
+							"6": "0",
+							"7": "0",
+							"8": "0"
+						},
+						"returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceInfoOfCrossPartyB",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": {
+							"0": "0",
+							"1": "0",
+							"2": "0",
+							"3": "0",
+							"4": "0",
+							"5": "0",
+							"6": "0",
+							"7": "0",
+							"8": "0"
+						},
+						"returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "partyAReimbursement",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getPartyADeferredBalance",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getLiquidationEscrow",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getPartyBLiquidationSettlementReserve",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getLastWithdrawRequestId",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getPendingWithdrawRequests",
+						"args": ["0x0000000000000000000000000000000000000000", 1, 100],
+						"value": [],
+						"returnData": "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getWithdrawableTime",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "1790683317",
+						"returnData": "0x000000000000000000000000000000000000000000000000000000006abba8b5"
+					}
+				]
+			},
+			"v085": {
+				"core": "0x8F06459f184553e5d04F07F868720BDaCAB39395",
+				"rows": [
+					{
+						"function": "balanceOf",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "allocatedBalanceOfPartyA",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "allocatedBalanceOfPartyB",
+						"args": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceOfReserveVault",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceInfoOfPartyA",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": {
+							"0": "0",
+							"1": "0",
+							"2": "0",
+							"3": "0",
+							"4": "0",
+							"5": "0",
+							"6": "0",
+							"7": "0",
+							"8": "0"
+						},
+						"returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceInfoOfPartyB",
+						"args": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000"],
+						"value": {
+							"0": "0",
+							"1": "0",
+							"2": "0",
+							"3": "0",
+							"4": "0",
+							"5": "0",
+							"6": "0",
+							"7": "0",
+							"8": "0"
+						},
+						"returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "balanceInfoOfCrossPartyB",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": {
+							"0": "0",
+							"1": "0",
+							"2": "0",
+							"3": "0",
+							"4": "0",
+							"5": "0",
+							"6": "0",
+							"7": "0",
+							"8": "0"
+						},
+						"returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "partyAReimbursement",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getPartyADeferredBalance",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getLiquidationEscrow",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getPartyBLiquidationSettlementReserve",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getLastWithdrawRequestId",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "0",
+						"returnData": "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getPendingWithdrawRequests",
+						"args": ["0x0000000000000000000000000000000000000000", 1, 100],
+						"value": [],
+						"returnData": "0x00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000"
+					},
+					{
+						"function": "getWithdrawableTime",
+						"args": ["0x0000000000000000000000000000000000000000"],
+						"value": "1790683317",
+						"returnData": "0x000000000000000000000000000000000000000000000000000000006abba8b5"
+					}
+				]
+			}
+		},
+		"tokenBalanceRaw": "0"
+	},
+	"crossProviderVerification": {
+		"cores": {
+			"v086": {
+				"balances": [
+					{
+						"address": "0xCfB0a84674229500836e662C229530a98bCE11Cc",
+						"earnedRaw": "90206616702417270904",
+						"balanceOf": "0",
+						"allocatedBalanceOfPartyA": "90206616702417270904",
+						"token": "0"
+					}
+				],
+				"dates": {
+					"earliest": {
+						"block": 503717976,
+						"date": "2026-09-10T13:06:44.000Z",
+						"tx": "0xaf53e6e9d9087e34743809a19de182d3fd85d507c7a2a0e7d892e9ab62e46511"
+					},
+					"latest": {
+						"block": 510008447,
+						"date": "2026-09-29T11:02:10.000Z",
+						"tx": "0xaea1ad81bc8ae742f7163e42f1a67e1991024adf81dba4453f1ebefd11a9c0ad"
+					},
+					"firstRole": {
+						"block": 500269392,
+						"date": "2026-08-31T11:04:36.000Z",
+						"tx": "0xdb1f8bccd4a15585ab5dc1dc97cdc9b0212a276983e2b11074b9bcb5a64ffa84"
+					}
+				},
+				"verification": {
+					"FullyLiquidatedPartyA": {
+						"originalCount": 73,
+						"secondCount": 73,
+						"same": true
+					},
+					"LiquidatePartyA": {
+						"originalCount": 0,
+						"secondCount": 0,
+						"same": true
+					},
+					"DeferredLiquidatePartyA": {
+						"originalCount": 74,
+						"secondCount": 74,
+						"same": true
+					},
+					"LiquidatePartyB": {
+						"originalCount": 0,
+						"secondCount": 0,
+						"same": true
+					},
+					"SoftPartyBLiquidation": {
+						"originalCount": 0,
+						"secondCount": 0,
+						"same": true
+					},
+					"fees": {
+						"first": 40,
+						"second": 40,
+						"same": true
+					}
+				}
+			},
+			"v085": {
+				"balances": [
+					{
+						"address": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+						"earnedRaw": "1143656180492511961236",
+						"balanceOf": "909053574956",
+						"allocatedBalanceOfPartyA": "969785419794923877736",
+						"token": "0"
+					},
+					{
+						"address": "0x7ECBEB26Cf76ca8680c851336B97D4BE8521918C",
+						"earnedRaw": "20171710151820713610928",
+						"balanceOf": "0",
+						"allocatedBalanceOfPartyA": "20171710151820713610928",
+						"token": "0"
+					},
+					{
+						"address": "0x18Ad5aA8948F2B5a571A6f7096a41df68F1301ef",
+						"earnedRaw": "46786948623514743010",
+						"balanceOf": "0",
+						"allocatedBalanceOfPartyA": "46786948623514743010",
+						"token": "0"
+					},
+					{
+						"address": "0x5Df743F2a8d6155d0497D434D1BB59f6F09E112a",
+						"earnedRaw": "109925959816233993210",
+						"balanceOf": "0",
+						"allocatedBalanceOfPartyA": "109925959816233993210",
+						"token": "0"
+					},
+					{
+						"address": "0xc587c76a41B9981977D170660C15c0aAbe56B4aA",
+						"earnedRaw": "2137098752751971954",
+						"balanceOf": "0",
+						"allocatedBalanceOfPartyA": "2137098752751971954",
+						"token": "0"
+					}
+				],
+				"dates": {
+					"earliest": {
+						"block": 249711395,
+						"date": "2024-09-03T16:33:19.000Z",
+						"tx": "0xb0b4d0de1f062246dc5ea76814811e13c21a15267d8eed2319b6085fbab7b5c0"
+					},
+					"latest": {
+						"block": 509733357,
+						"date": "2026-09-28T14:28:54.000Z",
+						"tx": "0x4ae0bc6917a3653d46b9219491e04396e4e22dc64e924dfbd85f90f20caaa55b"
+					},
+					"firstRole": {
+						"block": 210786668,
+						"date": "2024-05-13T09:03:42.000Z",
+						"tx": "0x87c32e8df33c0affc3801f74710d2d0562fbbcdc7d0fdafbbc5527bc9092ff0b"
+					}
+				},
+				"verification": {
+					"FullyLiquidatedPartyA": {
+						"originalCount": 898,
+						"secondCount": 898,
+						"same": true
+					},
+					"LiquidatePartyA": {
+						"originalCount": 898,
+						"secondCount": 898,
+						"same": true
+					},
+					"DeferredLiquidatePartyA": {
+						"originalCount": 0,
+						"secondCount": 0,
+						"same": true
+					},
+					"LiquidatePartyB": {
+						"originalCount": 2,
+						"secondCount": 2,
+						"same": true
+					},
+					"SoftPartyBLiquidation": {
+						"originalCount": 0,
+						"secondCount": 0,
+						"same": true
+					},
+					"fees": {
+						"first": 1000,
+						"second": 1000,
+						"same": true
+					}
+				}
+			}
+		}
+	},
+	"legacyVerification": {
+		"oldFormatSettlements": 792,
+		"duplicateModernSettlements": 788,
+		"additionalLegacySettlements": [
+			{
+				"partyA": "0xAA2846a7e6388840D2D1550dF3884Edd94638C9A",
+				"starter": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"start": "0xe7722c04f81f7aedf28b5e7228f226d8792fb252a68a9982dc5207adf336bf7e",
+				"startBlock": "0xdb5c5e5",
+				"pricer": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"block": "0xdb5c5f2",
+				"tx": "0x0c01994116a23809041fdc58470bb218bcefdf4231b90fdff2445fc0df9694fe",
+				"logIndex": "0x19",
+				"feeRaw": "40303805395443586588",
+				"halfRaw": "20151902697721793294",
+				"paidRaw": "40303805395443586588",
+				"storageSlot": "0x4fd25a0d61895f099a66a2150c1a0185479f3b29b99b0cf07255582dfed9fbae"
+			},
+			{
+				"partyA": "0x699A9a8FafE5c6F2bC9Ab89AE75D638949b0EF63",
+				"starter": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"start": "0xf01ccb4233eb7d128d2c2aea92162d0c87c89402822e07ba4d58617a49b8721b",
+				"startBlock": "0xe056539",
+				"pricer": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"block": "0xe056547",
+				"tx": "0x195c5751f5952ae47bd3ecc23890bc1be745bdadf9855a9c3783e457a9605ae4",
+				"logIndex": "0xf",
+				"feeRaw": "230462610550282521161",
+				"halfRaw": "115231305275141260580",
+				"paidRaw": "230462610550282521160",
+				"storageSlot": "0xaeaa0bc1d2d5778c26c45aadc176680b560ea8509b40be3859039bbb9a7996bb"
+			},
+			{
+				"partyA": "0x8A0b0f37a477aEEEDBEcA2d40699E58eC8f33cC5",
+				"starter": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"start": "0x91222a2f69f59ecd47a31260836da08bd0609bf4c3bcddede7172fefc2ac7e3b",
+				"startBlock": "0xe58742d",
+				"pricer": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"block": "0xe58743d",
+				"tx": "0xc114e2bd63538ea9fedb861ddb5b8c8193cbd5efe7f7a1e2939c416d82e382dc",
+				"logIndex": "0x11",
+				"feeRaw": "48312066551823985497",
+				"halfRaw": "24156033275911992748",
+				"paidRaw": "48312066551823985496",
+				"storageSlot": "0x52d8de62d73420ba2034c43c3053eaeb7c48e671f9d77bf4a07784e6ecf1610d"
+			},
+			{
+				"partyA": "0x699A9a8FafE5c6F2bC9Ab89AE75D638949b0EF63",
+				"starter": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"start": "0xf29c0fbd8f35c492bdb5e081592dc2939ad699db9d79536ae7f5f922a56da43b",
+				"startBlock": "0xea95efe",
+				"pricer": "0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"block": "0xea95f34",
+				"tx": "0xadbcd2cadf05f9e86297426ccd65025c277a816e038509754adacd18880df43a",
+				"logIndex": "0x1",
+				"feeRaw": "795205663713915398212",
+				"halfRaw": "397602831856957699106",
+				"paidRaw": "795205663713915398212",
+				"storageSlot": "0xaeaa0bc1d2d5778c26c45aadc176680b560ea8509b40be3859039bbb9a7996bb"
+			}
+		],
+		"overlappingHistoricalStorageChecks": 788,
+		"mismatches": 0
+	},
+	"insuranceVerification": {
+		"v086": {
+			"pricingBlocks": 74,
+			"netCreditsRaw": "0",
+			"completedBelowCap": 73
+		},
+		"v085": {
+			"pricingBlocks": 108,
+			"netCreditsRaw": "0",
+			"completedBelowCap": 110
+		},
+		"limitation": "Historical before/after balances are block-level net differences, not a per-transaction storage trace. No finalized fee-bearing liquidation reached its then-current aggregate cap; no soft-liquidation events were emitted."
+	},
+	"withdrawalReceipts": [
+		{
+			"type": "0x0",
+			"status": "0x1",
+			"cumulativeGasUsed": "0x6c83a",
+			"logsBloom": "0x00040000000000020000000000000000000000000000000000000000000000000000000000000000000000000000010000000021004000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000010400000100000000000000000000000000000000000000000000000000000000000000000000000000000404000000000000000000010000000000000000000000000000000002002000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000008000000000000000",
+			"logs": [
+				{
+					"address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+					"topics": [
+						"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+						"0x0000000000000000000000008f06459f184553e5d04f07f868720bdacab39395",
+						"0x000000000000000000000000b8b9102302f4a0cfc0c531c2f818392d1d2ec162"
+					],
+					"data": "0x000000000000000000000000000000000000000000000000000000004cc7af1a",
+					"blockNumber": "0xf2130cc",
+					"transactionHash": "0x58c7ef581c07c455b2ffd30e187422deeb1c608120cf42325d3508e4c8bb4796",
+					"transactionIndex": "0x3",
+					"blockHash": "0xd6c20edffc47a0d790a45dc7785ed0401cb46d6fbf6bfb88911c58f18d2ebdd9",
+					"logIndex": "0x10",
+					"blockTimestamp": "0x66e71028",
+					"removed": false
+				},
+				{
+					"address": "0x8f06459f184553e5d04f07f868720bdacab39395",
+					"topics": ["0x9b1bfa7fa9ee420a16e124f794c35ac9f90472acc99140eb2f6447c714cad8eb"],
+					"data": "0x000000000000000000000000e7f100009a7f06aa08a9d956e9607b5d9481fac1000000000000000000000000b8b9102302f4a0cfc0c531c2f818392d1d2ec162000000000000000000000000000000000000000000000000000000004cc7af1a",
+					"blockNumber": "0xf2130cc",
+					"transactionHash": "0x58c7ef581c07c455b2ffd30e187422deeb1c608120cf42325d3508e4c8bb4796",
+					"transactionIndex": "0x3",
+					"blockHash": "0xd6c20edffc47a0d790a45dc7785ed0401cb46d6fbf6bfb88911c58f18d2ebdd9",
+					"logIndex": "0x11",
+					"blockTimestamp": "0x66e71028",
+					"removed": false
+				}
+			],
+			"transactionHash": "0x58c7ef581c07c455b2ffd30e187422deeb1c608120cf42325d3508e4c8bb4796",
+			"from": "0xe7f100009a7f06aa08a9d956e9607b5d9481fac1",
+			"to": "0x8f06459f184553e5d04f07f868720bdacab39395",
+			"contractAddress": null,
+			"gasUsed": "0x19238",
+			"effectiveGasPrice": "0x989680",
+			"blockHash": "0xd6c20edffc47a0d790a45dc7785ed0401cb46d6fbf6bfb88911c58f18d2ebdd9",
+			"blockNumber": "0xf2130cc",
+			"transactionIndex": "0x3",
+			"blobGasUsed": "0x0",
+			"l1BlockNumber": "0x13cbb43",
+			"gasUsedForL1": "0x287d"
+		}
+	],
+	"clearingHouse": {
+		"v086": [
+			{
+				"name": "TakeoverPartyALiquidation",
+				"args": [
+					"0x652b2E3e3850801Ed22c600b13535FbcF93b2664",
+					"0x52bdb7e3b76a77831b224b11e6dfabe8524a94d81ac0f2ef41d0da3de73ba5d4",
+					"1789994946"
+				],
+				"tx": "0x7635ca24b7d6c92055bd3b558a318831f31bc871898834857683a85e9cc174a5"
+			},
+			{
+				"name": "SettlePartyATakeover",
+				"args": ["0x652b2E3e3850801Ed22c600b13535FbcF93b2664", "0x52bdb7e3b76a77831b224b11e6dfabe8524a94d81ac0f2ef41d0da3de73ba5d4"],
+				"tx": "0xc1e2342acdb487e783b0a0ea341bc92fc658d9b10eef7579c9a158115c52be8f"
+			}
+		],
+		"v085": [],
+		"isPartyALiquidated": false
+	},
+	"collateralHistory": {
+		"v086": [
+			{
+				"address": "0x57331027091994fcb9c5aec48ea92cef0a93cf6a",
+				"topics": ["0xc32c0deb1265118db5bbdf1fe97ba1426a3365eca3792bee2c3d01174dcb2799"],
+				"data": "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831",
+				"blockNumber": "0x1dd1834d",
+				"transactionHash": "0x0c965fc7d2a40c2631875e7b34e6230f8bb83079c675e7cf4ecd67c3a3f767f5",
+				"transactionIndex": "0x12",
+				"blockHash": "0x4ed71234fa1a052250c06d6304b84912c8c4e8397adb90334ecb19093d81795d",
+				"logIndex": "0x29",
+				"blockTimestamp": "0x6a956044",
+				"removed": false
+			}
+		],
+		"v085": [
+			{
+				"address": "0x8f06459f184553e5d04f07f868720bdacab39395",
+				"topics": ["0xc32c0deb1265118db5bbdf1fe97ba1426a3365eca3792bee2c3d01174dcb2799"],
+				"data": "0x000000000000000000000000fd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+				"blockNumber": "0xc905e3d",
+				"transactionHash": "0x78fdf4839ff573d9868775c494078810705212ea5847c1cfbae7f4969600ce12",
+				"transactionIndex": "0xa",
+				"blockHash": "0x6db075e4845c5fe8ce135e1dd50431637d7d363fcd6be86bf7408f1baba17fa4",
+				"logIndex": "0x13",
+				"blockTimestamp": "0x6641d8a9",
+				"removed": false
+			},
+			{
+				"address": "0x8f06459f184553e5d04f07f868720bdacab39395",
+				"topics": ["0xc32c0deb1265118db5bbdf1fe97ba1426a3365eca3792bee2c3d01174dcb2799"],
+				"data": "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831",
+				"blockNumber": "0xc90d206",
+				"transactionHash": "0x193bc5cc0ced0df9a688402d689b6a3821fd139ca6970eaeccbc6073b54224db",
+				"transactionIndex": "0x4",
+				"blockHash": "0x1eb0fd6e10f0da3fb0276f453b6c9078a5fbce2a952fa898a00e0d38a4da4497",
+				"logIndex": "0x3",
+				"blockTimestamp": "0x6641f634",
+				"removed": false
+			}
+		]
+	},
+	"sourceRefs": {
+		"v0862": "0eb4b51fdffd15d4d442a63593cdda7cd94873f4",
+		"v085": "6aace1560476374dc7002e677a45dbd48b30b6d1",
+		"v082": "93f63fe6bfbdde27de719c96fbb53f3c1ad0798f"
+	},
+	"rpcSources": ["https://arb1.arbitrum.io/rpc", "https://arbitrum.gateway.tenderly.co", "https://arbitrum-one-rpc.publicnode.com"]
+}
