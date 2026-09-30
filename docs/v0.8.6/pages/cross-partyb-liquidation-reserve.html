@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -65,8 +65,8 @@
 					<h2 id="summary">Summary</h2>
 					<p>
 						In cross mode, one shared PartyB allocation backs positions against multiple PartyAs. When one of those PartyAs is liquidated,
-						the liquidation path can release balances locked for its positions before that PartyA's positive PnL owed by the PartyB is
-						actually paid. Core records the unpaid amount in <code>partyBLiquidationSettlementReserve[partyB]</code>.
+						the liquidation path can release balances locked for its positions before that PartyA&rsquo;s positive PnL owed by the PartyB
+						is actually paid. Core records the unpaid amount in <code>partyBLiquidationSettlementReserve[partyB]</code>.
 					</p>
 					<p>
 						That reserve must behave like unavailable capital until <code>settlePartyALiquidation</code> consumes it or the Clearing House
@@ -79,7 +79,7 @@
 						<strong>Cross-PartyB liquidation settlement reserve was only enforced during deallocation.</strong>
 						The reserve was subtracted in <code>deallocateForPartyB</code>, but not in the shared helpers used by <code>lockQuote</code>,
 						open-position solvency, funding solvency, settlement solvency, or <code>liquidateCrossPartyB</code> eligibility. That meant
-						those paths could still read the PartyB's raw cross allocation as if the reserved amount was free capital.
+						those paths could still read the PartyB&rsquo;s raw cross allocation as if the reserved amount was free capital.
 					</aside>
 					<p>
 						The risky window existed after <code>liquidatePositionsPartyA</code> freed the cross PartyB locked balances but before the
@@ -97,7 +97,7 @@
 						<li><code>liquidateCrossPartyB</code> eligibility, so a PartyB can be liquidatable once reserved debt is counted.</li>
 					</ul>
 					<p>
-						Core tracks each PartyA liquidation's positive pending contribution in every PartyB margin mode. The availability helper
+						Core tracks each PartyA liquidation&rsquo;s positive pending contribution in every PartyB margin mode. The availability helper
 						returns zero for an isolated PartyB, but if that PartyB switches to cross mode before settlement completes, the recorded
 						contribution becomes unavailable in the shared bucket. <code>resolveLiquidationDispute</code> resynchronizes the contribution
 						when it overrides a pending amount. Normal PartyA settlement consumes it, and Clearing House takeover clears it. The aggregate
@@ -128,15 +128,15 @@ function partyBAvailableBalanceForLiquidation(
 					<h2 id="settlement-top-up-exception">Settlement top-up exception</h2>
 					<p>
 						One path intentionally bypasses the reserve check: <code>settlePartyBUpnlForLiquidation</code>. That function exists so a
-						liquidator can realize a cross PartyB's positive uPNL from other solvent PartyAs before paying the pending liquidation
+						liquidator can realize a cross PartyB&rsquo;s positive uPNL from other solvent PartyAs before paying the pending liquidation
 						settlement. If the reserve were applied to that pre-settlement solvency check, the top-up path could be blocked by the same
 						reserve it is trying to fund.
 					</p>
 					<p>
 						To keep the bypass narrow, <code>LibSettlement.settleUpnlUnified</code> now accepts an explicit
 						<code>applyPartyBLiquidationReserve</code> flag. Normal settlement and force-close settlement pass <code>true</code>.
-						<code>settlePartyBUpnlForLiquidation</code> passes <code>false</code> and then requires the PartyB's cross allocated balance
-						to be non-decreasing.
+						<code>settlePartyBUpnlForLiquidation</code> passes <code>false</code> and then requires the PartyB&rsquo;s cross allocated
+						balance to be non-decreasing.
 					</p>
 					<pre><code class="language-solidity">uint256 partyBBalanceBefore = accountLayout.partyBAllocatedBalances[sig.partyB][address(0)];
 LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false, false);
@@ -159,7 +159,7 @@ require(
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

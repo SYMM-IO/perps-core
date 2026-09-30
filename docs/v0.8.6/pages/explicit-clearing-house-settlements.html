@@ -32,7 +32,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -73,7 +73,7 @@
 						same interface serves PartyA takeovers and cross-margin PartyB liquidations.
 					</p>
 					<aside class="callout callout-invariant">
-						<strong>Sign convention.</strong> Every component is from <code>account</code>'s perspective: positive means the account
+						<strong>Sign convention.</strong> Every component is from <code>account</code>&rsquo;s perspective: positive means the account
 						receives value; negative means the account pays value.
 					</aside>
 
@@ -86,13 +86,13 @@
 						</li>
 						<li><code>account</code> is the PartyA or PartyB whose balance receives or pays the submitted component.</li>
 						<li>
-							<code>allocationKey</code> selects that account's ledger bucket. PartyB rows use the relevant isolated PartyA key or
+							<code>allocationKey</code> selects that account&rsquo;s ledger bucket. PartyB rows use the relevant isolated PartyA key or
 							<code>address(0)</code> for cross margin. PartyA rows normally use <code>address(0)</code>; a PartyA takeover may use the
 							designated reimbursement key, <code>address(1)</code>, only when debiting reimbursement.
 						</li>
 						<li>
-							The active <code>subject</code>'s deallocated pool receives account debits and funds account credits. The entire batch
-							reverts if that pool cannot cover the credits after all debits are included.
+							The active <code>subject</code>&rsquo;s deallocated pool receives account debits and funds account credits. The entire
+							batch reverts if that pool cannot cover the credits after all debits are included.
 						</li>
 					</ul>
 					<pre><code class="language-solidity">struct ClearingHouseSettlement {

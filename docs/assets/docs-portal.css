@@ -92,8 +92,8 @@ body.doc-page {
 	align-items: center;
 	min-height: 28px;
 	font-family: var(--display);
-	font-size: 13px;
-	font-weight: 640;
+	font-size: var(--text-caption);
+	font-weight: var(--weight-strong);
 	line-height: 1;
 	letter-spacing: -0.01em;
 	white-space: nowrap;
@@ -141,7 +141,7 @@ body.doc-page {
 	align-items: center;
 	min-height: 28px;
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 0.75rem;
 	line-height: 1;
 	letter-spacing: 0.03em;
 	white-space: nowrap;
@@ -162,6 +162,25 @@ body.doc-page {
 	color: var(--muted);
 }
 
+/* Only the chapter crumb gives way when the header is tight; it truncates
+   (full title in its tooltip) instead of spilling over the brand. */
+.docs-trail {
+	flex: 1 1 auto;
+}
+
+.docs-trail > * {
+	flex-shrink: 0;
+}
+
+.docs-trail .trail-chapter {
+	display: block;
+	flex-shrink: 1;
+	min-width: 0;
+	overflow: hidden;
+	line-height: 28px;
+	text-overflow: ellipsis;
+}
+
 .trail-version {
 	display: inline-flex;
 	align-items: center;
@@ -170,7 +189,7 @@ body.doc-page {
 	border: 1px solid var(--line);
 	border-radius: 999px;
 	background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.04em;
 }
 
@@ -182,8 +201,8 @@ body.doc-page {
 	border-radius: var(--radius-sm);
 	color: var(--ink);
 	font-family: var(--sans);
-	font-size: 12.5px;
-	font-weight: 620;
+	font-size: var(--text-caption);
+	font-weight: var(--weight-strong);
 	letter-spacing: -0.005em;
 }
 
@@ -196,17 +215,30 @@ body.doc-page {
 }
 
 .docs-header .top-actions {
-	gap: 6px;
+	gap: var(--space-2);
+	margin-inline-start: auto;
 }
 
 .docs-header .button {
 	min-height: var(--control-size);
 	padding: 0 10px;
-	font-size: 12px;
+	font-size: 0.75rem;
 }
 
 .rail-trigger {
 	display: none;
+}
+
+/* On reading pages the brand shares the rail's text edge. */
+@media (min-width: 981px) {
+	body.doc-page .docs-header .doc-topbar {
+		padding-inline-start: 22px;
+	}
+}
+
+/* The skip link focuses <main> itself; the outline would frame the whole page. */
+main[tabindex="-1"]:focus {
+	outline: none;
 }
 
 /* --- Navigation rail ----------------------------------------------------- */
@@ -271,7 +303,7 @@ body.rail-is-resizing {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 3px;
-	padding: 9px 9px;
+	padding: 9px 10px;
 	border-bottom: 1px solid var(--line);
 }
 
@@ -280,10 +312,10 @@ body.rail-is-resizing {
 	align-items: center;
 	min-height: 30px;
 	margin: 0;
-	padding: 0 10px;
+	padding: 0 12px;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
@@ -301,14 +333,14 @@ body.rail-is-resizing {
 	background: transparent;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10px;
+	font-size: var(--text-label);
 	letter-spacing: 0.07em;
 	text-transform: uppercase;
 	white-space: nowrap;
 	transition:
-		color 140ms ease,
-		background 140ms ease,
-		border-color 140ms ease;
+		color var(--dur-hover) ease,
+		background var(--dur-hover) ease,
+		border-color var(--dur-hover) ease;
 }
 
 .rail-collapse:hover {
@@ -321,8 +353,8 @@ body.rail-is-resizing {
 }
 
 .rail-collapse .control-icon {
-	width: 14px;
-	height: 14px;
+	width: 16px;
+	height: 16px;
 }
 
 .rail-collapse span {
@@ -345,22 +377,22 @@ body.rail-is-resizing {
 	height: 34px;
 	margin: 2px 2px 12px;
 	padding: 6px 9px;
-	border: 1px solid var(--line);
+	border: 1px solid var(--line-control);
 	border-radius: var(--radius);
 	background: var(--surface);
 	color: var(--ink);
 	font-family: var(--sans);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 }
 
 .rail-search::placeholder {
 	color: var(--faint);
 }
 
-.rail-search:focus {
+.rail-search:focus-visible {
 	border-color: var(--accent);
-	outline: 2px solid var(--accent-dim);
-	outline-offset: 0;
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
 }
 
 .rail-group {
@@ -379,10 +411,10 @@ body.rail-is-resizing {
 }
 
 .rail-group-title {
-	margin: 0 10px 7px;
+	margin: 0 12px 8px;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 9.5px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
@@ -393,10 +425,10 @@ body.rail-is-resizing {
 	grid-template-columns: 28px minmax(0, 1fr);
 	gap: 12px;
 	align-items: start;
-	padding: 9px 10px;
+	padding: 9px 12px;
 	border-radius: var(--radius);
 	color: var(--muted);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	line-height: 1.38;
 	text-decoration: none;
 }
@@ -416,7 +448,7 @@ body.rail-is-resizing {
 .rail-index {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	line-height: 1.72;
 	font-variant-numeric: tabular-nums;
 }
@@ -441,7 +473,7 @@ body.rail-is-resizing {
 	margin-top: 4px;
 	padding: 10px 12px;
 	border-radius: var(--radius);
-	font-size: 13.5px;
+	font-size: var(--text-ui);
 	font-weight: 500;
 	line-height: 1.35;
 }
@@ -461,13 +493,13 @@ body.rail-is-resizing {
 .rail-list[data-rail-list="sections"] .toc-link.level-2.is-active {
 	background: var(--surface-soft);
 	color: var(--ink);
-	font-weight: 650;
+	font-weight: var(--weight-strong);
 }
 
 .toc-section-index {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 0.75rem;
 	font-weight: 400;
 	font-variant-numeric: tabular-nums;
 }
@@ -481,6 +513,14 @@ body.rail-is-resizing {
 	overflow-wrap: anywhere;
 }
 
+/* A code identifier in a heading keeps the rail's link treatment. */
+.toc-link code {
+	padding: 0;
+	background: none;
+	color: inherit;
+	font-size: 0.92em;
+}
+
 .toc-sublist {
 	position: relative;
 	display: grid;
@@ -488,6 +528,12 @@ body.rail-is-resizing {
 	margin: 3px 0 8px;
 	margin-inline-start: 20px;
 	padding-inline-start: 12px;
+}
+
+/* A numbered parent's label starts after its index column, so its children
+   indent from that label edge rather than from the row edge. */
+.rail-list[data-rail-list="sections"] .toc-link.has-section-index + .toc-sublist {
+	margin-inline-start: 40px;
 }
 
 .toc-sublist::before {
@@ -507,7 +553,7 @@ body.rail-is-resizing {
 	border-left: 0;
 	border-radius: var(--radius-sm);
 	color: var(--muted);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 	line-height: 1.35;
 	overflow-wrap: anywhere;
 	white-space: normal;
@@ -527,7 +573,7 @@ body.rail-is-resizing {
 .rail-empty {
 	margin: 6px 8px;
 	color: var(--faint);
-	font-size: 12px;
+	font-size: 0.75rem;
 	line-height: 1.5;
 }
 
@@ -559,104 +605,6 @@ body.rail-is-collapsed .rail-panel {
 	display: none;
 }
 
-/* --- Reading map --------------------------------------------------------- */
-
-/* Long reference pages can offer a handful of intentional entry points before
-   the article starts. Keep each destination as a distinct control instead of
-   allowing the inline link contents to collapse into one sentence. */
-.reader-map {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 12px;
-	width: 100%;
-	max-width: 1160px;
-	margin: 0 0 40px;
-}
-
-.reader-map a {
-	display: grid;
-	grid-template-rows: auto auto 1fr;
-	gap: 7px;
-	min-width: 0;
-	padding: 17px 18px 18px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	background: var(--surface);
-	color: var(--ink);
-	text-decoration: none;
-	transition:
-		border-color 140ms ease,
-		background-color 140ms ease;
-}
-
-.reader-map a:hover {
-	text-decoration: none;
-}
-
-@media (hover: hover) {
-	.reader-map a:hover {
-		border-color: var(--line-strong);
-		background: var(--surface-soft);
-	}
-}
-
-.reader-map a:active {
-	background: var(--surface-tint);
-}
-
-.reader-map a:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 3px;
-}
-
-.reader-map span {
-	color: var(--faint);
-	font-family: var(--mono);
-	font-size: 10px;
-	font-weight: 600;
-	line-height: 1.3;
-	letter-spacing: 0.11em;
-	text-transform: uppercase;
-}
-
-.reader-map strong {
-	color: var(--ink);
-	font-family: var(--display);
-	font-size: 15px;
-	font-weight: 640;
-	line-height: 1.3;
-	letter-spacing: -0.01em;
-	text-wrap: balance;
-}
-
-.reader-map small {
-	max-width: 34ch;
-	color: var(--muted);
-	font-size: 13px;
-	line-height: 1.5;
-	overflow-wrap: break-word;
-	text-wrap: pretty;
-}
-
-@media (max-width: 1280px) {
-	.reader-map {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-}
-
-@media (max-width: 640px) {
-	.reader-map {
-		grid-template-columns: minmax(0, 1fr);
-		margin-bottom: 32px;
-	}
-}
-
-@media (forced-colors: active) {
-	.reader-map a:focus-visible {
-		outline-color: Highlight;
-	}
-}
-
 /* --- Chapter pager ------------------------------------------------------- */
 
 .chapter-pager {
@@ -681,6 +629,7 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	max-width: none;
 }
 
+/* Prose runs the full reader width, like code, tables, tools and figures above. */
 body.doc-page .reader-hero .hero-copy,
 body.doc-page .doc-article > :is(p, ul, ol, blockquote, .callout, h1, h2, h3, h4, h5, h6) {
 	width: 100%;
@@ -711,8 +660,8 @@ body.doc-page .doc-article p {
 	color: var(--ink);
 	text-decoration: none;
 	transition:
-		border-color 140ms ease,
-		background 140ms ease;
+		border-color var(--dur-hover) ease,
+		background var(--dur-hover) ease;
 }
 
 /* A lone Next keeps the right-hand column so it never reads as a Previous. */
@@ -734,7 +683,7 @@ body.doc-page .doc-article p {
 .chapter-pager small {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 9px;
+	font-size: var(--text-label);
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
 }
@@ -742,8 +691,8 @@ body.doc-page .doc-article p {
 .chapter-pager span {
 	overflow: hidden;
 	font-family: var(--display);
-	font-size: 13.5px;
-	font-weight: 620;
+	font-size: var(--text-ui);
+	font-weight: var(--weight-strong);
 	letter-spacing: -0.012em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -761,59 +710,43 @@ body.doc-page .doc-article p {
 	width: 40px;
 	height: 40px;
 	padding: 0;
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: 50%;
 	background: var(--bg-raised);
+	box-shadow: var(--shadow-float);
 	color: var(--muted);
 	opacity: 0;
 	pointer-events: none;
 	transform: translateY(8px);
 	transition:
-		opacity 150ms ease,
-		transform 150ms ease,
-		color 150ms ease;
+		opacity var(--dur-exit) var(--ease-out),
+		transform var(--dur-exit) var(--ease-out),
+		scale var(--dur-hover) var(--ease-out),
+		color var(--dur-hover) ease;
 }
 
 .back-to-top.is-visible {
 	opacity: 1;
 	pointer-events: auto;
 	transform: translateY(0);
+	transition-duration: var(--dur-enter), var(--dur-enter), var(--dur-hover);
 }
 
 .back-to-top:hover {
 	color: var(--accent);
-	border-color: var(--line-strong);
 }
 
 .back-to-top .control-icon {
-	width: 15px;
-	height: 15px;
+	width: 16px;
+	height: 16px;
 }
 
 /* --- Version portal ------------------------------------------------------ */
 
 .version-index-page {
+	--portal-inset: clamp(16px, 3vw, 48px);
 	min-height: 100vh;
 	background: var(--bg);
-}
-
-.version-index-page .docs-header {
-	background: var(--bg);
-	backdrop-filter: none;
-}
-
-.version-index-page .docs-header .doc-topbar {
-	min-height: 72px;
-}
-
-.version-index-page [data-theme-toggle] {
-	width: 38px;
-	height: 38px;
-	padding: 0;
-}
-
-.version-index-page [data-theme-toggle] span {
-	display: none;
 }
 
 .version-index-page .portal-search {
@@ -823,13 +756,13 @@ body.doc-page .doc-article p {
 	width: 170px;
 	height: 38px;
 	padding: 0 10px;
-	border: 1px solid var(--line);
+	border: 1px solid var(--line-control);
 	border-radius: 6px;
 	color: var(--faint);
 	background: var(--bg);
 	transition:
-		border-color 160ms ease,
-		color 160ms ease;
+		border-color var(--dur-hover) ease,
+		color var(--dur-hover) ease;
 }
 
 .version-index-page .portal-search:focus-within {
@@ -851,7 +784,7 @@ body.doc-page .doc-article p {
 	color: var(--ink);
 	background: transparent;
 	font: inherit;
-	font-size: 13px;
+	font-size: var(--text-caption);
 }
 
 .version-index-page .portal-search input::placeholder {
@@ -862,7 +795,7 @@ body.doc-page .doc-article p {
 .catalog-search-hint {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10px;
+	font-size: var(--text-label);
 	white-space: nowrap;
 }
 
@@ -876,8 +809,21 @@ body.doc-page .doc-article p {
 
 .catalog-search-hint {
 	position: absolute;
-	right: 12px;
+	top: 50%;
+	inset-inline-end: 12px;
+	transform: translateY(-50%);
 	pointer-events: none;
+}
+
+/* Touch screens have no keyboard shortcut to advertise. */
+@media (hover: none), (pointer: coarse) {
+	.catalog-search-hint {
+		display: none;
+	}
+
+	.catalog-search-wrap .catalog-search {
+		padding-inline-end: 12px;
+	}
 }
 
 .catalog-search {
@@ -893,15 +839,26 @@ body.doc-page .doc-article p {
 
 .version-index-page .site-hero::before {
 	inset: 0;
-	background-image: linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+	background-image: linear-gradient(var(--diagram-grid) 1px, transparent 1px), linear-gradient(90deg, var(--diagram-grid) 1px, transparent 1px);
 	background-size: 96px 96px;
 	mask-image: none;
 }
 
-.version-index-page .version-index-hero-content {
+/* The hero and the release list share one start edge: the hero takes the
+   shell's width and both are inset by --portal-inset. */
+.version-index-page .site-hero {
 	width: min(1280px, calc(100% - 112px));
-	margin: 0 auto;
-	padding: clamp(80px, 9vw, 132px) 0 clamp(54px, 6vw, 78px);
+}
+
+.version-index-page .version-index-hero-content {
+	width: 100%;
+	margin: 0;
+	padding: clamp(80px, 9vw, 132px) var(--portal-inset) clamp(54px, 6vw, 78px);
+}
+
+.version-index-page .version-index-hero-content .hero-layout {
+	width: 100%;
+	margin-inline: 0;
 }
 
 .version-index-page .hero-layout {
@@ -916,15 +873,15 @@ body.doc-page .doc-article p {
 
 .version-index-page .hero-intro h1 {
 	max-width: none;
-	font-size: clamp(44px, 5vw, 68px);
-	letter-spacing: -0.055em;
+	font-size: clamp(2.75rem, 5vw, 4.25rem);
+	letter-spacing: -0.025em;
 }
 
 .version-index-page .hero-copy {
 	max-width: 66ch;
 	margin-top: 16px;
 	color: var(--muted);
-	font-size: clamp(17px, 1.6vw, 23px);
+	font-size: clamp(1.0625rem, 1.6vw, 1.4375rem);
 }
 
 .version-index-mark {
@@ -958,7 +915,7 @@ body.doc-page .doc-article p {
 	align-items: center;
 	justify-content: space-between;
 	min-height: 102px;
-	padding: 0 clamp(16px, 3vw, 48px);
+	padding: 0 var(--portal-inset);
 	border-bottom: 1px solid var(--line);
 }
 
@@ -967,8 +924,8 @@ body.doc-page .doc-article p {
 .version-status,
 .version-entry-action {
 	font-family: var(--mono);
-	font-size: 11px;
-	font-weight: 550;
+	font-size: var(--text-label);
+	font-weight: 600;
 	letter-spacing: 0.2em;
 	text-transform: uppercase;
 }
@@ -1010,7 +967,7 @@ body.doc-page .doc-article p {
 	max-width: 62ch;
 	margin-top: 6px;
 	color: var(--muted);
-	font-size: 13.5px;
+	font-size: var(--text-ui);
 	line-height: 1.55;
 }
 
@@ -1021,7 +978,7 @@ body.doc-page .doc-article p {
 	gap: 48px;
 	align-items: center;
 	min-height: 214px;
-	padding: 34px clamp(16px, 3vw, 48px);
+	padding: 34px var(--portal-inset);
 	border-bottom: 1px solid var(--line);
 	color: var(--ink);
 	text-decoration: none;
@@ -1034,7 +991,7 @@ body.doc-page .doc-article p {
 	inset: 0;
 	background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%);
 	opacity: 0;
-	transition: opacity 180ms ease;
+	transition: opacity var(--dur-hover) ease;
 }
 
 .version-entry::after {
@@ -1062,21 +1019,26 @@ body.doc-page .doc-article p {
 
 .version-number {
 	font-family: var(--display);
-	font-size: clamp(72px, 9vw, 112px);
-	font-weight: 520;
-	letter-spacing: -0.065em;
+	font-size: clamp(4.5rem, 9vw, 7rem);
+	font-weight: var(--weight-medium);
+	letter-spacing: -0.035em;
 	line-height: 0.9;
 }
 
+/* The archived release steps down so the current one is plainly the choice. */
 .version-entry:not(.is-current) .version-number {
 	color: var(--muted);
+	font-size: clamp(2.75rem, 5vw, 4rem);
 }
 
 .version-status {
 	color: var(--faint);
 }
 
-.version-entry.is-current .version-status,
+.version-entry.is-current .version-status {
+	color: var(--ink-soft);
+}
+
 .version-entry-action {
 	color: var(--accent);
 }
@@ -1095,11 +1057,13 @@ body.doc-page .doc-article p {
 	align-items: center;
 	gap: 14px;
 	white-space: nowrap;
-	transition: transform 160ms ease;
+	transition: transform var(--dur-hover) var(--ease-out);
 }
 
-.version-entry:hover .version-entry-action {
-	transform: translateX(5px);
+@media (hover: hover) and (pointer: fine) {
+	.version-entry:hover .version-entry-action {
+		transform: translateX(5px);
+	}
 }
 
 .version-empty {
@@ -1154,29 +1118,27 @@ body.doc-page .doc-article p {
 	align-items: center;
 	margin-bottom: 48px;
 	padding: 16px 0;
-	border-bottom: 1px solid var(--line);
 	background: color-mix(in srgb, var(--bg) 94%, transparent);
+	box-shadow: 0 10px 12px -10px var(--bg);
 	backdrop-filter: blur(14px);
-}
-
-.catalog-search-wrap {
-	display: block;
 }
 
 .catalog-search {
 	width: 100%;
 	height: 38px;
-	padding: 8px 12px;
-	border: 1px solid var(--line-strong);
+	padding-block: 8px;
+	padding-inline: 12px 46px;
+	border: 1px solid var(--line-control);
 	border-radius: var(--radius);
 	background: var(--surface);
 	color: var(--ink);
-	font: 13px var(--sans);
+	font: var(--text-caption) var(--sans);
 }
 
-.catalog-search:focus {
+.catalog-search:focus-visible {
 	border-color: var(--accent);
-	outline: 3px solid var(--accent-dim);
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
 }
 
 .catalog-search::placeholder {
@@ -1186,7 +1148,7 @@ body.doc-page .doc-article p {
 .catalog-count {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	letter-spacing: 0.04em;
 	font-variant-numeric: tabular-nums;
 }
@@ -1196,7 +1158,8 @@ body.doc-page .doc-article p {
 }
 
 [data-catalog-item][hidden],
-.version-catalog-group[hidden] {
+.version-catalog-group[hidden],
+.doc-list-main .category[hidden] {
 	display: none;
 }
 
@@ -1221,8 +1184,8 @@ body.doc-page .doc-article p {
 .catalog-empty strong {
 	color: var(--ink);
 	font-family: var(--display);
-	font-size: 18px;
-	font-weight: 640;
+	font-size: 1.125rem;
+	font-weight: var(--weight-strong);
 	letter-spacing: -0.015em;
 }
 
@@ -1242,7 +1205,7 @@ body.doc-page .doc-article p {
 	margin: 0 0 18px !important;
 	color: var(--faint) !important;
 	font-family: var(--mono);
-	font-size: 9.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.11em;
 	text-transform: uppercase;
 	font-variant-numeric: tabular-nums;
@@ -1260,22 +1223,23 @@ body.doc-page .doc-article p {
 }
 
 .topic-kicker span:first-child {
-	color: var(--accent);
-} /* --- Compact ------------------------------------------------------------- */
+	color: var(--ink-soft);
+}
+
+/* --- Compact ------------------------------------------------------------- */
 
 @media (max-width: 980px) {
 	.docs-header .doc-topbar {
 		padding-inline: 24px;
 	}
 
-	.version-index-page .version-index-hero-content,
+	.version-index-page .site-hero,
 	.version-index-shell {
 		width: calc(100% - 56px);
 	}
 
 	.version-index-page .version-entry {
 		min-height: 190px;
-		padding-inline: 28px;
 	}
 	.rail-trigger {
 		display: inline-flex;
@@ -1304,9 +1268,9 @@ body.doc-page .doc-article p {
 		width: min(340px, calc(100vw - 42px));
 		height: auto;
 		border-inline-end: 1px solid var(--line);
-		box-shadow: 18px 0 50px rgb(0 0 0 / 0.34);
+		box-shadow: var(--shadow-sheet);
 		transform: translateX(-105%);
-		transition: transform 180ms cubic-bezier(0.3, 0.8, 0.3, 1);
+		transition: transform var(--dur-exit) var(--ease-out);
 	}
 
 	.rail-resizer {
@@ -1328,6 +1292,7 @@ body.doc-page .doc-article p {
 
 	body.rail-is-open .chapter-rail {
 		transform: translateX(0);
+		transition-duration: var(--dur-enter);
 	}
 
 	.rail-backdrop {
@@ -1339,12 +1304,13 @@ body.doc-page .doc-article p {
 		background: rgb(0 0 0 / 0.56);
 		opacity: 0;
 		pointer-events: none;
-		transition: opacity 180ms ease;
+		transition: opacity var(--dur-exit) var(--ease-out);
 	}
 
 	body.rail-is-open .rail-backdrop {
 		opacity: 1;
 		pointer-events: auto;
+		transition-duration: var(--dur-enter);
 	}
 
 	.rail-collapse .control-icon {
@@ -1393,6 +1359,11 @@ body.doc-page .doc-article p {
 	.version-catalog-page .index-shell {
 		width: calc(100% - 32px);
 	}
+
+	/* The hero section is already inset; its layout must not inset again. */
+	.version-catalog-page .site-hero .hero-layout {
+		width: 100%;
+	}
 	.docs-header .doc-topbar {
 		width: 100%;
 		padding-inline: 16px;
@@ -1402,14 +1373,6 @@ body.doc-page .doc-article p {
 	.version-index-page .portal-search {
 		display: none;
 	}
-	.version-index-page .docs-header .doc-topbar {
-		min-height: 64px;
-	}
-
-	.version-index-page .top-actions {
-		gap: 4px;
-	}
-
 	.version-index-page .portal-search {
 		width: 116px;
 		height: 36px;
@@ -1420,32 +1383,39 @@ body.doc-page .doc-article p {
 		display: none;
 	}
 
-	.version-index-page .version-index-hero-content {
-		width: calc(100% - 32px);
-		padding: 58px 0 44px;
+	.version-index-page {
+		--portal-inset: 8px;
 	}
 
+	.version-index-page .site-hero {
+		width: calc(100% - 32px);
+	}
+
+	.version-index-page .version-index-hero-content {
+		padding-block: 58px 44px;
+	}
+
+	/* One column on phones; the decorative mark goes. */
 	.version-index-page .hero-layout {
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 12px;
 	}
 
 	.version-index-page .hero-intro h1 {
-		font-size: 34px;
+		font-size: 2.125rem;
 	}
 
 	.version-index-page .hero-copy {
 		margin-top: 12px;
-		font-size: 16px;
+		font-size: var(--text-body);
 	}
 
 	.version-index-mark {
-		width: 68px;
+		display: none;
 	}
 
 	.version-index-heading {
 		min-height: 80px;
-		padding-inline: 8px;
 	}
 
 	/* Keep the wordmark — it is the home link, and an unlabelled icon is exactly
@@ -1458,7 +1428,7 @@ body.doc-page .doc-article p {
 	}
 
 	.catalog-toolbar {
-		grid-template-columns: minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 12px;
 		margin-bottom: 36px;
 		padding-block: 12px;
@@ -1477,11 +1447,11 @@ body.doc-page .doc-article p {
 		grid-template-columns: minmax(0, 1fr);
 		gap: 20px;
 		min-height: 160px;
-		padding: 32px 8px;
+		padding-block: 32px;
 	}
 
 	.version-index-page .version-number {
-		font-size: 58px;
+		font-size: 3.625rem;
 	}
 
 	.version-index-page .version-entry-main {
@@ -1509,6 +1479,20 @@ body.doc-page .doc-article p {
 	}
 }
 
+@media (prefers-reduced-transparency: reduce) {
+	.docs-header,
+	.catalog-toolbar {
+		background: var(--bg);
+		backdrop-filter: none;
+	}
+}
+
+@media (forced-colors: active) {
+	.toc-link.is-active {
+		outline: 1px solid Highlight;
+	}
+}
+
 @media print {
 	.docs-header,
 	.chapter-rail,
@@ -1521,236 +1505,5 @@ body.doc-page .doc-article p {
 
 	.reading-progress {
 		display: none !important;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.chapter-rail,
-	.rail-backdrop,
-	.rail-collapse,
-	.chapter-pager a,
-	.version-entry::after,
-	.version-entry-arrow,
-	.back-to-top {
-		transition: none;
-	}
-}
-
-/* --- Operator guide ------------------------------------------------------ */
-
-/* Operator-guide components. These remain namespaced, but live with the shared design system instead of inside the page. */
-.dep-lede {
-	font-size: 1.05rem;
-	line-height: 1.7;
-	color: var(--ink-soft);
-	max-width: 62ch;
-}
-
-/* Command rail — a reference, not a sequence, so it is deliberately unnumbered. */
-.dep-rail {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-	gap: 10px;
-	margin: 26px 0 30px;
-}
-.dep-cmd {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	padding: 14px 16px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	background: var(--bg-raised);
-}
-.dep-cmd code {
-	font-family: var(--mono);
-	font-size: 0.86rem;
-	font-weight: 600;
-	color: var(--accent-strong);
-	background: none;
-	padding: 0;
-}
-.dep-cmd span {
-	font-size: 0.83rem;
-	line-height: 1.5;
-	color: var(--muted);
-}
-.dep-cmd b {
-	font-size: 0.68rem;
-	font-weight: 600;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	color: var(--faint);
-}
-.dep-cmd[data-writes="yes"] {
-	border-inline-start: 3px solid var(--accent);
-}
-.dep-cmd[data-writes="no"] {
-	border-inline-start: 3px solid var(--green);
-}
-
-/* Step spine — numbered because deployment genuinely is ordered. */
-.dep-steps {
-	list-style: none;
-	margin: 24px 0 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: 28px;
-}
-.dep-steps > li {
-	position: relative;
-	padding-inline-start: 46px;
-}
-.dep-steps > li::before {
-	content: attr(data-step);
-	position: absolute;
-	inset-inline-start: 0;
-	top: 0;
-	width: 30px;
-	height: 30px;
-	display: grid;
-	place-items: center;
-	border-radius: 50%;
-	background: var(--accent);
-	color: #fff;
-	font-family: var(--mono);
-	font-size: 0.8rem;
-	font-weight: 600;
-	font-variant-numeric: tabular-nums;
-}
-.dep-steps > li::after {
-	content: "";
-	position: absolute;
-	inset-inline-start: 15px;
-	top: 36px;
-	bottom: -28px;
-	width: 1px;
-	background: var(--line);
-}
-.dep-steps > li:last-child::after {
-	display: none;
-}
-.dep-steps h3 {
-	margin: 2px 0 8px;
-	font-size: 1.05rem;
-}
-
-/* Gotchas: things that silently cost hours. Severity is encoded in form, not just words. */
-.dep-gotchas {
-	display: grid;
-	gap: 12px;
-	margin: 22px 0;
-}
-.dep-gotcha {
-	display: grid;
-	grid-template-columns: auto 1fr;
-	gap: 14px;
-	align-items: start;
-	padding: 15px 17px;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	background: var(--bg-raised);
-}
-.dep-gotcha kbd {
-	font-family: var(--mono);
-	font-size: 0.64rem;
-	font-weight: 700;
-	letter-spacing: 0.07em;
-	text-transform: uppercase;
-	padding: 4px 8px;
-	border-radius: 999px;
-	border: 0;
-	white-space: nowrap;
-	background: var(--surface-soft);
-	color: var(--muted);
-}
-.dep-gotcha[data-level="money"] kbd {
-	background: color-mix(in srgb, var(--rose) 15%, transparent);
-	color: var(--rose);
-}
-.dep-gotcha[data-level="blocks"] kbd {
-	background: color-mix(in srgb, var(--amber) 18%, transparent);
-	color: var(--amber);
-}
-.dep-gotcha[data-level="confuses"] kbd {
-	background: color-mix(in srgb, var(--blue) 15%, transparent);
-	color: var(--blue);
-}
-.dep-gotcha p {
-	margin: 0;
-	font-size: 0.9rem;
-	line-height: 1.6;
-}
-.dep-gotcha p + p {
-	margin-top: 6px;
-	color: var(--muted);
-}
-
-/* Exit codes: the single most misread signal in the whole workflow. */
-.dep-exits {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-	gap: 12px;
-	margin: 20px 0;
-}
-.dep-exit {
-	padding: 16px;
-	border-radius: var(--radius);
-	border: 1px solid var(--line);
-	background: var(--bg-raised);
-}
-.dep-exit strong {
-	display: block;
-	font-family: var(--mono);
-	font-size: 1.5rem;
-	font-variant-numeric: tabular-nums;
-	line-height: 1;
-	margin-bottom: 8px;
-}
-.dep-exit[data-code="0"] strong {
-	color: var(--green);
-}
-.dep-exit[data-code="2"] strong {
-	color: var(--amber);
-}
-.dep-exit[data-code="n"] strong {
-	color: var(--rose);
-}
-.dep-exit span {
-	font-size: 0.86rem;
-	line-height: 1.55;
-	color: var(--muted);
-}
-/* Direct child only: an inline <em> inside the description must stay inline. */
-.dep-exit > em {
-	display: block;
-	margin-top: 8px;
-	font-style: normal;
-	font-size: 0.8rem;
-	color: var(--faint);
-}
-
-.dep-field-note {
-	font-family: var(--mono);
-	font-size: 0.78rem;
-	color: var(--accent-strong);
-}
-
-@media (max-width: 640px) {
-	.dep-steps > li {
-		padding-inline-start: 38px;
-	}
-	.dep-steps > li::before {
-		width: 26px;
-		height: 26px;
-		font-size: 0.72rem;
-	}
-	.dep-steps > li::after {
-		inset-inline-start: 13px;
-	}
-	.dep-gotcha {
-		grid-template-columns: 1fr;
-		gap: 8px;
 	}
 }

@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="Complete Symmio Core v0.8.6 release notes with 36 scoped changes covering Express Withdrawal, Gasless Layer, AccountLayer, trading execution, liquidation, settlement, fees, funding, events, and operations."
+			content="Symmio Core v0.8.6 release notes covering Express Withdrawal, Gasless Layer, AccountLayer, trading execution, liquidation, settlement, fees, funding, events, and operations."
 		/>
 		<title>Symmio Core v0.8.6 release notes</title>
 		<link rel="icon" type="image/svg+xml" href="assets/symmio-mark.svg" />
@@ -33,7 +33,7 @@
 					<span class="trail-current" aria-current="page">v0.8.6</span>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -50,7 +50,7 @@
 						</p>
 						<p class="hero-copy">
 							Start with the <a href="./pages/overview.html">role-based overview</a>. Express operators should then use the
-							<a href="./pages/express-bot-operations-checklist.html">bot operations runbook</a> alongside the numbered
+							<a href="./pages/express-bot-operations-checklist.html">Express bot operations checklist</a> alongside the numbered
 							<a href="./pages/express-withdrawal-system-design.html">design chapter</a>.
 						</p>
 					</div>
@@ -91,7 +91,7 @@
 								<span class="category">Express Withdrawal</span>
 								<strong>Express Withdrawal System Design</strong>
 								<span
-									>SYMMIO's configurable cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and
+									>Symmio&rsquo;s configurable cooldown protects withdrawals but slows exits. ExpressProvider fronts pool and
 									credit-backed funds, then reconciles when the underlying withdrawal finalizes.</span
 								>
 							</span>
@@ -200,7 +200,7 @@
 						<a class="doc-list-item" href="pages/strict-deallocation.html" data-catalog-item>
 							<span class="doc-list-index">11</span>
 							<span class="doc-list-main">
-								<span class="category">Accounts</span>
+								<span class="category">AccountLayer</span>
 								<strong>Strict Deallocation</strong>
 								<span
 									>PartyA and opted-in PartyBs cannot deallocate collateral that still protects their positions. Safe APIs enforce
@@ -238,7 +238,7 @@
 								<strong>Gasless Layer</strong>
 								<span
 									>Approved relayers pay chain gas for signed InstantLayer and wallet operations, native-gas top-ups, and settlement
-									of bridged collateral into wallet-owned SYMMIO accounts.</span
+									of bridged collateral into wallet-owned Symmio accounts.</span
 								>
 							</span>
 						</a>
@@ -309,7 +309,7 @@
 							<strong>InstantLayer Authorization Scope</strong>
 							<span
 								>The helpers treated a global &quot;inside an InstantLayer batch&quot; flag as authorization. v0.8.6 removes
-								MultiAccount's bypass and makes SymmioPartyB check the direct caller's role.</span
+								MultiAccount&rsquo;s bypass and makes SymmioPartyB check the direct caller&rsquo;s role.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/market-open-fee-execution-price.html" data-catalog-item>
@@ -386,11 +386,11 @@
 						</a>
 						<a class="minor-improvement-item" href="pages/force-close-request-binding.html" data-catalog-item>
 							<span class="doc-list-index">31</span>
-							<span class="category">Force Close</span>
+							<span class="category">Force-Close</span>
 							<strong>Force-Close Request Binding</strong>
 							<span
 								>A multi-step force-close snapshot is now bound to the close request that initialized it, preventing a canceled or
-								expired request's price from being applied to a replacement request.</span
+								expired request&rsquo;s price from being applied to a replacement request.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/notional-liquidation-fee-floor.html" data-catalog-item>
@@ -407,8 +407,8 @@
 							<span class="category">Settlement</span>
 							<strong>Per-Quote Close Settlement Netting</strong>
 							<span
-								>Funding and realized PnL now settle against each quote's bilateral difference while batch closes preserve sequential
-								fills, repeated IDs, and gradual hook visibility.</span
+								>Funding and realized PnL now settle against each quote&rsquo;s bilateral difference while batch closes preserve
+								sequential fills, repeated IDs, and gradual hook visibility.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/accountlayer-callback-liveness.html" data-catalog-item>
@@ -462,7 +462,7 @@
 		</main>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

@@ -61,6 +61,7 @@ describe("GaslessLayer onboarding scenario", function () {
 			instantLayerAddress,
 			treasury.address,
 			DEPOSIT_FEE,
+			DEPOSIT_FEE,
 			0,
 			MIN_DEPOSIT,
 		])
@@ -466,5 +467,215 @@ describe("GaslessLayer onboarding scenario", function () {
 			(BRIDGED_AMOUNT - DEPOSIT_FEE - creationFee) * 2n - withdrawalAmount - OP_FEE * 4n - creationFee,
 		)
 		expect(await context.collateral.balanceOf(treasury.address)).to.equal((DEPOSIT_FEE + creationFee) * 2n)
+	})
+
+	// Vibe onboarding price: the relayer settles the first deposit into a new account, then one batch grants a
+	// session key and deploys the remaining wallets with empty wallet executions. Normal relay-operation fees are
+	// separate from this price, so these tests make them zero unless a test says otherwise.
+	describe("onboarding price with a new-account settlement fee and per-wallet creation fees", function () {
+		const EXISTING_ACCOUNT_FEE = ethers.parseEther("0.05")
+		const NEW_ACCOUNT_FEE = ethers.parseEther("0.80")
+		const CREATION_FEE = ethers.parseEther("0.10")
+		const walletTypes = {
+			Account: [
+				{ name: "addr", type: "address" },
+				{ name: "isPartyB", type: "bool" },
+			],
+			ReplayAttackHeader: [
+				{ name: "nonce", type: "uint256" },
+				{ name: "deadline", type: "uint256" },
+				{ name: "salt", type: "bytes32" },
+			],
+			SignedOperation: [
+				{ name: "signer", type: "address" },
+				{ name: "target", type: "address" },
+				{ name: "callData", type: "bytes" },
+				{ name: "signerAccount", type: "Account" },
+				{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
+			],
+		}
+
+		async function configurePricing() {
+			const admin = context.signers.admin
+			// The new-account fee must move first: the shared minimum stays above both settlement fees.
+			await gateway.connect(admin).setNewAccountDepositFee(NEW_ACCOUNT_FEE)
+			await gateway.connect(admin).setDepositFeeConfig(EXISTING_ACCOUNT_FEE, MIN_DEPOSIT)
+			await gateway.connect(admin).setWalletCreationFee(CREATION_FEE)
+			await gateway.connect(admin).setDefaultSelectorFee(0)
+			await gateway.connect(admin).setDailyFreeOpsLimit(0)
+		}
+
+		/// Build the setup batch: owner-signed grant, session-key fee approval, then one empty execution per extra wallet.
+		async function setupBatch(subAccount: string, walletCount: number, allowance: bigint, maxCreationFee = CREATION_FEE) {
+			const approveSelector = context.accountFacet.interface.getFunction("approveOperationalFee")!.selector
+			const sentinel = await gateway.WALLET_EXECUTION_SENTINEL_SELECTOR()
+			const walletDomain = { ...domain, name: "GaslessGateway", verifyingContract: gatewayAddr }
+			const walletInterface = (await ethers.getContractFactory("GaslessWallet")).interface
+			const ids = Array.from({ length: walletCount - 1 }, (_, i) => BigInt(i + 1))
+			const wallets: string[] = await Promise.all(ids.map(id => gateway.getGaslessWalletAddress(user.address, id)))
+			const walletOps = wallets.map(target => {
+				const op = createSignedOperation(sessionKey.address, target, walletInterface.encodeFunctionData("execute", [[]]), subAccount)
+				op.replayAttackHeader.nonce = 1n
+				// Each empty execution caps its own charge at one creation fee.
+				op.replayAttackHeader.salt = gaslessFeeLimitSalt(maxCreationFee)
+				return op
+			})
+			const grantOp = createSignedOperation(
+				user.address,
+				instantLayerAddress,
+				context.instantLayer.interface.encodeFunctionData("grantDelegation", [
+					{
+						account: { addr: subAccount, isPartyB: false },
+						delegatedSigner: sessionKey.address,
+						selectors: [approveSelector, sentinel],
+						expiryTimestamp: deadline,
+					},
+				]),
+				subAccount,
+			)
+			const approveOp = createSignedOperation(
+				sessionKey.address,
+				symmioAddress,
+				context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [allowance]]),
+				subAccount,
+			)
+			const args = [
+				[grantOp, approveOp, ...walletOps],
+				[
+					await user.signTypedData(domain, types, grantOp),
+					await sessionKey.signTypedData(domain, types, approveOp),
+					...(await Promise.all(walletOps.map(op => sessionKey.signTypedData(walletDomain, walletTypes, op)))),
+				],
+				[[], [], ...ids.map(() => [])],
+				[[], [], ...ids.map(() => [])],
+				[0n, 0n, ...ids],
+			] as const
+			return { args, ids, wallets, walletOps, walletDomain, sentinel }
+		}
+
+		for (const walletCount of [2, 3, 4]) {
+			it(`charges ${walletCount === 2 ? "$1.00" : walletCount === 3 ? "$1.10" : "$1.20"} for ${walletCount} wallets, then $0.05 per repeat deposit`, async function () {
+				await configurePricing()
+				const treasuryBefore = await context.collateral.balanceOf(treasury.address)
+				const subAccount = await settleFundedAccount()
+				const settledBalance = BRIDGED_AMOUNT - NEW_ACCOUNT_FEE - CREATION_FEE
+				expect(await context.viewFacet.balanceOf(subAccount)).to.equal(settledBalance)
+				expect(await context.collateral.balanceOf(treasury.address)).to.equal(treasuryBefore + NEW_ACCOUNT_FEE + CREATION_FEE)
+
+				const batchFee = CREATION_FEE * BigInt(walletCount - 1)
+				const probe = await setupBatch(subAccount, walletCount, batchFee)
+				const untouchedFunds = ethers.parseEther("7")
+				for (const wallet of probe.wallets) await context.collateral.mint(wallet, untouchedFunds)
+
+				// Without the grant earlier in the batch, the session key cannot execute through the wallets.
+				await expect(
+					gateway
+						.connect(relayer)
+						.relayInstantBatch(probe.walletOps, probe.args[1].slice(2), probe.args[2].slice(2), probe.args[3].slice(2), probe.ids),
+				).to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
+
+				async function assertSetupRolledBack() {
+					expect(await context.instantLayer.isDelegationActive(subAccount, sessionKey.address, probe.sentinel)).to.be.false
+					expect((await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr))[0]).to.equal(0n)
+					expect(await context.viewFacet.balanceOf(subAccount)).to.equal(settledBalance)
+					for (const wallet of probe.wallets) {
+						expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+						expect(await context.collateral.balanceOf(wallet)).to.equal(untouchedFunds)
+					}
+				}
+				await assertSetupRolledBack()
+				const short = await setupBatch(subAccount, walletCount, batchFee - 1n)
+				await expect(gateway.connect(relayer).relayInstantBatch(...short.args)).to.be.revertedWith("OperationalFee: Allowance exceeded")
+				await assertSetupRolledBack()
+
+				const { args, wallets } = await setupBatch(subAccount, walletCount, batchFee)
+				const callData = gateway.interface.encodeFunctionData("relayInstantBatch", args)
+				const exact = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
+				if (exact.status !== "quoted") throw new Error(exact.data)
+				expect(exact.quote.totalFee18).to.equal(batchFee)
+				await assertSetupRolledBack()
+
+				const tx = await gateway.connect(relayer).relayInstantBatch(...args)
+				await expect(tx)
+					.to.emit(gateway, "InstantBatchRelayed")
+					.withArgs(relayer.address, walletCount + 1, batchFee)
+				for (const wallet of wallets) {
+					expect(await ethers.provider.getCode(wallet)).not.to.equal("0x")
+					expect(await context.collateral.balanceOf(wallet)).to.equal(untouchedFunds)
+					await expect(tx).to.emit(gateway, "WalletCreationFeeCollected").withArgs(wallet, subAccount, CREATION_FEE)
+				}
+				const onboardingCost = NEW_ACCOUNT_FEE + CREATION_FEE * BigInt(walletCount)
+				expect(onboardingCost).to.equal(ethers.parseEther(walletCount === 2 ? "1" : walletCount === 3 ? "1.10" : "1.20"))
+				expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT - onboardingCost)
+				expect((await context.viewFacet.getOperationalFeeAllowance(subAccount, gatewayAddr))[0]).to.equal(0n)
+
+				// Deployed wallets are reused without another creation fee, even with the fee allowance exhausted.
+				const repeats = args[0].slice(2).map(op => ({ ...op, replayAttackHeader: { ...op.replayAttackHeader, nonce: 2n } }))
+				const walletDomain = { ...domain, name: "GaslessGateway", verifyingContract: gatewayAddr }
+				const repeatSigs = await Promise.all(repeats.map(op => sessionKey.signTypedData(walletDomain, walletTypes, op)))
+				await expect(
+					gateway.connect(relayer).relayInstantBatch(repeats, repeatSigs, args[2].slice(2), args[3].slice(2), args[4].slice(2)),
+				).not.to.emit(gateway, "WalletCreationFeeCollected")
+				expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT - onboardingCost)
+
+				// Later deposits through the same source wallet into the same account pay only the existing-account fee.
+				await context.collateral.mint(await gateway.getGaslessWalletAddress(user.address, 0n), BRIDGED_AMOUNT)
+				const nextDeposit = await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, subAccount)
+				await expect(nextDeposit).not.to.emit(gateway, "WalletCreationFeeCollected")
+				await expect(nextDeposit)
+					.to.emit(gateway, "WalletDepositSettled")
+					.withArgs(user.address, 0n, subAccount, BRIDGED_AMOUNT - EXISTING_ACCOUNT_FEE, EXISTING_ACCOUNT_FEE, 1)
+				expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT * 2n - onboardingCost - EXISTING_ACCOUNT_FEE)
+				expect(await context.collateral.balanceOf(treasury.address)).to.equal(treasuryBefore + NEW_ACCOUNT_FEE + CREATION_FEE + EXISTING_ACCOUNT_FEE)
+			})
+		}
+
+		it("charges a priced delegation grant on top of the onboarding price instead of inside it", async function () {
+			await configurePricing()
+			const grantFee = ethers.parseEther("0.25")
+			const grantSelector = context.instantLayer.interface.getFunction("grantDelegation")!.selector
+			await gateway.connect(context.signers.admin).setSelectorFeeConfig(grantSelector, true, grantFee)
+			const subAccount = await settleFundedAccount()
+			const { args } = await setupBatch(subAccount, 2, grantFee + CREATION_FEE)
+			const tx = await gateway.connect(relayer).relayInstantBatch(...args)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(subAccount, subAccount, grantFee)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(subAccount, subAccount, CREATION_FEE)
+			expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT - ethers.parseEther("1") - grantFee)
+		})
+
+		it("reaches the onboarding price when the daily free quota covers the priced setup operations", async function () {
+			await configurePricing()
+			await gateway.connect(context.signers.admin).setDefaultSelectorFee(OP_FEE)
+			await gateway.connect(context.signers.admin).setDailyFreeOpsLimit(2)
+			await gateway.connect(context.signers.admin).setRevertWhenFreeQuotaExhausted(true)
+			const subAccount = await settleFundedAccount()
+			// Grant and approval use both free slots; the three empty executions use none.
+			const { args } = await setupBatch(subAccount, 4, CREATION_FEE * 3n)
+			const callData = gateway.interface.encodeFunctionData("relayInstantBatch", args)
+			const preview = await quoteGaslessFee({ gateway, callData, mode: "preview" })
+			const exact = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
+			if (preview.status !== "quoted" || exact.status !== "quoted") throw new Error("setup quote failed")
+			for (const quote of [preview.quote, exact.quote]) {
+				expect(quote.freeOpsApplied).to.equal(2)
+				expect(quote.totalFee18).to.equal(CREATION_FEE * 3n)
+			}
+			await gateway.connect(relayer).relayInstantBatch(...args)
+			expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BRIDGED_AMOUNT - ethers.parseEther("1.20"))
+			expect(await gateway.dailyFreeOpsRemaining(subAccount)).to.equal(0)
+		})
+
+		it("rejects an empty wallet execution when the creation fee rises above its signed limit", async function () {
+			await configurePricing()
+			const subAccount = await settleFundedAccount()
+			const { args, wallets } = await setupBatch(subAccount, 2, ethers.parseEther("1"))
+			await gateway.connect(context.signers.admin).setWalletCreationFee(CREATION_FEE + 1n)
+			await expect(gateway.connect(relayer).relayInstantBatch(...args))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(CREATION_FEE + 1n, CREATION_FEE)
+			expect(await ethers.provider.getCode(wallets[0])).to.equal("0x")
+			await gateway.connect(context.signers.admin).setWalletCreationFee(CREATION_FEE)
+			await gateway.connect(relayer).relayInstantBatch(...args)
+			expect(await ethers.provider.getCode(wallets[0])).not.to.equal("0x")
+		})
 	})
 })

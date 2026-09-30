@@ -90,7 +90,7 @@
 			["operational-fees", "Fees", "Operational Fees"],
 			["balance-change-event-cleanup", "Events & Indexing", "Allocated Balance Event Ledger"],
 			["symbol-adjustment", "Symbols", "Symbol Corporate-Action Adjustment"],
-			["strict-deallocation", "Accounts", "Strict Deallocation"],
+			["strict-deallocation", "AccountLayer", "Strict Deallocation"],
 			["instant-open-gas-optimization", "Performance", "InstantOpen Gas Optimization"],
 			["close-to-liquidation", "Trading & Liquidation", "Close-to-Liquidation Execution"],
 			["gasless-layer", "Gasless Operations", "Gasless Layer"],
@@ -110,7 +110,7 @@
 			["accountlayer-behavior-changes", "AccountLayer", "AccountLayer Behavior Changes"],
 			["position-isolation-partial-fill", "AccountLayer", "Position Isolation Partial Fill Remainder"],
 			["lazy-accumulated-funding", "Funding", "Lazy Accumulated Funding"],
-			["force-close-request-binding", "Force Close", "Force-Close Request Binding"],
+			["force-close-request-binding", "Force-Close", "Force-Close Request Binding"],
 			["notional-liquidation-fee-floor", "Liquidation", "Notional Liquidation Fee Floor"],
 			["close-settlement-netting", "Settlement", "Per-Quote Close Settlement Netting"],
 			["accountlayer-callback-liveness", "AccountLayer", "AccountLayer Force-Close and Liquidation Fix"],
@@ -129,6 +129,7 @@
 			"express-bot-operations-checklist": ["Express Withdrawal", "Express Provider Bot Operations Checklist"],
 			"market-best-effort": ["Compatibility", "MARKET_BEST_EFFORT Close Orders"],
 			"per-solver-liquidation-overshoot": ["Compatibility", "Per-Solver Liquidation Overshoot"],
+			"session-keys": ["Gasless Operations", "Session Keys"],
 		},
 	};
 
@@ -145,9 +146,9 @@
 	/* --- Rail ---------------------------------------------------------------
 	   A reader only needs its local outline here. Release-wide navigation lives
 	   in the catalog and the previous/next pager, so the rail remains one clear
-	   "On this page" region instead of introducing a competing tab model. */
+	   "Contents" landmark instead of introducing a competing tab model. */
 	const buildRail = ({ id, label, title }) => {
-		const rail = document.createElement("aside");
+		const rail = document.createElement("nav");
 		rail.className = "chapter-rail is-single-panel";
 		rail.id = id;
 		rail.setAttribute("aria-label", label);
@@ -158,11 +159,11 @@
 			`<p class="rail-title" id="${id}-title">${escapeHtml(title)}</p>` +
 			'<button type="button" class="rail-collapse" data-rail-collapse aria-controls="' +
 			id +
-			'" aria-label="Hide navigation" title="Hide navigation">' +
+			'" aria-label="Hide contents" title="Hide contents">' +
 			icons.rail +
 			"</button>" +
 			"</div>" +
-			`<div class="rail-panel" role="region" id="${id}-panel" aria-labelledby="${id}-title">` +
+			`<div class="rail-panel" id="${id}-panel">` +
 			'<div class="rail-list" data-rail-list="sections"></div>' +
 			"</div>" +
 			"</div>";
@@ -182,7 +183,7 @@
 		resizer.tabIndex = 0;
 		resizer.setAttribute("role", "separator");
 		resizer.setAttribute("aria-orientation", "vertical");
-		resizer.setAttribute("aria-label", "Resize page navigation");
+		resizer.setAttribute("aria-label", "Resize contents panel");
 		resizer.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight Home End Enter");
 		resizer.setAttribute("title", "Drag or use arrow keys to resize. Double-click or press Enter to reset.");
 		rail.append(resizer);
@@ -274,7 +275,11 @@
 		const backdrop = document.createElement("button");
 		backdrop.type = "button";
 		backdrop.className = "rail-backdrop";
-		backdrop.setAttribute("aria-label", "Close navigation");
+		// Pointer-only convenience: the drawer's own close button and Escape
+		// cover keyboard and assistive technology, so the backdrop never takes focus.
+		backdrop.tabIndex = -1;
+		backdrop.setAttribute("aria-hidden", "true");
+		backdrop.setAttribute("aria-label", "Close contents");
 		body.append(backdrop);
 		const background = [
 			document.querySelector(".docs-header"),
@@ -320,7 +325,7 @@
 			if (!collapse) return;
 			const drawer = compact.matches;
 			const collapsed = body.classList.contains("rail-is-collapsed");
-			const label = drawer ? "Close navigation" : collapsed ? "Show navigation" : "Hide navigation";
+			const label = drawer ? "Close contents" : collapsed ? "Show contents" : "Hide contents";
 			collapse.innerHTML = drawer ? icons.close : icons.rail;
 			collapse.setAttribute("aria-label", label);
 			collapse.setAttribute("title", label);
@@ -389,10 +394,11 @@
 		setCollapsed(store.get("docs-rail-collapsed") === "true", false);
 	};
 
-	/* The compact-width rail trigger, added to whatever top bar the page has. */
+	/* The compact-width rail trigger sits at the leading edge of the top bar, on
+	   the same side the drawer slides in from. */
 	const installRailTrigger = (railId, label) => {
-		const actions = document.querySelector(".docs-header .top-actions");
-		if (!actions) return null;
+		const trail = document.querySelector(".docs-header .docs-trail");
+		if (!trail) return null;
 		const trigger = document.createElement("button");
 		trigger.type = "button";
 		trigger.className = "button ghost rail-trigger";
@@ -400,7 +406,7 @@
 		trigger.setAttribute("aria-controls", railId);
 		trigger.setAttribute("aria-expanded", "false");
 		trigger.innerHTML = `${icons.rail}<span>${escapeHtml(label)}</span>`;
-		actions.prepend(trigger);
+		trail.before(trigger);
 		return trigger;
 	};
 
@@ -420,6 +426,7 @@
 		current.dataset.trailCurrent = "true";
 		current.setAttribute("aria-current", "page");
 		current.textContent = title;
+		current.title = title;
 		trail.append(separator, current);
 	};
 
@@ -540,26 +547,18 @@
 		const progress = document.createElement("div");
 		progress.className = "reading-progress";
 		progress.dataset.readingProgress = "true";
-		progress.setAttribute("role", "progressbar");
-		progress.setAttribute("aria-label", "Reading progress");
-		progress.setAttribute("aria-valuemin", "0");
-		progress.setAttribute("aria-valuemax", "100");
-		progress.setAttribute("aria-valuenow", "0");
-		progress.innerHTML = '<span aria-hidden="true"></span>';
+		// Decoration only: the rail's aria-current="location" already tells
+		// assistive technology where the reader is.
+		progress.setAttribute("aria-hidden", "true");
+		progress.innerHTML = "<span></span>";
 		header.append(progress);
 
 		let frame = 0;
-		let previousValue = -1;
 		const update = () => {
 			frame = 0;
 			const scrollable = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
 			const ratio = Math.min(1, Math.max(0, window.scrollY / scrollable));
-			const value = Math.round(ratio * 100);
 			progress.style.setProperty("--reading-progress", String(ratio));
-			if (value !== previousValue) {
-				progress.setAttribute("aria-valuenow", String(value));
-				previousValue = value;
-			}
 		};
 		const schedule = () => {
 			if (!frame) frame = window.requestAnimationFrame(update);
@@ -585,8 +584,8 @@
 
 		const { rail, list: sectionList } = buildRail({
 			id: "docs-rail",
-			label: "On this page",
-			title: "On this page",
+			label: "Contents",
+			title: "Contents",
 		});
 
 		if (authored) {
@@ -617,7 +616,7 @@
 			} else if (companion) {
 				kicker.innerHTML = `<span>${escapeHtml(companion[0])}</span><span>Companion guide</span>`;
 			} else {
-				kicker.innerHTML = "<span>Reference</span>";
+				kicker.innerHTML = "<span>Companion guide</span>";
 			}
 			hero.prepend(kicker);
 		}
@@ -637,10 +636,20 @@
 				pager.className = "chapter-pager";
 				pager.setAttribute("aria-label", "Previous and next pages");
 				if (previous)
-					pager.innerHTML += `<a href="${previous.slug}.html"><small>Previous</small><span>${escapeHtml(previous.title)}</span></a>`;
-				if (next) pager.innerHTML += `<a href="${next.slug}.html"><small>Next</small><span>${escapeHtml(next.title)}</span></a>`;
+					pager.innerHTML += `<a href="${previous.slug}.html" title="${escapeHtml(previous.title)}"><small>Previous</small><span>${escapeHtml(previous.title)}</span></a>`;
+				if (next)
+					pager.innerHTML += `<a href="${next.slug}.html" title="${escapeHtml(next.title)}"><small>Next</small><span>${escapeHtml(next.title)}</span></a>`;
 				main.append(pager);
 			}
+		} else if (companion) {
+			// Companions sit outside the numbered sequence, so they end with one way
+			// back to the release catalog instead of a dead stop.
+			const pager = document.createElement("nav");
+			pager.className = "chapter-pager";
+			pager.setAttribute("aria-label", "Release navigation");
+			const label = `All v${escapeHtml(version)} chapters`;
+			pager.innerHTML = `<a href="../index.html" title="${label}"><small>Release</small><span>${label}</span></a>`;
+			main.append(pager);
 		}
 
 		trackSections(sectionList, Array.from(article.querySelectorAll("h2[id], h3[id], h4[id]")));
@@ -650,6 +659,7 @@
 	/* Both search fields answer to the same keys, so the shortcut a reader learns on
 	   the portal still works on the release catalog. */
 	const wireSearchShortcuts = (input, apply) => {
+		input.setAttribute("aria-keyshortcuts", "Meta+K Control+K");
 		window.addEventListener("keydown", event => {
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
 				event.preventDefault();
@@ -684,8 +694,19 @@
 		const count = document.querySelector("[data-catalog-count]");
 		const empty = document.querySelector("[data-catalog-empty]");
 		const clear = document.querySelector("[data-catalog-clear]");
+		const emptyTitle = empty?.querySelector("[data-catalog-empty-title], strong");
 		const groupCounts = new Map(groups.map(group => [group, group.querySelector("[data-catalog-group-count]")]));
 		const total = rows.length;
+
+		// A row's category adds nothing when it only repeats the group heading above
+		// it (the v0.8.5 catalog groups by category), so it is hidden there.
+		groups.forEach(group => {
+			const heading = normalize(group.querySelector("h2")?.textContent || "");
+			if (!heading) return;
+			group.querySelectorAll(".category").forEach(category => {
+				if (normalize(category.textContent || "") === heading) category.hidden = true;
+			});
+		});
 		if (count) {
 			if (!count.id) count.id = "catalog-result-count";
 			count.setAttribute("role", "status");
@@ -697,6 +718,20 @@
 		const describe = value => {
 			const unit = count?.dataset.catalogUnit || "chapter";
 			return `${value} ${value === 1 ? unit : `${unit}s`}`;
+		};
+
+		// The query lives in `?q=` so a filtered view survives reload and Back, and
+		// can be shared.
+		const syncUrl = () => {
+			try {
+				const next = new URL(window.location.href);
+				const value = input.value.trim();
+				if (value) next.searchParams.set("q", value);
+				else next.searchParams.delete("q");
+				if (next.href !== window.location.href) history.replaceState(history.state, "", next);
+			} catch (_error) {
+				// Some embedded or file:// contexts refuse history updates; filtering still works.
+			}
 		};
 
 		const apply = () => {
@@ -714,8 +749,10 @@
 				const label = groupCounts.get(group);
 				if (label) label.textContent = describe(visible);
 			});
-			if (count) count.textContent = query ? `${describe(shown)} of ${total}` : describe(total);
+			if (count) count.textContent = query ? `${shown} of ${describe(total)}` : describe(total);
 			if (empty) empty.hidden = shown !== 0;
+			if (emptyTitle && shown === 0) emptyTitle.textContent = `No chapters match "${input.value.trim()}"`;
+			syncUrl();
 		};
 
 		groups.forEach(group => {
@@ -723,6 +760,11 @@
 			if (label) label.textContent = describe(rows.filter(row => group.contains(row)).length);
 		});
 		if (count) count.textContent = describe(total);
+		const initialQuery = new URLSearchParams(window.location.search).get("q");
+		if (initialQuery) {
+			input.value = initialQuery;
+			apply();
+		}
 		input.addEventListener("input", apply);
 		clear?.addEventListener("click", () => {
 			input.value = "";
@@ -765,7 +807,7 @@
 				item.hidden = !match;
 				if (match) shown += 1;
 			});
-			if (count) count.textContent = query ? `${describe(shown)} of ${items.length}` : describe(items.length);
+			if (count) count.textContent = query ? `${shown} of ${describe(items.length)}` : describe(items.length);
 			if (empty) empty.hidden = shown !== 0;
 		};
 
@@ -787,13 +829,38 @@
 		}
 		if (!button) return;
 		if (!button.querySelector("svg")) button.innerHTML = icons.up;
-		const sync = () => button.classList.toggle("is-visible", window.scrollY > 900);
+		// While hidden the button is out of the tab order and the accessibility tree.
+		const sync = () => {
+			const visible = window.scrollY > 900;
+			button.classList.toggle("is-visible", visible);
+			button.inert = !visible;
+		};
 		window.addEventListener("scroll", sync, { passive: true });
 		button.addEventListener("click", () => {
 			const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 			window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
 		});
 		sync();
+	};
+
+	/* --- Landmarks ---------------------------------------------------------- */
+	// Done here so every release, including frozen ones, gets the same structure
+	// without editing its markup.
+	const installLandmarks = () => {
+		// The header actions hold buttons only, so they are a group, not navigation.
+		document.querySelectorAll("nav.top-actions").forEach(actions => actions.setAttribute("role", "group"));
+		// A second top-level <header> would read as a second banner.
+		document.querySelectorAll("header.site-hero").forEach(hero => {
+			if (!hero.closest("main")) hero.setAttribute("role", "presentation");
+		});
+		// "Skip to document" should land before the chapter title, not after it.
+		const main = document.querySelector("main");
+		const skipLinks = document.querySelectorAll('a.skip-link[href="#full-document"]');
+		if (main && skipLinks.length) {
+			if (!main.id) main.id = "main";
+			main.setAttribute("tabindex", "-1");
+			skipLinks.forEach(link => link.setAttribute("href", `#${main.id}`));
+		}
 	};
 
 	/* --- Deep links --------------------------------------------------------- */
@@ -811,6 +878,7 @@
 		root.style.scrollBehavior = previousBehavior;
 	};
 
+	installLandmarks();
 	installReaderShell();
 	installCatalog();
 	installVersionSearch();

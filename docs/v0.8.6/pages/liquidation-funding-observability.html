@@ -32,7 +32,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -86,8 +86,8 @@
 						counterparties, liquidation, raw funding, and raw price PnL calculated from the liquidation snapshot.
 					</p>
 					<p>
-						<code>rawFunding</code> and <code>rawPnl</code> are signed from PartyB's perspective: a positive value means PartyB receives
-						that component, and a negative value means PartyB pays it.
+						<code>rawFunding</code> and <code>rawPnl</code> are signed from PartyB&rsquo;s perspective: a positive value means PartyB
+						receives that component, and a negative value means PartyB pays it.
 					</p>
 
 					<h2 id="aggregate-settlement-event">Aggregate settlement event</h2>
@@ -105,7 +105,7 @@
 );</code></pre>
 					<p>
 						The contract emits this event when the PartyA/PartyB settlement bucket is finalized. It reports the raw and final aggregate
-						funding and price PnL applied to PartyB's allocation bucket.
+						funding and price PnL applied to PartyB&rsquo;s allocation bucket.
 					</p>
 					<ul>
 						<li><code>rawFunding</code> is the signed funding total before the final settlement adjustment.</li>
@@ -116,10 +116,10 @@
 						<li><code>allocationKey</code> identifies the PartyB balance bucket that changed.</li>
 					</ul>
 					<p>
-						The event's scale operands come from the settlement state. The <strong>expected amount</strong> is the full PartyA-perspective
-						funding-plus-PnL total accumulated while processing quotes. The <strong>final amount</strong> is the PartyA-perspective amount
-						the bucket will actually settle after any deficit or dispute adjustment and any isolated-mode balance cap. These are internal
-						operands; the event reports their ratio and the resulting PartyB-perspective components.
+						The event&rsquo;s scale operands come from the settlement state. The <strong>expected amount</strong> is the full
+						PartyA-perspective funding-plus-PnL total accumulated while processing quotes. The <strong>final amount</strong> is the
+						PartyA-perspective amount the bucket will actually settle after any deficit or dispute adjustment and any isolated-mode
+						balance cap. These are internal operands; the event reports their ratio and the resulting PartyB-perspective components.
 					</p>
 					<p>
 						Normally the final amount matches the expected amount and the scale is <code>1 / 1</code>. A haircut, dispute override, or

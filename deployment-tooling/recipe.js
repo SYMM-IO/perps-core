@@ -536,6 +536,7 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 		"admin",
 		"treasury",
 		"depositFee",
+		"newAccountDepositFee",
 		"walletCreationFee",
 		"minimumDeposit",
 		"defaultSelectorFee",
@@ -560,11 +561,13 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 	}
 	if (component.mode === "reuse") fail(source, `${name}.mode`, "reuse is not supported; use deploy or skip");
 
-	const requiredConfig = configFields.filter(field => field !== "admin" && field !== "walletCreationFee");
+	const optionalConfig = new Set(["admin", "newAccountDepositFee", "walletCreationFee"]);
+	const requiredConfig = configFields.filter(field => !optionalConfig.has(field));
 	required(component, requiredConfig, source, name);
 	if (component.admin !== undefined) address(component.admin, source, `${name}.admin`);
 	address(component.treasury, source, `${name}.treasury`);
 	if (component.walletCreationFee !== undefined) uintString(component.walletCreationFee, source, `${name}.walletCreationFee`);
+	if (component.newAccountDepositFee !== undefined) uintString(component.newAccountDepositFee, source, `${name}.newAccountDepositFee`);
 	for (const field of [
 		"depositFee",
 		"minimumDeposit",
@@ -577,6 +580,9 @@ function validateGaslessLayer(value, source, name = "gaslessLayer") {
 	}
 	if (BigInt(component.minimumDeposit) <= BigInt(component.depositFee)) {
 		fail(source, `${name}.minimumDeposit`, "must be greater than depositFee");
+	}
+	if (component.newAccountDepositFee !== undefined && BigInt(component.minimumDeposit) <= BigInt(component.newAccountDepositFee)) {
+		fail(source, `${name}.minimumDeposit`, "must be greater than newAccountDepositFee");
 	}
 	boolean(component.revertWhenFreeQuotaExhausted, source, `${name}.revertWhenFreeQuotaExhausted`);
 	boolean(component.revertWhenNativeSponsorLimitExhausted, source, `${name}.revertWhenNativeSponsorLimitExhausted`);

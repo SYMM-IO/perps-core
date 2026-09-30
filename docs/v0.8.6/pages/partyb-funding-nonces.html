@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -161,7 +161,7 @@
 
 					<h2 id="batching">Batched calls are routed back through the gate</h2>
 					<p>
-						<code>SymmioPartyB._call</code> forwards each entry to the Symmio core. An entry targeting this contract's own
+						<code>SymmioPartyB._call</code> forwards each entry to the Symmio core. An entry targeting this contract&rsquo;s own
 						<code>setFundingFee</code> selector would therefore have bypassed the nonce gate entirely. <code>_call</code> now detects that
 						selector and <code>delegatecall</code>s it back into this contract instead, so a funding update carries the same guarantees
 						whether it is submitted directly or inside a batch.
@@ -185,7 +185,7 @@ mapping(uint256 =&gt; uint256) public fundingNonce; // slot N+5: symbolId =&gt; 
 						<li>Read <code>fundingNonce(symbolId)</code> on startup to recover the floor after an engine restart.</li>
 						<li>
 							Treat <code>FundingFeeUpdateSkipped</code> as expected traffic; alert on a symbol that is skipped repeatedly, which means
-							the engine's nonce has fallen behind.
+							the engine&rsquo;s nonce has fallen behind.
 						</li>
 						<li>
 							Reuse the same nonce when resubmitting the latest update for a symbol; a higher nonce is only needed for a genuinely newer
@@ -197,7 +197,7 @@ mapping(uint256 =&gt; uint256) public fundingNonce; // slot N+5: symbolId =&gt; 
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

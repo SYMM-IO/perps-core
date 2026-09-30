@@ -3,11 +3,8 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta
-			name="description"
-			content="Operator runbook for deploying and running SYMMIO from the menu application: safety contract, receipts, reports, checklist, and handover evidence."
-		/>
-		<title>SYMMIO Operator Guide</title>
+		<meta name="description" content="Operator guide for deploying and running Symmio Core from the menu application." />
+		<title>Symmio Core operator guide</title>
 		<link rel="icon" type="image/svg+xml" href="v0.8.6/assets/symmio-mark.svg" />
 		<script>
 			// Applied before first paint so a saved light preference does not flash dark.
@@ -33,7 +30,7 @@
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
 					<a class="button ghost" href="v0.8.6/index.html">v0.8.6 docs</a>
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -49,9 +46,9 @@
 				<a class="toc-link level-2" href="#evidence">Evidence</a>
 				<section class="rail-group rail-group-plain">
 					<h2 class="rail-group-title">Related</h2>
-					<a class="rail-link" href="deployment.md"><span class="rail-label">Deployment safety contract</span></a>
-					<a class="rail-link" href="../cli/README.md"><span class="rail-label">Task and registration standard</span></a>
-					<a class="rail-link" href="../deployment-tooling/README.md"><span class="rail-label">Portable intent format</span></a>
+					<span class="rail-link"><span class="rail-label">Deployment safety contract</span> <code>docs/deployment.md</code></span>
+					<span class="rail-link"><span class="rail-label">Task and registration standard</span> <code>cli/README.md</code></span>
+					<span class="rail-link"><span class="rail-label">Portable intent format</span> <code>deployment-tooling/README.md</code></span>
 				</section>
 			</div>
 
@@ -60,9 +57,9 @@
 					<p class="topic-kicker"><span>Operations</span><span>Operator guide</span></p>
 					<div class="reader-title-row">
 						<div>
-							<h1>Operate SYMMIO from one menu</h1>
+							<h1>Operate Symmio Core from one menu</h1>
 							<p class="hero-copy">
-								Deploy, patch, audit, resume, and safely abandon work without memorising commands or editing deployment JSON by hand.
+								Deploy, patch, audit, resume, and safely abandon work without memorizing commands or editing deployment JSON by hand.
 							</p>
 						</div>
 					</div>
@@ -241,16 +238,16 @@ EXECUTE=true CONFIRM_CHAIN_ID=42161 PHASE=decommission ADMIN_SIGNER=cast-ledger 
 						is required.
 					</p>
 					<p>
-						For persistent local-node rehearsal, patch semantics, checklist coverage, and maintenance policies, use the
-						<a href="deployment.md">complete deployment runbook</a>. For adding a one-time script, use the
-						<a href="../cli/README.md">task-definition and registry standard</a>.
+						For persistent local-node rehearsal, patch semantics, checklist coverage, and maintenance policies, use the complete
+						deployment runbook in the repository at <code>docs/deployment.md</code>. For adding a one-time script, use the task-definition
+						and registry standard at <code>cli/README.md</code>.
 					</p>
 				</article>
 			</main>
 		</div>
 
 		<footer class="site-footer">
-			<span>SYMMIO operator documentation.</span>
+			<span>Symmio Core operator documentation.</span>
 			<span>Menu-only, durable, and evidence-first.</span>
 		</footer>
 	</body>
