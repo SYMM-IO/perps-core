@@ -233,6 +233,19 @@ for (const file of htmlFiles) {
 		}
 	}
 
+	/* Chapter headings and their rail links are plain sentence text, never
+	   "4.2 Credit line" style numbered headings, so every chapter reads alike. */
+	if (file.startsWith("v0.8.6/pages/")) {
+		for (const [, level, inner] of html.matchAll(/<h([234])\b[^>]*>([\s\S]*?)<\/h\1>/g)) {
+			const text = stripTags(inner);
+			if (/^\d+(\.\d+)*\.?\s/.test(text)) fail(file, `numbered h${level} "${text}"; chapter headings are not numbered`);
+		}
+		for (const [, inner] of html.matchAll(/<a class="toc-link[^"]*"[^>]*>([\s\S]*?)<\/a\s*>/g)) {
+			const text = stripTags(inner);
+			if (/^\d+(\.\d+)*\.?\s/.test(text)) fail(file, `numbered rail link "${text}"; rail links match their unnumbered headings`);
+		}
+	}
+
 	/* Mermaid treats semicolons as statement delimiters, including semicolons
 	   embedded in sequence message and note labels. The runtime otherwise renders
 	   an error SVG that looks like a valid diagram node to the page shell. */
