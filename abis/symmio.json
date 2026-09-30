@@ -23837,19 +23837,6 @@
     },
     {
         "inputs": [],
-        "name": "PARTY_B_OPENING_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
         "name": "PARTY_B_PAUSER_ROLE",
         "outputs": [
             {

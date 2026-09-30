@@ -45,7 +45,7 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	}
 
 	/// @notice Restricts Party B to closing positions only; opening positions and locking quotes are blocked.
-	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PARTY_B_OPENING_PAUSER_ROLE) {
+	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PARTY_B_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBOpenPositionsPaused = true;
 		emit PausePartyBOpenPositions();
 	}
@@ -166,7 +166,7 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	/// @dev Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still close positions,
 	///      deallocate funds, and receive correct fund routing in ClearingHouse distributions.
 	/// @param partyB The address of the Party B to pause.
-	function pausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.PARTY_B_OPENING_PAUSER_ROLE) {
+	function pausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.PARTY_B_PAUSER_ROLE) {
 		require(partyB != address(0), "PauseControlFacet: Zero address");
 		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = true;
 		emit SetPartyBOpenPositionsPausedForPartyB(partyB, true);
