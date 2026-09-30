@@ -8,51 +8,28 @@ import {
 	requireRoundingPaused,
 	guardRoundingCut,
 	executeRoundingOwnerAction,
-	planStageFundingRoles,
-	verifyStageFundingRoles,
 	inspectRoundingUpgrade,
 } from "../../tasks/deploy/arbitrumRoundingUpgrade.js"
+import { CORE_PAUSE_ROLES } from "../../utils/corePauseRoles.js"
+import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
-import { initializeLegacyPauseFixture } from "../helpers/legacy-pause-fixture.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 
 describe("Arbitrum rounding release Safe unpause", function () {
-	it("stage Safe grants only missing roles before separate pause, cut and unpause files", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
+	it("stage cut and unpause preserve accounting pause with current Core roles", async function () {
+		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
 		const input = {
 			profile: "stage-funding",
 			release: "version_0.8.6.2-funding",
 			target: { core: context.diamond, safe: admin.address, governanceMode: "safe-file" },
 		}
-		for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
-		const report: any = { deployments: { Create2Factory: { published: true }, FundingRateFacet: { published: false } } }
-		await expectFailure(() => planStageFundingRoles(ethers, input, report), /publication.*FundingRateFacet/)
-		report.deployments.FundingRateFacet.published = true
-		const nonce = await ethers.provider.getTransactionCount(admin.address)
-		const roles = await planStageFundingRoles(ethers, input, report)
-		expect(await ethers.provider.getTransactionCount(admin.address)).to.equal(nonce)
-		const batch = createSafeBatch({ chainId: 42161, safeAddress: admin.address, name: "Stage funding roles", actions: roles.actions })
-		validateSafeBatchTransport(batch)
-		expect(batch.transactionBuilder.transactions).to.have.length(2)
-		await expectFailure(() => verifyStageFundingRoles(ethers, input, report), /PAUSER_ROLE/)
-		await expectFailure(() => planRoundingPause(ethers, input, report), /PAUSER_ROLE/)
-		for (const [index, tx] of batch.transactionBuilder.transactions.entries()) {
-			const decoded = context.controlFacet.interface.decodeFunctionData("grantRole", tx.data)
-			expect(decoded.user).to.equal(admin.address)
-			expect(decoded.role).to.equal(ethers.id(index === 0 ? "PAUSER_ROLE" : "UNPAUSER_ROLE"))
-			expect(tx.value).to.equal("0")
-			await (await admin.sendTransaction({ to: tx.to, data: tx.data, value: tx.value })).wait()
-		}
-		await verifyStageFundingRoles(ethers, input, report)
-		expect(report.roles.verifiedBlock).to.be.greaterThan(0)
-		expect((await planStageFundingRoles(ethers, input, report)).actions).to.deep.equal([])
+		const report: any = {}
 		await context.pauseControlFacet.connect(admin).pauseAccounting()
-		const pause = await planRoundingPause(ethers, input, report)
 		const cut = new ethers.Interface(["function diamondCut((address,uint8,bytes4[])[],address,bytes)"])
 		report.actions = [{ to: context.diamond, value: "0", data: cut.encodeFunctionData("diamondCut", [[], ethers.ZeroAddress, "0x"]) }]
 		await expectFailure(() => guardRoundingCut(ethers, input, report), /must be globally paused/)
-		await (await admin.sendTransaction(pause.actions[0])).wait()
+		await context.pauseControlFacet.connect(admin).pauseGlobal()
 		await requireRoundingPaused(ethers, input, report)
 		await guardRoundingCut(ethers, input, report)
 		await expectFailure(() => planRoundingUnpause(ethers, input, report), /Verify the installed Core cut/)
@@ -67,10 +44,10 @@ describe("Arbitrum rounding release Safe unpause", function () {
 	})
 
 	it("stage inspection accepts installed rounding without pause roles and rejects selector or runtime drift", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
+		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
 		await context.pauseControlFacet.connect(admin).activateAccumulatedFunding()
-		for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
+		for (const role of [...CORE_PAUSE_ROLES, "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
 		const loupe = await ethers.getContractAt("DiamondLoupeFacet", context.diamond)
 		const selectors = selectorMap(await loupe.facets())
 		const fundingAddress = selectors["0xfe9e82df"]
@@ -102,11 +79,10 @@ describe("Arbitrum rounding release Safe unpause", function () {
 		await expectFailure(() => inspectRoundingUpgrade(ethers, input, report), /Preserved rounding facet changed/)
 	})
 	it("production executes only a Ledger-owner cut without pause roles and preserves all pause flags", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
+		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
-		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))
 		await context.pauseControlFacet.connect(admin).pauseAccounting()
-		for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
+		for (const role of [...CORE_PAUSE_ROLES, "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
 		const input = {
 			profile: "production",
 			release: "version_0.8.6.2",
@@ -153,22 +129,17 @@ describe("Arbitrum rounding release Safe unpause", function () {
 		expect(after[2]).to.equal(true)
 	})
 
-	it("stage still requires both pause roles and a verified pause before unpause", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
+	it("stage unpause requires a verified global pause", async function () {
+		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
 		const input = { profile: "stage-funding", target: { core: context.diamond, safe: admin.address } }
-		await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id("UNPAUSER_ROLE"))
-		await expectFailure(() => planRoundingPause(ethers, input, {}), /UNPAUSER_ROLE/)
-		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))
-		await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id("PAUSER_ROLE"))
-		await expectFailure(() => planRoundingPause(ethers, input, {}), /PAUSER_ROLE/)
+		await context.pauseControlFacet.connect(admin).pauseGlobal()
 		await expectFailure(() => planRoundingUnpause(ethers, input, { actions: [], verifiedBlock: 1 }), /pause verification is missing/)
 	})
 
 	it("exports one read-only planned unpause call whose execution clears only the global flag", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
+		const context = await loadFixture(initializeFixture)
 		const admin = context.signers.admin
-		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))
 		await context.pauseControlFacet.connect(admin).pauseGlobal()
 		await context.pauseControlFacet.connect(admin).pauseAccounting()
 		const input = { release: "version_0.8.6.2", target: { core: context.diamond, safe: admin.address } }
@@ -192,7 +163,7 @@ describe("Arbitrum rounding release Safe unpause", function () {
 	})
 
 	it("refuses an unverified cut or a multisig without the unpauser role", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
+		const context = await loadFixture(initializeFixture)
 		await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 		const other = (await ethers.getSigners())[1]
 		const input = { release: "version_0.8.6.2", target: { core: context.diamond, safe: other.address } }
