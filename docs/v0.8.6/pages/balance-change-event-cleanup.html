@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -68,9 +68,9 @@
 					<h2 id="overview">Overview</h2>
 					<p>
 						<code>BalanceChangePartyA</code> and <code>BalanceChangePartyB</code> now form a deterministic delta ledger for the core
-						Diamond's allocated-balance mappings. Every non-zero PartyA or PartyB allocated-balance mutation goes through a
-						<code>LibAccount</code> increase or decrease method. That method writes storage and emits the matching event with the caller's
-						reason as one operation.
+						Diamond&rsquo;s allocated-balance mappings. Every non-zero PartyA or PartyB allocated-balance mutation goes through a
+						<code>LibAccount</code> increase or decrease method. That method writes storage and emits the matching event with the
+						caller&rsquo;s reason as one operation.
 					</p>
 					<aside class="callout callout-invariant">
 						<strong>Post-upgrade guarantee.</strong> Starting from a known state checkpoint, applying every successful
@@ -243,7 +243,7 @@ event BalanceChangePartyB(
 									<td>8</td>
 									<td><code>LF_IN</code></td>
 									<td>Inbound</td>
-									<td>A capped liquidation fee enters the liquidation starter or liquidator's PartyA allocation.</td>
+									<td>A capped liquidation fee enters the liquidation starter or liquidator&rsquo;s PartyA allocation.</td>
 								</tr>
 								<tr>
 									<td>9</td>
@@ -322,7 +322,7 @@ event BalanceChangePartyB(
 					<h2 id="partyb-allocation-keys">PartyB allocation keys</h2>
 					<p>
 						For <code>BalanceChangePartyB</code>, the indexed field named <code>partyA</code> is the exact second key of
-						<code>partyBAllocatedBalances[partyB][allocationKey]</code>. Treat the event's accounting key as:
+						<code>partyBAllocatedBalances[partyB][allocationKey]</code>. Treat the event&rsquo;s accounting key as:
 					</p>
 					<pre><code>partyBAllocationKey = (partyB, event.partyA)</code></pre>
 					<div class="table-wrap">
@@ -487,8 +487,8 @@ event SettlePartyALiquidation(
 					</ul>
 					<aside class="callout callout-important">
 						<strong>Do not double count.</strong> The two settlement overloads describe the same call. Neither is an additional
-						allocated-balance delta. PartyB's actual CVA allocation credit is already emitted as <code>BalanceChangePartyB(CVA_IN)</code>;
-						the extended event supplies PartyA attribution and the exact bucket key.
+						allocated-balance delta. PartyB&rsquo;s actual CVA allocation credit is already emitted as
+						<code>BalanceChangePartyB(CVA_IN)</code>; the extended event supplies PartyA attribution and the exact bucket key.
 					</aside>
 					<p>
 						Final PartyA settlement also replaces the pre-finalization allocation with the values that survive liquidation. The emitted
@@ -534,7 +534,7 @@ event SettlePartyALiquidation(
 								</tr>
 								<tr>
 									<td>CVA received by a PartyB</td>
-									<td><code>cvaAmounts[i]</code> is that solver's exact severity-adjusted receipt, including zero.</td>
+									<td><code>cvaAmounts[i]</code> is that solver&rsquo;s exact severity-adjusted receipt, including zero.</td>
 									<td>
 										Apply only the matching non-zero <code>CVA_IN</code> event. A zero metadata amount has no balance-change log
 										and no storage effect.
@@ -550,14 +550,14 @@ event SettlePartyALiquidation(
 									<td>The event address and amount are the exact recipient allocation credit.</td>
 								</tr>
 								<tr>
-									<td>LF funded from the liquidated PartyA's allocation</td>
+									<td>LF funded from the liquidated PartyA&rsquo;s allocation</td>
 									<td>
 										Use <code>BalanceChangePartyA(partyA, amount, LF_OUT)</code> in that same final receipt. This is only the part
 										of the starter fee the live allocation could cover, not the original locked LF or liquidation-start fee
 										calculation.
 									</td>
 									<td>
-										The event amount is the exact debit from the liquidated user's allocated balance. Treat an absent
+										The event amount is the exact debit from the liquidated user&rsquo;s allocated balance. Treat an absent
 										<code>LF_OUT</code> as zero, not as missing data.
 									</td>
 								</tr>
@@ -607,7 +607,7 @@ insuranceVaultCredit              = rawRemainingLf - totalLf
 // The allocated-balance events do not encode lockedLf or availableBalanceShortfall.</code></pre>
 					<p>
 						A settlement call emits its balance changes before the legacy and extended <code>SettlePartyALiquidation</code> events. Buffer
-						the complete receipt, process it in <code>logIndex</code> order, and then attach the later extended event's
+						the complete receipt, process it in <code>logIndex</code> order, and then attach the later extended event&rsquo;s
 						<code>liquidationId</code>, <code>partyBs</code>, and <code>allocationKeys</code>. Paginated settlement contributes one
 						extended event per processed batch; aggregate all batches sharing the liquidation ID.
 					</p>
@@ -616,11 +616,11 @@ insuranceVaultCredit              = rawRemainingLf - totalLf
 						signed-snapshot shortfall, but debited from live allocated balance; those quantities can differ by finalization. Liquidation
 						start moves <code>allocated - liquidationAllocatedBalance</code> into deferred balance, so settlement consumes exactly the
 						signed allocation. When the signed <code>upnl</code> is positive, that allocation can be smaller than the fee: part of the fee
-						is funded by PartyA's profit, which PartyB pays in its settlement rather than through PartyA's allocation. Finalization debits
-						only what remains, because emitting the full fee against a smaller bucket would break exact replay. So <code>LF_OUT</code> is
-						the slice of the starter fee still present in allocation at that moment. Read the receipt-local credit/debit gap as
-						<code>LF_IN - LF_OUT</code>; <code>LF_IN &gt; LF_OUT</code> is the signal that the clamp fired. The gap is not itself a
-						transfer event and should not be assigned to a destination.
+						is funded by PartyA&rsquo;s profit, which PartyB pays in its settlement rather than through PartyA&rsquo;s allocation.
+						Finalization debits only what remains, because emitting the full fee against a smaller bucket would break exact replay. So
+						<code>LF_OUT</code> is the slice of the starter fee still present in allocation at that moment. Read the receipt-local
+						credit/debit gap as <code>LF_IN - LF_OUT</code>; <code>LF_IN &gt; LF_OUT</code> is the signal that the clamp fired. The gap is
+						not itself a transfer event and should not be assigned to a destination.
 					</aside>
 					<aside class="callout callout-note">
 						<strong>Worked example.</strong> A PartyA holding 496 allocated, CVA 22, locked LF 3, unrealized profit 23.5, insolvent at the
@@ -635,15 +635,16 @@ DEFERRED_BALANCE_IN 495.25   returned to PartyA
 lockedLf = 3.00; signed-snapshot shortfall = 0.75; rawRemainingLf = 2.25
 high cap in this example means starter fee = 2.25 and insurance-vault credit = 0</code></pre>
 						None of the quantities is interchangeable: 0.75 is both the allocated debit and the signed-snapshot shortfall in this setup,
-						2.25 is what the starter earned, 1.50 is the <code>LF_IN - LF_OUT</code> gap that PartyB's net payment covers, and 3.00 is the
-						original locked LF. The balance-change ledger alone does not encode the locked amount or shortfall.
+						2.25 is what the starter earned, 1.50 is the <code>LF_IN - LF_OUT</code> gap that PartyB&rsquo;s net payment covers, and 3.00
+						is the original locked LF. The balance-change ledger alone does not encode the locked amount or shortfall.
 					</aside>
 					<aside class="callout callout-warning">
 						<strong>Conserve across the whole liquidation, not one receipt.</strong> When the clamp fires, the starter is credited the
-						full fee while PartyA is debited less; the difference is PartyB's net settlement payment. If settlement is paginated, that
-						payment may sit in an earlier receipt, so a finalization receipt checked in isolation need not balance. Each account still
-						reconstructs exactly from its own events. An indexer that runs a global "credits equal debits" check should reconcile over the
-						full liquidation lifecycle, including deferred, reimbursement, every PartyB settlement batch, and insurance-vault state.
+						full fee while PartyA is debited less; the difference is PartyB&rsquo;s net settlement payment. If settlement is paginated,
+						that payment may sit in an earlier receipt, so a finalization receipt checked in isolation need not balance. Each account
+						still reconstructs exactly from its own events. An indexer that runs a global "credits equal debits" check should reconcile
+						over the full liquidation lifecycle, including deferred, reimbursement, every PartyB settlement batch, and insurance-vault
+						state.
 					</aside>
 
 					<h3>PartyB liquidation</h3>
@@ -717,7 +718,7 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 						<code>ForceActionsFacet.settleAndForceClosePosition</code> passed <code>msg.sender</code> into the parameter declared as
 						<code>partyA</code>. On that path the field held the keeper or liquidator who submitted the force close, not the PartyA being
 						settled. <code>SettlementFacet</code> always passed the real PartyA, so one event signature meant two different things
-						depending on which facet emitted it. v0.8.6 passes the quote's PartyA on both paths.
+						depending on which facet emitted it. v0.8.6 passes the quote&rsquo;s PartyA on both paths.
 					</p>
 					<p>
 						Any index keyed on that field from the force-close path has been attributing settlements to submitters. History can be
@@ -815,9 +816,9 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 									<td>Apply every component in log order; do not infer one synthetic net event.</td>
 								</tr>
 								<tr>
-									<td>PartyA <code>LF_OUT</code> was read as the liquidated user's total LF payment.</td>
+									<td>PartyA <code>LF_OUT</code> was read as the liquidated user&rsquo;s total LF payment.</td>
 									<td>
-										It is only the part funded from the live allocation, so it can be smaller than the starter's
+										It is only the part funded from the live allocation, so it can be smaller than the starter&rsquo;s
 										<code>LF_IN</code>, or absent entirely.
 									</td>
 									<td>
@@ -876,7 +877,7 @@ high cap in this example means starter fee = 2.25 and insurance-vault credit = 0
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

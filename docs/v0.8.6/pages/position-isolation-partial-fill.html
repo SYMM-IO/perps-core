@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -67,7 +67,7 @@
 						whose isolation rule permits exactly one position, sharing margin and liquidating together with the first.
 					</p>
 					<p>
-						The AccountLayer therefore cancels the remainder during the solver's <code>openPosition</code> transaction. The
+						The AccountLayer therefore cancels the remainder during the solver&rsquo;s <code>openPosition</code> transaction. The
 						<code>onOpenPosition</code> hook detects the child quote and calls <code>requestToCancelQuote</code> on it as the virtual
 						account. Because the child is still PENDING with no PartyB, the cancel is immediate: the reserved open trading fee is refunded
 						and the pending locked balance is released back to the virtual account in the same transaction.
@@ -95,17 +95,17 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 </code></pre>
 					<p>The cancel path inside the core does four things atomically:</p>
 					<ul>
-						<li>Sets the child quote's status to <code>CANCELED</code>.</li>
-						<li>Refunds the child's reserved open trading fee to the virtual account.</li>
-						<li>Releases the child's <code>pendingLockedBalances</code> reservation.</li>
-						<li>Removes the child from the account's pending quote list.</li>
+						<li>Sets the child quote&rsquo;s status to <code>CANCELED</code>.</li>
+						<li>Refunds the child&rsquo;s reserved open trading fee to the virtual account.</li>
+						<li>Releases the child&rsquo;s <code>pendingLockedBalances</code> reservation.</li>
+						<li>Removes the child from the account&rsquo;s pending quote list.</li>
 					</ul>
 					<p>
 						The nested cancel triggers the <code>onCancelQuote</code> hook back into the AccountLayer while <code>onOpenPosition</code> is
-						still executing. The child was never added to the virtual account's tracked quote IDs, and the account still holds the opened
-						position, so no deletion is attempted. <code>onCancelQuote</code> uses the callback-aware reentrancy guard: it admits this
-						expected callback from the exact core that AccountLayer is already calling while still rejecting unrelated or nested protected
-						callbacks.
+						still executing. The child was never added to the virtual account&rsquo;s tracked quote IDs, and the account still holds the
+						opened position, so no deletion is attempted. <code>onCancelQuote</code> uses the callback-aware reentrancy guard: it admits
+						this expected callback from the exact core that AccountLayer is already calling while still rejecting unrelated or nested
+						protected callbacks.
 					</p>
 
 					<h2 id="order-semantics">Order semantics</h2>
@@ -127,11 +127,11 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 					<h2 id="integration-notes">Integration notes</h2>
 					<p>
 						Indexers and frontends should expect a <code>RequestToCancelQuote(partyA, address(0), CANCELED, childQuoteId)</code> event
-						emitted by the nested cancel inside the solver's <code>openPosition</code> transaction. It occurs during the
+						emitted by the nested cancel inside the solver&rsquo;s <code>openPosition</code> transaction. It occurs during the
 						<code>onOpenPosition</code> hook, before the outer facet emits its open-position events. After the hook returns, the outer
 						facet also emits <code>AcceptCancelRequest(childQuoteId, CANCELED)</code> for the already-cancelled remainder. The child
-						quote's <code>parentId</code> points to the filled quote, which is how clients distinguish this pair from a user-initiated
-						cancel.
+						quote&rsquo;s <code>parentId</code> points to the filled quote, which is how clients distinguish this pair from a
+						user-initiated cancel.
 					</p>
 					<p>Two operational couplings follow from routing the cancel through the normal PartyA path:</p>
 					<ul>
@@ -150,7 +150,7 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

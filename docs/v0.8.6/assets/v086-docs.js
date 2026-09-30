@@ -20,12 +20,31 @@
 			}
 		},
 	};
+	// One shared polite region for short confirmations (copy, calculator summaries).
+	// Clearing first lets the same sentence be announced twice in a row.
+	const liveStatus = document.createElement("p");
+	liveStatus.className = "visually-hidden";
+	liveStatus.setAttribute("role", "status");
+	liveStatus.setAttribute("data-live-status", "");
+	document.body.append(liveStatus);
+	let liveStatusTimer = 0;
+	window.v086Announce = text => {
+		window.clearTimeout(liveStatusTimer);
+		liveStatus.textContent = "";
+		liveStatusTimer = window.setTimeout(() => {
+			liveStatus.textContent = text;
+		}, 60);
+	};
+	const announce = text => window.v086Announce(text);
 	const themeButtons = Array.from(document.querySelectorAll("[data-theme-toggle]"));
 	const icons = {
 		check: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>',
 		copy: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
 		expand: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="M9 21H3v-6"/><path d="m3 21 7-7"/></svg>',
+		close: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+		minus: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
 		moon: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5"/></svg>',
+		plus: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>',
 		sun: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>',
 		wrap: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h14a4 4 0 0 1 0 8H7"/><path d="m10 12-3 3 3 3"/></svg>',
 	};
@@ -44,7 +63,7 @@
 	const syncThemeButtons = () => {
 		const isDark = root.dataset.theme === "dark";
 		themeButtons.forEach(button => {
-			setIconLabel(button, isDark ? icons.sun : icons.moon, isDark ? "Light" : "Dark");
+			setIconLabel(button, isDark ? icons.sun : icons.moon, isDark ? "Light theme" : "Dark theme");
 			const actionLabel = isDark ? "Switch to light theme" : "Switch to dark theme";
 			button.setAttribute("aria-label", actionLabel);
 			button.setAttribute("title", actionLabel);
@@ -90,67 +109,337 @@
 		return (bracket ? bracket[1] : trimmed.replace(/^[\w.-]+$/, match => match)).replace(/&amp;/g, "&");
 	};
 
-	const parseSequence = source =>
+	// Free text (messages, notes, branch conditions) keeps its brackets: only node
+	// declarations such as `A[Label]` reduce to the bracketed label.
+	const cleanText = value =>
+		value
+			.replace(/["'`]/g, "")
+			.replace(/<br\s*\/?>/gi, " / ")
+			.replace(/\s+/g, " ")
+			.replace(/&amp;/g, "&")
+			.trim();
+
+	/* Sequence rows are messages, branch headers and notes, so the steps read in the
+	   order the drawing does and alternatives read as alternatives. `rect` and `box`
+	   blocks also close with `end` but carry no meaning in text, so they stay silent. */
+	const SEQUENCE_BRANCH_PREFIX = {
+		alt: "If",
+		opt: "If",
+		else: "Otherwise",
+		loop: "Loop:",
+		par: "In parallel:",
+		and: "In parallel:",
+		critical: "Critical:",
+	};
+	const SEQUENCE_BRANCH_END = {
+		alt: "End of condition",
+		opt: "End of condition",
+		loop: "End of loop",
+		par: "End of parallel block",
+		critical: "End of critical block",
+	};
+	const parseSequence = source => {
+		const rows = [];
+		const open = [];
+		// `participant FE as Front end` names the lane; rows use the name, not the id.
+		const names = new Map();
+		const nameOf = id => names.get(id.trim()) || cleanNodeLabel(id);
 		source
 			.split("\n")
 			.map(line => line.trim())
-			.map(line => line.match(/^(.+?)(?:--)?->>[\+ -]*(.+?):\s*(.+)$/))
-			.filter(Boolean)
-			.map(match => ({
-				from: cleanNodeLabel(match[1]),
-				to: cleanNodeLabel(match[2]),
-				label: cleanNodeLabel(match[3]),
-			}));
-
-	const parseFlow = source => {
-		const nodeLabels = new Map();
-		const lines = source
-			.split("\n")
-			.map(line => line.trim())
-			.filter(line => line && !/^(flowchart|graph|subgraph|end\b|%%)/i.test(line));
-		lines.forEach(line => {
-			for (const match of line.matchAll(/\b([A-Za-z][\w.-]*)[\[\(\{]([^()[\]{}]+)[\]\)\}]/g)) {
-				nodeLabels.set(match[1], cleanNodeLabel(match[2]));
-			}
-		});
-		const labelFor = value => {
-			const id = value.trim().match(/^([A-Za-z][\w.-]*)\b/)?.[1];
-			return id && nodeLabels.has(id) ? nodeLabels.get(id) : cleanNodeLabel(value);
-		};
-		return lines
-			.map(line => {
-				const label = (line.match(/-->\|([^|]+)\|/) || line.match(/--\s*([^->]+?)\s*-->/) || [])[1] || "";
-				const parts = line.replace(/-->\|[^|]+\|/, "-->").split(/-->|---|==>/);
-				if (parts.length < 2) return null;
-				return {
-					from: labelFor(parts[0]),
-					to: labelFor(parts[1]),
-					label: cleanNodeLabel(label),
-				};
-			})
-			.filter(Boolean);
+			.forEach((line, index) => {
+				const participant = line.match(/^(?:participant|actor)\s+(\S+)(?:\s+as\s+(.+))?$/);
+				if (participant) {
+					if (participant[2]) names.set(participant[1], cleanText(participant[2]));
+					return;
+				}
+				const branch = line.match(/^(alt|else|opt|loop|par|and|critical)\b\s*(.*)$/);
+				if (branch) {
+					if (!["else", "and"].includes(branch[1])) open.push(branch[1]);
+					const text = cleanText(branch[2]);
+					rows.push({
+						branch: text ? `${SEQUENCE_BRANCH_PREFIX[branch[1]]} ${text}` : SEQUENCE_BRANCH_PREFIX[branch[1]].replace(/:$/, ""),
+						line: index,
+					});
+					return;
+				}
+				if (/^(rect|box)\b/.test(line)) {
+					open.push(null);
+					return;
+				}
+				if (/^end$/.test(line)) {
+					const kind = open.pop();
+					if (kind) rows.push({ branch: SEQUENCE_BRANCH_END[kind], end: true, line: index });
+					return;
+				}
+				const note = line.match(/^Note (?:over|left of|right of) ([^:]+):\s*(.+)$/i);
+				if (note) {
+					rows.push({ note: cleanText(note[2]), about: note[1].split(",").map(nameOf).join(", "), line: index });
+					return;
+				}
+				// Every message arrow: ->, -->, ->>, -->>, -x, --x, -) and --), with optional +/- activation.
+				const message = line.match(/^([^-:]+?)\s*--?(?:>>|>|x|\))[+-]?\s*([^:]+?)\s*:\s*(.+)$/);
+				if (message) rows.push({ from: nameOf(message[1]), to: nameOf(message[2]), label: cleanText(message[3]), line: index });
+			});
+		return rows;
 	};
 
-	const parseState = source =>
-		source
-			.split("\n")
-			.map(line => line.trim())
-			.filter(line => line.includes("-->"))
-			.map(line => {
-				const [from, rest] = line.split("-->");
-				const [to, label = ""] = rest.split(":");
-				return { from: cleanNodeLabel(from), to: cleanNodeLabel(to), label: cleanNodeLabel(label) };
-			});
+	/* Flow, state and gantt rows carry what the drawing carries: every edge (chains
+	   and `&` groups expand to one row per pair), subgraph and composite-state
+	   headings, notes, standalone nodes and gantt sections. Every parser's rows keep
+	   the index of the source line they came from. */
+	const cleanDiagramText = value =>
+		value
+			.replace(/^\s*"([\s\S]*)"\s*$/, "$1")
+			.replace(/["`]/g, "")
+			.replace(/<br\s*\/?>|\\n/gi, " ")
+			.replace(/&amp;/g, "&")
+			.replace(/\s+/g, " ")
+			.trim();
 
-	const parseGantt = source =>
-		source
-			.split("\n")
-			.map(line => line.trim())
-			.filter(line => line.includes(":") && !/^(title|dateFormat|axisFormat|section)\b/i.test(line))
-			.map(line => {
-				const [label, timing = ""] = line.split(":");
-				return { label: cleanNodeLabel(label), timing: cleanNodeLabel(timing) };
+	// Longest opener first, so `((` is not read as `(` and `[[` not as `[`.
+	const FLOW_SHAPES = [
+		["(((", [")))"]],
+		["((", ["))"]],
+		["([", ["])"]],
+		["[[", ["]]"]],
+		["[(", [")]"]],
+		["[/", ["/]", "\\]"]],
+		["[\\", ["\\]", "/]"]],
+		["{{", ["}}"]],
+		["(", [")"]],
+		["[", ["]"]],
+		["{", ["}"]],
+		[">", ["]"]],
+	];
+	const readFlowNode = (text, start) => {
+		const idMatch = /^\s*(\w+)/.exec(text.slice(start));
+		if (!idMatch) return null;
+		let end = start + idMatch[0].length;
+		let label = null;
+		const shape = FLOW_SHAPES.find(([opener]) => text.startsWith(opener, end));
+		if (shape) {
+			const bodyStart = end + shape[0].length;
+			// A quoted label may contain the closing bracket, so search after the quote.
+			const quote = /^\s*"/.exec(text.slice(bodyStart));
+			const searchFrom = quote ? text.indexOf('"', bodyStart + quote[0].length) + 1 : bodyStart;
+			if (quote && searchFrom === 0) return null;
+			let close = -1;
+			let closeLength = 0;
+			shape[1].forEach(closer => {
+				const at = text.indexOf(closer, searchFrom);
+				if (at !== -1 && (close === -1 || at < close)) {
+					close = at;
+					closeLength = closer.length;
+				}
 			});
+			if (close === -1) return null;
+			label = cleanDiagramText(text.slice(bodyStart, close));
+			end = close + closeLength;
+		}
+		return { id: idMatch[1], label, end };
+	};
+	const readFlowGroup = (text, start) => {
+		const nodes = [];
+		let end = start;
+		for (;;) {
+			const node = readFlowNode(text, end);
+			if (!node) return null;
+			nodes.push(node);
+			end = node.end;
+			const amp = /^\s*&/.exec(text.slice(end));
+			if (!amp) return { nodes, end };
+			end += amp[0].length;
+		}
+	};
+	// Text-label forms (`-- a -->`, `-. a .->`, `== a ==>`) need spaces around the label,
+	// which keeps them apart from the bare arrows that may carry `|label|`.
+	const FLOW_LINKS = [
+		/^\s*<?--\s+(.+?)\s+(?:-{2,}[>xo]|-{3,})/,
+		/^\s*<?-\.\s+(.+?)\s+\.-[>xo]?/,
+		/^\s*<?==\s+(.+?)\s+(?:={2,}[>xo]|={3,})/,
+		/^\s*<?(?:-{2,}[>xo]|-{3,}|-\.+-[>xo]?|={2,}[>xo]|={3,}|~~~)(?:\s*\|([^|]*)\|)?/,
+	];
+	const readFlowLink = (text, start) => {
+		const rest = text.slice(start);
+		for (const pattern of FLOW_LINKS) {
+			const match = pattern.exec(rest);
+			if (match) return { label: cleanDiagramText(match[1] || ""), end: start + match[0].length };
+		}
+		return null;
+	};
+	const readFlowChain = line => {
+		const first = readFlowGroup(line, 0);
+		if (!first) return null;
+		const groups = [first.nodes];
+		const links = [];
+		let end = first.end;
+		for (;;) {
+			const link = readFlowLink(line, end);
+			if (!link) break;
+			const next = readFlowGroup(line, link.end);
+			if (!next) return null;
+			links.push(link.label);
+			groups.push(next.nodes);
+			end = next.end;
+		}
+		return line.slice(end).replace(/;\s*$/, "").trim() ? null : { groups, links };
+	};
+
+	const parseFlow = source => {
+		const labels = new Map();
+		const statements = source.split("\n").map((raw, index) => {
+			const line = raw.trim();
+			if (!line || /^(flowchart|graph)\b/i.test(line) || /^(%%|style|classDef|class|linkStyle|click|direction)\b/.test(line)) return null;
+			const subgraph = line.match(/^subgraph\s+(.+)$/);
+			if (subgraph) {
+				const titled = /^\s*"/.test(subgraph[1]) ? null : readFlowNode(subgraph[1], 0);
+				const title = titled ? titled.label || titled.id : cleanDiagramText(subgraph[1]);
+				return { index, subgraph: title };
+			}
+			if (/^end\s*;?$/.test(line)) return { index, end: true };
+			const chain = readFlowChain(line);
+			if (!chain) return null;
+			chain.groups.flat().forEach(node => {
+				if (node.label !== null) labels.set(node.id, node.label);
+			});
+			return { index, ...chain };
+		});
+		const linked = new Set();
+		statements.forEach(statement => {
+			if (statement?.links?.length) statement.groups.flat().forEach(node => linked.add(node.id));
+		});
+		// A node referenced by id alone reads as the label it was declared with anywhere.
+		const labelOf = node => labels.get(node.id) ?? node.id;
+		const rows = [];
+		const open = [];
+		statements.forEach(statement => {
+			if (!statement) return;
+			const line = statement.index;
+			if ("subgraph" in statement) {
+				open.push(statement.subgraph);
+				rows.push({ branch: statement.subgraph, line });
+			} else if (statement.end) {
+				if (open.length) rows.push({ branch: `End of ${open.pop()}`, end: true, line });
+			} else if (!statement.links.length) {
+				// Declarations inside a subgraph show membership; loose ones only matter if no edge names them.
+				statement.groups[0].forEach(node => {
+					if (open.length || !linked.has(node.id)) rows.push({ node: labelOf(node), line });
+				});
+			} else {
+				statement.links.forEach((label, step) => {
+					statement.groups[step].forEach(from => {
+						statement.groups[step + 1].forEach(to => rows.push({ from: labelOf(from), to: labelOf(to), label, line }));
+					});
+				});
+			}
+		});
+		return rows;
+	};
+
+	const parseState = source => {
+		const rows = [];
+		const open = [];
+		const names = new Map();
+		// `[*]` is the start when it leads an arrow and the end when it closes one.
+		const nameOf = (id, side) => (id === "[*]" ? (side === "from" ? "Start" : "End") : names.get(id) || cleanDiagramText(id));
+		let note = null;
+		source.split("\n").forEach((raw, index) => {
+			const line = raw.trim();
+			if (note) {
+				if (/^end\s+note$/i.test(line)) {
+					rows.push({ note: note.text.join(" "), about: note.about, line: note.line });
+					note = null;
+				} else if (line) note.text.push(cleanDiagramText(line));
+				return;
+			}
+			if (!line || /^(stateDiagram|%%|classDef|class|direction|hide|style)\b/i.test(line)) return;
+			const noteLine = line.match(/^note\s+(?:left|right)\s+of\s+(\S+)\s*(?::\s*(.*))?$/i);
+			if (noteLine) {
+				const about = nameOf(noteLine[1]);
+				if (noteLine[2] !== undefined) rows.push({ note: cleanDiagramText(noteLine[2]), about, line: index });
+				else note = { about, text: [], line: index };
+				return;
+			}
+			const composite = line.match(/^state\s+(?:"([^"]+)"\s+as\s+)?(\S+?)\s*\{$/);
+			if (composite) {
+				if (composite[1]) names.set(composite[2], cleanDiagramText(composite[1]));
+				const title = nameOf(composite[2]);
+				open.push(title);
+				rows.push({ branch: title, line: index });
+				return;
+			}
+			if (line === "}") {
+				if (open.length) rows.push({ branch: `End of ${open.pop()}`, end: true, line: index });
+				return;
+			}
+			const alias = line.match(/^state\s+"([^"]+)"\s+as\s+(\S+)$/);
+			if (alias) {
+				names.set(alias[2], cleanDiagramText(alias[1]));
+				rows.push({ node: names.get(alias[2]), line: index });
+				return;
+			}
+			const transition = line.match(/^(\S+?)\s*-->\s*([^:]+?)\s*(?::\s*(.*))?$/);
+			if (transition) {
+				rows.push({
+					from: nameOf(transition[1], "from"),
+					to: nameOf(transition[2], "to"),
+					label: cleanDiagramText(transition[3] || ""),
+					line: index,
+				});
+				return;
+			}
+			const description = line.match(/^([\w.-]+)\s*:\s*(.+)$/);
+			if (description) rows.push({ note: cleanDiagramText(description[2]), about: nameOf(description[1]), line: index });
+		});
+		return rows;
+	};
+
+	const formatDuration = seconds => {
+		const rounded = Math.max(0, Math.round(seconds));
+		const hours = Math.floor(rounded / 3600);
+		const minutes = Math.floor((rounded % 3600) / 60);
+		const remainingSeconds = rounded % 60;
+		const parts = [];
+		if (hours) parts.push(`${hours}h`);
+		if (minutes) parts.push(`${minutes}m`);
+		if (remainingSeconds || !parts.length) parts.push(`${remainingSeconds}s`);
+		return parts.join(" ");
+	};
+	const GANTT_TAGS = new Set(["done", "active", "crit", "milestone"]);
+	const parseGantt = source => {
+		const rows = [];
+		source.split("\n").forEach((raw, index) => {
+			const line = raw.trim();
+			if (!line || /^(gantt|title|dateFormat|axisFormat|tickInterval|excludes|includes|todayMarker|weekday|%%)\b/i.test(line)) return;
+			const section = line.match(/^section\s+(.+)$/i);
+			if (section) {
+				rows.push({ branch: cleanDiagramText(section[1]), line: index });
+				return;
+			}
+			const colon = line.indexOf(":");
+			if (colon === -1) return;
+			// Tasks read as a time range in the tools' own "T + ..." form. Mermaid's
+			// status tags are styling, and every v0.8.6 gantt uses `dateFormat X` (seconds).
+			const parts = line
+				.slice(colon + 1)
+				.split(",")
+				.map(part => part.trim())
+				.filter(Boolean);
+			const milestone = parts.includes("milestone");
+			const spec = parts.filter(part => !GANTT_TAGS.has(part));
+			const numbers = spec.every(part => /^\d+(\.\d+)?$/.test(part)) ? spec.map(Number) : [];
+			const [start, end] = numbers.length >= 2 ? numbers.slice(-2) : numbers;
+			const timing =
+				start === undefined
+					? cleanDiagramText(spec.join(", "))
+					: milestone || end === undefined || end === start
+						? `At T + ${formatDuration(start)}`
+						: `T + ${formatDuration(start)} to T + ${formatDuration(end)}`;
+			rows.push({ label: cleanDiagramText(line.slice(0, colon)), timing, line: index });
+		});
+		return rows;
+	};
 
 	/* The text fallback stands in for a diagram that could not be drawn, so it may
 	   not quietly end early. Long diagrams collapse past a readable length and say
@@ -182,52 +471,51 @@
 		target.append(notice);
 	};
 
-	const fillFallbackDiagram = (target, source) => {
+	const fillFallbackDiagram = (target, source, limit = FALLBACK_VISIBLE_ROWS) => {
 		const type = detectDiagramType(source);
 		target.className = `diagram-fallback diagram-fallback-${type}`;
 		target.replaceChildren();
 
-		if (type === "sequence") {
-			const steps = parseSequence(source);
-			steps.slice(0, FALLBACK_VISIBLE_ROWS).forEach((step, index) => {
-				const row = document.createElement("div");
-				row.className = "diagram-step";
-				row.innerHTML = `<span class="diagram-count">${String(index + 1).padStart(2, "0")}</span><span class="diagram-node">${step.from}</span><span class="diagram-arrow">to</span><span class="diagram-node">${step.to}</span><span class="diagram-message">${step.label}</span>`;
-				target.append(row);
-			});
-			appendFallbackOverflow(target, steps.length - FALLBACK_VISIBLE_ROWS, source);
-			return;
-		}
-
-		if (type === "gantt") {
-			const tasks = parseGantt(source);
-			tasks.slice(0, FALLBACK_VISIBLE_ROWS).forEach((task, index) => {
-				const row = document.createElement("div");
-				row.className = "diagram-task";
-				row.innerHTML = `<span style="--bar:${(index % 5) + 4}"></span><strong>${task.label}</strong><small>${task.timing}</small>`;
-				target.append(row);
-			});
-			appendFallbackOverflow(target, tasks.length - FALLBACK_VISIBLE_ROWS, source);
-			return;
-		}
-
-		const edges = type === "state" ? parseState(source) : parseFlow(source);
-		edges.slice(0, FALLBACK_VISIBLE_ROWS).forEach(edge => {
+		const parse = { sequence: parseSequence, state: parseState, gantt: parseGantt }[type] || parseFlow;
+		const rows = parse(source);
+		let stepNumber = 0;
+		rows.slice(0, limit).forEach(step => {
 			const row = document.createElement("div");
-			row.className = "diagram-edge";
-			row.innerHTML = `<span class="diagram-node">${edge.from}</span><span class="diagram-arrow">${edge.label || "to"}</span><span class="diagram-node">${edge.to}</span>`;
+			if ("branch" in step) {
+				row.className = step.end ? "diagram-branch is-end" : "diagram-branch";
+				row.textContent = step.branch;
+			} else if ("note" in step) {
+				row.className = "diagram-note";
+				// Reads "Lane: note", indented under the step it annotates.
+				row.textContent = `${step.about}: ${step.note}`;
+			} else if ("node" in step) {
+				row.className = "diagram-edge";
+				row.innerHTML = `<span class="diagram-node">${escapeHtml(step.node)}</span>`;
+			} else if ("timing" in step) {
+				row.className = "diagram-task";
+				row.innerHTML = `<strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.timing)}</small>`;
+			} else if (type === "sequence") {
+				stepNumber += 1;
+				row.className = "diagram-step";
+				row.innerHTML = `<span class="diagram-count">${String(stepNumber).padStart(2, "0")}</span><span class="diagram-node">${escapeHtml(step.from)}</span><span class="diagram-arrow">to</span><span class="diagram-node">${escapeHtml(step.to)}</span><span class="diagram-message">${escapeHtml(step.label)}</span>`;
+			} else {
+				row.className = "diagram-edge";
+				row.innerHTML = `<span class="diagram-node">${escapeHtml(step.from)}</span><span class="diagram-arrow">${escapeHtml(step.label || "to")}</span><span class="diagram-node">${escapeHtml(step.to)}</span>`;
+			}
 			target.append(row);
 		});
-		appendFallbackOverflow(target, edges.length - FALLBACK_VISIBLE_ROWS, source);
+		appendFallbackOverflow(target, rows.length - limit, source);
 	};
 
 	let activeDiagramModal = null;
 	const openDiagramViewer = (frame, title) => {
 		if (activeDiagramModal) activeDiagramModal.remove();
 
-		const source = frame.querySelector(".mermaid, .diagram-fallback");
+		const source = frame.querySelector(":scope > .mermaid, :scope > .diagram-fallback");
 		if (!source) return;
 		const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches;
+		const helpText = coarsePointer ? "Pinch to zoom, drag to pan" : "Scroll to zoom, drag or use arrow keys to pan";
 
 		const modal = document.createElement("div");
 		modal.className = "diagram-modal";
@@ -236,13 +524,14 @@
 		modal.setAttribute("aria-label", `${title} diagram viewer`);
 		modal.innerHTML = `
 			<div class="diagram-modal-bar">
-				<strong>${title}</strong>
-				<span class="diagram-modal-help">Scroll to zoom, drag to pan</span>
+				<strong title="${escapeHtml(title)}">${escapeHtml(title)}</strong>
+				<span class="diagram-modal-help">${helpText}</span>
 				<div class="diagram-modal-actions">
-					<button type="button" data-diagram-zoom="out" aria-label="Zoom out">-</button>
-					<button type="button" data-diagram-zoom="reset" aria-label="Fit diagram to readable width">Fit 100%</button>
-					<button type="button" data-diagram-zoom="in" aria-label="Zoom in">+</button>
-					<button type="button" data-diagram-close aria-label="Close diagram">Close</button>
+					<button type="button" data-diagram-zoom="out" aria-label="Zoom out">${icons.minus}</button>
+					<button type="button" data-diagram-zoom="in" aria-label="Zoom in">${icons.plus}</button>
+					<output class="diagram-zoom-level">100%</output>
+					<button type="button" data-diagram-zoom="reset">Fit to width</button>
+					<button type="button" data-diagram-close aria-label="Close diagram">${icons.close}<span>Close</span></button>
 				</div>
 			</div>
 			<div class="diagram-modal-stage">
@@ -252,7 +541,12 @@
 
 		const stage = modal.querySelector(".diagram-modal-stage");
 		const canvas = modal.querySelector(".diagram-modal-canvas");
+		stage.tabIndex = 0;
+		stage.setAttribute("role", "region");
+		stage.setAttribute("aria-label", "Diagram canvas. Arrow keys pan, plus and minus zoom, 0 fits.");
 		const modalSource = source.cloneNode(true);
+		// The inline canvas is only a pointer shortcut; nothing in the clone is a control.
+		["role", "tabindex", "aria-label"].forEach(attribute => modalSource.removeAttribute?.(attribute));
 		const modalSvg = modalSource.matches?.("svg") ? modalSource : modalSource.querySelector?.("svg");
 		if (modalSvg) namespaceSvgIds(modalSvg, `diagram-modal-${Date.now()}`);
 		canvas.append(modalSource);
@@ -269,19 +563,22 @@
 		let originX = 0;
 		let originY = 0;
 		let dragMoved = false;
+		let pinched = false;
 		let lastDragEndedAt = 0;
 		let backdropClickCandidate = false;
 		let backdropStartX = 0;
 		let backdropStartY = 0;
+		const pointers = new Map();
 		const backdropClickThreshold = 6;
 		const diagramContentSelector = ".diagram-modal-canvas > .mermaid, .diagram-modal-canvas > .diagram-fallback";
-		const zoomLabel = modal.querySelector("[data-diagram-zoom='reset']");
+		const zoomLevel = modal.querySelector(".diagram-zoom-level");
+		const resetZoomButton = modal.querySelector('[data-diagram-zoom="reset"]');
 		const minScale = 0.35;
 		const maxScale = 4;
 		const fitPadding = 40;
 		const applyTransform = () => {
 			canvas.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-			if (zoomLabel) zoomLabel.textContent = `Fit ${Math.round(scale * 100)}%`;
+			if (zoomLevel) zoomLevel.textContent = `${Math.round(scale * 100)}%`;
 		};
 		const clampScale = value => Math.min(maxScale, Math.max(minScale, Number(value.toFixed(3))));
 		const fitToStage = () => {
@@ -289,13 +586,20 @@
 			const contentWidth = canvas.offsetWidth;
 			const contentHeight = canvas.offsetHeight;
 			if (!contentWidth || !contentHeight) return;
-			const availableWidth = Math.max(1, stageRect.width - fitPadding * 2);
-			const availableHeight = Math.max(1, stageRect.height - fitPadding * 2);
-			// Fit to readable width. Tall flowcharts may extend below the viewport and
-			// can be panned; fitting their full height made labels illegible.
-			scale = clampScale(Math.min(1, availableWidth / contentWidth));
-			x = (stageRect.width - contentWidth * scale) / 2;
-			y = contentHeight * scale <= availableHeight ? (stageRect.height - contentHeight * scale) / 2 : fitPadding;
+			const narrow = stageRect.width < 640;
+			const padding = narrow ? 16 : fitPadding;
+			const availableWidth = Math.max(1, stageRect.width - padding * 2);
+			const availableHeight = Math.max(1, stageRect.height - padding * 2);
+			// Fit to a readable scale: grow small diagrams on wide stages, and keep a
+			// floor on phones so labels stay legible. Wider content starts at its left
+			// edge and pans; tall content starts at the top.
+			const widthFit = availableWidth / contentWidth;
+			const readableFloor = narrow ? 0.8 : 0;
+			scale = clampScale(Math.min(1.6, Math.max(widthFit, readableFloor)));
+			// On phones the readable floor can win over fitting, so say what the button really does.
+			if (resetZoomButton) resetZoomButton.textContent = widthFit < readableFloor ? "Reset view" : "Fit to width";
+			x = contentWidth * scale <= availableWidth ? (stageRect.width - contentWidth * scale) / 2 : padding;
+			y = contentHeight * scale <= availableHeight ? (stageRect.height - contentHeight * scale) / 2 : padding;
 			applyTransform();
 		};
 		const stageCenter = () => {
@@ -329,8 +633,33 @@
 			window.removeEventListener("resize", fitToStage);
 			if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
 		};
+		const panSteps = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+		const onStageKey = event => {
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
+			const pan = panSteps[event.key];
+			if (pan) {
+				event.preventDefault();
+				const step = event.shiftKey ? 160 : 48;
+				x += pan[0] * step;
+				y += pan[1] * step;
+				applyTransform();
+			} else if (event.key === "+" || event.key === "=") {
+				event.preventDefault();
+				zoomBy(1.18);
+			} else if (event.key === "-" || event.key === "_") {
+				event.preventDefault();
+				zoomBy(1 / 1.18);
+			} else if (event.key === "0") {
+				event.preventDefault();
+				reset();
+			}
+		};
 		const onKeydown = event => {
-			if (event.key === "Escape") close();
+			if (event.key === "Escape") {
+				close();
+				return;
+			}
+			if (document.activeElement === stage) onStageKey(event);
 			if (event.key === "Tab") {
 				const focusable = Array.from(modal.querySelectorAll(focusableSelector)).filter(
 					element => !element.hasAttribute("disabled") && element instanceof HTMLElement,
@@ -356,7 +685,7 @@
 			const target = event.target;
 			if (!(target instanceof Element)) return;
 			if (Date.now() - lastDragEndedAt < 200) return;
-			if (target.closest(`${diagramContentSelector}, .diagram-modal-actions`)) return;
+			if (target.closest(`${diagramContentSelector}, .diagram-modal-bar`)) return;
 			close();
 		});
 		stage.addEventListener(
@@ -370,24 +699,51 @@
 			},
 			{ passive: false },
 		);
-		stage.addEventListener("pointerdown", event => {
-			if (event.button !== 0) return;
-			event.preventDefault();
-			backdropClickCandidate = event.target instanceof Element && !event.target.closest(diagramContentSelector);
-			backdropStartX = event.clientX;
-			backdropStartY = event.clientY;
-			dragMoved = false;
+		const beginDrag = point => {
 			dragging = true;
-			stage.setPointerCapture(event.pointerId);
-			startX = event.clientX;
-			startY = event.clientY;
+			startX = point.clientX;
+			startY = point.clientY;
 			originX = x;
 			originY = y;
 			stage.classList.add("is-dragging");
+		};
+		const pointerDistance = () => {
+			const [a, b] = Array.from(pointers.values());
+			return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+		};
+		stage.addEventListener("pointerdown", event => {
+			if (event.button !== 0) return;
+			event.preventDefault();
+			stage.focus({ preventScroll: true });
+			stage.setPointerCapture(event.pointerId);
+			pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+			if (pointers.size === 1) {
+				backdropClickCandidate = event.target instanceof Element && !event.target.closest(diagramContentSelector);
+				backdropStartX = event.clientX;
+				backdropStartY = event.clientY;
+				dragMoved = false;
+				pinched = false;
+				beginDrag(event);
+				return;
+			}
+			// A second finger turns the gesture into a pinch.
+			pinched = true;
+			dragging = false;
+			backdropClickCandidate = false;
 		});
 		stage.addEventListener("pointermove", event => {
-			if (!dragging) return;
+			if (!pointers.has(event.pointerId)) return;
 			event.preventDefault();
+			if (pointers.size >= 2) {
+				const before = pointerDistance();
+				pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+				const after = pointerDistance();
+				const [a, b] = Array.from(pointers.values());
+				if (before > 0 && after > 0) zoomBy(after / before, { clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 });
+				return;
+			}
+			pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+			if (!dragging) return;
 			const dragDistance = Math.hypot(event.clientX - backdropStartX, event.clientY - backdropStartY);
 			if (dragDistance > backdropClickThreshold) {
 				dragMoved = true;
@@ -398,13 +754,21 @@
 			applyTransform();
 		});
 		const stopDragging = event => {
-			const shouldCloseFromBackdrop = backdropClickCandidate && !dragMoved;
-			if (dragMoved) lastDragEndedAt = Date.now();
+			pointers.delete(event.pointerId);
+			if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+			if (pointers.size === 1) {
+				// One finger left after a pinch keeps panning from where it is.
+				beginDrag(Array.from(pointers.values())[0]);
+				return;
+			}
+			if (pointers.size > 1) return;
+			const shouldCloseFromBackdrop = backdropClickCandidate && !dragMoved && !pinched;
+			if (dragMoved || pinched) lastDragEndedAt = Date.now();
 			backdropClickCandidate = false;
 			dragMoved = false;
+			pinched = false;
 			dragging = false;
 			stage.classList.remove("is-dragging");
-			if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
 			if (shouldCloseFromBackdrop) close();
 		};
 		stage.addEventListener("pointerup", stopDragging);
@@ -526,6 +890,107 @@
 		return mermaidPromise;
 	};
 
+	/* Mermaid colors come from the same tokens as the rest of the page, read at
+	   render time so a theme switch can redraw with the new values. The hex set
+	   is only a fallback for a token that resolves to nothing. */
+	const MERMAID_FALLBACK_THEME = {
+		dark: {
+			background: "#050505",
+			node: "#1c100e",
+			nodeBorder: "#ff7c70",
+			ink: "#f2eded",
+			label: "#141010",
+			cluster: "#121010",
+			border: "#4a4646",
+			edge: "#8f8a8a",
+		},
+		light: {
+			background: "#ffffff",
+			node: "#fff1ef",
+			nodeBorder: "#e0483a",
+			ink: "#0a0a0a",
+			label: "#ffffff",
+			cluster: "#fafafa",
+			border: "#bdbdbd",
+			edge: "#6f6f6f",
+		},
+	};
+	const resolveTokenColor = (probe, token, fallback) => {
+		const raw = getComputedStyle(root).getPropertyValue(token).trim();
+		if (!raw) return fallback;
+		probe.style.color = "";
+		probe.style.color = raw;
+		if (!probe.style.color) return fallback;
+		// Computed style normalises hsl() to rgb()/rgba(), which mermaid's color math parses.
+		return getComputedStyle(probe).color || fallback;
+	};
+	const buildMermaidTheme = () => {
+		const fallback = MERMAID_FALLBACK_THEME[root.dataset.theme === "light" ? "light" : "dark"];
+		const probe = document.createElement("span");
+		probe.hidden = true;
+		document.body.append(probe);
+		const color = (token, key) => resolveTokenColor(probe, token, fallback[key]);
+		const background = color("--diagram-bg", "background");
+		const node = color("--diagram-node", "node");
+		const nodeBorder = color("--diagram-node-border", "nodeBorder");
+		const ink = color("--ink", "ink");
+		const label = color("--diagram-label-bg", "label");
+		const cluster = color("--diagram-cluster", "cluster");
+		const border = color("--line-strong", "border");
+		const edge = color("--diagram-edge", "edge");
+		const fontFamily = getComputedStyle(root).getPropertyValue("--sans").trim() || "Manrope, ui-sans-serif, system-ui, sans-serif";
+		probe.remove();
+		return {
+			fontFamily,
+			background,
+			mainBkg: node,
+			primaryColor: node,
+			primaryBorderColor: nodeBorder,
+			primaryTextColor: ink,
+			secondaryColor: label,
+			secondaryBorderColor: border,
+			secondaryTextColor: ink,
+			tertiaryColor: cluster,
+			tertiaryBorderColor: border,
+			tertiaryTextColor: ink,
+			lineColor: edge,
+			textColor: ink,
+			nodeTextColor: ink,
+			clusterBkg: cluster,
+			clusterBorder: border,
+			edgeLabelBackground: label,
+			actorBkg: node,
+			actorBorder: nodeBorder,
+			actorTextColor: ink,
+			actorLineColor: edge,
+			noteBkgColor: label,
+			noteTextColor: ink,
+			noteBorderColor: border,
+			labelBoxBkgColor: label,
+			labelBoxBorderColor: border,
+			labelTextColor: ink,
+			loopTextColor: ink,
+		};
+	};
+
+	/* Authored `data-diagram-size="W H"` on a mermaid `pre` is the drawing's natural
+	   size. The loading box reserves the height the drawing will take, so the page
+	   does not shift when it arrives: from 641px up the SVG shrinks to the frame,
+	   below that it keeps at least 720px and scrolls sideways. */
+	const parseDiagramSize = pre => {
+		const [width, height] = (pre?.dataset.diagramSize || "").trim().split(/\s+/).map(Number);
+		return width > 0 && height > 0 ? { width, height } : null;
+	};
+	const expectDiagramHeight = (canvas, { width, height }) => {
+		const style = getComputedStyle(canvas);
+		const paddingX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+		const paddingY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+		const contentWidth = canvas.clientWidth - paddingX;
+		const phone = window.matchMedia("(max-width: 640px)").matches;
+		const renderedWidth = phone ? Math.max(720, width) : Math.min(width, contentWidth);
+		return Math.ceil((renderedWidth * height) / width + paddingY);
+	};
+
 	const installMermaidDiagrams = async () => {
 		const blocks = Array.from(document.querySelectorAll(".doc-article pre > code.language-mermaid"));
 		if (!blocks.length) return;
@@ -547,98 +1012,58 @@
 			const openDiagram = () => openDiagramViewer(frame, captionText);
 			openButton.addEventListener("click", openDiagram);
 			caption.append(captionLabel, openButton);
+			// Clicking the drawing is a pointer shortcut; the Full screen button above
+			// is the one control keyboard and screen reader users need.
 			const canvas = document.createElement("div");
-			canvas.className = "diagram-fallback";
+			canvas.className = "diagram-fallback is-loading";
 			canvas.dataset.diagramIndex = String(index);
-			canvas.setAttribute("role", "button");
-			canvas.setAttribute("tabindex", "0");
-			canvas.setAttribute("aria-label", `Open ${captionText} diagram full screen`);
+			canvas.textContent = "Drawing diagram…";
 			canvas.addEventListener("click", event => {
 				if (event.target.closest("button, a")) return;
 				openDiagram();
 			});
-			canvas.addEventListener("keydown", event => {
-				if (event.key !== "Enter" && event.key !== " ") return;
-				event.preventDefault();
-				openDiagram();
-			});
-			fillFallbackDiagram(canvas, source);
 			frame.append(caption, canvas);
+			const size = parseDiagramSize(pre);
 			if (pre) pre.replaceWith(frame);
-			return { frame, canvas, source };
+			return { frame, canvas, captionLabel, source, size, expectedHeight: 0 };
+		});
+		// Measure every placeholder first, then write, so the page lays out once.
+		diagrams.forEach(diagram => {
+			if (diagram.size) diagram.expectedHeight = expectDiagramHeight(diagram.canvas, diagram.size);
+		});
+		diagrams.forEach(({ canvas, expectedHeight }) => {
+			if (expectedHeight) canvas.style.setProperty("--diagram-h", `${expectedHeight}px`);
 		});
 
-		try {
-			const mermaid = await loadMermaid();
-			const mermaidTheme =
-				root.dataset.theme === "dark"
-					? {
-							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
-							background: "#050505",
-							mainBkg: "#1c100e",
-							primaryColor: "#1c100e",
-							primaryBorderColor: "#ff7c70",
-							primaryTextColor: "#f2eded",
-							secondaryColor: "#141010",
-							secondaryBorderColor: "#807b7b",
-							secondaryTextColor: "#f2eded",
-							tertiaryColor: "#131010",
-							tertiaryBorderColor: "#807b7b",
-							tertiaryTextColor: "#f2eded",
-							lineColor: "#8f8a8a",
-							textColor: "#f2eded",
-							nodeTextColor: "#f2eded",
-							clusterBkg: "#121010",
-							clusterBorder: "#4a4646",
-							edgeLabelBackground: "#141010",
-							actorBkg: "#1c100e",
-							actorBorder: "#ff7c70",
-							actorTextColor: "#f2eded",
-							actorLineColor: "#8f8a8a",
-							noteBkgColor: "#141010",
-							noteTextColor: "#f2eded",
-							noteBorderColor: "#4a4646",
-							labelBoxBkgColor: "#141010",
-							labelBoxBorderColor: "#4a4646",
-							labelTextColor: "#f2eded",
-							loopTextColor: "#f2eded",
-						}
-					: {
-							fontFamily: "Manrope, ui-sans-serif, system-ui, sans-serif",
-							background: "#ffffff",
-							mainBkg: "#fff1ef",
-							primaryColor: "#fff1ef",
-							primaryBorderColor: "#e0483a",
-							primaryTextColor: "#0a0a0a",
-							secondaryColor: "#fff1ef",
-							secondaryBorderColor: "#ff6f61",
-							secondaryTextColor: "#0a0a0a",
-							tertiaryColor: "#fff7dc",
-							tertiaryBorderColor: "#9d6b00",
-							tertiaryTextColor: "#0a0a0a",
-							lineColor: "#6f6f6f",
-							textColor: "#0a0a0a",
-							nodeTextColor: "#0a0a0a",
-							clusterBkg: "#fafafa",
-							clusterBorder: "#bdbdbd",
-							edgeLabelBackground: "#ffffff",
-							actorBkg: "#f5f5f5",
-							actorBorder: "#bdbdbd",
-							actorTextColor: "#0a0a0a",
-							actorLineColor: "#6f6f6f",
-							noteBkgColor: "#fff7dc",
-							noteTextColor: "#0a0a0a",
-							noteBorderColor: "#9d6b00",
-							labelBoxBkgColor: "#fff7dc",
-							labelBoxBorderColor: "#9d6b00",
-							labelTextColor: "#0a0a0a",
-							loopTextColor: "#0a0a0a",
-						};
+		const showFallback = ({ frame, canvas, captionLabel, source }) => {
+			frame.classList.add("is-fallback");
+			fillFallbackDiagram(canvas, source);
+			if (frame.querySelector(".diagram-fallback-note")) return;
+			const note = document.createElement("span");
+			note.className = "diagram-fallback-note";
+			note.textContent = "Text version, diagram could not be drawn";
+			captionLabel.after(note);
+		};
+
+		const appendStepsTwin = ({ frame, source }) => {
+			if (frame.querySelector(":scope > .diagram-steps")) return;
+			const steps = document.createElement("details");
+			steps.className = "diagram-steps";
+			const summary = document.createElement("summary");
+			summary.textContent = "View as steps";
+			const list = document.createElement("div");
+			// The twin is the complete text equivalent, so it never truncates.
+			fillFallbackDiagram(list, source, Infinity);
+			steps.append(summary, list);
+			frame.append(steps);
+		};
+
+		const renderDiagrams = async mermaid => {
 			mermaid.initialize({
 				startOnLoad: false,
 				securityLevel: "loose",
 				theme: "base",
-				themeVariables: mermaidTheme,
+				themeVariables: buildMermaidTheme(),
 				flowchart: { htmlLabels: true },
 			});
 			const staging = document.createElement("div");
@@ -652,86 +1077,217 @@
 				staging.append(node);
 				return node;
 			});
-			await mermaid.run({ nodes: renderNodes, suppressErrors: true });
-			renderNodes.forEach((node, index) => {
-				const { frame, canvas, source } = diagrams[index];
-				const svg = node.querySelector("svg");
-				if (svg) {
-					const renderedSvg = svg.cloneNode(true);
-					enhanceMermaidSvg(renderedSvg, `diagram-${index}`);
-					canvas.className = "mermaid";
-					canvas.replaceChildren(renderedSvg);
-					frame.classList.add("is-rendered");
-				} else {
-					frame.classList.add("is-fallback");
-					fillFallbackDiagram(canvas, source);
-				}
-			});
-			staging.remove();
+			try {
+				await mermaid.run({ nodes: renderNodes, suppressErrors: true });
+				renderNodes.forEach((node, index) => {
+					const diagram = diagrams[index];
+					const svg = node.querySelector("svg");
+					if (svg) {
+						const renderedSvg = svg.cloneNode(true);
+						enhanceMermaidSvg(renderedSvg, `diagram-${index}`);
+						diagram.canvas.className = "mermaid";
+						diagram.canvas.replaceChildren(renderedSvg);
+						// Phones size the SVG to at least its natural width so labels keep their authored size.
+						const naturalWidth = renderedSvg.viewBox?.baseVal?.width;
+						if (naturalWidth) renderedSvg.style.setProperty("--diagram-natural-width", `${Math.ceil(naturalWidth)}px`);
+						if (diagram.expectedHeight) {
+							diagram.canvas.style.removeProperty("--diagram-h");
+							const actualHeight = diagram.canvas.getBoundingClientRect().height;
+							// Checked once per diagram, on first draw; theme redraws skip it.
+							if (Math.abs(actualHeight - diagram.expectedHeight) > 40) {
+								console.debug(
+									`Diagram ${index + 1} rendered ${Math.round(actualHeight)}px tall, its data-diagram-size predicted ${diagram.expectedHeight}px; update the attribute.`,
+								);
+							}
+							diagram.expectedHeight = 0;
+						}
+						diagram.frame.classList.add("is-rendered");
+						appendStepsTwin(diagram);
+					} else if (!diagram.frame.classList.contains("is-rendered")) {
+						// A redraw that fails keeps the drawing it already has.
+						showFallback(diagram);
+					}
+				});
+				// Wide drawings may now overflow their frame; make those reachable by keyboard.
+				syncScrollRegions();
+			} finally {
+				staging.remove();
+			}
+		};
+
+		let mermaid;
+		try {
+			mermaid = await loadMermaid();
+			await renderDiagrams(mermaid);
 		} catch (_error) {
-			diagrams.forEach(({ frame }) => frame.classList.add("is-fallback"));
+			diagrams.forEach(diagram => {
+				if (!diagram.frame.classList.contains("is-rendered")) showFallback(diagram);
+			});
+			if (!mermaid) return;
 		}
+
+		// Redraw with the new theme's tokens; queued so two quick toggles never overlap.
+		let redraw = Promise.resolve();
+		window.addEventListener("v086-docs:themechange", () => {
+			redraw = redraw.then(() => renderDiagrams(mermaid)).catch(() => {});
+		});
 	};
 
 	installMermaidDiagrams();
 
 	const formatAmount = value =>
 		new Intl.NumberFormat("en-US", { maximumFractionDigits: 6, minimumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
-	const readNumber = (rootElement, selector) => {
-		const input = rootElement.querySelector(selector);
-		const value = input ? Number(input.value) : 0;
-		return Number.isFinite(value) ? value : 0;
+	// Returns null for a blank, non-numeric or out-of-range entry so the tool can say so
+	// instead of computing with a silent 0 or a negative amount. `data-min-exclusive`
+	// makes `min` itself invalid (an amount that must be above 0).
+	const readChecked = input => {
+		const text = input ? input.value.trim() : "";
+		const value = Number(text);
+		const min = input && input.getAttribute("min") !== null ? Number(input.getAttribute("min")) : 0;
+		const max = input && input.getAttribute("max") !== null ? Number(input.getAttribute("max")) : Infinity;
+		const belowMin = input?.hasAttribute("data-min-exclusive") ? value <= min : value < min;
+		return text === "" || !Number.isFinite(value) || belowMin || value > max ? null : value;
 	};
-	const formatDuration = seconds => {
-		const rounded = Math.max(0, Math.round(seconds));
-		const hours = Math.floor(rounded / 3600);
-		const minutes = Math.floor((rounded % 3600) / 60);
-		const remainingSeconds = rounded % 60;
-		const parts = [];
-		if (hours) parts.push(`${hours}h`);
-		if (minutes) parts.push(`${minutes}m`);
-		if (remainingSeconds || !parts.length) parts.push(`${remainingSeconds}s`);
-		return parts.join(" ");
+	const sentence = text => `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+
+	let toolCount = 0;
+	const nextToolId = () => `calc-${++toolCount}`;
+	// The error text sits inside the label for layout, but is hidden from the label's
+	// name and reached through aria-describedby instead, so it is read once.
+	const toolInput = (id, label, attributes, error = "Enter 0 or more.") =>
+		`<label>${label}<input id="${id}" ${attributes} aria-describedby="${id}-error"><small class="tool-field-error" id="${id}-error" aria-hidden="true" hidden>${error}</small></label>`;
+	const resetButtonMarkup = '<button type="button" class="button ghost tool-reset">Reset example</button>';
+	const setFieldInvalid = (control, invalid) => {
+		if (invalid) control.setAttribute("aria-invalid", "true");
+		else control.removeAttribute("aria-invalid");
+		const message = control.parentElement?.querySelector(".tool-field-error");
+		if (message) message.hidden = !invalid;
 	};
+
+	/* Shared calculator loop. `compute` returns { html, invalid, summary }:
+	   `invalid` lists the controls whose entry cannot be used. While such a value is
+	   being typed the last good result stays up, dimmed; the error and the field
+	   marks appear on change (blur), on reset, or when there is nothing to keep. */
+	const wireTool = (mount, result, compute) => {
+		const controls = Array.from(mount.querySelectorAll("input, select"));
+		let lastGood = "";
+		let announceTimer = 0;
+		const update = event => {
+			const outcome = compute();
+			const invalid = new Set(outcome.invalid || []);
+			const typing = event?.type === "input";
+			controls.forEach(control => {
+				if (!invalid.has(control)) setFieldInvalid(control, false);
+			});
+			if (invalid.size && typing && lastGood) {
+				result.classList.add("is-stale");
+				return;
+			}
+			result.classList.remove("is-stale");
+			result.innerHTML = outcome.html;
+			if (invalid.size) {
+				invalid.forEach(control => setFieldInvalid(control, true));
+				lastGood = "";
+				return;
+			}
+			lastGood = outcome.html;
+			// Only after load: the scroll-region helper is set up further down the file.
+			if (event) syncScrollRegions();
+			if (event && outcome.summary) {
+				window.clearTimeout(announceTimer);
+				announceTimer = window.setTimeout(() => announce(outcome.summary), 500);
+			}
+		};
+		const heading = mount.querySelector(".tool-heading");
+		if (heading) {
+			heading.insertAdjacentHTML("beforeend", resetButtonMarkup);
+			heading.querySelector(".tool-reset").addEventListener("click", () => {
+				controls.forEach(control => {
+					if (control instanceof HTMLSelectElement) {
+						const defaultIndex = Array.from(control.options).findIndex(option => option.defaultSelected);
+						control.selectedIndex = defaultIndex >= 0 ? defaultIndex : 0;
+					} else {
+						control.value = control.defaultValue;
+					}
+					setFieldInvalid(control, false);
+				});
+				lastGood = "";
+				update({ type: "reset" });
+			});
+		}
+		controls.forEach(control => {
+			control.addEventListener("input", update);
+			control.addEventListener("change", update);
+		});
+		update();
+	};
+	// One sentence per rule, naming the fields that break it, in the words their own
+	// field errors use.
+	const fieldRule = input => {
+		const min = input?.getAttribute("min") ?? "0";
+		const max = input?.getAttribute("max");
+		if (input?.hasAttribute("data-min-exclusive")) return `Enter an amount above ${min}`;
+		return max !== null && max !== undefined ? `Enter ${min} to ${max}` : `Enter ${min} or more`;
+	};
+	const invalidValuesMessage = fields => {
+		const groups = new Map();
+		fields.forEach(field => {
+			const rule = fieldRule(field.input);
+			groups.set(rule, [...(groups.get(rule) || []), field.label]);
+		});
+		const items = Array.from(groups, ([rule, labels]) => `<li>${escapeHtml(`${rule} for ${labels.join(", ")}.`)}</li>`);
+		return `<ul class="tool-warnings">${items.join("")}</ul>`;
+	};
+
 	const installExpressFundingTool = mount => {
+		const uid = nextToolId();
+		const money = (name, label, value, error, extra = "") =>
+			toolInput(`${uid}-${name}`, label, `type="text" inputmode="decimal" min="0"${extra} value="${value}" data-${name}`, error);
+		const count = (name, label, value, max = "") =>
+			toolInput(
+				`${uid}-${name}`,
+				label,
+				`type="number" min="0"${max ? ` max="${max}"` : ""} step="1" value="${value}" data-${name}`,
+				max ? `Enter 0 to ${max}.` : undefined,
+			);
 		mount.innerHTML = `
 			<div class="tool-heading">
 				<div>
-					<p class="eyebrow">Context helper</p>
-					<h3>Offer Eligibility & Funding</h3>
+					<p class="eyebrow">Calculator</p>
+					<h3>Offer eligibility and funding</h3>
 				</div>
-				<p>Enter the user's request, pool balances, and credit config to see which offers the bot can sign and where capital is drawn from.</p>
+				<p>Enter the user’s request, pool balances, and credit config to see which offers the bot can sign and where capital is drawn from.</p>
 			</div>
 			<div class="tool-input-groups">
 				<div class="tool-input-group">
 					<strong>Request</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>User requested amount<input type="number" min="0" step="0.01" value="500" data-request-amount></label>
-						<label>Risk check<select data-risk-check>
-							<option value="LOW">LOW RISK</option>
-							<option value="HIGH">HIGH RISK</option>
+						${money("request-amount", "User requested amount", "500", "Enter an amount above 0.", " data-min-exclusive")}
+						<label>Risk check<select id="${uid}-risk-check" data-risk-check>
+							<option value="LOW">Low risk</option>
+							<option value="HIGH">High risk</option>
 						</select></label>
-						<label>Min validator signatures<input type="number" min="0" step="1" value="2" data-validator-count></label>
+						${count("validator-count", "Min validator signatures", "2")}
 					</div>
 				</div>
 				<div class="tool-input-group">
 					<strong>Available liquidity</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>Affiliate pool free<input type="number" min="0" step="0.01" value="120" data-affiliate-pool></label>
-						<label>General pool free<input type="number" min="0" step="0.01" value="300" data-general-pool></label>
-						<label>Muon eligible base<input type="number" min="0" step="0.01" value="2000" data-eligible-base></label>
+						${money("affiliate-pool", "Affiliate pool free", "120")}
+						${money("general-pool", "General pool free", "300")}
+						${money("eligible-base", "Muon eligible base", "2000")}
 					</div>
 				</div>
 				<div class="tool-input-group">
 					<strong>Credit line config</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>Current debt<input type="number" min="0" step="0.01" value="300" data-current-debt></label>
-						<label>Protocol max debt<input type="number" min="0" step="0.01" value="1000" data-protocol-max-debt></label>
-						<label>Affiliate max debt<input type="number" min="0" step="0.01" value="700" data-affiliate-max-debt></label>
-						<label>Protocol max bps<input type="number" min="0" max="10000" step="1" value="5000" data-protocol-max-bps></label>
-						<label>Affiliate max bps<input type="number" min="0" max="10000" step="1" value="3000" data-affiliate-max-bps></label>
-						<label>Credit blocked?<select data-credit-blocked>
-							<option value="NO">No</option>
+						${money("current-debt", "Current debt", "300")}
+						${money("protocol-max-debt", "Protocol max debt", "1000")}
+						${money("affiliate-max-debt", "Affiliate max debt", "700")}
+						${count("protocol-max-bps", "Protocol max bps", "5000", "10000")}
+						${count("affiliate-max-bps", "Affiliate max bps", "3000", "10000")}
+						<label>Credit line status<select id="${uid}-credit-blocked" data-credit-blocked>
+							<option value="NO">Active</option>
 							<option value="PAUSED">Paused</option>
 							<option value="BLACKLISTED">User blacklisted</option>
 						</select></label>
@@ -740,12 +1296,12 @@
 				<div class="tool-input-group">
 					<strong>Fees</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>Affiliate fee bps<input type="number" min="0" max="10000" step="1" value="80" data-fee-bps></label>
-						<label>Operator fee<input type="number" min="0" step="0.01" value="1" data-operator-fee></label>
+						${count("fee-bps", "Affiliate fee bps", "80", "10000")}
+						${money("operator-fee", "Operator fee", "1")}
 					</div>
 				</div>
 			</div>
-			<div class="tool-result" aria-live="polite"></div>
+			<div class="tool-result"></div>
 		`;
 		const result = mount.querySelector(".tool-result");
 		const cappedLimit = values => {
@@ -773,58 +1329,88 @@
 					<span><small>Affiliate pool</small><strong>${formatAmount(option.allocation.affiliateAmount)}</strong></span>
 					<span><small>Credit advance</small><strong>${formatAmount(option.allocation.creditAmount)}</strong></span>
 					<span><small>General pool</small><strong>${formatAmount(option.allocation.generalAmount)}</strong></span>
+					${option.allocation.unfunded > 0 ? `<span><small>Unfunded</small><strong>${formatAmount(option.allocation.unfunded)}</strong></span>` : ""}
 				</div>
 			</article>
 		`;
-		const update = () => {
-			const requestAmount = readNumber(mount, "[data-request-amount]");
+		const numericFields = [
+			["requestAmount", "user requested amount", "[data-request-amount]"],
+			["validatorCount", "min validator signatures", "[data-validator-count]"],
+			["affiliatePool", "affiliate pool free", "[data-affiliate-pool]"],
+			["generalPool", "general pool free", "[data-general-pool]"],
+			["eligibleBase", "Muon eligible base", "[data-eligible-base]"],
+			["currentDebt", "current debt", "[data-current-debt]"],
+			["protocolMaxDebt", "protocol max debt", "[data-protocol-max-debt]"],
+			["affiliateMaxDebt", "affiliate max debt", "[data-affiliate-max-debt]"],
+			["protocolMaxBps", "protocol max bps", "[data-protocol-max-bps]"],
+			["affiliateMaxBps", "affiliate max bps", "[data-affiliate-max-bps]"],
+			["feeBps", "affiliate fee bps", "[data-fee-bps]"],
+			["operatorFee", "operator fee", "[data-operator-fee]"],
+		].map(([key, label, selector]) => ({ key, label, input: mount.querySelector(selector) }));
+		const compute = () => {
+			const values = {};
+			const invalidFields = [];
+			numericFields.forEach(field => {
+				values[field.key] = readChecked(field.input);
+				if (values[field.key] == null) invalidFields.push(field);
+			});
+			if (invalidFields.length) return { html: invalidValuesMessage(invalidFields), invalid: invalidFields.map(field => field.input) };
+			const {
+				requestAmount,
+				validatorCount,
+				affiliatePool,
+				generalPool,
+				eligibleBase,
+				currentDebt,
+				protocolMaxDebt,
+				affiliateMaxDebt,
+				protocolMaxBps,
+				affiliateMaxBps,
+				feeBps,
+				operatorFee,
+			} = values;
 			const riskCheck = mount.querySelector("[data-risk-check]").value;
-			const validatorCount = readNumber(mount, "[data-validator-count]");
-			const affiliatePool = readNumber(mount, "[data-affiliate-pool]");
-			const generalPool = readNumber(mount, "[data-general-pool]");
-			const eligibleBase = readNumber(mount, "[data-eligible-base]");
-			const currentDebt = readNumber(mount, "[data-current-debt]");
-			const protocolMaxDebt = readNumber(mount, "[data-protocol-max-debt]");
-			const affiliateMaxDebt = readNumber(mount, "[data-affiliate-max-debt]");
-			const protocolMaxBps = readNumber(mount, "[data-protocol-max-bps]");
-			const affiliateMaxBps = readNumber(mount, "[data-affiliate-max-bps]");
 			const creditBlocked = mount.querySelector("[data-credit-blocked]").value;
-			const feeBps = readNumber(mount, "[data-fee-bps]");
-			const operatorFee = readNumber(mount, "[data-operator-fee]");
 
 			const protocolBpsLimit = protocolMaxBps > 0 ? (eligibleBase * protocolMaxBps) / 10000 : Infinity;
 			const affiliateBpsLimit = affiliateMaxBps > 0 ? (eligibleBase * affiliateMaxBps) / 10000 : Infinity;
 			const effectiveDebtLimit = cappedLimit([protocolMaxDebt, affiliateMaxDebt, protocolBpsLimit, affiliateBpsLimit]);
 			const creditBlockedReason =
-				creditBlocked === "PAUSED" ? "credit line is paused" : creditBlocked === "BLACKLISTED" ? "user is blacklisted for credit" : "";
+				creditBlocked === "PAUSED"
+					? "the credit line is paused"
+					: creditBlocked === "BLACKLISTED"
+						? "the user is blacklisted for credit"
+						: "";
 			const rawCreditCapacity = Number.isFinite(effectiveDebtLimit) ? Math.max(0, effectiveDebtLimit - currentDebt) : requestAmount;
 			const creditCapacity = creditBlocked === "NO" ? rawCreditCapacity : 0;
 			const fastAllocation = allocateFastFunding(requestAmount, affiliatePool, generalPool, creditCapacity);
 			const standardAllocation = { affiliateAmount: 0, creditAmount: 0, generalAmount: 0, unfunded: 0 };
 
 			const feeAmount = (requestAmount * feeBps) / 10000;
-			const totalFee = feeAmount + operatorFee;
-			const userFee = totalFee;
+			const userFee = feeAmount + operatorFee;
 			const netUserAmount = Math.max(0, requestAmount - userFee);
 			const poolDraw = fastAllocation.affiliateAmount + fastAllocation.generalAmount;
 			const validatorsReady = validatorCount > 0;
-			const fastFundingAvailable = requestAmount > 0 && fastAllocation.unfunded <= 0;
+			// The request field rejects 0, so every request here is above 0.
+			const fastFundingAvailable = fastAllocation.unfunded <= 0;
+			const fundingReason =
+				fastAllocation.unfunded > 0 ? `${formatAmount(fastAllocation.unfunded)} is still unfunded after pools and credit.` : "";
 
 			const sameTxReasons = [];
-			if (!validatorsReady) sameTxReasons.push("validator signatures are not configured");
-			if (!fastFundingAvailable) sameTxReasons.push(`${formatAmount(fastAllocation.unfunded)} remains unfunded after pools and credit`);
-			if (creditBlockedReason && fastAllocation.unfunded > 0) sameTxReasons.push(creditBlockedReason);
+			if (!validatorsReady) sameTxReasons.push("Min validator signatures is 0.");
+			if (fundingReason) sameTxReasons.push(fundingReason);
+			if (creditBlockedReason && fastAllocation.unfunded > 0) sameTxReasons.push(sentence(creditBlockedReason));
 			const windowedReasons = [];
-			if (riskCheck !== "LOW") windowedReasons.push("risk check is high, so the bot should not sign the fast path");
-			if (!fastFundingAvailable) windowedReasons.push(`${formatAmount(fastAllocation.unfunded)} remains unfunded after pools and credit`);
-			if (creditBlockedReason && fastAllocation.unfunded > 0) windowedReasons.push(creditBlockedReason);
+			if (riskCheck !== "LOW") windowedReasons.push("Risk check is high, so the bot should not sign a fast offer.");
+			if (fundingReason) windowedReasons.push(fundingReason);
+			if (creditBlockedReason && fastAllocation.unfunded > 0) windowedReasons.push(sentence(creditBlockedReason));
 
 			const options = [
 				{
 					type: "SAME_TX",
 					available: validatorsReady && fastFundingAvailable,
 					reason: sameTxReasons.length
-						? sameTxReasons.join("; ")
+						? sameTxReasons.join(" ")
 						: "Same-transaction payout can be signed because validators are configured and the request can be fully funded.",
 					allocation: fastAllocation,
 				},
@@ -832,80 +1418,85 @@
 					type: "WINDOWED",
 					available: riskCheck === "LOW" && fastFundingAvailable,
 					reason: windowedReasons.length
-						? windowedReasons.join("; ")
+						? windowedReasons.join(" ")
 						: "The request can be processed after the security window using the computed pool and credit split.",
 					allocation: fastAllocation,
 				},
 				{
 					type: "STANDARD",
-					available: requestAmount > 0,
-					reason:
-						requestAmount > 0
-							? "Always available as the cooldown path; Express does not front pools or credit for STANDARD."
-							: "Enter a positive request amount.",
+					available: true,
+					reason: "Always available as the cooldown offer; Express does not front pools or credit for STANDARD.",
 					allocation: standardAllocation,
 				},
 			];
-			const recommended = options.find(option => option.available) || options[2];
+			// STANDARD is always available, so there is always a recommendation.
+			const recommended = options.find(option => option.available);
 			const warnings = [];
 			if (creditBlockedReason) warnings.push(`Credit capacity is zero because ${creditBlockedReason}.`);
-			if (requestAmount > 0 && fastAllocation.unfunded > 0)
-				warnings.push(
-					"Fast options cannot cover the full request with the current pools and credit capacity; STANDARD remains the fallback.",
-				);
-			if (!validatorsReady) warnings.push("SAME_TX requires minValidatorSignatures above zero.");
+			if (fastAllocation.unfunded > 0)
+				warnings.push("Fast offers cannot cover the full request with the current pools and credit capacity; STANDARD remains the fallback.");
+			if (!validatorsReady) warnings.push("SAME_TX needs Min validator signatures above 0.");
 			if (riskCheck !== "LOW") warnings.push("WINDOWED should not be signed while the risk check is high.");
-			result.innerHTML = `
+			const verdict = recommended.type;
+			const html = `
+				<p class="tool-verdict"><small>Recommended offer</small><strong>${escapeHtml(verdict)}</strong></p>
 				<div class="result-metrics">
-					<span><small>Recommended offer</small><strong>${escapeHtml(recommended.type)}</strong></span>
-					<span><small>Fast pool draw</small><strong>${formatAmount(poolDraw)}</strong></span>
+					<span><small>Fast offer pool draw</small><strong>${formatAmount(poolDraw)}</strong></span>
 					<span><small>Credit capacity</small><strong>${formatAmount(creditCapacity)}</strong></span>
 					<span><small>User receives after fees</small><strong>${formatAmount(netUserAmount)}</strong></span>
 				</div>
 				<div class="option-card-grid">${options.map(optionCard).join("")}</div>
 				<p>Effective credit cap is <strong>${describeLimit(effectiveDebtLimit)}</strong>; current debt is <strong>${formatAmount(currentDebt)}</strong>; usable credit for this request is <strong>${formatAmount(creditCapacity)}</strong>.</p>
-				<p>Fee is <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>; user pays <strong>${formatAmount(userFee)}</strong>.</p>
-				${warnings.length ? `<ul class="tool-warnings">${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : '<p class="tool-ok">Current config supports a fast offer and a standard fallback.</p>'}
+				<p>Affiliate fee <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>: the user pays <strong>${formatAmount(userFee)}</strong> in fees.</p>
+				${warnings.length ? `<ul class="tool-warnings">${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
+				${!warnings.length ? '<p class="tool-ok">Current config supports a fast offer and a standard fallback.</p>' : ""}
 			`;
+			const summary = `Recommended offer ${recommended.type}. User receives ${formatAmount(netUserAmount)}.`;
+			return { html, summary };
 		};
-		mount.querySelectorAll("input, select").forEach(control => {
-			control.addEventListener("input", update);
-			control.addEventListener("change", update);
-		});
-		update();
+		wireTool(mount, result, compute);
 	};
 
 	const installExpressTimingTool = mount => {
+		const uid = nextToolId();
+		const seconds = (name, label, value, step = "1") =>
+			toolInput(`${uid}-${name}`, label, `type="number" min="0" step="${step}" value="${value}" data-${name}`);
 		mount.innerHTML = `
 			<div class="tool-heading">
 				<div>
-					<p class="eyebrow">Context helper</p>
-					<h3>Processing Timeline</h3>
+					<p class="eyebrow">Calculator</p>
+					<h3>Processing timeline</h3>
 				</div>
-				<p>Model operator, permissionless, and STANDARD finalization windows.</p>
+				<p>See when the operator, anyone, and STANDARD finalization can process a request.</p>
 			</div>
 			<div class="tool-grid tool-grid-compact">
-				<label>Security window (seconds)<input type="number" min="0" step="1" value="20" data-security-window></label>
-				<label>Tolerance period (seconds)<input type="number" min="0" step="1" value="60" data-tolerance-period></label>
-				<label>STANDARD cooldown (hours)<input type="number" min="0" step="0.25" value="12" data-standard-cooldown></label>
+				${seconds("security-window", "Security window (seconds)", "20")}
+				${seconds("tolerance-period", "Tolerance period (seconds)", "60")}
+				${seconds("standard-cooldown", "STANDARD cooldown (hours)", "12", "0.25")}
 			</div>
-			<div class="timeline-track" aria-live="polite"></div>
+			<div class="timeline-track"></div>
 		`;
 		const result = mount.querySelector(".timeline-track");
-		const update = () => {
-			const securityWindow = readNumber(mount, "[data-security-window]");
-			const tolerancePeriod = readNumber(mount, "[data-tolerance-period]");
-			const cooldown = readNumber(mount, "[data-standard-cooldown]") * 3600;
+		const fields = [
+			["securityWindow", "security window", "[data-security-window]"],
+			["tolerancePeriod", "tolerance period", "[data-tolerance-period]"],
+			["cooldownHours", "STANDARD cooldown", "[data-standard-cooldown]"],
+		].map(([key, label, selector]) => ({ key, label, input: mount.querySelector(selector) }));
+		const compute = () => {
+			const values = {};
+			const invalidFields = fields.filter(field => (values[field.key] = readChecked(field.input)) == null);
+			if (invalidFields.length) return { html: invalidValuesMessage(invalidFields), invalid: invalidFields.map(field => field.input) };
+			const { securityWindow, tolerancePeriod, cooldownHours } = values;
 			const permissionless = securityWindow + tolerancePeriod;
-			result.innerHTML = `
+			const html = `
 				<div class="timeline-item"><span>Accept</span><strong>T + 0s</strong><small>Request enters ExpressProvider state.</small></div>
 				<div class="timeline-item"><span>Operator</span><strong>T + ${formatDuration(securityWindow)}</strong><small>Operator can process WINDOWED if not locked.</small></div>
-				<div class="timeline-item"><span>Fallback</span><strong>T + ${formatDuration(permissionless)}</strong><small>Anyone can process after tolerance expires.</small></div>
-				<div class="timeline-item"><span>STANDARD</span><strong>T + ${formatDuration(cooldown)}</strong><small>SYMMIO cooldown target before finalization.</small></div>
+				<div class="timeline-item"><span>Permissionless</span><strong>T + ${formatDuration(permissionless)}</strong><small>Anyone can process after tolerance expires.</small></div>
+				<div class="timeline-item"><span>STANDARD</span><strong>T + ${formatDuration(cooldownHours * 3600)}</strong><small>Symmio cooldown target before finalization.</small></div>
 			`;
+			return { html, summary: `Permissionless processing at T plus ${formatDuration(permissionless)}.` };
 		};
-		mount.querySelectorAll("input").forEach(control => control.addEventListener("input", update));
-		update();
+		wireTool(mount, result, compute);
 	};
 	const ADJUSTMENT_SCALE = 1000000000000000000n;
 
@@ -955,10 +1546,14 @@
 	};
 
 	const installSymbolAdjustmentTool = mount => {
+		const uid = nextToolId();
+		const wholeNumber = "Enter a whole number, 0 or more.";
+		const field = (name, label, mode, value, error) =>
+			toolInput(`${uid}-${name}`, label, `type="text" inputmode="${mode}" value="${value}" data-${name}`, error);
 		mount.innerHTML = `
 			<div class="tool-heading">
 				<div>
-					<p class="eyebrow">Context helper</p>
+					<p class="eyebrow">Calculator</p>
 					<h3>Factor and quote conversion</h3>
 				</div>
 				<p>Describe one venue event and one stored quote. The panel shows the price Muon must publish on the adjusted-price route, and the rewritten fields, rounding dust, and rejection rules on the physical route.</p>
@@ -967,37 +1562,38 @@
 				<div class="tool-input-group">
 					<strong>Venue event</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>Active factor<input type="text" inputmode="decimal" value="1" data-active-factor></label>
-						<label>This event's factor<input type="text" inputmode="decimal" value="4" data-event-factor></label>
-						<label>Raw venue price after event<input type="text" inputmode="numeric" value="100" data-venue-price></label>
+						${field("active-factor", "Active factor", "decimal", "1", "Enter a decimal above 0.")}
+						${field("event-factor", "This event’s factor", "decimal", "4", "Enter a decimal above 0.")}
+						${field("venue-price", "Raw venue price after event", "numeric", "100", wholeNumber)}
 					</div>
 				</div>
 				<div class="tool-input-group">
 					<strong>Quote as stored, in raw amount units</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>quantity<input type="text" inputmode="numeric" value="100" data-quantity></label>
-						<label>openedPrice<input type="text" inputmode="numeric" value="400" data-opened-price></label>
-						<label>closedAmount<input type="text" inputmode="numeric" value="0" data-closed-amount></label>
-						<label>avgClosedPrice<input type="text" inputmode="numeric" value="0" data-avg-closed-price></label>
-						<label>quantityToClose<input type="text" inputmode="numeric" value="0" data-quantity-to-close></label>
-						<label>requestedClosePrice<input type="text" inputmode="numeric" value="0" data-requested-close-price></label>
+						${field("quantity", "Quantity <code>quantity</code>", "numeric", "100", "Enter a whole number above 0.")}
+						${field("opened-price", "Opened price <code>openedPrice</code>", "numeric", "400", wholeNumber)}
+						${field("closed-amount", "Closed amount <code>closedAmount</code>", "numeric", "0", wholeNumber)}
+						${field("avg-closed-price", "Average closed price <code>avgClosedPrice</code>", "numeric", "0", wholeNumber)}
+						${field("quantity-to-close", "Quantity to close <code>quantityToClose</code>", "numeric", "0", wholeNumber)}
+						${field("requested-close-price", "Requested close price <code>requestedClosePrice</code>", "numeric", "0", wholeNumber)}
 					</div>
 				</div>
 				<div class="tool-input-group">
 					<strong>Funding</strong>
 					<div class="tool-grid tool-grid-compact">
-						<label>Current rate per old unit<input type="text" inputmode="numeric" value="8" data-funding-rate></label>
+						${field("funding-rate", "Current rate per old unit", "numeric", "8", "Enter a whole number.")}
 					</div>
 				</div>
 			</div>
-			<div class="tool-result" aria-live="polite"></div>
+			<div class="tool-result"></div>
 		`;
 		const result = mount.querySelector(".tool-result");
 		const readField = (selector, parser) => parser(mount.querySelector(selector).value);
 		const row = (label, before, after, note) =>
 			`<tr><td><code>${escapeHtml(label)}</code></td><td>${before}</td><td>${after}</td><td>${note}</td></tr>`;
 
-		const update = () => {
+		const inputFor = selector => mount.querySelector(selector);
+		const compute = () => {
 			const activeFactor = readField("[data-active-factor]", parseScaledFactor);
 			const eventFactor = readField("[data-event-factor]", parseScaledFactor);
 			const venuePrice = readField("[data-venue-price]", parseUnsignedInteger);
@@ -1010,35 +1606,35 @@
 			const fundingRate = readField("[data-funding-rate]", parseSignedInteger);
 
 			const missing = [
-				activeFactor == null && "active factor",
-				eventFactor == null && "this event's factor",
-				venuePrice == null && "raw venue price",
-				quantity == null && "quantity",
-				openedPrice == null && "openedPrice",
-				closedAmount == null && "closedAmount",
-				avgClosedPrice == null && "avgClosedPrice",
-				quantityToClose == null && "quantityToClose",
-				requestedClosePrice == null && "requestedClosePrice",
-				fundingRate == null && "funding rate",
-			].filter(Boolean);
-			if (missing.length) {
-				result.innerHTML = `<ul class="tool-warnings"><li>Enter a valid value for ${escapeHtml(missing.join(", "))}. Factors are positive decimals; amounts and prices are whole numbers; the funding rate may be negative.</li></ul>`;
-				return;
-			}
-			if (quantity === 0n) {
-				result.innerHTML = `<ul class="tool-warnings"><li>A stored quote has a nonzero <code>quantity</code>.</li></ul>`;
-				return;
-			}
-			if (closedAmount > quantity) {
-				result.innerHTML = `<ul class="tool-warnings"><li><code>closedAmount</code> cannot exceed <code>quantity</code>.</li></ul>`;
-				return;
-			}
+				[activeFactor, "active factor", "[data-active-factor]"],
+				[eventFactor, "this event’s factor", "[data-event-factor]"],
+				[venuePrice, "raw venue price", "[data-venue-price]"],
+				[quantity, "quantity", "[data-quantity]"],
+				[openedPrice, "opened price", "[data-opened-price]"],
+				[closedAmount, "closed amount", "[data-closed-amount]"],
+				[avgClosedPrice, "average closed price", "[data-avg-closed-price]"],
+				[quantityToClose, "quantity to close", "[data-quantity-to-close]"],
+				[requestedClosePrice, "requested close price", "[data-requested-close-price]"],
+				[fundingRate, "funding rate", "[data-funding-rate]"],
+			].filter(([value]) => value == null);
+			if (missing.length)
+				return {
+					html: `<ul class="tool-warnings"><li>Enter a valid value for ${escapeHtml(missing.map(([, label]) => label).join(", "))}. Factors are positive decimals; amounts and prices are whole numbers; the funding rate may be negative.</li></ul>`,
+					invalid: missing.map(([, , selector]) => inputFor(selector)),
+				};
+			if (quantity === 0n)
+				return {
+					html: `<ul class="tool-warnings"><li>Enter a <code>quantity</code> above 0. A stored quote always has one.</li></ul>`,
+					invalid: [inputFor("[data-quantity]")],
+				};
+			if (closedAmount > quantity)
+				return { html: `<ul class="tool-warnings"><li><code>closedAmount</code> cannot exceed <code>quantity</code>.</li></ul>` };
 
 			const prospectiveFactor = (activeFactor * eventFactor) / ADJUSTMENT_SCALE;
-			if (prospectiveFactor === 0n) {
-				result.innerHTML = `<ul class="tool-warnings"><li>The two factors compound to zero: <code>floor(${escapeHtml(formatFactor(activeFactor))} &times; ${escapeHtml(formatFactor(eventFactor))})</code> floors away entirely. Confirmation, direct start, and preview all reject this product.</li></ul>`;
-				return;
-			}
+			if (prospectiveFactor === 0n)
+				return {
+					html: `<ul class="tool-warnings"><li>The two factors compound to zero: <code>floor(${escapeHtml(formatFactor(activeFactor))} &times; ${escapeHtml(formatFactor(eventFactor))})</code> floors away entirely. Confirmation, direct start, and preview all reject this product.</li></ul>`,
+				};
 
 			// Adjusted-price route: external prices are lifted onto the stored quote basis.
 			const adjustedMark = scaleDown(venuePrice, prospectiveFactor);
@@ -1089,7 +1685,7 @@
 				);
 			if (restatable && totalDust > 0n)
 				notes.push(
-					`Integer division discards <code>${escapeHtml(formatBigInt(totalDust))}</code> of notional across the converted pairs. Each pair's dust is <code>oldNotional % adjustedAmount</code>, always smaller than the converted amount.`,
+					`Integer division discards <code>${escapeHtml(formatBigInt(totalDust))}</code> of notional across the converted pairs. Each pair’s dust is <code>oldNotional % adjustedAmount</code>, always smaller than the converted amount.`,
 				);
 			if (restatable && fundingBefore !== fundingAfter)
 				notes.push(
@@ -1100,14 +1696,14 @@
 					`A direct restatement converts by the prospective factor shown. A restatement opened later, after <code>confirmPriceAdjusted</code>, would instead convert by the active factor <code>${escapeHtml(formatFactor(activeFactor))}</code>.`,
 				);
 
-			result.innerHTML = `
+			const html = `
 				<div class="result-metrics">
 					<span><small>Prospective factor</small><strong>${escapeHtml(formatFactor(prospectiveFactor))}x</strong></span>
 					<span><small>Adjusted mark Muon publishes</small><strong>${escapeHtml(formatBigInt(adjustedMark))}</strong></span>
 					<span><small>Physical conversion</small><strong>${restatable ? "Accepted" : "Rejected"}</strong></span>
 					<span><small>Notional dust</small><strong>${restatable ? escapeHtml(formatBigInt(totalDust)) : "n/a"}</strong></span>
 				</div>
-				<p class="eyebrow">Adjusted-price route &mdash; storage untouched</p>
+				<h4>Adjusted-price route, storage untouched</h4>
 				<p>
 					Muon multiplies the raw venue price by the factor: <code>floor(${escapeHtml(formatBigInt(venuePrice))} &times; ${escapeHtml(formatFactor(prospectiveFactor))}) = ${escapeHtml(formatBigInt(adjustedMark))}</code>.
 					Feeding Core the raw <code>${escapeHtml(formatBigInt(venuePrice))}</code> instead would report a price UPNL of
@@ -1117,7 +1713,7 @@
 					closed amount <code>${escapeHtml(formatBigInt(venueClosedAmount))}</code>, and open amount
 					<code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> for display only.
 				</p>
-				<p class="eyebrow">Physical route &mdash; storage rewritten</p>
+				<h4>Physical route, storage rewritten</h4>
 				<div class="table-wrap">
 					<table>
 						<thead><tr><th>Field</th><th>Stored</th><th>Rewritten</th><th>Notional</th></tr></thead>
@@ -1130,11 +1726,11 @@
 					</table>
 				</div>
 				${rejections.length ? `<ul class="tool-warnings">${rejections.map(entry => `<li>${entry}</li>`).join("")}</ul>` : `<p class="tool-ok">Every amount survives the conversion, so <code>applyAdjustment</code> would rewrite this quote. The dust exception does not apply.</p>`}
-				${notes.length ? `<ul class="tool-warnings">${notes.map(entry => `<li>${entry}</li>`).join("")}</ul>` : ""}
+				${notes.length ? `<ul class="tool-notes">${notes.map(entry => `<li>${entry}</li>`).join("")}</ul>` : ""}
 			`;
+			return { html, summary: `Physical conversion ${restatable ? "Accepted" : "Rejected"}.` };
 		};
-		mount.querySelectorAll("input").forEach(control => control.addEventListener("input", update));
-		update();
+		wireTool(mount, result, compute);
 	};
 
 	const installExpressTools = () => {
@@ -1391,6 +1987,7 @@
 		node.innerHTML = tokenizeInlineCode(text);
 	});
 
+	const isApplePlatform = /Mac|iPhone|iPad/.test(navigator.platform || "");
 	document.querySelectorAll(".doc-article pre").forEach(pre => {
 		if (pre.closest(".mermaid-frame")) return;
 		if (pre.closest(".code-frame")) return;
@@ -1413,17 +2010,28 @@
 		wrap.addEventListener("click", () => {
 			frame.classList.toggle("is-wrapped");
 			setIconLabel(wrap, icons.wrap, frame.classList.contains("is-wrapped") ? "Unwrap" : "Wrap");
+			syncScrollRegions();
 		});
+		// Both icons stay in the button so CSS can cross-fade them on .is-copied.
 		const copy = document.createElement("button");
 		copy.type = "button";
-		setIconLabel(copy, icons.copy, "Copy");
+		copy.innerHTML = `<span class="copy-icons"><span class="icon-default">${icons.copy}</span><span class="icon-done">${icons.check}</span></span><span class="copy-label">Copy</span>`;
+		const copyLabel = copy.querySelector(".copy-label");
+		let copyTimer = 0;
+		const showCopyState = (label, copied, duration) => {
+			window.clearTimeout(copyTimer);
+			copy.classList.toggle("is-copied", copied);
+			copyLabel.textContent = label;
+			copyTimer = window.setTimeout(() => {
+				copy.classList.remove("is-copied");
+				copyLabel.textContent = "Copy";
+			}, duration);
+		};
 		copy.addEventListener("click", async () => {
 			try {
 				await navigator.clipboard.writeText(pre.textContent || "");
-				setIconLabel(copy, icons.check, "Copied");
-				window.setTimeout(() => {
-					setIconLabel(copy, icons.copy, "Copy");
-				}, 1200);
+				showCopyState("Copied", true, 2000);
+				announce("Code copied");
 			} catch (_error) {
 				const selection = window.getSelection();
 				if (selection) {
@@ -1432,10 +2040,10 @@
 					selection.removeAllRanges();
 					selection.addRange(range);
 				}
-				setIconLabel(copy, icons.check, selection ? "Selected" : "Copy unavailable");
-				window.setTimeout(() => {
-					setIconLabel(copy, icons.copy, "Copy");
-				}, 1200);
+				const selected = Boolean(selection && selection.toString().length);
+				const label = selected ? (isApplePlatform ? "Press ⌘C to copy" : "Press Ctrl+C to copy") : "Select the code to copy";
+				showCopyState(label, false, 4000);
+				announce(label);
 			}
 		});
 		actions.append(wrap, copy);
@@ -1459,6 +2067,58 @@
 
 	installTableScrollers();
 
+	/* A region that scrolls sideways must be reachable by keyboard (Safari does not
+	   focus scrollers on its own). Only overflowing ones become tab stops, and only
+	   the attributes added here are ever removed. */
+	const CODE_LANGUAGE_NAMES = {
+		solidity: "Solidity",
+		typescript: "TypeScript",
+		ts: "TypeScript",
+		javascript: "JavaScript",
+		js: "JavaScript",
+		json: "JSON",
+		bash: "Bash",
+		sh: "Shell",
+		shell: "Shell",
+		text: "",
+	};
+	const scrollRegionLabel = element => {
+		if (element.classList.contains("table-wrap")) return "Scrollable table";
+		if (element.classList.contains("mermaid")) {
+			const caption = (element.closest(".mermaid-frame")?.querySelector("figcaption > span")?.textContent || "").trim();
+			// Captions usually end in their type ("…: flow diagram"); do not say "diagram" twice.
+			return /\bdiagram$/i.test(caption) ? `${caption}, scrollable` : `${caption || "Untitled"} diagram, scrollable`;
+		}
+		const language = (element.closest(".code-frame")?.querySelector(".code-lang")?.textContent || "").trim().toLowerCase();
+		const name = language in CODE_LANGUAGE_NAMES ? CODE_LANGUAGE_NAMES[language] : language.charAt(0).toUpperCase() + language.slice(1);
+		return name ? `${name} code` : "Code";
+	};
+	function syncScrollRegions() {
+		// Drawn diagrams scroll sideways on phones (they keep at least 720px or their natural width).
+		document.querySelectorAll(".table-wrap, .code-frame pre, .mermaid-frame > .mermaid").forEach(element => {
+			const overflowing = element.scrollWidth > element.clientWidth + 1;
+			const managed = element.hasAttribute("data-scroll-region");
+			if (overflowing && !managed) {
+				if (element.hasAttribute("tabindex")) return;
+				element.tabIndex = 0;
+				element.setAttribute("role", "region");
+				element.setAttribute("aria-label", scrollRegionLabel(element));
+				element.setAttribute("data-scroll-region", "");
+				// The diagram frame clips overflow, so the shared focus ring is drawn inside the canvas.
+				if (element.classList.contains("mermaid")) element.style.outlineOffset = "-2px";
+			} else if (!overflowing && managed) {
+				["tabindex", "role", "aria-label", "data-scroll-region"].forEach(attribute => element.removeAttribute(attribute));
+				element.style.removeProperty("outline-offset");
+			}
+		});
+	}
+	syncScrollRegions();
+	let scrollRegionTimer = 0;
+	window.addEventListener("resize", () => {
+		window.clearTimeout(scrollRegionTimer);
+		scrollRegionTimer = window.setTimeout(syncScrollRegions, 150);
+	});
+
 	const installHeadingLinks = () => {
 		document.querySelectorAll(".doc-article h2[id], .doc-article h3[id]").forEach(heading => {
 			if (heading.querySelector(".heading-anchor")) return;
@@ -1473,25 +2133,30 @@
 			heading.append(text);
 			heading.setAttribute("aria-labelledby", text.id);
 
-			const anchor = document.createElement("button");
-			anchor.type = "button";
+			// A real link, so open-in-new-tab and copy-link-address work; a plain
+			// click also puts the section in the address bar and copies it.
+			const anchor = document.createElement("a");
 			anchor.className = "heading-anchor";
+			anchor.href = `#${heading.id}`;
 			anchor.textContent = "#";
 			anchor.setAttribute("aria-label", `Copy link to ${title}`);
-			const defaultLabel = anchor.getAttribute("aria-label");
-			anchor.addEventListener("click", async () => {
-				const url = `${window.location.href.split("#")[0]}#${heading.id}`;
+			let anchorTimer = 0;
+			anchor.addEventListener("click", async event => {
+				if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+				event.preventDefault();
+				window.history.replaceState(null, "", `#${heading.id}`);
+				window.clearTimeout(anchorTimer);
 				try {
-					await navigator.clipboard.writeText(url);
+					await navigator.clipboard.writeText(window.location.href);
 					anchor.textContent = "✓";
-					anchor.setAttribute("aria-label", "Section link copied");
-					window.setTimeout(() => {
-						anchor.textContent = "#";
-						anchor.setAttribute("aria-label", defaultLabel);
-					}, 1100);
+					announce("Section link copied");
 				} catch (_error) {
-					window.location.hash = heading.id;
+					anchor.textContent = "#";
+					announce("Link is in the address bar");
 				}
+				anchorTimer = window.setTimeout(() => {
+					anchor.textContent = "#";
+				}, 2000);
 			});
 			heading.append(anchor);
 		});

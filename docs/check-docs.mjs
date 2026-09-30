@@ -137,11 +137,32 @@ for (const release of releases) {
 	}
 
 	const portalIndex = read("index.html");
-	const label = new RegExp(`aria-label="Open the [^"]*${version.replace(/\./g, "\\.")} (?:changelog|release notes), (\\d+) chapters"`).exec(
-		portalIndex,
-	);
+	const entry = new RegExp(`<a class="version-entry[^"]*" href="${release}/index\\.html"[\\s\\S]*?</a>`).exec(portalIndex);
+	const label = entry && /<span class="visually-hidden">, (\d+) chapters<\/span>/.exec(entry[0]);
+	if (entry && !label) fail("index.html", `portal entry for ${version} does not state its chapter count`);
 	if (label && Number(label[1]) !== manifest.length) {
-		fail("index.html", `portal aria-label claims ${label[1]} chapters for ${version}, MANIFESTS has ${manifest.length}`);
+		fail("index.html", `portal entry claims ${label[1]} chapters for ${version}, MANIFESTS has ${manifest.length}`);
+	}
+	if (entry && /aria-label=/.test(entry[0].slice(0, entry[0].indexOf(">")))) {
+		fail("index.html", `portal entry for ${version} must take its name from its visible text, not aria-label`);
+	}
+
+	/* The overview's change map must link every numbered chapter. */
+	const overviewPath = `${release}/pages/overview.html`;
+	if (existsSync(join(DOCS, overviewPath))) {
+		const overview = read(overviewPath);
+		for (const slug of manifestSlugs) {
+			if (slug === "overview") continue;
+			if (!overview.includes(`href="${slug}.html`)) fail(overviewPath, `does not link numbered chapter ${slug}`);
+		}
+		/* ...and name every live companion. Redirect stubs (meta refresh) have moved
+		   into a chapter and are not companions a reader can open. */
+		for (const slug of companions) {
+			if (slug === "overview") continue;
+			const file = `${release}/pages/${slug}.html`;
+			if (!existsSync(join(DOCS, file)) || /<meta\s+http-equiv="refresh"/i.test(read(file))) continue;
+			if (!overview.includes(`href="${slug}.html`)) fail(overviewPath, `does not link companion page ${slug}`);
+		}
 	}
 }
 
@@ -195,12 +216,51 @@ for (const file of htmlFiles) {
 		fail(file, 'no <meta name="description"> (and not marked noindex)');
 	}
 
+	/* Prose apostrophes are typographic (&rsquo;). Code, pre, script and style
+	   content and attribute values keep straight quotes. */
+	if (file.startsWith("v0.8.6/")) {
+		const skip = { pre: 0, code: 0, script: 0, style: 0 };
+		for (const [token] of html.matchAll(/<!--[\s\S]*?-->|<[^>]+>|[^<]+/g)) {
+			if (token.startsWith("<")) {
+				const tag = /^<(\/?)([a-zA-Z0-9]+)/.exec(token);
+				const name = tag?.[2].toLowerCase();
+				if (name in skip && !token.endsWith("/>")) skip[name] += tag[1] ? -1 : 1;
+				continue;
+			}
+			if (Object.values(skip).some(Boolean)) continue;
+			const straight = /[A-Za-z]'[A-Za-z]/.exec(token);
+			if (straight) fail(file, `straight apostrophe in prose ("${straight[0]}"); use &rsquo;`);
+		}
+	}
+
 	/* Mermaid treats semicolons as statement delimiters, including semicolons
 	   embedded in sequence message and note labels. The runtime otherwise renders
 	   an error SVG that looks like a valid diagram node to the page shell. */
-	const mermaidBlocks = [...html.matchAll(/<pre><code[^>]*class="[^"]*\blanguage-mermaid\b[^"]*"[^>]*>([\s\S]*?)<\/code><\/pre>/g)];
+	const mermaidBlocks = [...html.matchAll(/<pre\b([^>]*)><code[^>]*class="[^"]*\blanguage-mermaid\b[^"]*"[^>]*>([\s\S]*?)<\/code><\/pre>/g)];
+
+	/* Each v0.8.6 diagram carries its drawn size so the loading placeholder can
+	   reserve the right height. The values are the rendered mermaid SVG viewBox
+	   (width height, rounded up); regenerate them with
+	   .better-ui-app/20260929-2118-docs-portal/fixes/scratch-007/measure.mjs --apply
+	   after editing a diagram. */
+	if (file.startsWith("v0.8.6/pages/")) {
+		mermaidBlocks.forEach((block, diagramIndex) => {
+			const size = /\sdata-diagram-size="([^"]*)"/.exec(block[1])?.[1];
+			if (!size || !/^[1-9]\d* [1-9]\d*$/.test(size)) {
+				fail(file, `Mermaid diagram ${diagramIndex + 1} needs data-diagram-size="W H" (two positive integers from the rendered viewBox)`);
+			}
+		});
+	}
 	mermaidBlocks.forEach((block, diagramIndex) => {
-		const source = decodeHtmlEntities(block[1]);
+		const source = decodeHtmlEntities(block[2]);
+		if (/^\s*stateDiagram/.test(source)) {
+			source.split("\n").forEach((line, lineIndex) => {
+				const transition = /-->[^:]*:(.*)$/.exec(line);
+				if (!transition || !transition[1].includes(";")) return;
+				fail(file, `Mermaid state diagram ${diagramIndex + 1}, line ${lineIndex + 1}: semicolon in stateDiagram label splits the statement`);
+			});
+			return;
+		}
 		if (!/^\s*sequenceDiagram\b/.test(source)) return;
 
 		source.split("\n").forEach((line, lineIndex) => {

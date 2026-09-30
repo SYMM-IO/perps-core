@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -62,7 +62,7 @@
 
 				<article class="doc-article" id="full-document">
 					<p>
-						A market quote carries two prices. <code>marketPrice</code> is the request-time spot price in PartyA's UPNL payload, and
+						A market quote carries two prices. <code>marketPrice</code> is the request-time spot price in PartyA&rsquo;s UPNL payload, and
 						<code>openedPrice</code> is the price PartyB filled at. Until this change the open trading fee was computed from
 						<code>marketPrice</code>. Close fees already used the executed <code>closedPrice</code>, so open fees were the only trading
 						fee in the protocol still priced off a request-time input.
@@ -70,9 +70,9 @@
 
 					<h2 id="the-gap">Why request-time price was unsafe</h2>
 					<p>
-						<code>marketPrice</code> reaches storage from the uPnL payload submitted with PartyA's request. On the normal path a Muon
-						signature covers that payload, so the value is attested. When PartyA is bound to a PartyB, <code>sendQuote</code> skips Muon
-						verification because binding is the oracle-less path. The request-time price is accepted as supplied.
+						<code>marketPrice</code> reaches storage from the uPnL payload submitted with PartyA&rsquo;s request. On the normal path a
+						Muon signature covers that payload, so the value is attested. When PartyA is bound to a PartyB, <code>sendQuote</code> skips
+						Muon verification because binding is the oracle-less path. The request-time price is accepted as supplied.
 					</p>
 					<p>
 						A bound PartyA could therefore submit a market quote with <code>marketPrice</code> set to zero. The quote was otherwise valid:
@@ -90,14 +90,14 @@
 					<aside class="callout callout-note">
 						<strong>The protocol did not validate the fee basis at fill.</strong>
 						PartyB chooses whether to fill, but the open path validated <code>openedPrice</code> against <code>requestedOpenPrice</code>;
-						it did not compare or reconcile <code>marketPrice</code>. The fee collector therefore received the amount produced by PartyA's
-						stored request-time input.
+						it did not compare or reconcile <code>marketPrice</code>. The fee collector therefore received the amount produced by
+						PartyA&rsquo;s stored request-time input.
 					</aside>
 					<p>
-						Charging on <code>openedPrice</code> removes PartyA's request-time <code>marketPrice</code> from the executed fee calculation.
-						PartyB supplies <code>openedPrice</code> at fill time, and the protocol bounds it against <code>requestedOpenPrice</code> in
-						the required direction. It must be at or below the requested price for a long and at or above it for a short. The collector's
-						fee follows the price recorded for the opened position.
+						Charging on <code>openedPrice</code> removes PartyA&rsquo;s request-time <code>marketPrice</code> from the executed fee
+						calculation. PartyB supplies <code>openedPrice</code> at fill time, and the protocol bounds it against
+						<code>requestedOpenPrice</code> in the required direction. It must be at or below the requested price for a long and at or
+						above it for a short. The collector&rsquo;s fee follows the price recorded for the opened position.
 					</p>
 
 					<h2 id="two-bases">Reserved and executed fees</h2>
@@ -184,7 +184,7 @@
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

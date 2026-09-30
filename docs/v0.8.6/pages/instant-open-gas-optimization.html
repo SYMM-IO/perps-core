@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -125,7 +125,7 @@
 
 					<h3 id="lock-and-open">Combined core entry: <code>lockAndOpenPosition</code></h3>
 					<p>
-						The solver's compact operation first runs the existing <code>lockQuote</code> path. If the lock succeeds, it continues
+						The solver&rsquo;s compact operation first runs the existing <code>lockQuote</code> path. If the lock succeeds, it continues
 						directly into <code>openPosition</code>. Both paths are reached through self-delegatecall, so their guards, hooks, post-hook
 						binding checks, and events still run in the same order. The combined entrypoint is:
 					</p>
@@ -146,20 +146,20 @@
 					</p>
 					<p>
 						A non-empty <code>solverFees</code> entry list is charged after the open, each entry routed to the receiver resolved for its
-						tag, subject to the quote's user-approved open-rate cap over the list total. The combined path uses the same solvency guard
-						and emits the same per-entry <code>SolverFeeCharged</code> events as fee-aware <code>openPosition</code>. Empty arrays leave
-						the open fee-free.
+						tag, subject to the quote&rsquo;s user-approved open-rate cap over the list total. The combined path uses the same solvency
+						guard and emits the same per-entry <code>SolverFeeCharged</code> events as fee-aware <code>openPosition</code>. Empty arrays
+						leave the open fee-free.
 					</p>
 					<p>
-						Joining lock and open removes the solver's second signed operation and the extra SymmioPartyB routing round trip. The user's
-						two operations are compressed in the same way on the AccountLayer side.
+						Joining lock and open removes the solver&rsquo;s second signed operation and the extra SymmioPartyB routing round trip. The
+						user&rsquo;s two operations are compressed in the same way on the AccountLayer side.
 					</p>
 
 					<h3 id="call-with-margin">Combined AccountLayer entry: <code>_callWithMargin</code></h3>
 					<p>
-						The user's compact operation enters AccountLayer once. It resolves the next virtual account from the supplied isolation type
-						and symbol, transfers margin to that account, and then continues through the existing <code>_call</code> path. The combined
-						entrypoint is:
+						The user&rsquo;s compact operation enters AccountLayer once. It resolves the next virtual account from the supplied isolation
+						type and symbol, transfers margin to that account, and then continues through the existing <code>_call</code> path. The
+						combined entrypoint is:
 					</p>
 					<pre><code>function _callWithMargin(
     address account,
@@ -196,13 +196,13 @@
 					</ol>
 					<p>
 						One user-signed operation and one solver-signed operation, instead of two each. The quote id still flows from the first
-						operation into the second through the template's result injection.
+						operation into the second through the template&rsquo;s result injection.
 					</p>
 					<p>
 						After the first operation sends the quote, AccountLayer returns the quote id inside its ABI-encoded <code>bytes[]</code>
 						result. Because this operation targets AccountLayer directly, the wrapper places the id at byte offset
 						<strong>128</strong>: <code>[bytes[] offset][array length][element offset][element length][quoteId]</code>. The template reads
-						that value with <code>sourceOffsets: [128]</code> and injects it into the solver's combined lock-and-open call.
+						that value with <code>sourceOffsets: [128]</code> and injects it into the solver&rsquo;s combined lock-and-open call.
 					</p>
 
 					<h2 id="transient">Transient execution context</h2>
@@ -228,9 +228,9 @@
 					</ol>
 					<p>
 						The live word and signer slots reside in the transient-storage context of the diamond using them, so every facet reached
-						through <code>delegatecall</code> sees the same values. Core's <code>LibExecutionContext</code> owns the word and core signer;
-						<code>LibAccountLayerSigner</code> applies the same signer model to the AccountLayer diamond. AccountLayer also keeps a
-						separate transient account-family scope when a delegate, rather than the owner, drives the operation; that scope constrains
+						through <code>delegatecall</code> sees the same values. Core&rsquo;s <code>LibExecutionContext</code> owns the word and core
+						signer; <code>LibAccountLayerSigner</code> applies the same signer model to the AccountLayer diamond. AccountLayer also keeps
+						a separate transient account-family scope when a delegate, rather than the owner, drives the operation; that scope constrains
 						the installed signer and is documented in <a href="../pages/delegation-account-scope.html">Delegation Account Scope</a>.
 					</p>
 
@@ -321,17 +321,17 @@
 					<p>
 						Suppose the transient signer is Alice. During the operation, the value slot contains Alice and the marker is set. Before a
 						hook runs, <code>clearSignerForExternalCall()</code> saves Alice and clears only the value slot. The state is now "marker set,
-						value empty." Readers continue to use the transient slot, but find no signer there, so Alice's authority is hidden instead of
-						falling through to the persistent signer field.
+						value empty." Readers continue to use the transient slot, but find no signer there, so Alice&rsquo;s authority is hidden
+						instead of falling through to the persistent signer field.
 					</p>
 					<p>
-						The helper also returns <code>wasTransientScoped = true</code>. The trusted boundary keeps that flag with Alice's saved
+						The helper also returns <code>wasTransientScoped = true</code>. The trusted boundary keeps that flag with Alice&rsquo;s saved
 						address so it knows where to restore her after the hook returns.
 					</p>
 
 					<h2 id="suspend-overview">Suspending authority around hooks</h2>
 					<p>
-						At a protected hook boundary, the surrounding batch scope may span the external call, but its authority must not. Core's
+						At a protected hook boundary, the surrounding batch scope may span the external call, but its authority must not. Core&rsquo;s
 						<code>LibHook</code> clears the effective signer and suspends the core routing and InstantOpen context before the hook runs.
 						AccountLayer affiliate-hook routing applies the same two protections across the AccountLayer and core diamonds.
 					</p>
@@ -435,8 +435,9 @@
 					<h4>Example: a nested trusted call uses Bob</h4>
 					<p>
 						While Alice is hidden, trusted protocol code may temporarily install Bob as its own transient signer. When that inner call
-						finishes, it clears Bob and the shared marker. This does not erase the outer boundary's saved note, "Alice, from transient
-						storage." After confirming that both signer addresses are empty, the boundary sets the marker again and restores Alice.
+						finishes, it clears Bob and the shared marker. This does not erase the outer boundary&rsquo;s saved note, "Alice, from
+						transient storage." After confirming that both signer addresses are empty, the boundary sets the marker again and restores
+						Alice.
 					</p>
 
 					<h4>Example: Alice came from persistent storage</h4>
@@ -491,11 +492,11 @@
 					<p>
 						For the cross-contract AccountLayer path, core does not return the raw snapshot to the router. It stores the snapshot in
 						<code>keccak256(abi.encode(namespace, msg.sender))</code>, preventing the router from substituting a value, restoring another
-						router's snapshot, or suspending twice before restore.
+						router&rsquo;s snapshot, or suspending twice before restore.
 					</p>
 					<p>
 						The caller examples in the snapshot-slot panel use the same namespace with three illustrative addresses. Each address produces
-						a different slot, so one router cannot reach another router's saved context.
+						a different slot, so one router cannot reach another router&rsquo;s saved context.
 					</p>
 
 					<section class="tool-panel" data-slot-address-tool aria-label="Caller-scoped snapshot slots"></section>
@@ -569,8 +570,8 @@
 						The current source compiles with solc 0.8.36 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
 						batch paths initiate transient authority. Authorized direct callers can still set the persistent
 						<code>instantOpenMode</code> by calling the legacy selector outside a transient scope, and suspension/restoration continues to
-						protect that compatibility state. Core's legacy <code>setSigner</code> likewise writes the persistent core signer when no
-						transient execution scope is active.
+						protect that compatibility state. Core&rsquo;s legacy <code>setSigner</code> likewise writes the persistent core signer when
+						no transient execution scope is active.
 					</p>
 					<p>
 						A pre-Cancun deployment therefore needs a separate build targeting <code>evmVersion "paris"</code>. Its
@@ -584,7 +585,7 @@
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -190,8 +190,8 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 </code></pre>
 					<p>
 						Delegated creation writes the supplied owner into the existing SubAccount record. Ownership transfer updates
-						<code>subAccounts[subAccount].owner</code> and moves the SubAccount address from the old owner's index set to the new owner's
-						index set.
+						<code>subAccounts[subAccount].owner</code> and moves the SubAccount address from the old owner&rsquo;s index set to the new
+						owner&rsquo;s index set.
 					</p>
 					<p>The new creator permission also reuses existing AccountLayer role storage:</p>
 					<pre><code class="language-solidity">mapping(address =&gt; mapping(bytes32 =&gt; bool)) hasRole;
@@ -227,8 +227,8 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					<ol>
 						<li>Validate caller and <code>newOwner</code>.</li>
 						<li>Read <code>oldOwner</code>, <code>affiliate</code>, and <code>symmioCore</code>.</li>
-						<li>Remove the SubAccount from <code>oldOwner</code>'s enumerable set.</li>
-						<li>Add the SubAccount to <code>newOwner</code>'s enumerable set.</li>
+						<li>Remove the SubAccount from <code>oldOwner</code>&rsquo;s enumerable set.</li>
+						<li>Add the SubAccount to <code>newOwner</code>&rsquo;s enumerable set.</li>
 						<li>Set <code>subAccounts[subAccount].owner = newOwner</code>.</li>
 						<li>
 							Call <code>onSubAccountOwnershipTransfer(subAccount, oldOwner, newOwner)</code> if the affiliate registered a hook for
@@ -244,7 +244,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 						The existing hook context protection still applies. <code>LibAccountLayerUtils.callHook</code> clears whichever AccountLayer
 						signer mechanism is active (persistent or transient) before external hook execution and restores it afterward. When an
 						InstantLayer core context is active, it suspends and later restores that context as well. The hook therefore cannot inherit
-						the transferring user's authorization.
+						the transferring user&rsquo;s authorization.
 					</p>
 					<hr />
 					<h2 id="security-considerations">Security considerations</h2>
@@ -287,7 +287,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					<p>
 						A SubAccount transfer also carries its active InstantLayer delegations as outstanding approvals. Reconstruct the candidate
 						delegate and selector list from
-						<code>DelegationGranted</code> events or the integration's own records, then confirm active entries with
+						<code>DelegationGranted</code> events or the integration&rsquo;s own records, then confirm active entries with
 						<code>getActiveDelegations</code>. For anything that should not survive the transfer, call
 						<code>initiateRevokeDelegation</code>. After the configured cooldown, <code>finalizeRevokeDelegation</code> removes the grant.
 						The grant remains active during that cooldown. A safe handoff must wait for the cooldown and confirm the grant is inactive,
@@ -368,7 +368,7 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>
