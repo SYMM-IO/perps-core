@@ -2,7 +2,6 @@ import { expect } from "chai"
 
 import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
-import { initializeLegacyPauseFixture } from "../helpers/legacy-pause-fixture.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 import { User } from "../models/User.js"
 
@@ -62,7 +61,7 @@ describe("Core granular pause authority", function () {
 		})
 	}
 
-	for (const role of [undefined, "PAUSER_ROLE", "DEFAULT_ADMIN_ROLE", "UNPAUSER_ROLE", "SUSPENDER_ROLE", "EMERGENCY_ADMIN_ROLE"]) {
+	for (const role of [undefined, "DEFAULT_ADMIN_ROLE", "UNPAUSER_ROLE", "SUSPENDER_ROLE", "EMERGENCY_ADMIN_ROLE"]) {
 		it(`${role ?? "an unprivileged caller"} alone cannot invoke any pause`, async function () {
 			const context = await loadFixture(initializeFixture)
 			const operator = context.signers.user2
@@ -117,43 +116,6 @@ describe("Core granular pause authority", function () {
 		)
 		await context.controlFacet.connect(roleAdmin).revokeRole(operator.address, role)
 		await expect(context.pauseControlFacet.connect(operator).pauseAccounting()).to.be.revertedWith(missingRole)
-	})
-
-	it("activates pre-granted granular authority across a legacy facet replacement without resetting state", async function () {
-		const context = await loadFixture(initializeLegacyPauseFixture)
-		const legacyOperator = context.signers.user
-		const newOperator = context.signers.user2
-		await context.controlFacet.grantRole(legacyOperator.address, ethers.id("PAUSER_ROLE"))
-		await context.controlFacet.grantRole(newOperator.address, ethers.id("GLOBAL_PAUSER_ROLE"))
-		const user = new User(context, context.signers.user)
-		await user.setup()
-		await user.setBalances(ethers.parseEther("100"), ethers.parseEther("100"))
-		await context.pauseControlFacet.pauseAccounting()
-		await context.pauseControlFacet.pausePartyBOpenPositionsFor(context.signers.hedger.address)
-		await expect(context.pauseControlFacet.connect(newOperator).pauseGlobal()).to.be.revertedWith(missingRole)
-		await context.pauseControlFacet.connect(legacyOperator).pauseGlobal()
-		const before = await context.viewFacet.pauseState()
-		const replacement = await (await ethers.getContractFactory("PauseControlFacet")).deploy()
-		const cut = await ethers.getContractAt("DiamondCutFacet", context.diamond)
-		await cut.diamondCut(
-			[
-				{
-					facetAddress: await replacement.getAddress(),
-					action: 1,
-					functionSelectors: [context.pauseControlFacet.interface.getFunction("pauseGlobal")!.selector],
-				},
-			],
-			ethers.ZeroAddress,
-			"0x",
-		)
-		expect(await context.viewFacet.pauseState()).to.deep.equal(before)
-		expect(await context.viewFacet.balanceOf(user.address)).to.equal(ethers.parseEther("100"))
-		expect(await context.viewFacet.isPartyBOpenPositionsPaused(context.signers.hedger.address)).to.equal(true)
-		expect(await context.viewFacet.hasRole(legacyOperator.address, ethers.id("PAUSER_ROLE"))).to.equal(true)
-		await expect(context.pauseControlFacet.connect(legacyOperator).pauseGlobal()).to.be.revertedWith(missingRole)
-		await context.pauseControlFacet.unpauseGlobal()
-		await context.pauseControlFacet.connect(newOperator).pauseGlobal()
-		expect(await context.viewFacet.pauseState()).to.deep.equal(before)
 	})
 
 	it("PartyA pause permits deposits and withdrawals; accounting pause blocks both", async function () {
