@@ -121,29 +121,6 @@
 					</div>
 				</header>
 
-				<nav class="reader-map" aria-label="Express Withdrawal reading map">
-					<a href="#how-it-works-high-level">
-						<span>Reader path</span>
-						<strong>Start with the three speeds</strong>
-						<small>SAME_TX, WINDOWED, and STANDARD all route through ExpressProvider.</small>
-					</a>
-					<a href="#where-the-money-comes-from">
-						<span>Capital path</span>
-						<strong>Then follow the money</strong>
-						<small>Affiliate pool, credit line, and general pool explain who fronts funds.</small>
-					</a>
-					<a href="#safety-mechanisms">
-						<span>Safety path</span>
-						<strong>Then read the risk gates</strong>
-						<small>Validator checks, security windows, locks, cancellation, and suspension.</small>
-					</a>
-					<a href="#the-signature-scheme-eip-712">
-						<span>Integration path</span>
-						<strong>Finish with implementation surfaces</strong>
-						<small>EIP-712 payloads, fees, bot duties, roles, and contract interfaces.</small>
-					</a>
-				</nav>
-
 				<article class="doc-article" id="full-document">
 					<aside class="callout callout-note">
 						<strong>Timing source</strong> The ExpressProvider never assumes a fixed 12-hour delay. Core supplies
@@ -157,9 +134,8 @@
 						then reconcile the provider when SYMMIO releases the underlying withdrawal.
 					</p>
 					<aside class="callout callout-note">
-						<strong>Operator guide</strong> The detailed bot runbook is kept separately as the
-						<a href="express-bot-operations-checklist.html">Express Provider Bot Operations Checklist</a>. It is an integration guide, not
-						a standalone changelog item.
+						<strong>Bot checklist</strong> Step-by-step bot operations live in the companion
+						<a href="express-bot-operations-checklist.html">Express bot operations checklist</a>.
 					</aside>
 					<h2 id="expressprovider-s-role">ExpressProvider&rsquo;s role</h2>
 					<p>
