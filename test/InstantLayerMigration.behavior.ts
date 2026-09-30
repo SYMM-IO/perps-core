@@ -65,6 +65,7 @@ describe("InstantLayer migration rehearsal", function () {
 			oldInstantLayer,
 			context.signers.feeCollector.address,
 			2_000_000n,
+			2_000_000n,
 			0,
 			5_000_000n,
 		])

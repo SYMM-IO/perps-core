@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -131,7 +131,7 @@ remainingRawAllocation &gt;= protectedFloor</code></pre>
 
 					<h2 id="the-remaining-gap">The gap the raw floor leaves</h2>
 					<p>
-						The raw floor uses the CVA and liquidation-fee amounts currently stored for locked and pending quotes. An opened quote's
+						The raw floor uses the CVA and liquidation-fee amounts currently stored for locked and pending quotes. An opened quote&rsquo;s
 						values are scaled to its fill and are not subsequently re-marked to live prices. That leaves two related problems that the raw
 						floor alone does not address.
 					</p>
@@ -151,9 +151,9 @@ remainingRawAllocation &gt;= protectedFloor</code></pre>
 					<h2 id="scaled-floor">The scaled locked-balance floor</h2>
 					<p>
 						The safe deallocation paths close both gaps with one additional signed value. The Muon app attests a
-						<code>scaledLockedBalance</code>, the account's locked requirement re-marked to live notional, inside the same signature that
-						carries uPnL and gross funding debt. On-chain, the position requirement is the stricter of the stored and attested floors, and
-						the funding debt is then added:
+						<code>scaledLockedBalance</code>, the account&rsquo;s locked requirement re-marked to live notional, inside the same signature
+						that carries uPnL and gross funding debt. On-chain, the position requirement is the stricter of the stored and attested
+						floors, and the funding debt is then added:
 					</p>
 					<pre><code>retention = max(protectedFloor, scaledLockedBalance) + fundingDebt
 
@@ -173,7 +173,7 @@ remainingRawAllocation &gt;= retention</code></pre>
 					<p>
 						<code>initialOpenedPrice</code> is used rather than <code>openedPrice</code> because funding charges and settlement rewrite
 						<code>openedPrice</code>; dividing by it would leak funding payments into the margin rate. The ratio against the initial price
-						applies exactly the guarantee rate both parties priced at open to the position's current size, so no contractual term is
+						applies exactly the guarantee rate both parties priced at open to the position&rsquo;s current size, so no contractual term is
 						rewritten. Partial closes need no special handling: locked values and open quantity shrink proportionally together.
 					</p>
 					<aside class="callout callout-note">
@@ -259,9 +259,9 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 
 					<h2 id="cross-mode">Cross-mode buckets</h2>
 					<p>
-						An isolated PartyB uses the named PartyA's allocation bucket. An active cross-mode PartyB instead backs all current positions
-						from the shared <code>address(0)</code> bucket. A nonzero PartyA bucket left behind after enabling cross mode is a legacy
-						migration bucket, not part of the active cross pool.
+						An isolated PartyB uses the named PartyA&rsquo;s allocation bucket. An active cross-mode PartyB instead backs all current
+						positions from the shared <code>address(0)</code> bucket. A nonzero PartyA bucket left behind after enabling cross mode is a
+						legacy migration bucket, not part of the active cross pool.
 					</p>
 					<p>
 						For a cross-mode PartyB, positions are backed by the aggregate <code>address(0)</code> allocation bucket. Strict deallocation
@@ -433,7 +433,7 @@ upnlCounterOfPartyB(address partyB, address partyA) returns (uint256)</code></pr
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

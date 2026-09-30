@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -66,8 +66,8 @@
 						The accumulated funding system keeps mutable funding state per <code>(symbolId, partyB)</code>. It stores a weighted-average
 						rate over completed history plus the rate currently in force. In earlier versions, position open, close, accumulated funding
 						charge, liquidation sync, and migration initialization first <em>rolled</em> this shared state forward (re-folding the
-						weighted average and advancing <code>lastUpdatedEpoch</code>) so that a simplified two-term formula could write the quote's
-						<code>accumulatedPaidFunding</code> baseline.
+						weighted average and advancing <code>lastUpdatedEpoch</code>) so that a simplified two-term formula could write the
+						quote&rsquo;s <code>accumulatedPaidFunding</code> baseline.
 					</p>
 					<p>
 						The roll was never required for correctness. The persisted state fully determines the cumulative fee at any time, as described
@@ -76,10 +76,10 @@
 						roll.
 					</p>
 					<p>
-						v0.8.6 removes that roll from ordinary quote processing. Quote-driven flows now compute the quote's baseline with the same
-						lazy formula every read path already used, and do not mutate the symbol/PartyB state. The weighted average is re-folded during
-						solver configuration and at symbol-restatement boundaries. Both emit the <a href="#state-event">state event</a> after their
-						final storage writes. Between those explicit transitions the persisted funding state is byte-stable.
+						v0.8.6 removes that roll from ordinary quote processing. Quote-driven flows now compute the quote&rsquo;s baseline with the
+						same lazy formula every read path already used, and do not mutate the symbol/PartyB state. The weighted average is re-folded
+						during solver configuration and at symbol-restatement boundaries. Both emit the <a href="#state-event">state event</a> after
+						their final storage writes. Between those explicit transitions the persisted funding state is byte-stable.
 					</p>
 
 					<h2 id="lazy-evaluation">Lazy evaluation model</h2>
@@ -89,7 +89,7 @@
 						position at any epoch is fully determined without rolling storage:
 					</p>
 					<p>
-						Choose the long or short fields according to the quote's <code>positionType</code>. In the formula,
+						Choose the long or short fields according to the quote&rsquo;s <code>positionType</code>. In the formula,
 						<code>snapshotFee</code> means <code>snapshotLongFee</code> or <code>snapshotShortFee</code>, the cumulative per-unit fee
 						preserved when a duration change rebases the epoch schedule. <code>startEpoch</code> is the first epoch of the current funding
 						history, while <code>lastUpdatedEpoch</code> is the last epoch already represented by <code>accumulatedRate</code>.
@@ -111,7 +111,7 @@ cumulativeFee = snapshotFee
 					<ul>
 						<li>
 							<code>LibQuoteFunding.updateAccumulatedPaidFunding</code> no longer calls the accumulated-rate updater. It writes the
-							quote's baseline using the three-term lazy formula above.
+							quote&rsquo;s baseline using the three-term lazy formula above.
 						</li>
 						<li>
 							<code>MigrationFacetImpl._initializeQuoteFunding</code> initializes migrated quotes with the same lazy computation instead
@@ -161,7 +161,7 @@ cumulativeFee = snapshotFee
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

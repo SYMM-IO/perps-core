@@ -26,6 +26,7 @@ async function main() {
 	const INSTANT_LAYER = need("SYMMIO_INSTANT_LAYER")
 	const TREASURY = process.env.TREASURY || deployer.address
 	const DEPOSIT_FEE = process.env.DEPOSIT_FEE || "2000000"
+	const NEW_ACCOUNT_DEPOSIT_FEE = process.env.NEW_ACCOUNT_DEPOSIT_FEE || DEPOSIT_FEE
 	const WALLET_CREATION_FEE = process.env.WALLET_CREATION_FEE || "0"
 	const MINIMUM_DEPOSIT = process.env.MINIMUM_DEPOSIT || "5000000"
 	let gatewayAddress = ""
@@ -56,6 +57,7 @@ async function main() {
 			INSTANT_LAYER,
 			TREASURY,
 			DEPOSIT_FEE,
+			NEW_ACCOUNT_DEPOSIT_FEE,
 			WALLET_CREATION_FEE,
 			MINIMUM_DEPOSIT,
 		])

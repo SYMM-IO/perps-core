@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -110,7 +110,7 @@
 						by-signature grant paths.
 					</p>
 					<p>
-						The multi-delegate form runs that same logic once per entry. Every entry must name the operation's
+						The multi-delegate form runs that same logic once per entry. Every entry must name the operation&rsquo;s
 						<code>signerAccount</code>; an empty list, or an entry for another account, reverts with <code>InvalidDelegation</code>.
 					</p>
 
@@ -140,8 +140,8 @@
 							selectors, or the expiry after the owner signed.
 						</li>
 						<li>
-							<code>DelegationInfo.account</code> must equal the operation's <code>signerAccount</code> &mdash; for every entry of a
-							multi-delegate grant &mdash; and PartyB accounts cannot grant.
+							<code>DelegationInfo.account</code> must equal the operation&rsquo;s <code>signerAccount</code> &mdash; for every entry of
+							a multi-delegate grant &mdash; and PartyB accounts cannot grant.
 						</li>
 					</ul>
 					<p>
@@ -217,8 +217,8 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 							fee, creates a SubAccount owned by the user through the AccountLayer, and deposits the remainder into core.
 						</li>
 						<li>
-							<strong>One relayed batch finishes setup.</strong> The batch carries the user's single signature and the session key's
-							signatures:
+							<strong>One relayed batch finishes setup.</strong> The batch carries the user&rsquo;s single signature and the session
+							key&rsquo;s signatures:
 							<pre><code>[
     grantOp,       // signed by the user: delegate bindToPartyB + approveOperationalFee
                    // to the session key
@@ -231,15 +231,15 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 						</li>
 					</ol>
 					<p>
-						From the user's perspective: one deposit and one signature. Every subsequent action &mdash; and everything in the setup batch
-						beyond the grant itself &mdash; is signed by the session key and relayed gaslessly.
+						From the user&rsquo;s perspective: one deposit and one signature. Every subsequent action &mdash; and everything in the setup
+						batch beyond the grant itself &mdash; is signed by the session key and relayed gaslessly.
 					</p>
 					<p>
 						The same holds when 1-click trading needs a second delegate next to the session key. The grant operation then encodes
 						<code>grantDelegations</code> with one entry per delegate, the wallet still signs exactly once, and operations signed by
 						either delegate ride the same batch. Two things would quietly add a prompt back: deriving the session key from a wallet
-						signature (the grant must already contain the key's address), and learning the second delegate's address only after the grant
-						was signed.
+						signature (the grant must already contain the key&rsquo;s address), and learning the second delegate&rsquo;s address only
+						after the grant was signed.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Deployment wiring.</strong>
@@ -262,7 +262,7 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

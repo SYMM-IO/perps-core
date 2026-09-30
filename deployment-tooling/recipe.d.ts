@@ -118,7 +118,10 @@ export interface GaslessLayerRecipe {
 	mode: ComponentMode
 	admin?: string
 	treasury?: string
+	/** Flat collateral fee for settling into an existing sub-account. */
 	depositFee?: string
+	/** Flat collateral fee, charged instead of depositFee, when settlement creates the sub-account; defaults to depositFee. */
+	newAccountDepositFee?: string
 	/** Flat collateral fee per wallet deployment; defaults to zero. */
 	walletCreationFee?: string
 	minimumDeposit?: string

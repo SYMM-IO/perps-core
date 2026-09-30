@@ -1235,6 +1235,8 @@ async function repairGaslessLayer(
 	const resolved = {
 		...configured,
 		...snapshot.gaslessFeeState,
+		// Legacy GaslessLayers charge depositFee on both settlement paths.
+		newAccountDepositFee: snapshot.gaslessFeeState.depositFee,
 		relayers,
 	}
 	const result = await deployAndConfigureGaslessLayer(hre, checkpoint, resolved, deployer, null)
@@ -1607,7 +1609,11 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 	const deployedConfig =
 		(report.stages.gaslessLayerReplacement as any)?.resolvedConfig || (report.stages.gaslessLayerDeployment as any)?.resolvedConfig
 	if (!deployedConfig) throw new Error("GaslessLayer resolved deployment config is missing from the standard report")
-	const resolved = { ...deployedConfig, ...legacyState.gaslessFeeState }
+	const resolved = {
+		...deployedConfig,
+		...legacyState.gaslessFeeState,
+		newAccountDepositFee: legacyState.gaslessFeeState.depositFee,
+	}
 	const gaslessState = await inspectGaslessLayerPostState(ethers, {
 		...resolved,
 		address: report.addresses.newGaslessLayer,

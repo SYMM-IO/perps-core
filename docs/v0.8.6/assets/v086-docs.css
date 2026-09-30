@@ -45,13 +45,16 @@
 	--bg-raised: hsl(0 0% 5%);
 	--surface: hsl(0 0% 6.5%);
 	--surface-soft: hsl(0 0% 10%);
-	--surface-tint: hsl(0 0% 8%);
+	/* Kept only as an alias for older rules; new rules use --surface. */
 	--ink: hsl(0 20% 95%);
-	--ink-soft: hsl(0 8% 78%);
-	--muted: hsl(0 3% 58%);
-	--faint: hsl(0 3% 53%);
+	--ink-soft: hsl(0 8% 82%);
+	--muted: hsl(0 3% 71%);
+	/* One label step: --faint is retired into --muted; the name stays for existing uses. */
+	--faint: var(--muted);
 	--line: hsl(0 3% 50% / 0.26);
 	--line-strong: hsl(0 3% 62% / 0.44);
+	/* Control boundaries need 3:1 against the page; hairlines stay on --line. */
+	--line-control: hsl(0 3% 40%);
 	--accent: hsl(5 100% 72%);
 	--accent-strong: hsl(5 100% 78%);
 	--accent-dim: hsl(5 100% 72% / 0.12);
@@ -59,15 +62,27 @@
 	--on-accent: hsl(0 33% 4%);
 	--blue: hsl(199 89% 68%);
 	--amber: hsl(43 96% 62%);
-	--rose: hsl(0 82% 68%);
+	--rose: hsl(345 85% 70%);
 	--green: hsl(158 64% 52%);
-	--violet: hsl(258 90% 76%);
+
+	/* Roles. Components use these, never the hue names above. */
+	--focus-ring: var(--accent);
+	--status-danger: var(--rose);
+	--status-warning: var(--amber);
+	--status-success: var(--green);
+	--status-info: var(--blue);
+	/* Text-grade status roles for labels; borders keep the plain role. */
+	--status-danger-text: hsl(345 90% 80%);
+	--status-warning-text: var(--status-warning);
+	--status-info-text: var(--status-info);
+	--shadow-float: 0 0 0 1px hsl(0 0% 100% / 0.08), 0 6px 16px -4px hsl(0 0% 0% / 0.6);
+	--shadow-sheet: 18px 0 50px hsl(0 0% 0% / 0.34);
 
 	--code-bg: hsl(0 0% 9%);
 	--code-ink: hsl(0 12% 92%);
 	--code-line: hsl(0 3% 50% / 0.24);
 	--code-toolbar-bg: hsl(0 0% 6%);
-	--code-toolbar-ink: hsl(0 3% 58%);
+	--code-toolbar-ink: hsl(0 3% 71%);
 	--code-button-bg: hsl(0 0% 10%);
 	--code-button-hover: hsl(0 0% 14%);
 	--code-keyword: hsl(5 100% 74%);
@@ -96,6 +111,38 @@
 	--sans: Manrope, ui-sans-serif, system-ui, sans-serif;
 	--display: Inter, ui-sans-serif, system-ui, sans-serif;
 	--mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+	/* Diagram labels: the neutral UI face at a fixed size, so every chart reads alike.
+	   Mermaid lays out with these values, so change them here, not in CSS overrides. */
+	--diagram-font: var(--display);
+	--diagram-font-size: 14px;
+
+	/* Type scale, in rem so the reader's browser text size applies. */
+	--text-label: 0.6875rem;
+	--text-caption: 0.8125rem;
+	--text-ui: 0.875rem;
+	--text-body: 1rem;
+	--text-h3: 1.0625rem;
+	--text-h2: 1.5rem;
+	--weight-regular: 400;
+	--weight-medium: 500;
+	--weight-strong: 650;
+	--weight-bold: 700;
+
+	/* Spacing scale. */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 24px;
+	--space-6: 32px;
+	--space-7: 48px;
+	--space-8: 64px;
+
+	/* Motion. */
+	--ease-out: cubic-bezier(0.3, 0.8, 0.3, 1);
+	--dur-hover: 130ms;
+	--dur-enter: 180ms;
+	--dur-exit: 130ms;
 }
 
 [data-theme="light"] {
@@ -104,13 +151,13 @@
 	--bg-raised: hsl(0 0% 100%);
 	--surface: hsl(0 0% 100%);
 	--surface-soft: hsl(0 12% 95%);
-	--surface-tint: hsl(20 20% 98%);
 	--ink: hsl(0 33% 6%);
 	--ink-soft: hsl(0 8% 22%);
 	--muted: hsl(0 3% 42%);
-	--faint: hsl(0 3% 44%);
+	--faint: var(--muted);
 	--line: hsl(0 8% 20% / 0.14);
 	--line-strong: hsl(0 8% 20% / 0.28);
+	--line-control: hsl(0 3% 55%);
 	--accent: hsl(5 74% 45%);
 	--accent-strong: hsl(5 80% 37%);
 	--accent-dim: hsl(5 100% 70% / 0.1);
@@ -118,9 +165,19 @@
 	--on-accent: hsl(0 0% 100%);
 	--blue: hsl(199 84% 38%);
 	--amber: hsl(38 92% 34%);
-	--rose: hsl(348 78% 44%);
+	--rose: hsl(338 72% 42%);
 	--green: hsl(158 64% 30%);
-	--violet: hsl(258 62% 48%);
+
+	--focus-ring: var(--accent);
+	--status-danger: var(--rose);
+	--status-warning: var(--amber);
+	--status-success: var(--green);
+	--status-info: var(--blue);
+	--status-danger-text: var(--status-danger);
+	--status-warning-text: hsl(36 92% 28%);
+	--status-info-text: hsl(199 84% 32%);
+	--shadow-float: 0 0 0 1px hsl(0 8% 20% / 0.1), 0 6px 16px -6px hsl(0 8% 20% / 0.22);
+	--shadow-sheet: 18px 0 40px hsl(0 8% 20% / 0.16);
 
 	--code-bg: hsl(20 14% 95.5%);
 	--code-ink: hsl(0 20% 14%);
@@ -153,7 +210,6 @@
 }
 
 html {
-	scroll-behavior: smooth;
 	overflow-x: clip;
 	-moz-osx-font-smoothing: grayscale;
 }
@@ -163,7 +219,7 @@ body {
 	background: var(--bg);
 	color: var(--ink);
 	font-family: var(--sans);
-	font-size: 15px;
+	font-size: 0.9375rem;
 	line-height: 1.62;
 	font-feature-settings: "cv05", "ss01";
 	overflow-x: clip;
@@ -184,6 +240,13 @@ a:hover {
 	color: var(--accent-strong);
 	text-decoration: underline;
 	text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+/* Links inside running text are underlined at rest: color alone does not set them
+   apart from the prose around them. */
+.doc-article :is(p, li, td, th, dd, blockquote, figcaption, .callout) a:not(.heading-anchor):not(.button) {
+	text-decoration: underline;
+	text-decoration-color: currentColor;
 }
 
 button,
@@ -207,7 +270,7 @@ button {
 }
 
 :focus-visible {
-	outline: 2px solid var(--accent);
+	outline: 2px solid var(--focus-ring);
 	outline-offset: 2px;
 }
 
@@ -234,7 +297,6 @@ button {
 	color: var(--on-accent);
 	font-weight: 700;
 	transform: translateY(-160%);
-	transition: transform 160ms ease;
 }
 
 .skip-link:focus {
@@ -255,15 +317,15 @@ button {
 	background: transparent;
 	color: var(--ink-soft);
 	font-family: var(--display);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	font-weight: 600;
 	line-height: 1.2;
 	text-decoration: none;
 	white-space: nowrap;
 	transition:
-		border-color 140ms ease,
-		background 140ms ease,
-		color 140ms ease;
+		border-color var(--dur-hover) ease,
+		background var(--dur-hover) ease,
+		color var(--dur-hover) ease;
 }
 
 .button:hover {
@@ -299,8 +361,8 @@ button {
 }
 
 .control-icon {
-	width: 15px;
-	height: 15px;
+	width: 16px;
+	height: 16px;
 	flex: 0 0 auto;
 	color: currentColor;
 	fill: none;
@@ -310,23 +372,32 @@ button {
 	stroke-linejoin: round;
 }
 
+/* Icons that sit beside semibold labels match the label's stem weight. */
+.button .control-icon,
+.code-actions .control-icon,
+.diagram-open-button .control-icon {
+	stroke-width: 2;
+}
+
 input[type="search"],
 input[type="number"],
+input[type="text"],
 select {
 	width: 100%;
 	min-height: 36px;
-	border: 1px solid var(--line);
+	border: 1px solid var(--line-control);
 	border-radius: var(--radius);
 	background: var(--bg-raised);
 	color: var(--ink);
 	padding: 7px 10px;
 	font-family: var(--mono);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	font-variant-numeric: tabular-nums;
 }
 
 input[type="search"]:focus-visible,
 input[type="number"]:focus-visible,
+input[type="text"]:focus-visible,
 select:focus-visible {
 	border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
 }
@@ -343,7 +414,7 @@ input::placeholder {
 	margin: 0;
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
@@ -358,40 +429,41 @@ h6 {
 	margin: 0;
 	color: var(--ink);
 	font-family: var(--display);
-	font-weight: 640;
+	font-weight: var(--weight-strong);
 	letter-spacing: -0.022em;
 	line-height: 1.14;
 }
 
 h1 {
 	max-width: 22ch;
-	font-size: 44px;
+	font-size: 2.75rem;
 	letter-spacing: -0.034em;
 }
 
 h2 {
-	font-size: 24px;
+	font-size: var(--text-h2);
 }
 
 h3 {
-	font-size: 17px;
+	font-size: var(--text-h3);
 }
 
 h4 {
-	font-size: 15px;
+	font-size: 0.9375rem;
 }
 
 p {
 	margin: 0;
 }
 
-/* Inline code: a warm coral-tinted chip so identifiers read as protocol terms. */
+/* Inline code: neutral code ink. Coral stays reserved for links, so an unlinked
+   identifier never reads as one. */
 code {
 	border: 0;
 	border-radius: 0;
 	background: transparent;
 	padding: 0;
-	color: color-mix(in srgb, var(--accent) 58%, var(--ink));
+	color: var(--code-ink);
 	font-family: var(--mono);
 	font-size: 0.88em;
 }
@@ -401,6 +473,13 @@ code {
    hero lede and function cards mark up their code the same way. */
 .tok-fn {
 	color: var(--code-keyword);
+}
+
+/* Outside a code block a function name is prose, not syntax: weight, not the link hue. */
+.doc-article :not(pre) > code .tok-fn,
+:not(pre) > code .tok-fn {
+	color: inherit;
+	font-weight: 600;
 }
 
 .tok-arg {
@@ -416,7 +495,7 @@ code {
 }
 
 .doc-article :not(pre) > code {
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .doc-article :where(p, li) code {
@@ -433,7 +512,7 @@ code {
 	background: transparent;
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 }
 
 /* --- Index page ---------------------------------------------------------- */
@@ -507,6 +586,14 @@ code {
 	background: url("symmio-mark.svg") center / contain no-repeat;
 	color: transparent;
 	font-size: 0;
+	/* The tile is near-black, so it needs its own edge against a dark page. */
+	outline: 1px solid hsl(0 0% 0% / 0.1);
+	outline-offset: -1px;
+}
+
+:root:not([data-theme="light"]) .brand-mark,
+[data-theme="dark"] .brand-mark {
+	outline-color: hsl(0 0% 100% / 0.1);
 }
 
 .top-actions,
@@ -540,9 +627,9 @@ code {
 
 .index-page .site-hero h1 {
 	max-width: 15ch;
-	font-size: clamp(46px, 6vw, 78px);
-	font-weight: 680;
-	letter-spacing: -0.045em;
+	font-size: clamp(2.875rem, 6vw, 4.875rem);
+	font-weight: var(--weight-strong);
+	letter-spacing: -0.025em;
 	line-height: 0.96;
 }
 
@@ -555,21 +642,10 @@ code {
 	letter-spacing: -0.02em;
 }
 
-.eyebrow::before,
-.section-heading .eyebrow::before {
-	content: "";
-	display: inline-block;
-	width: 14px;
-	height: 1px;
-	margin: 0 8px 3.5px 0;
-	background: var(--accent);
-	vertical-align: middle;
-}
-
 .hero-copy {
 	margin-top: 20px;
 	color: var(--muted);
-	font-size: 16px;
+	font-size: var(--text-body);
 	line-height: 1.6;
 	text-wrap: pretty;
 }
@@ -590,7 +666,7 @@ code {
 }
 
 .section-heading h2 {
-	font-size: 20px;
+	font-size: 1.25rem;
 	font-weight: 600;
 }
 
@@ -620,7 +696,7 @@ code {
 	border-bottom: 1px solid var(--line);
 	color: var(--ink);
 	text-decoration: none;
-	transition: background 130ms ease;
+	transition: background var(--dur-hover) ease;
 }
 
 .doc-list-item::before {
@@ -629,10 +705,11 @@ code {
 	inset: 0 -12px;
 	z-index: -1;
 	background: transparent;
-	transition: background 130ms ease;
+	transition: background var(--dur-hover) ease;
 }
 
-/* Hover: a coral rule wipes in from the left edge of the row. */
+/* Hover: a coral rule fades in on the row's leading edge. Fine pointers only, so
+   a tap on touch does not flash it just before the page navigates. */
 .doc-list-item::after {
 	content: "";
 	position: absolute;
@@ -641,13 +718,14 @@ code {
 	bottom: -1px;
 	width: 2px;
 	background: var(--accent);
-	transform: scaleY(0);
-	transform-origin: 50% 0;
-	transition: transform 200ms cubic-bezier(0.3, 0.8, 0.3, 1);
+	opacity: 0;
+	transition: opacity var(--dur-hover) ease;
 }
 
-.doc-list-item:hover::after {
-	transform: scaleY(1);
+@media (hover: hover) and (pointer: fine) {
+	.doc-list-item:hover::after {
+		opacity: 1;
+	}
 }
 
 .doc-list-item:hover {
@@ -666,10 +744,10 @@ code {
 .doc-list-index {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	font-variant-numeric: tabular-nums;
 	letter-spacing: 0.06em;
-	transition: color 130ms ease;
+	transition: color var(--dur-hover) ease;
 }
 
 .doc-list-item:hover .doc-list-index {
@@ -698,7 +776,7 @@ code {
 	flex: 0 0 4px;
 	border-radius: 999px;
 	background: currentColor;
-	transition: background 130ms ease;
+	transition: background var(--dur-hover) ease;
 }
 
 .doc-list-item:hover .category::before,
@@ -709,16 +787,16 @@ code {
 .doc-list-main strong {
 	color: var(--ink);
 	font-family: var(--display);
-	font-size: 17px;
+	font-size: var(--text-h3);
 	font-weight: 600;
 	letter-spacing: -0.018em;
 	line-height: 1.25;
-	transition: color 130ms ease;
+	transition: color var(--dur-hover) ease;
 }
 
 .doc-list-main > span:last-child {
 	color: var(--muted);
-	font-size: 13.5px;
+	font-size: var(--text-ui);
 	line-height: 1.55;
 	text-wrap: pretty;
 }
@@ -740,7 +818,7 @@ code {
 	border-bottom: 1px solid var(--line);
 	color: var(--ink);
 	text-decoration: none;
-	transition: background 130ms ease;
+	transition: background var(--dur-hover) ease;
 }
 
 /* These cards carry the same chapter numbers their pages announce, so the
@@ -773,13 +851,14 @@ code {
 	bottom: -1px;
 	width: 2px;
 	background: var(--accent);
-	transform: scaleY(0);
-	transform-origin: 50% 0;
-	transition: transform 200ms cubic-bezier(0.3, 0.8, 0.3, 1);
+	opacity: 0;
+	transition: opacity var(--dur-hover) ease;
 }
 
-.minor-improvement-item:hover::after {
-	transform: scaleY(1);
+@media (hover: hover) and (pointer: fine) {
+	.minor-improvement-item:hover::after {
+		opacity: 1;
+	}
 }
 
 .minor-improvement-item .category {
@@ -789,16 +868,16 @@ code {
 .minor-improvement-item strong {
 	color: var(--ink);
 	font-family: var(--display);
-	font-size: 14.5px;
+	font-size: var(--text-ui);
 	font-weight: 600;
 	letter-spacing: -0.014em;
 	line-height: 1.3;
-	transition: color 130ms ease;
+	transition: color var(--dur-hover) ease;
 }
 
 .minor-improvement-item > span:last-child {
 	color: var(--muted);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	line-height: 1.5;
 	text-wrap: pretty;
 }
@@ -811,7 +890,7 @@ code {
 	border-top: 1px solid var(--line);
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	letter-spacing: 0.03em;
 }
 
@@ -845,13 +924,13 @@ code {
 .change-meta span {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 }
 
 .change-meta strong {
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
@@ -912,14 +991,14 @@ code {
 	grid-template-columns: 30px minmax(0, 1fr);
 	gap: 8px;
 	align-items: baseline;
-	font-size: 13.5px;
+	font-size: var(--text-ui);
 }
 
 .path-card li span,
 .mini-stats {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 }
 
 .doc-card-top {
@@ -930,7 +1009,7 @@ code {
 }
 
 .doc-card h2 {
-	font-size: 18px;
+	font-size: 1.125rem;
 }
 
 .doc-card h2 a {
@@ -959,7 +1038,7 @@ code {
 
 .metric span {
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
 }
@@ -968,7 +1047,7 @@ code {
 	display: block;
 	margin-top: 2px;
 	font-family: var(--mono);
-	font-size: 17px;
+	font-size: var(--text-h3);
 	font-weight: 500;
 	font-variant-numeric: tabular-nums;
 }
@@ -979,7 +1058,7 @@ code {
 	min-width: 260px;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 }
@@ -1022,12 +1101,12 @@ code {
 	padding: 5px 9px;
 	border-radius: var(--radius-sm);
 	color: var(--muted);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 	line-height: 1.35;
 	text-decoration: none;
 	transition:
-		color 120ms ease,
-		background 120ms ease;
+		color var(--dur-hover) ease,
+		background var(--dur-hover) ease;
 }
 
 .toc-link:hover {
@@ -1056,7 +1135,7 @@ code {
 	padding-left: 14px;
 	border-left: 1px solid var(--line);
 	border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-	font-size: 12px;
+	font-size: 0.75rem;
 }
 
 .toc-link.is-active {
@@ -1146,9 +1225,9 @@ code {
 
 .reader-title-row h1 {
 	max-width: none;
-	font-size: clamp(34px, 4vw, 52px);
-	font-weight: 660;
-	letter-spacing: -0.04em;
+	font-size: clamp(2.125rem, 4vw, 3.25rem);
+	font-weight: var(--weight-strong);
+	letter-spacing: -0.025em;
 	line-height: 1.02;
 	text-wrap: balance;
 }
@@ -1157,7 +1236,7 @@ code {
 	width: 100%;
 	max-width: none;
 	margin-top: 18px;
-	font-size: 16px;
+	font-size: var(--text-body);
 	line-height: 1.6;
 	overflow-wrap: break-word;
 	text-wrap: pretty;
@@ -1186,7 +1265,7 @@ code {
 	max-width: none;
 	padding-bottom: 18px;
 	border-bottom: 0;
-	font-size: 30px;
+	font-size: 1.875rem;
 }
 
 .doc-article h1::after {
@@ -1205,10 +1284,10 @@ code {
 	/* The rule sits at the top of this box, so the margin is the space above it
 	   and the padding the space below. Keep the two close, or it reads as
 	   belonging to neither section. */
-	margin-top: 48px;
-	padding-top: 40px;
+	margin-top: var(--space-6);
+	padding-top: var(--space-6);
 	border-top: 0;
-	font-size: 24px;
+	font-size: var(--text-h2);
 	scroll-margin-top: calc(var(--header-h, 57px) + 20px);
 	text-wrap: balance;
 }
@@ -1237,7 +1316,7 @@ code {
 	width: 34px;
 	height: 2px;
 	margin-top: 13px;
-	background: var(--accent);
+	background: var(--line-strong);
 	content: "";
 }
 
@@ -1267,30 +1346,27 @@ code {
 	gap: 10px;
 	align-items: center;
 	color: var(--ink);
-	font-size: 17px;
-	font-weight: 660;
+	font-size: var(--text-h3);
+	font-weight: var(--weight-strong);
 }
 
+/* Headings carry no status-like marker: a coral bar here read as a risk callout. */
 .doc-article h3::before {
-	width: 2px;
-	height: 16px;
-	flex: 0 0 2px;
-	background: var(--accent);
-	content: "";
+	display: none;
 }
 
 .doc-article h4 {
 	padding-left: 12px;
 	border-left: 1px solid var(--line-strong);
 	color: var(--ink-soft);
-	font-size: 14.5px;
-	font-weight: 650;
+	font-size: var(--text-body);
+	font-weight: var(--weight-strong);
 }
 
 .doc-article p,
 .doc-article li {
 	color: var(--ink-soft);
-	font-size: 16px;
+	font-size: var(--text-body);
 	line-height: 1.62;
 	overflow-wrap: break-word;
 	text-wrap: pretty;
@@ -1307,6 +1383,20 @@ code {
 
 .doc-article li + li {
 	margin-top: 5px;
+}
+
+/* Manrope ships no italic, so emphasis is carried by weight, not a synthetic slant. */
+.doc-article em {
+	font-style: normal;
+	font-weight: 600;
+	color: var(--ink);
+}
+
+/* Inside articles an eyebrow stays a label; the prose paragraph rule must not grow it. */
+.doc-article .eyebrow {
+	color: var(--muted);
+	font-size: var(--text-label);
+	line-height: 1.4;
 }
 
 .doc-article blockquote {
@@ -1335,7 +1425,7 @@ code {
 	border-top: 1px dashed var(--line-strong);
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	cursor: auto;
@@ -1371,7 +1461,7 @@ code {
 	background: var(--code-bg);
 	color: var(--code-ink);
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 0.75rem;
 	line-height: 1.6;
 	text-align: left;
 	white-space: pre;
@@ -1391,26 +1481,34 @@ code {
 	background: transparent;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	line-height: 1;
+	text-decoration: none;
 	vertical-align: middle;
 	opacity: 0;
 	transition:
-		color 140ms ease,
-		opacity 140ms ease;
+		color var(--dur-hover) ease,
+		opacity var(--dur-hover) ease;
 }
 
-.doc-article h2:hover .heading-anchor,
-.doc-article h3:hover .heading-anchor,
 .heading-anchor:focus-visible {
 	opacity: 1;
 }
 
-.heading-anchor:hover {
-	color: var(--accent);
+@media (hover: hover) {
+	.doc-article h2:hover .heading-anchor,
+	.doc-article h3:hover .heading-anchor {
+		opacity: 1;
+	}
+
+	.heading-anchor:hover {
+		color: var(--accent);
+		text-decoration: none;
+	}
 }
 
-/* Callouts: no box. A single left rule carries the status. */
+/* Callouts: no box. A left rule plus a printed type label carry the status, so the
+   type never depends on telling the rule colors apart. */
 .callout {
 	margin: 24px 0;
 	padding: 2px 0 2px 18px;
@@ -1419,7 +1517,7 @@ code {
 	border-radius: 0;
 	background: transparent;
 	color: var(--ink-soft);
-	font-size: 14px;
+	font-size: var(--text-ui);
 }
 
 .callout strong {
@@ -1427,19 +1525,67 @@ code {
 	font-weight: 700;
 }
 
+.callout::before {
+	display: block;
+	margin-bottom: var(--space-1);
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: var(--text-label);
+	font-weight: 500;
+	letter-spacing: 0.12em;
+	line-height: 1.4;
+	text-transform: uppercase;
+}
+
 .callout-risk {
-	border-left-color: var(--rose);
+	border-left-color: var(--status-danger);
+}
+
+.callout-risk::before {
+	content: "Risk";
+	color: var(--status-danger-text);
+}
+
+.callout-warning,
+.callout-security {
+	border-left-color: var(--status-warning);
+}
+
+.callout-warning::before {
+	content: "Warning";
+	color: var(--status-warning-text);
+}
+
+.callout-security::before {
+	content: "Security";
+	color: var(--status-warning-text);
 }
 
 .callout-note {
-	border-left-color: var(--blue);
+	border-left-color: var(--status-info);
+}
+
+.callout-note::before {
+	content: "Note";
+	color: var(--status-info-text);
 }
 
 .callout-important,
 .callout-invariant,
-.callout-decision,
-.callout-security {
-	border-left-color: var(--amber);
+.callout-decision {
+	border-left-color: var(--ink-soft);
+}
+
+.callout-important::before {
+	content: "Important";
+}
+
+.callout-invariant::before {
+	content: "Invariant";
+}
+
+.callout-decision::before {
+	content: "Decision";
 }
 
 /* Tables */
@@ -1453,10 +1599,18 @@ code {
 	background: transparent;
 }
 
+/* Overflowing tables and code blocks are made focusable by the script so the
+   keyboard can scroll them. */
+.table-wrap:focus-visible,
+.code-frame pre:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
 table {
 	width: 100%;
 	border-collapse: collapse;
-	font-size: 13px;
+	font-size: var(--text-caption);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1465,7 +1619,7 @@ table caption {
 	border-bottom: 1px solid var(--line);
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	text-align: left;
 }
 
@@ -1482,7 +1636,7 @@ th {
 	border-bottom-color: var(--line-strong);
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
@@ -1519,10 +1673,13 @@ tbody tr:last-child > td {
 
 th code,
 td code {
-	color: color-mix(in srgb, var(--accent) 46%, var(--ink));
+	color: var(--code-ink);
 	background: transparent;
 }
 
+/* Identifiers in cells keep their shape; a narrow table scrolls instead. */
+th code,
+td code,
 .enum-table td:nth-child(2) code {
 	overflow-wrap: normal;
 	white-space: nowrap;
@@ -1561,14 +1718,16 @@ td code {
 	background: transparent;
 }
 
-a code {
-	color: var(--accent);
+a code,
+th a code,
+td a code {
+	color: var(--link);
 	background: transparent;
 }
 
 .doc-article pre code {
 	padding: 2px 18px 16px;
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 	line-height: 1.7;
 }
 
@@ -1582,13 +1741,13 @@ a code {
 	background: transparent;
 	color: var(--code-toolbar-ink);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 }
 
 .code-lang {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 9.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.18em;
 	text-transform: uppercase;
 }
@@ -1597,19 +1756,17 @@ a code {
 	color: var(--faint);
 }
 
+/* Copy and Wrap stay fully visible; low emphasis comes from the toolbar ink alone. */
 .code-actions {
-	opacity: 0;
-	transition: opacity 140ms ease;
-}
-
-.code-frame:hover .code-actions,
-.code-actions:focus-within {
+	display: flex;
+	gap: var(--space-2);
 	opacity: 1;
 }
 
-.code-actions {
-	display: flex;
-	gap: 4px;
+@media (hover: none) {
+	.heading-anchor {
+		opacity: 1;
+	}
 }
 
 .doc-article pre::-webkit-scrollbar-thumb {
@@ -1629,7 +1786,7 @@ a code {
 	background: transparent;
 	color: var(--code-toolbar-ink);
 	font-family: var(--display);
-	font-size: 11.5px;
+	font-size: 0.75rem;
 	font-weight: 600;
 }
 
@@ -1639,42 +1796,86 @@ a code {
 	color: var(--code-ink);
 }
 
-.code-actions .control-icon {
-	width: 13px;
-	height: 13px;
+/* Copy feedback: both icons are rendered and stacked; .is-copied swaps them. */
+.copy-icons {
+	display: inline-grid;
+	flex: 0 0 auto;
+}
+
+.copy-icons > * {
+	display: inline-flex;
+	grid-area: 1 / 1;
+}
+
+.copy-icons .icon-done {
+	opacity: 0;
+}
+
+.is-copied .copy-icons .icon-default {
+	opacity: 0;
+}
+
+.is-copied .copy-icons .icon-done {
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.copy-icons > * {
+		transition:
+			opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+			scale 200ms cubic-bezier(0.2, 0, 0, 1),
+			filter 200ms cubic-bezier(0.2, 0, 0, 1);
+	}
+
+	.copy-icons .icon-done,
+	.is-copied .copy-icons .icon-default {
+		scale: 0.25;
+		filter: blur(4px);
+	}
+
+	.is-copied .copy-icons .icon-done {
+		scale: 1;
+		filter: blur(0);
+	}
 }
 
 .code-frame.is-wrapped pre {
 	white-space: pre-wrap;
 }
 
-.language-solidity .tok-keyword {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-keyword {
 	color: var(--code-keyword);
 }
 
-.language-solidity .tok-type {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-type {
 	color: var(--code-type);
 }
 
-.language-solidity .tok-symbol {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-symbol {
 	color: var(--code-symbol);
 }
 
-.language-solidity .tok-string {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-string {
 	color: var(--code-string);
 }
 
-.language-solidity .tok-number {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-number {
 	color: var(--code-number);
 }
 
-.language-solidity .tok-comment {
+:is(.language-solidity, .language-typescript, .language-javascript, .language-ts, .language-js) .tok-comment {
 	color: var(--code-comment);
-	font-style: italic;
+}
+
+.tok-comment {
+	font-style: normal;
 }
 
 /* Interactive panels */
+/* Tools adapt to their own width, not the viewport: the resizable rail can leave a
+   narrow reader column on a wide screen. */
 .tool-panel {
+	container: tool / inline-size;
 	margin: 28px 0;
 	border: 0;
 	border-top: 1px solid var(--line);
@@ -1686,7 +1887,7 @@ a code {
 .interactive-title span {
 	color: var(--code-toolbar-ink);
 	font-family: var(--mono);
-	font-size: 10px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
@@ -1696,7 +1897,7 @@ a code {
 	margin-left: auto;
 	color: var(--code-toolbar-ink);
 	font-family: var(--mono);
-	font-size: 10px;
+	font-size: var(--text-label);
 }
 
 /* --- Interactive tools --------------------------------------------------- */
@@ -1718,15 +1919,29 @@ a code {
 	align-items: baseline;
 }
 
+/* Title and description stack on the same start edge as the inputs below. */
+.tool-heading {
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--space-1);
+}
+
 .tool-heading h3,
 .tool-heading h4 {
 	margin-top: 4px;
-	font-size: 16px;
+	font-size: var(--text-body);
+}
+
+.doc-article .tool-heading h3::before {
+	display: none;
+}
+
+.tool-reset {
+	justify-self: start;
 }
 
 .tool-heading p:last-child {
 	color: var(--muted);
-	font-size: 13px;
+	font-size: var(--text-caption);
 }
 
 .tool-grid {
@@ -1740,19 +1955,20 @@ a code {
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* Three spacing levels on a 2x ratio: fields within a group, groups, then the
+   larger gap that marks where the inputs end and the result begins. */
 .tool-input-groups {
 	display: grid;
-	gap: 16px;
-	padding: 14px 0;
+	gap: var(--space-5);
+	padding: var(--space-4) 0 var(--space-6);
 }
 
 .tool-input-group {
 	display: grid;
-	gap: 10px;
+	gap: var(--space-2);
 	min-width: 0;
-	padding: 0 0 0 16px;
+	padding: 0;
 	border: 0;
-	border-left: 1px solid var(--line);
 	border-radius: 0;
 	background: transparent;
 }
@@ -1760,7 +1976,7 @@ a code {
 .tool-input-group > strong {
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
@@ -1775,17 +1991,72 @@ a code {
 	gap: 5px;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
 
+/* Identifier labels keep their camelCase. */
+.tool-grid label code {
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: inherit;
+}
+
+.tool-grid [aria-invalid="true"] {
+	border-color: var(--status-danger);
+}
+
+.tool-field-error {
+	color: var(--status-danger-text);
+	font-family: var(--sans);
+	font-size: var(--text-label);
+	letter-spacing: 0;
+	text-transform: none;
+}
+
 .tool-result {
 	display: grid;
-	gap: 12px;
+	gap: var(--space-5);
 	padding: 0 0 14px;
 	color: var(--ink-soft);
-	font-size: 13.5px;
+	font-size: var(--text-ui);
+	transition: opacity var(--dur-hover) ease;
+}
+
+/* While a field is being retyped the last good result stays, dimmed. */
+.tool-result.is-stale,
+.timeline-track.is-stale {
+	opacity: 0.6;
+}
+
+/* Readout values stay in text ink, before and after the first recompute. */
+.tool-result :not(pre) > code span {
+	color: inherit;
+}
+
+.tool-verdict {
+	margin: 0;
+}
+
+.tool-verdict small {
+	display: block;
+	color: var(--faint);
+	font-family: var(--mono);
+	font-size: var(--text-label);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.tool-verdict strong {
+	display: block;
+	margin-top: var(--space-1);
+	color: var(--ink);
+	font-family: var(--mono);
+	font-size: 1.375rem;
+	font-weight: 600;
+	line-height: 1.2;
+	overflow-wrap: anywhere;
 }
 
 .result-metrics,
@@ -1798,6 +2069,7 @@ a code {
 
 .timeline-track {
 	margin: 0 0 14px;
+	transition: opacity var(--dur-hover) ease;
 }
 
 .result-metrics span,
@@ -1813,7 +2085,7 @@ a code {
 	display: block;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10px;
+	font-size: var(--text-label);
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
 }
@@ -1823,12 +2095,17 @@ a code {
 	display: block;
 	margin-top: 4px;
 	color: var(--ink);
-	font-family: var(--mono);
-	font-size: 15px;
-	font-weight: 500;
-	font-variant-numeric: tabular-nums;
+	font-family: var(--sans);
+	font-size: var(--text-body);
+	font-weight: 600;
+	font-variant-numeric: proportional-nums;
 	line-height: 1.2;
 	overflow-wrap: anywhere;
+}
+
+.result-metrics strong code,
+.timeline-item strong code {
+	font-size: 0.88em;
 }
 
 .timeline-item small {
@@ -1836,7 +2113,7 @@ a code {
 	margin-top: 5px;
 	color: var(--muted);
 	font-family: var(--sans);
-	font-size: 12px;
+	font-size: 0.75rem;
 	line-height: 1.4;
 	text-transform: none;
 	letter-spacing: 0;
@@ -1873,7 +2150,7 @@ body.doc-page .doc-article > p.adjustment-timeline-intro {
 	display: block;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 0.75rem;
 	font-weight: 600;
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
@@ -1888,8 +2165,8 @@ body.doc-page .doc-article > p.adjustment-timeline-intro {
 	margin: 4px 0 2px;
 	color: var(--ink);
 	font-family: var(--display);
-	font-size: clamp(19px, 2vw, 22px);
-	font-weight: 700;
+	font-size: var(--text-body);
+	font-weight: var(--weight-strong);
 	line-height: 1.15;
 	letter-spacing: -0.02em;
 	text-wrap: balance;
@@ -1898,7 +2175,7 @@ body.doc-page .doc-article > p.adjustment-timeline-intro {
 body.doc-page .doc-article .adjustment-sequence-header p {
 	margin: 0;
 	color: var(--muted);
-	font-size: 14px;
+	font-size: var(--text-ui);
 	line-height: 1.5;
 	text-wrap: pretty;
 	-webkit-hyphens: none;
@@ -1921,8 +2198,8 @@ body.doc-page .doc-article .adjustment-sequence-header p {
 	margin: 0;
 	color: var(--ink);
 	font-family: var(--display);
-	font-size: 16px;
-	font-weight: 650;
+	font-size: var(--text-body);
+	font-weight: var(--weight-strong);
 	line-height: 1.2;
 	letter-spacing: -0.01em;
 }
@@ -1930,7 +2207,7 @@ body.doc-page .doc-article .adjustment-sequence-header p {
 body.doc-page .doc-article .adjustment-continuation-header p {
 	margin: 0;
 	color: var(--muted);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	line-height: 1.5;
 	text-wrap: pretty;
 	-webkit-hyphens: none;
@@ -1970,7 +2247,7 @@ body.doc-page .doc-article .adjustment-continuation-header p {
 .adjustment-event > span {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	font-weight: 600;
 	letter-spacing: 0.09em;
 	text-transform: uppercase;
@@ -1986,7 +2263,7 @@ body.doc-page .doc-article .adjustment-continuation-header p {
 	background: transparent;
 	color: var(--ink);
 	font-family: var(--mono);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	font-weight: 600;
 	line-height: 1.4;
 	overflow-wrap: normal;
@@ -2056,7 +2333,7 @@ body.doc-page .doc-article .adjustment-event > code {
 	border: 0;
 	background: transparent;
 	color: var(--ink-soft);
-	font-size: 12px;
+	font-size: 0.75rem;
 	font-weight: 600;
 	letter-spacing: 0.02em;
 }
@@ -2068,7 +2345,7 @@ body.doc-page .doc-article .adjustment-event > code {
 	align-items: center;
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 0.75rem;
 	letter-spacing: 0.01em;
 }
 
@@ -2086,13 +2363,13 @@ body.doc-page .doc-article .adjustment-event > code {
 }
 
 .adjustment-tick.is-frozen .adjustment-status::before {
-	background: color-mix(in srgb, var(--amber) 72%, var(--faint));
+	background: color-mix(in srgb, var(--status-warning) 72%, var(--faint));
 }
 
 body.doc-page .doc-article .adjustment-interval p {
 	margin: 7px 0 0;
 	color: var(--muted);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	line-height: 1.5;
 	text-wrap: pretty;
 	-webkit-hyphens: none;
@@ -2175,11 +2452,11 @@ body.doc-page .doc-article .adjustment-interval p {
 }
 
 .option-card.is-available {
-	border-left-color: var(--green);
+	border-left-color: var(--status-success);
 }
 
 .option-card.is-unavailable {
-	border-left-color: var(--amber);
+	border-left-color: var(--status-warning);
 }
 
 .option-card-title {
@@ -2192,32 +2469,35 @@ body.doc-page .doc-article .adjustment-interval p {
 .option-card-title span {
 	color: var(--ink);
 	font-family: var(--mono);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 	font-weight: 500;
 }
 
 .option-card-title strong {
-	color: var(--green);
+	color: var(--status-success);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	font-weight: 500;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
 
 .option-card.is-unavailable .option-card-title strong {
-	color: var(--amber);
+	color: var(--status-warning-text);
 }
 
 .option-card p {
 	color: var(--muted);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 	line-height: 1.45;
 }
 
+/* One column per funding source present, including Unfunded when it appears. */
 .option-spend-grid {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
+	grid-template-columns: none;
 	border-top: 1px solid var(--line);
 	border-left: 1px solid var(--line);
 }
@@ -2233,7 +2513,7 @@ body.doc-page .doc-article .adjustment-interval p {
 	display: block;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 9.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
@@ -2243,7 +2523,7 @@ body.doc-page .doc-article .adjustment-interval p {
 	margin-top: 2px;
 	color: var(--ink);
 	font-family: var(--mono);
-	font-size: 13px;
+	font-size: var(--text-caption);
 	font-weight: 500;
 	font-variant-numeric: tabular-nums;
 	overflow-wrap: anywhere;
@@ -2255,23 +2535,64 @@ body.doc-page .doc-article .adjustment-interval p {
 	margin: 0;
 	padding: 2px 0 2px 30px;
 	border: 0;
-	border-left: 2px solid var(--rose);
+	border-left: 2px solid var(--status-danger);
 	border-radius: 0;
 	color: var(--ink-soft);
-	font-size: 13px;
+	font-size: var(--text-caption);
 }
 
 .tool-warnings li::marker {
-	color: var(--rose);
+	color: var(--status-danger-text);
+}
+
+/* Explanatory notes are not warnings: neutral rule, no status hue. */
+.tool-notes {
+	display: grid;
+	gap: 6px;
+	margin: 0;
+	padding: 2px 0 2px 30px;
+	border-left: 2px solid var(--line-strong);
+	color: var(--ink-soft);
+	font-size: var(--text-caption);
+}
+
+.tool-notes li::marker {
+	color: var(--faint);
 }
 
 .tool-ok {
 	padding: 2px 0 2px 14px;
 	border: 0;
-	border-left: 2px solid var(--green);
+	border-left: 2px solid var(--status-success);
 	border-radius: 0;
 	color: var(--ink-soft);
-	font-size: 13px;
+	font-size: var(--text-caption);
+}
+
+@container tool (max-width: 720px) {
+	.tool-heading,
+	.tool-grid,
+	.tool-grid-compact,
+	.option-card-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.result-metrics,
+	.timeline-track {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@container tool (max-width: 440px) {
+	.result-metrics,
+	.timeline-track {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.option-spend-grid {
+		grid-auto-flow: row;
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 /* --- Diagrams ------------------------------------------------------------ */
@@ -2303,7 +2624,7 @@ body.doc-page .doc-article .adjustment-interval p {
 	background: transparent;
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 }
@@ -2321,7 +2642,7 @@ body.doc-page .doc-article .adjustment-interval p {
 	background: transparent;
 	color: var(--muted);
 	font-family: var(--display);
-	font-size: 11.5px;
+	font-size: 0.75rem;
 	font-weight: 600;
 	letter-spacing: 0;
 	text-transform: none;
@@ -2334,9 +2655,11 @@ body.doc-page .doc-article .adjustment-interval p {
 	color: var(--ink);
 }
 
-.diagram-open-button .control-icon {
-	width: 13px;
-	height: 13px;
+/* Shown after the caption when mermaid failed and the text version is on screen. */
+.diagram-fallback-note {
+	margin-left: var(--space-2);
+	color: var(--muted);
+	font-size: var(--text-label);
 }
 
 .mermaid,
@@ -2348,8 +2671,44 @@ body.doc-page .doc-article .adjustment-interval p {
 	background-image: none;
 	contain: layout paint;
 	cursor: zoom-in;
-	user-select: none;
-	-webkit-user-select: none;
+}
+
+/* A fixed-height placeholder while mermaid loads, so the page does not jump when
+   the drawn diagram replaces a long text list. */
+.diagram-fallback.is-loading {
+	display: grid;
+	place-items: center;
+	min-height: var(--diagram-h, 220px);
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: var(--text-label);
+}
+
+/* The text twin of a drawn diagram, collapsed under the figure. */
+.diagram-steps {
+	padding: var(--space-2) 0 0;
+	border-top: 1px solid var(--line);
+}
+
+.diagram-steps > summary {
+	width: fit-content;
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: var(--text-label);
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	cursor: pointer;
+}
+
+.diagram-steps > summary:hover {
+	color: var(--ink);
+}
+
+.diagram-steps .diagram-fallback {
+	min-height: 0;
+	cursor: auto;
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .mermaid svg {
@@ -2384,7 +2743,7 @@ body.doc-page .doc-article .adjustment-interval p {
 .mermaid svg foreignObject span {
 	fill: var(--ink) !important;
 	color: var(--ink) !important;
-	font-family: var(--sans) !important;
+	font-family: var(--diagram-font) !important;
 }
 
 .mermaid svg line,
@@ -2402,6 +2761,8 @@ body.doc-page .doc-article .adjustment-interval p {
 	stroke-linejoin: round !important;
 }
 
+.mermaid svg circle,
+.mermaid svg marker circle,
 .mermaid svg marker path {
 	fill: var(--diagram-edge) !important;
 	stroke: var(--diagram-edge) !important;
@@ -2490,7 +2851,7 @@ body.doc-page .doc-article .adjustment-interval p {
 .diagram-count {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -2505,14 +2866,14 @@ body.doc-page .doc-article .adjustment-interval p {
 	background: var(--diagram-node);
 	color: var(--ink);
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 0.75rem;
 	text-align: center;
 }
 
 .diagram-arrow {
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-label);
 	letter-spacing: 0.08em;
 	text-align: center;
 	text-transform: uppercase;
@@ -2520,12 +2881,12 @@ body.doc-page .doc-article .adjustment-interval p {
 
 .diagram-message {
 	color: var(--muted);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 }
 
 .diagram-task {
 	display: grid;
-	grid-template-columns: minmax(90px, 1fr) 1.4fr;
+	grid-template-columns: minmax(0, 1fr) auto;
 	gap: 10px;
 	align-items: center;
 	padding: 9px 10px;
@@ -2534,24 +2895,99 @@ body.doc-page .doc-article .adjustment-interval p {
 	background: var(--diagram-label-bg);
 }
 
-.diagram-task span {
-	display: block;
-	width: calc(var(--bar) * 10%);
-	height: 8px;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--accent) 55%, transparent);
-}
-
 .diagram-task strong {
 	color: var(--ink);
-	font-size: 12.5px;
+	font-size: var(--text-caption);
 }
 
 .diagram-task small {
 	display: block;
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
+}
+
+/* Branch and note rows from sequence diagrams, in the steps twin and the fallback. */
+.diagram-branch {
+	padding-top: var(--space-3);
+	color: var(--ink);
+	font-size: var(--text-caption);
+	font-weight: var(--weight-strong);
+}
+
+/* The branch closer is a label, not a heading. */
+.diagram-branch.is-end {
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: var(--text-label);
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+.diagram-note {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1) var(--space-2);
+	align-items: baseline;
+	padding-inline-start: var(--space-4);
+	color: var(--muted);
+	font-size: var(--text-caption);
+}
+
+/* The steps twin reads as a plain list; the card treatment above stays for the
+   failure fallback, where the text replaces the drawing. */
+.diagram-steps .diagram-edge,
+.diagram-steps .diagram-step,
+.diagram-steps .diagram-task {
+	padding: var(--space-1) 0;
+	border: 0;
+	border-bottom: 1px solid var(--line);
+	border-radius: 0;
+	background: transparent;
+}
+
+/* Keep the label next to its source node so each row reads "A, label, B". */
+.diagram-steps .diagram-edge {
+	grid-template-columns: minmax(0, 14rem) max-content minmax(0, 1fr);
+	gap: var(--space-3);
+}
+
+.diagram-steps .diagram-node {
+	justify-self: start;
+	justify-content: start;
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	font-family: var(--sans);
+	font-size: var(--text-ui);
+	font-weight: var(--weight-medium);
+	text-align: start;
+}
+
+.diagram-steps .diagram-arrow {
+	color: var(--ink-soft);
+	font-family: var(--sans);
+	font-size: var(--text-caption);
+	letter-spacing: 0;
+	text-align: start;
+	text-transform: none;
+}
+
+/* On phones twin rows wrap like a sentence instead of clipping a fixed grid. */
+@media (max-width: 640px) {
+	.diagram-steps .diagram-edge,
+	.diagram-steps .diagram-step {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-1) var(--space-2);
+		align-items: baseline;
+	}
+
+	.diagram-steps .diagram-step .diagram-message {
+		flex-basis: 100%;
+	}
 }
 
 /* Diagram modal */
@@ -2568,10 +3004,26 @@ body.doc-page .doc-article .adjustment-interval p {
 	background: color-mix(in srgb, var(--bg) 92%, transparent);
 }
 
+/* A short fade shows the viewer is a layer over the chapter, not a new page. Pan
+   and zoom on the canvas stay instant. */
+@media (prefers-reduced-motion: no-preference) {
+	.diagram-modal {
+		transition: opacity var(--dur-enter) var(--ease-out);
+	}
+
+	@starting-style {
+		.diagram-modal {
+			opacity: 0;
+		}
+	}
+}
+
+/* Wraps into a title row and a controls row when space runs out. */
 .diagram-modal-bar {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
-	gap: 12px;
+	gap: var(--space-2) var(--space-3);
 	align-items: center;
 	padding: 10px 14px;
 	border-bottom: 1px solid var(--line);
@@ -2579,30 +3031,48 @@ body.doc-page .doc-article .adjustment-interval p {
 }
 
 .diagram-modal-bar strong {
+	flex: 1 1 16ch;
+	min-width: 0;
+	overflow: hidden;
 	color: var(--ink);
 	font-family: var(--display);
-	font-size: 13px;
-	font-weight: 640;
-	text-transform: capitalize;
+	font-size: var(--text-caption);
+	font-weight: var(--weight-strong);
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .diagram-modal-help {
 	margin-right: auto;
 	color: var(--faint);
 	font-family: var(--mono);
-	font-size: 11px;
+	font-size: var(--text-label);
+}
+
+@media (hover: none) {
+	.diagram-modal-help {
+		display: none;
+	}
 }
 
 .diagram-modal-actions {
 	display: flex;
-	gap: 6px;
+	gap: var(--space-2);
 	align-items: center;
 }
 
 .diagram-modal-actions button {
 	min-width: 34px;
-	font-family: var(--mono);
 	font-variant-numeric: tabular-nums;
+}
+
+.diagram-zoom-level {
+	min-width: 4ch;
+	color: var(--muted);
+	font-family: var(--display);
+	font-size: 0.75rem;
+	font-variant-numeric: tabular-nums;
+	text-align: end;
 }
 
 .diagram-modal-stage {
@@ -2615,6 +3085,11 @@ body.doc-page .doc-article .adjustment-interval p {
 	touch-action: none;
 	user-select: none;
 	-webkit-user-select: none;
+}
+
+.diagram-modal-stage:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: -2px;
 }
 
 .diagram-modal-stage.is-dragging {
@@ -2658,6 +3133,19 @@ body.doc-page .doc-article .adjustment-interval p {
 	max-width: none;
 }
 
+/* On phones the inline diagram keeps a readable width and scrolls sideways inside
+   its frame; mermaid writes an inline max-width, hence !important. */
+@media (max-width: 640px) {
+	.mermaid svg {
+		max-width: none !important;
+		min-width: max(720px, var(--diagram-natural-width, 720px));
+	}
+
+	.diagram-modal-canvas .mermaid svg {
+		min-width: 0;
+	}
+}
+
 /* --- Utility ------------------------------------------------------------- */
 
 .empty-state,
@@ -2668,7 +3156,7 @@ body.doc-page .doc-article .adjustment-interval p {
 	border-radius: var(--radius);
 	color: var(--muted);
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 0.75rem;
 	text-align: center;
 }
 
@@ -2681,11 +3169,6 @@ body.doc-page .doc-article .adjustment-interval p {
 @media (max-width: 1180px) {
 	:root {
 		--rail: 232px;
-	}
-
-	.result-metrics,
-	.timeline-track {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
 	.minor-improvement-list {
@@ -2741,11 +3224,6 @@ body.doc-page .doc-article .adjustment-interval p {
 	.diagram-step,
 	.diagram-edge,
 	.diagram-task,
-	.tool-heading,
-	.tool-grid,
-	.tool-grid-compact,
-	.option-card-grid,
-	.option-spend-grid,
 	.change-item,
 	.path-grid,
 	.doc-grid {
@@ -2755,10 +3233,9 @@ body.doc-page .doc-article .adjustment-interval p {
 
 @media (max-width: 640px) {
 	body {
-		font-size: 14.5px;
+		font-size: var(--text-ui);
 	}
 
-	.hero-layout,
 	.index-shell,
 	.site-footer,
 	.index-page .site-hero,
@@ -2770,10 +3247,14 @@ body.doc-page .doc-article .adjustment-interval p {
 		padding: 0 16px 56px;
 	}
 
-	.minor-improvement-list,
-	.result-metrics,
-	.timeline-track {
+	.minor-improvement-list {
 		grid-template-columns: minmax(0, 1fr);
+	}
+
+	/* The two-digit index moves out of its own column so titles get the width. */
+	.doc-list-item {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-1);
 	}
 
 	.site-footer {
@@ -3061,10 +3542,13 @@ body.doc-page .doc-article .adjustment-interval p {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	* {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
-		transition-duration: 0.001ms !important;
-		animation-duration: 0.001ms !important;
 	}
 }
 
@@ -3074,23 +3558,66 @@ body.doc-page .doc-article .adjustment-interval p {
 	[data-theme="light"] {
 		--line: var(--line-strong);
 	}
+
+	:root:not([data-theme="light"]),
+	[data-theme="dark"] {
+		--ink-soft: hsl(0 8% 91%);
+		--muted: hsl(0 3% 82%);
+		--code-toolbar-ink: hsl(0 3% 82%);
+		--line-control: hsl(0 3% 60%);
+		--status-danger-text: hsl(345 90% 86%);
+		--status-warning-text: hsl(43 96% 72%);
+		--status-info-text: hsl(199 89% 78%);
+	}
+
+	[data-theme="light"] {
+		--ink-soft: hsl(0 8% 14%);
+		--muted: hsl(0 3% 30%);
+		--code-toolbar-ink: hsl(0 3% 30%);
+		--line-control: hsl(0 3% 35%);
+		--status-danger-text: hsl(338 72% 34%);
+		--status-warning-text: hsl(36 92% 22%);
+		--status-info-text: hsl(199 84% 25%);
+	}
 }
 
 @media (prefers-reduced-motion: no-preference) {
-	.button {
+	.button,
+	.code-actions button,
+	.diagram-open-button,
+	.diagram-modal-actions button {
 		transition-property: border-color, background, color, transform;
+	}
+
+	.code-actions button,
+	.diagram-open-button,
+	.diagram-modal-actions button {
+		transition-duration: var(--dur-hover);
+		transition-timing-function: ease;
 	}
 
 	.button:active {
 		transform: scale(0.96);
+	}
+
+	.code-actions button:active,
+	.diagram-open-button:active,
+	.diagram-modal-actions button:active {
+		transform: scale(0.97);
+	}
+
+	/* Back-to-top animates transform for its entrance, so press uses scale. */
+	.back-to-top:active {
+		scale: 0.97;
 	}
 }
 
 @media (max-width: 640px) {
 	input[type="search"],
 	input[type="number"],
+	input[type="text"],
 	select {
-		font-size: 16px;
+		font-size: var(--text-body);
 	}
 }
 

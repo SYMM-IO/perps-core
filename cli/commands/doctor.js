@@ -687,7 +687,10 @@ export async function doctor(args, runtime = {}) {
 	if (gaslessLayer?.mode === "deploy") {
 		r.ok(`GaslessLayer relayers configured (${gaslessLayer.relayers.length})`, gaslessLayer.relayers.join(", "));
 		r.ok("GaslessLayer treasury configured", gaslessLayer.treasury);
-		r.ok("GaslessLayer deposit bounds configured", `depositFee=${gaslessLayer.depositFee}, minimumDeposit=${gaslessLayer.minimumDeposit}`);
+		r.ok(
+			"GaslessLayer deposit bounds configured",
+			`depositFee=${gaslessLayer.depositFee}, newAccountDepositFee=${gaslessLayer.newAccountDepositFee ?? gaslessLayer.depositFee}, minimumDeposit=${gaslessLayer.minimumDeposit}`,
+		);
 		r.ok(
 			`GaslessLayer selector overrides configured (${gaslessLayer.selectorFees.length})`,
 			gaslessLayer.selectorFees.map(entry => entry.selector).join(", ") || "default selector fee only",

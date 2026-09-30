@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -43,7 +43,7 @@
 				<a class="toc-link level-2" href="#problem">Why a close can fail</a>
 				<a class="toc-link level-2" href="#helper">Closing to the boundary</a>
 				<a class="toc-link level-2" href="#scenarios">Execution scenarios</a>
-				<a class="toc-link level-2" href="#market-best-effort"><code>MARKET_BEST_EFFORT</code></a>
+				<a class="toc-link level-2" href="#market-best-effort">Why <code>MARKET_BEST_EFFORT</code> was added</a>
 				<a class="toc-link level-2" href="#zero-boundary">Why zero is fragile</a>
 				<a class="toc-link level-2" href="#overshoot">Liquidation overshoot</a>
 				<a class="toc-link level-2" href="#configuration">Configuration</a>
@@ -59,8 +59,8 @@
 						<div>
 							<h1>Close-to-Liquidation Execution</h1>
 							<p class="hero-copy">
-								How a solver closes the largest valid part of a request near PartyA's solvency boundary, how a one-shot best-effort
-								request handles the remainder, and why a manager may permit a controlled overshoot.
+								How a solver closes the largest valid part of a request near PartyA&rsquo;s solvency boundary, how a one-shot
+								best-effort request handles the remainder, and why a manager may permit a controlled overshoot.
 							</p>
 						</div>
 					</div>
@@ -70,15 +70,15 @@
 					<h2 id="problem">Why a close can make PartyA insolvent</h2>
 					<p>
 						v0.8.5 introduced <code>fillCloseRequestToLiquidation</code> for a close request that cannot be filled completely without
-						crossing PartyA's solvency boundary. v0.8.6 builds on that path in two ways. It adds a close-only order type that cancels an
-						unfilled remainder, and it lets a manager configure a bounded below-zero target for the handoff into liquidation.
+						crossing PartyA&rsquo;s solvency boundary. v0.8.6 builds on that path in two ways. It adds a close-only order type that
+						cancels an unfilled remainder, and it lets a manager configure a bounded below-zero target for the handoff into liquidation.
 					</p>
 					<p>
-						Closing a position does more than reduce its quantity. The close releases part of the quote's locked CVA and LF, realizes PnL
-						at the actual fill price, and charges the protocol close fee. A fee-aware fill can also charge a solver fee. The actual fill
-						price can differ from the signed market price used in the solvency snapshot. A large close may execute away from that market
-						reference because of price impact, especially in thin, lower-cap markets. The combined balance change can therefore be
-						negative even though PartyA, the trader, was solvent before the close.
+						Closing a position does more than reduce its quantity. The close releases part of the quote&rsquo;s locked CVA and LF,
+						realizes PnL at the actual fill price, and charges the protocol close fee. A fee-aware fill can also charge a solver fee. The
+						actual fill price can differ from the signed market price used in the solvency snapshot. A large close may execute away from
+						that market reference because of price impact, especially in thin, lower-cap markets. The combined balance change can
+						therefore be negative even though PartyA, the trader, was solvent before the close.
 					</p>
 					<p>
 						This becomes dangerous when PartyA is close to liquidation. An unfavorable fill and the fees can consume more balance than the
@@ -87,16 +87,16 @@
 						normal Muon-verified fill cannot create an unapproved shortfall.
 					</p>
 					<aside class="callout callout-important">
-						<strong>A close-to-liquidation fill is not a liquidation.</strong> It closes a position at PartyA's balance boundary. Starting
-						and settling PartyA liquidation still require separate transactions and fresh protocol checks.
+						<strong>A close-to-liquidation fill is not a liquidation.</strong> It closes a position at PartyA&rsquo;s balance boundary.
+						Starting and settling PartyA liquidation still require separate transactions and fresh protocol checks.
 					</aside>
 
 					<h2 id="helper">Closing to the liquidation boundary</h2>
 					<p>
 						<code>fillCloseRequestToLiquidation</code> exists for the case where PartyA is solvent now but the requested close is too
-						large to execute safely. For Muon-verified execution, PartyB, the quote's solver, supplies the close price and a price and
-						uPnL snapshot. The protocol first simulates the requested amount, including released collateral, realized PnL, protocol fees,
-						and any quoted solver fee.
+						large to execute safely. For Muon-verified execution, PartyB, the quote&rsquo;s solver, supplies the close price and a price
+						and uPnL snapshot. The protocol first simulates the requested amount, including released collateral, realized PnL, protocol
+						fees, and any quoted solver fee.
 					</p>
 					<p>
 						If the whole bounded amount leaves PartyA nonnegative, the method fills it. A harmful close that starts from a positive
@@ -104,7 +104,7 @@
 						largest amount inside the boundary. The method then executes that amount through the normal close pipeline, including
 						bound-mode handling, the applicable Muon and solvency checks, settlement, uPnL counters, hooks, and fill events.
 					</p>
-					<pre><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="853 1763"><code class="language-mermaid">flowchart TD
     A[Validate pending close and signed snapshot] --&gt; B[Simulate the bounded amount]
     B --&gt; C{PartyA remains nonnegative?}
     C --&gt;|Yes| D[Fill the bounded amount]
@@ -157,7 +157,7 @@
 								</tr>
 								<tr>
 									<td>Muon-verified execution would leave PartyB insolvent</td>
-									<td>Revert regardless of PartyA's result</td>
+									<td>Revert regardless of PartyA&rsquo;s result</td>
 								</tr>
 							</tbody>
 						</table>
@@ -178,13 +178,13 @@ PartyA balance after that partial fill      approximately 0</code></pre>
 					<ul>
 						<li>The quote must have a live or cancellation-pending close request and an unexpired deadline.</li>
 						<li>
-							The close price must satisfy PartyA's requested threshold. The signed snapshot must be valid when Muon verification
+							The close price must satisfy PartyA&rsquo;s requested threshold. The signed snapshot must be valid when Muon verification
 							applies.
 						</li>
 						<li>The order type must be <code>LIMIT</code> or <code>MARKET_BEST_EFFORT</code>.</li>
-						<li>The calculated amount must be positive and cannot exceed the request or the caller's permitted cap.</li>
+						<li>The calculated amount must be positive and cannot exceed the request or the caller&rsquo;s permitted cap.</li>
 						<li>A partial fill must preserve the minimum remaining quote value and nonzero proportional locked-value slices.</li>
-						<li>Fee-aware execution must stay within PartyA's close solver-fee rate cap.</li>
+						<li>Fee-aware execution must stay within PartyA&rsquo;s close solver-fee rate cap.</li>
 					</ul>
 					<p>
 						Any failed check reverts the whole transaction. No partial close, cancellation-state change, fee charge, or hook result
@@ -259,7 +259,7 @@ PartyA balance after that partial fill      approximately 0</code></pre>
 						transactions. A small favorable move in the remaining market exposure can make PartyA solvent again. The liquidation
 						transaction then rejects the account, and operations may have to repeat the close attempt.
 					</p>
-					<pre><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="947 421"><code class="language-mermaid">sequenceDiagram
     participant Solver
     participant Core
     participant Market
@@ -274,7 +274,7 @@ PartyA balance after that partial fill      approximately 0</code></pre>
 					<h2 id="overshoot">What liquidation overshoot changes</h2>
 					<p>
 						Liquidation overshoot lets the close-to-liquidation planner cross below zero by a manager-configured amount. The planner uses
-						PartyA's remaining account-level locked CVA and LF after the candidate close as its threshold:
+						PartyA&rsquo;s remaining account-level locked CVA and LF after the candidate close as its threshold:
 					</p>
 					<pre><code class="language-text">postCloseThreshold = remaining account locked CVA + remaining account locked LF
 allowedShortfall   = floor(postCloseThreshold * effectiveRate / 1e18)
@@ -344,10 +344,11 @@ accepted when postCloseBalance &gt;= -allowedShortfall</code></pre>
     SolverFeeEntry[] calldata maxSolverFees
 ) external returns (uint256 filledAmount);</code></pre>
 					<p>
-						Each entry's amount is quoted for <code>maxFillAmount</code> and routes to the receiver resolved for its tag; the planner
-						budgets the list total. If the boundary permits less, execution charges <code>amount * filledAmount / maxFillAmount</code> per
-						entry and drops entries that floor to zero. A fee-bearing call should use a concrete quantity. Passing an effectively
-						unbounded <code>maxFillAmount</code> can make every prorated entry round down to zero.
+						Each entry&rsquo;s amount is quoted for <code>maxFillAmount</code> and routes to the receiver resolved for its tag; the
+						planner budgets the list total. If the boundary permits less, execution charges
+						<code>amount * filledAmount / maxFillAmount</code> per entry and drops entries that floor to zero. A fee-bearing call should
+						use a concrete quantity. Passing an effectively unbounded <code>maxFillAmount</code> can make every prorated entry round down
+						to zero.
 					</p>
 					<p>
 						For <code>LIMIT</code>, <code>maxFillAmount</code> may cap the transaction below the protocol boundary and leave PartyA
@@ -410,8 +411,8 @@ accepted when postCloseBalance &gt;= -allowedShortfall</code></pre>
 					<h2 id="risk">Risk boundary</h2>
 					<p>
 						Overshoot intentionally permits a PartyA shortfall. The allowance is based on the full remaining account CVA and LF, not only
-						the closing quote's remaining LF. A large rate can move the later liquidation into <code>LATE</code> and change which balance
-						absorbs the deficit. A further adverse market move can still push it into <code>OVERDUE</code>.
+						the closing quote&rsquo;s remaining LF. A large rate can move the later liquidation into <code>LATE</code> and change which
+						balance absorbs the deficit. A further adverse market move can still push it into <code>OVERDUE</code>.
 					</p>
 					<p>
 						Managers should therefore configure overshoot as an explicit liquidation-risk decision. The zero default preserves the
@@ -423,7 +424,7 @@ accepted when postCloseBalance &gt;= -allowedShortfall</code></pre>
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>
