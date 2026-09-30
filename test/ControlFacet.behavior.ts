@@ -22,7 +22,7 @@ const SYMBOL_LISTING_ROLE = `0x${keccak256("SYMBOL_LISTING_ROLE")}`
 const PROTOCOL_CONFIG_ROLE = `0x${keccak256("PROTOCOL_CONFIG_ROLE")}`
 const PROTOCOL_LIMITS_ROLE = `0x${keccak256("PROTOCOL_LIMITS_ROLE")}`
 const SUSPENDER_ROLE = `0x${keccak256("SUSPENDER_ROLE")}`
-const PAUSER_ROLE = `0x${keccak256("PAUSER_ROLE")}`
+const PARTY_B_OPENING_PAUSER_ROLE = `0x${keccak256("PARTY_B_OPENING_PAUSER_ROLE")}`
 const UNPAUSER_ROLE = `0x${keccak256("UNPAUSER_ROLE")}`
 // New V2 roles
 const FEE_ADMIN_ROLE = `0x${keccak256("FEE_ADMIN_ROLE")}`
@@ -56,7 +56,7 @@ export function shouldBehaveLikeControlFacet(): void {
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SYMBOL_LISTING_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PROTOCOL_CONFIG_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PROTOCOL_LIMITS_ROLE)
-		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PAUSER_ROLE)
+		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), PARTY_B_OPENING_PAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), SUSPENDER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), UNPAUSER_ROLE)
 		await context.controlFacet.connect(owner).grantRole(await owner.getAddress(), AFFILIATE_MANAGER_ROLE)
@@ -712,7 +712,7 @@ export function shouldBehaveLikeControlFacet(): void {
 	})
 
 	describe("pausePartyBOpenPositionsFor / unpausePartyBOpenPositionsFor", () => {
-		it("Should pause with PAUSER_ROLE and unpause with UNPAUSER_ROLE", async function () {
+		it("Should pause with PARTY_B_OPENING_PAUSER_ROLE and unpause with UNPAUSER_ROLE", async function () {
 			const hedgerAddress = context.signers.hedger.address
 			expect(await context.viewFacet.isPartyBOpenPositionsPaused(hedgerAddress)).to.be.equal(false)
 
@@ -729,7 +729,7 @@ export function shouldBehaveLikeControlFacet(): void {
 
 		it("Should not let a pause-only holder unpause", async function () {
 			const hedgerAddress = context.signers.hedger.address
-			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PAUSER_ROLE)
+			await context.controlFacet.connect(owner).grantRole(await user2.getAddress(), PARTY_B_OPENING_PAUSER_ROLE)
 			await expect(context.pauseControlFacet.connect(user2).pausePartyBOpenPositionsFor(hedgerAddress)).to.not.reverted
 			await expect(context.pauseControlFacet.connect(user2).unpausePartyBOpenPositionsFor(hedgerAddress)).to.be.revertedWith(
 				"Accessibility: Must have role",
