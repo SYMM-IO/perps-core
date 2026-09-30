@@ -329,7 +329,7 @@
 						</li>
 					</ul>
 					<h4 id="same-tx-state-machine">SAME_TX state machine</h4>
-					<pre data-diagram-size="605 573"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="564 544"><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; PROCESSED : onWithdrawRequest\n(same-tx transfer)
     PROCESSED --&gt; FINALIZED : onWithdrawComplete\n(at cooldown end, pools replenished)
@@ -342,7 +342,7 @@
     end note
 </code></pre>
 					<h4 id="windowed-state-machine">WINDOWED state machine</h4>
-					<pre data-diagram-size="1260 741"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="1152 699"><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; ACCEPTED : onWithdrawRequest
 
@@ -362,7 +362,7 @@
     SUSPENDED --&gt; [*]
 </code></pre>
 					<h4 id="standard-state-machine">STANDARD state machine</h4>
-					<pre data-diagram-size="1536 624"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="1389 589"><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; ACCEPTED : onWithdrawRequest
 
@@ -956,7 +956,7 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 						STANDARD acceleration path in
 						<a href="#cap-aware-accelerate-polling-standard-windowed">Cap-aware accelerate polling (STANDARD → WINDOWED)</a>.
 					</p>
-					<pre data-diagram-size="1513 1640"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="1383 1530"><code class="language-mermaid">flowchart TD
     A[User requests withdrawal options] --&gt; B[Read on-chain state]
     B --&gt; B1[&quot;nonces(user)&quot;]
     B --&gt; B2[&quot;affiliateConfigs(affiliate)&quot;]
@@ -979,7 +979,7 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 	H --&gt; I[Sign EIP-712 WithdrawOption]
     I --&gt; J[Return options to user]
 </code></pre>
-					<pre data-diagram-size="698 401"><code class="language-mermaid">flowchart LR
+					<pre data-diagram-size="654 375"><code class="language-mermaid">flowchart LR
     subgraph &quot;For each user withdrawal request&quot;
         A{Validators enabled\n&amp; liquidity OK?} --&gt;|Yes| IM[SAME_TX]
         B{Unlocked liquidity\n&gt;= amount?} --&gt;|Yes| IN[WINDOWED]
@@ -1074,7 +1074,7 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 						inflate this provider&rsquo;s advance. Do not put virtual-only parts under an Express-master request because this
 						provider&rsquo;s transfer loop intentionally skips them.
 					</p>
-					<pre data-diagram-size="787 557"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="712 519"><code class="language-mermaid">flowchart TD
     P[Parts Array] --&gt; C1{expressProvider == this?}
     C1 --&gt;|No| SKIP[Skipped by ExpressProvider]
     C1 --&gt;|Yes| EO[Adds to expressAmount]
@@ -1407,7 +1407,7 @@ Step 4: Bot sees: cooldownEndTime reached
 					<h2 id="withdrawal-flows">Withdrawal flows</h2>
 					<h3 id="same-tx-optiontype-0">SAME_TX (optionType = 0)</h3>
 					<p><strong>User experience:</strong> Transfer inside the initiation transaction.</p>
-					<pre data-diagram-size="1203 1171"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1108 1046"><code class="language-mermaid">sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider (Diamond)
@@ -1632,7 +1632,7 @@ Result:
 					<hr />
 					<h3 id="windowed-optiontype-1">WINDOWED (optionType = 1)</h3>
 					<p><strong>User experience:</strong> ~20 seconds. Capital fronted from pools plus any optional credit advance.</p>
-					<pre data-diagram-size="1310 1125"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1210 990"><code class="language-mermaid">sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider
@@ -1792,7 +1792,7 @@ Step 5: Bot sees: block.timestamp &gt;= cooldownEndTime (~T0 + 12h).
 					<hr />
 					<h3 id="standard-optiontype-2">STANDARD (optionType = 2)</h3>
 					<p><strong>User experience:</strong> until cooldownEndTime. No capital fronting. ExpressProvider acts as intermediary.</p>
-					<pre data-diagram-size="1276 1127"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1191 987"><code class="language-mermaid">sequenceDiagram
     participant U as User
     participant S as SYMMIO
     participant EP as ExpressProvider
@@ -2168,7 +2168,7 @@ Step 2: Bot checks: When does exclusivity end?
 					<hr />
 					<h2 id="event-monitoring">Event monitoring</h2>
 					<h3 id="event-handling-flow">Event handling flow</h3>
-					<pre data-diagram-size="3233 652"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="2973 611"><code class="language-mermaid">flowchart TD
     E[Event Received] --&gt; T{Event Type?}
 
     T --&gt;|WithdrawAccepted| A1{optionType?}
@@ -2374,7 +2374,7 @@ Step 4: Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
 					<hr />
 					<h2 id="fee-system">Fee system</h2>
 					<h3 id="fee-calculation-flow">Fee calculation flow</h3>
-					<pre data-diagram-size="877 1137"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="814 1078"><code class="language-mermaid">flowchart TD
     A[&quot;feeBasis = expressAmount&quot;] --&gt; B[&quot;fee = (feeBasis × feeRate) / 10,000&quot;]
     B --&gt; C[&quot;operatorFee = affiliateConfigs[affiliate].operatorFee&quot;]
     C --&gt; D[&quot;totalFee = fee + operatorFee&quot;]
@@ -2400,7 +2400,7 @@ Step 4: Bot sees: cooldownEndTime reached at T=43,200s (~block 43400)
 						never charged.
 					</p>
 					<h3 id="fee-deduction-order-in-transfertoreceivers">Fee deduction order (in <code>transferToReceivers</code>)</h3>
-					<pre data-diagram-size="542 1076"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="491 1009"><code class="language-mermaid">flowchart TD
     A[&quot;feeRemaining = userFee&quot;] --&gt; B{Next express part?}
     B --&gt;|Yes| C[&quot;deduction = min(feeRemaining, part.amount)&quot;]
     C --&gt; D[&quot;feeRemaining -= deduction&quot;]
@@ -2500,7 +2500,7 @@ Step 2: Bot pre-computes: how will 15 USDC fee cascade across parts?
 						This flow applies when the selected option invokes validator validation: always for SAME_TX, conditionally for WINDOWED, and
 						never for STANDARD acceptance.
 					</p>
-					<pre data-diagram-size="1925 1029"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1794 909"><code class="language-mermaid">sequenceDiagram
     participant Bot as Bot Service
     participant V1 as Validator 1
     participant V2 as Validator 2
@@ -2789,7 +2789,7 @@ if (parts[i].virtualProvider != address(0)) revert LibErrors.VirtualProviderMust
 						<code>LibCreditLine</code>; the internal library operations are <code>reserveDebt</code>, <code>activate</code>,
 						<code>settle</code>, <code>releaseReservation</code>, and <code>coverLoss</code>.
 					</p>
-					<pre data-diagram-size="530 663"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="481 615"><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; Reserved : reserveDebt\nreservedDebt += amount
 
     Reserved --&gt; Active : activate\nreservedDebt -= amount\nactiveDebt += amount\nISymmio.advanceWithdraw
@@ -3481,7 +3481,7 @@ Step 4c: Post-payout rollback (suspend after PROCESSED, rare):
 					<hr />
 					<h2 id="multi-part-withdrawals">Multi-part withdrawals</h2>
 					<h3 id="part-classification">Part classification</h3>
-					<pre data-diagram-size="460 494"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="428 452"><code class="language-mermaid">flowchart TD
     A[WithdrawReceiverPart] --&gt; B{&quot;expressProvider\n== address(this)?&quot;}
     B --&gt;|No| C[Non-express\nSkipped entirely]
     B --&gt;|Yes| D[&quot;Express\nAdds to expressAmount\nPool, credit, or STANDARD payout&quot;]
@@ -3515,7 +3515,7 @@ Step 4c: Post-payout rollback (suspend after PROCESSED, rare):
 						Express-master request because this provider skips them.
 					</p>
 					<h3 id="multi-part-fee-cascading">Multi-part fee cascading</h3>
-					<pre data-diagram-size="846 306"><code class="language-mermaid">flowchart LR
+					<pre data-diagram-size="791 289"><code class="language-mermaid">flowchart LR
     subgraph &quot;Fee = 150 cascading across 3 parts&quot;
         P1[&quot;Part 1: 100\nDeduction: 100\nReceiver gets: 0&quot;] --&gt; P2[&quot;Part 2: 400\nDeduction: 50\nReceiver gets: 350&quot;]
         P2 --&gt; P3[&quot;Part 3: 500\nDeduction: 0\nReceiver gets: 500&quot;]
@@ -3651,7 +3651,7 @@ Step 7: Bot processes after security window:
 					<hr />
 					<h2 id="risk-lock-unlock">Risk lock / unlock</h2>
 					<h3 id="lock-resolution-paths">Lock resolution paths</h3>
-					<pre data-diagram-size="1697 702"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="1552 650"><code class="language-mermaid">flowchart TD
     A[&quot;ACCEPTED&quot;] --&gt;|&quot;lockWithdraw\n(LOCKER_ROLE)&quot;| B[&quot;LOCKED&quot;]
 
     B --&gt; C{Resolution path?}
@@ -3679,7 +3679,7 @@ Step 7: Bot processes after security window:
 						forced rollback.
 					</aside>
 					<h3 id="role-separation">Role separation</h3>
-					<pre data-diagram-size="1295 276"><code class="language-mermaid">flowchart LR
+					<pre data-diagram-size="1193 260"><code class="language-mermaid">flowchart LR
     subgraph &quot;Role Isolation&quot;
         OP[&quot;OPERATOR_ROLE\n(Bot)&quot;] --&gt;|&quot;processWithdraw&quot;| PROC[&quot;Process\nWithdrawals&quot;]
         LK[&quot;LOCKER_ROLE\n(Risk Service)&quot;] --&gt;|&quot;lockWithdraw&quot;| LOCK[&quot;Lock\nWithdrawals&quot;]
@@ -3822,7 +3822,7 @@ Step 2D: Bot sees: WithdrawFinalized(user, reqId) at T+43200
 					<hr />
 					<h2 id="cancellation-and-suspension">Cancellation and suspension</h2>
 					<h3 id="cancellation-decision-tree">Cancellation decision tree</h3>
-					<pre data-diagram-size="1838 593"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="1696 546"><code class="language-mermaid">flowchart TD
     A{Who is cancelling?} --&gt;|User&lt;br/&gt;onWithdrawCancelRequest| B{Status?}
     A --&gt;|SYMMIO suspend&lt;br/&gt;onWithdrawSuspend| D{Status?}
 
@@ -3967,7 +3967,7 @@ Step 2D: Bot sees: WithdrawFinalized(user, reqId) at T+43200
 					<hr />
 					<h2 id="error-catalog">Error catalog</h2>
 					<h3 id="error-decision-tree">Error decision tree</h3>
-					<pre data-diagram-size="10410 522"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="9562 492"><code class="language-mermaid">flowchart TD
     E[Transaction Reverted] --&gt; A{Error type?}
 
     A --&gt;|Signature| S{Which?}
@@ -4452,7 +4452,7 @@ Decision:
 					<hr />
 					<h2 id="edge-cases-and-race-conditions">Edge cases and race conditions</h2>
 					<h3 id="liquidity-race-conditions">Liquidity race conditions</h3>
-					<pre data-diagram-size="920 755"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="877 670"><code class="language-mermaid">sequenceDiagram
     participant U1 as User 1
     participant U2 as User 2
     participant EP as ExpressProvider
@@ -4498,7 +4498,7 @@ Decision:
 						</table>
 					</div>
 					<h3 id="config-changes-mid-flight">Config changes mid-flight</h3>
-					<pre data-diagram-size="1188 575"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1114 515"><code class="language-mermaid">sequenceDiagram
     participant Bot
     participant Admin
     participant EP as ExpressProvider
@@ -5126,7 +5126,7 @@ Step 1: onWithdrawComplete called (T+12h):
 					<hr />
 					<h2 id="pool-management">Pool management</h2>
 					<h3 id="pool-lifecycle-diagram">Pool lifecycle diagram</h3>
-					<pre data-diagram-size="1354 536"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="1275 503"><code class="language-mermaid">flowchart TD
     subgraph &quot;WINDOWED/SAME_TX Lifecycle&quot;
         A1[&quot;depositToGeneral\n+10,000&quot;] --&gt; B1[&quot;Lock on accept\nlockedGeneral += 500&quot;]
         B1 --&gt; C1[&quot;Process: deduct\ngeneralBalance -= 500\nUser gets 500&quot;]
@@ -5267,7 +5267,7 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<hr />
 					<h2 id="access-control">Access control</h2>
 					<h3 id="role-interaction-diagram">Role interaction diagram</h3>
-					<pre data-diagram-size="1906 586"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="1779 553"><code class="language-mermaid">flowchart TD
     subgraph &quot;Admin Roles&quot;
         ADMIN[&quot;Diamond Owner\n(Multisig)&quot;]
         SETTER[&quot;SETTER_ROLE&quot;]
@@ -5552,7 +5552,7 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
 					<hr />
 					<h2 id="operational-invariants">Operational invariants</h2>
 					<h3 id="invariant-check-diagram">Invariant check diagram</h3>
-					<pre data-diagram-size="1540 200"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="1407 187"><code class="language-mermaid">flowchart TD
 
     C[&quot;Credit line invariant&quot;] --&gt; D[&quot;creditLineTotalDebt(aff) ==\ncreditLineReservedDebt(aff) +\ncreditLineActiveDebt(aff)&quot;]
     C --&gt; E[&quot;Cap usage includes\ncreditLineTotalDebt(aff) +\ncreditLineBadDebt(aff)&quot;]
@@ -5722,7 +5722,7 @@ What-if: SYMMIO core pauses withdraw advances?
 </code></pre>
 					<hr />
 					<h2 id="quick-reference-complete-bot-action-timeline">Quick reference: complete bot action timeline</h2>
-					<pre data-diagram-size="1258 1503"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1166 1335"><code class="language-mermaid">sequenceDiagram
     participant User
     participant Bot
     participant SYMMIO

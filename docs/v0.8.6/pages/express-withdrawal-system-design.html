@@ -187,7 +187,7 @@
 						payload containing the signed offer, validator approvals when required, and credit data when used;
 						<a href="#provider-data-encoding">Provider data encoding</a> gives the exact encoding.
 					</p>
-					<pre data-diagram-size="2112 2028"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1947 1757"><code class="language-mermaid">sequenceDiagram
     participant User
     participant Bot
     participant Validators
@@ -233,7 +233,7 @@
 					<h2 id="where-the-money-comes-from">Where the money comes from</h2>
 					<h3 id="balance-pools">Balance pools</h3>
 					<p>The ExpressProvider maintains two types of liquidity pools:</p>
-					<pre data-diagram-size="765 250"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="705 237"><code class="language-mermaid">flowchart TD
     subgraph ExpressProvider
         GP[General Pool&lt;br/&gt;generalBalance / lockedGeneralBalance]
         FP[Affiliate Pool per affiliate&lt;br/&gt;affiliateBalances / lockedAffiliateBalances]
@@ -356,7 +356,7 @@ event AffiliateWithdraw(address indexed affiliate, address indexed recipient, ui
 						When the ExpressProvider fronts funds for SAME_TX or WINDOWED withdrawals, it temporarily depletes its pools. Those pools are
 						replenished when SYMMIO releases the actual tokens after the configured cooldown:
 					</p>
-					<pre data-diagram-size="1089 899"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1027 804"><code class="language-mermaid">sequenceDiagram
     participant User
     participant SYMMIO
     participant Express as ExpressProvider
@@ -383,7 +383,7 @@ event AffiliateWithdraw(address indexed affiliate, address indexed recipient, ui
 						error). ExpressProvider acts as an intermediary so one service can orchestrate the flow; core finalization and the delayed
 						Express payout fallback are permissionless.
 					</p>
-					<pre data-diagram-size="1510 1117"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1394 977"><code class="language-mermaid">sequenceDiagram
     participant User
     participant Bot
     participant SYMMIO
@@ -433,7 +433,7 @@ event AffiliateWithdraw(address indexed affiliate, address indexed recipient, ui
 						WINDOWED fronts capital from the ExpressProvider&rsquo;s pools. The user gets funds after a short security window during which
 						the bot performs a risk check.
 					</p>
-					<pre data-diagram-size="1609 1643"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1479 1444"><code class="language-mermaid">sequenceDiagram
     participant User
     participant Bot
     participant SYMMIO
@@ -481,7 +481,7 @@ event AffiliateWithdraw(address indexed affiliate, address indexed recipient, ui
 						as <code>initiateWithdraw</code>. This requires validators to be enabled (<code>minValidatorSignatures(affiliate) &gt; 0</code
 						>).
 					</p>
-					<pre data-diagram-size="1619 1235"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1508 1075"><code class="language-mermaid">sequenceDiagram
     participant User
     participant Bot
     participant Validators
@@ -536,7 +536,7 @@ event AffiliateWithdraw(address indexed affiliate, address indexed recipient, ui
 						<code>affiliateMaxDebt</code>). Both call the same permissionless <code>accelerateWithdraw</code> function with a fresh
 						bot-signed <code>AccelerateOffer</code>.
 					</p>
-					<pre data-diagram-size="2030 1914"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1893 1678"><code class="language-mermaid">sequenceDiagram
     participant User
     participant Bot
     participant Caller as Caller&lt;br/&gt;(bot / frontend / user)
@@ -776,7 +776,7 @@ setCapChangeQuotaConfig(uint256 maxFreePerWindow, uint256 windowDuration)
 						a one-off adjustment).
 					</p>
 					<p><strong>Flow diagram:</strong></p>
-					<pre data-diagram-size="1057 2646"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="970 2457"><code class="language-mermaid">flowchart TD
     A[Affiliate calls setMyCreditLineConfig] --&gt; B{Protocol cap invariant ok?}
     B --&gt;|No| Z1[revert AffiliateLimitExceedsProtocol]
     B --&gt;|Yes| C{No-op?}
@@ -833,7 +833,7 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 					<section class="tool-panel" data-express-timing-tool aria-label="Express processing timeline helper"></section>
 					<h3 id="risk-locking">Risk locking</h3>
 					<p>If the anomaly detection API flags a user as risky between acceptance and processing:</p>
-					<pre data-diagram-size="1155 291"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="1048 275"><code class="language-mermaid">stateDiagram-v2
     ACCEPTED --&gt; LOCKED: lockWithdraw() [LOCKER_ROLE]
     LOCKED --&gt; PROCESSED: unlockAndProcess() [UNLOCK_ROLE, false alarm]
     LOCKED --&gt; PROCESSED: processWithdraw() [operator at cooldown, anyone after + tolerance]
@@ -891,7 +891,7 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 						</li>
 					</ol>
 					<h3 id="cancellation">Cancellation</h3>
-					<pre data-diagram-size="1060 658"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="981 617"><code class="language-mermaid">flowchart TD
     A{Option Type?}
     A --&gt;|SAME_TX| Z[NOT CANCELLABLE: funds already transferred]
     A --&gt;|WINDOWED| B{Status?}
@@ -935,7 +935,7 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 					</p>
 					<h3 id="state-machines">State machines</h3>
 					<p><strong>WINDOWED (capital fronted):</strong></p>
-					<pre data-diagram-size="1311 589"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="1188 560"><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; ACCEPTED: onWithdrawRequest
 
@@ -955,7 +955,7 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 PROCESSED → FINALIZED (onWithdrawComplete: pools replenished)
 </code></pre>
 					<p><strong>STANDARD (no fronting):</strong></p>
-					<pre data-diagram-size="1927 472"><code class="language-mermaid">stateDiagram-v2
+					<pre data-diagram-size="1757 449"><code class="language-mermaid">stateDiagram-v2
     [*] --&gt; NONE
     NONE --&gt; ACCEPTED: onWithdrawRequest
 
@@ -1438,7 +1438,7 @@ event OperatorFeesClaimed(address indexed affiliate, address indexed recipient, 
 						events include that actual recipient for direct payout reconciliation.
 					</p>
 					<h3 id="fee-flow">Fee flow</h3>
-					<pre data-diagram-size="1339 1213"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1290 1058"><code class="language-mermaid">sequenceDiagram
 	participant Admin
 	participant Bot
 	participant Express as ExpressProvider
@@ -1997,7 +1997,7 @@ else:
 					<h2 id="contract-interfaces">Contract interfaces</h2>
 					<h3 id="expressprovider">ExpressProvider</h3>
 					<h4 id="deployment-topology">Deployment topology</h4>
-					<pre data-diagram-size="656 242"><code class="language-mermaid">flowchart LR
+					<pre data-diagram-size="626 232"><code class="language-mermaid">flowchart LR
     subgraph &quot;Per Chain&quot;
         SYMMIO[SYMMIO Core Diamond]
         EC[ExpressProvider&lt;br/&gt;EIP-2535 Diamond&lt;br/&gt;1 per chain]

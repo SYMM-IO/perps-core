@@ -104,7 +104,7 @@
 						largest amount inside the boundary. The method then executes that amount through the normal close pipeline, including
 						bound-mode handling, the applicable Muon and solvency checks, settlement, uPnL counters, hooks, and fill events.
 					</p>
-					<pre data-diagram-size="933 1907"><code class="language-mermaid">flowchart TD
+					<pre data-diagram-size="853 1763"><code class="language-mermaid">flowchart TD
     A[Validate pending close and signed snapshot] --&gt; B[Simulate the bounded amount]
     B --&gt; C{PartyA remains nonnegative?}
     C --&gt;|Yes| D[Fill the bounded amount]
@@ -259,7 +259,7 @@ PartyA balance after that partial fill      approximately 0</code></pre>
 						transactions. A small favorable move in the remaining market exposure can make PartyA solvent again. The liquidation
 						transaction then rejects the account, and operations may have to repeat the close attempt.
 					</p>
-					<pre data-diagram-size="970 471"><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="947 421"><code class="language-mermaid">sequenceDiagram
     participant Solver
     participant Core
     participant Market
