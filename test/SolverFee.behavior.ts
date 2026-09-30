@@ -666,7 +666,6 @@ export function shouldBehaveLikeSolverFee(): void {
 		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
 		await hedger.lockQuote(quoteId)
 
-		await context.controlFacet.connect(admin).grantRole(admin, ethers.id("PARTY_B_OPENING_PAUSER_ROLE"))
 		await context.controlFacet.connect(admin).grantRole(admin, ethers.id("PARTY_B_PAUSER_ROLE"))
 		await context.controlFacet.connect(admin).grantRole(admin, ethers.id("UNPAUSER_ROLE"))
 

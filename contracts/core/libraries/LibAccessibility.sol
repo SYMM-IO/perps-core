@@ -35,7 +35,6 @@ library LibAccessibility {
 	bytes32 public constant GLOBAL_PAUSER_ROLE = keccak256("GLOBAL_PAUSER_ROLE");
 	bytes32 public constant PARTY_A_PAUSER_ROLE = keccak256("PARTY_A_PAUSER_ROLE");
 	bytes32 public constant PARTY_B_PAUSER_ROLE = keccak256("PARTY_B_PAUSER_ROLE");
-	bytes32 public constant PARTY_B_OPENING_PAUSER_ROLE = keccak256("PARTY_B_OPENING_PAUSER_ROLE");
 	bytes32 public constant ACCOUNTING_PAUSER_ROLE = keccak256("ACCOUNTING_PAUSER_ROLE");
 	bytes32 public constant INTERNAL_TRANSFER_PAUSER_ROLE = keccak256("INTERNAL_TRANSFER_PAUSER_ROLE");
 	bytes32 public constant EXTERNAL_TRANSFER_PAUSER_ROLE = keccak256("EXTERNAL_TRANSFER_PAUSER_ROLE");

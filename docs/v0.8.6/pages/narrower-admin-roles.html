@@ -147,7 +147,7 @@
 
 					<h2 id="granular-core-pause-roles">Granular Core pause roles</h2>
 					<p>
-						Core replaces <code>PAUSER_ROLE</code> with ten independent roles. Each role authorizes only the listed pause entry points.
+						Core replaces <code>PAUSER_ROLE</code> with nine independent roles. Each role authorizes only the listed pause entry points.
 						There is no combined trading role, and deposits and withdrawals stay together under accounting. Role identifiers are
 						<code>keccak256</code> hashes of the exact names below.
 					</p>
@@ -176,15 +176,13 @@
 								</tr>
 								<tr>
 									<td><code>PARTY_B_PAUSER_ROLE</code></td>
-									<td><code>pausePartyBActions()</code></td>
-									<td>Guarded PartyB trading, settlement, funding and PartyB accounting actions across all solvers.</td>
-								</tr>
-								<tr>
-									<td><code>PARTY_B_OPENING_PAUSER_ROLE</code></td>
-									<td><code>pausePartyBOpenPositions(), pausePartyBOpenPositionsFor(partyB)</code></td>
 									<td>
-										Quote locking and position opening for all solvers or one selected solver; closing remains available subject
-										to other guards.
+										<code>pausePartyBActions(), pausePartyBOpenPositions(), pausePartyBOpenPositionsFor(partyB)</code>
+									</td>
+									<td>
+										The actions pause blocks guarded PartyB trading, settlement, funding and PartyB accounting across all solvers.
+										The opening pauses block quote locking and position opening for all solvers or one selected solver; closing
+										remains available subject to other guards. These functions set separate flags.
 									</td>
 								</tr>
 								<tr>
@@ -235,7 +233,7 @@
 						schemes.
 					</p>
 					<p>
-						Fresh Core setup grants all ten roles to the configured admin, and deployment verification checks each grant. An emergency
+						Fresh Core setup grants all nine roles to the configured admin, and deployment verification checks each grant. An emergency
 						operator receives only the roles selected by governance; holding a pause role does not authorize granting another role.
 						<code>DEFAULT_ADMIN_ROLE</code> can still administer every role but does not itself authorize pause calls.
 					</p>
@@ -270,7 +268,7 @@
 					</p>
 					<pre><code class="language-solidity">// Core PauseControlFacet
 // removed: setPartyBOpenPositionsPaused(address partyB, bool status)
-function pausePartyBOpenPositionsFor(address partyB) external;   // PARTY_B_OPENING_PAUSER_ROLE
+function pausePartyBOpenPositionsFor(address partyB) external;   // PARTY_B_PAUSER_ROLE
 function unpausePartyBOpenPositionsFor(address partyB) external; // UNPAUSER_ROLE
 
 // ExpressProvider ControlFacet
