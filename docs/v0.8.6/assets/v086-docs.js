@@ -924,6 +924,14 @@
 		// Computed style normalises hsl() to rgb()/rgba(), which mermaid's color math parses.
 		return getComputedStyle(probe).color || fallback;
 	};
+	const diagramFont = () => {
+		const styles = getComputedStyle(document.documentElement);
+		return {
+			fontFamily: styles.getPropertyValue("--diagram-font").trim() || "Inter, ui-sans-serif, system-ui, sans-serif",
+			fontSize: styles.getPropertyValue("--diagram-font-size").trim() || "14px",
+		};
+	};
+
 	const buildMermaidTheme = () => {
 		const fallback = MERMAID_FALLBACK_THEME[root.dataset.theme === "light" ? "light" : "dark"];
 		const probe = document.createElement("span");
@@ -938,10 +946,11 @@
 		const cluster = color("--diagram-cluster", "cluster");
 		const border = color("--line-strong", "border");
 		const edge = color("--diagram-edge", "edge");
-		const fontFamily = getComputedStyle(root).getPropertyValue("--sans").trim() || "Manrope, ui-sans-serif, system-ui, sans-serif";
+		const { fontFamily, fontSize } = diagramFont();
 		probe.remove();
 		return {
 			fontFamily,
+			fontSize,
 			background,
 			mainBkg: node,
 			primaryColor: node,
@@ -1037,6 +1046,8 @@
 
 		const showFallback = ({ frame, canvas, captionLabel, source }) => {
 			frame.classList.add("is-fallback");
+			// The fallback already is the text version; drop the twin so it is not shown twice.
+			frame.querySelector(":scope > .diagram-steps")?.remove();
 			fillFallbackDiagram(canvas, source);
 			if (frame.querySelector(".diagram-fallback-note")) return;
 			const note = document.createElement("span");
@@ -1057,14 +1068,34 @@
 			steps.append(summary, list);
 			frame.append(steps);
 		};
+		// Built with the frame, not after drawing, so the row below never shifts the page.
+		diagrams.forEach(appendStepsTwin);
 
 		const renderDiagrams = async mermaid => {
+			const { fontFamily, fontSize } = diagramFont();
+			// Mermaid sizes every box from measured text, so the face must be loaded first
+			// or labels are laid out in the fallback font and then drawn in the real one.
+			try {
+				await Promise.all(["400", "600"].map(weight => document.fonts.load(`${weight} ${fontSize} ${fontFamily}`)));
+			} catch (_error) {}
+			const size = Number.parseFloat(fontSize) || 14;
 			mermaid.initialize({
 				startOnLoad: false,
 				securityLevel: "loose",
 				theme: "base",
+				fontFamily,
+				fontSize: size,
 				themeVariables: buildMermaidTheme(),
 				flowchart: { htmlLabels: true },
+				sequence: {
+					actorFontFamily: fontFamily,
+					actorFontSize: size,
+					messageFontFamily: fontFamily,
+					messageFontSize: size,
+					noteFontFamily: fontFamily,
+					noteFontSize: size,
+				},
+				gantt: { fontSize: size, sectionFontSize: size },
 			});
 			const staging = document.createElement("div");
 			staging.className = "mermaid-staging";
@@ -1102,7 +1133,6 @@
 							diagram.expectedHeight = 0;
 						}
 						diagram.frame.classList.add("is-rendered");
-						appendStepsTwin(diagram);
 					} else if (!diagram.frame.classList.contains("is-rendered")) {
 						// A redraw that fails keeps the drawing it already has.
 						showFallback(diagram);

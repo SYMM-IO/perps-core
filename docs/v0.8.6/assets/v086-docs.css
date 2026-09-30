@@ -111,6 +111,10 @@
 	--sans: Manrope, ui-sans-serif, system-ui, sans-serif;
 	--display: Inter, ui-sans-serif, system-ui, sans-serif;
 	--mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+	/* Diagram labels: the neutral UI face at a fixed size, so every chart reads alike.
+	   Mermaid lays out with these values, so change them here, not in CSS overrides. */
+	--diagram-font: var(--display);
+	--diagram-font-size: 14px;
 
 	/* Type scale, in rem so the reader's browser text size applies. */
 	--text-label: 0.6875rem;
@@ -2739,7 +2743,7 @@ body.doc-page .doc-article .adjustment-interval p {
 .mermaid svg foreignObject span {
 	fill: var(--ink) !important;
 	color: var(--ink) !important;
-	font-family: var(--sans) !important;
+	font-family: var(--diagram-font) !important;
 }
 
 .mermaid svg line,
