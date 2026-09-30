@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -72,13 +72,14 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="what">What a session key is</h2>
 					<p>
-						A session key is an ordinary Ethereum key pair with its own address. It is not the owner wallet's key and not a contract. Its
-						only power comes from an InstantLayer <strong>delegation</strong>: an on-chain record, written by the account owner, saying
-						this key may sign these functions for this account until this time.
+						A session key is an ordinary Ethereum key pair with its own address. It is not the owner wallet&rsquo;s key and not a
+						contract. Its only power comes from an InstantLayer <strong>delegation</strong>: an on-chain record, written by the account
+						owner, saying this key may sign these functions for this account until this time.
 					</p>
 					<p>
-						The key holds no funds. Collateral and positions stay in the user's accounts; the key only signs instructions about them. A
-						signed operation still names the user's account, and InstantLayer executes it as that account once it confirms the delegation.
+						The key holds no funds. Collateral and positions stay in the user&rsquo;s accounts; the key only signs instructions about
+						them. A signed operation still names the user&rsquo;s account, and InstantLayer executes it as that account once it confirms
+						the delegation.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -103,7 +104,7 @@
 								</tr>
 								<tr>
 									<td>Virtual Account</td>
-									<td>Holds a position and its margin under a SubAccount; covered by the SubAccount's grant</td>
+									<td>Holds a position and its margin under a SubAccount; covered by the SubAccount&rsquo;s grant</td>
 								</tr>
 								<tr>
 									<td>Service signer</td>
@@ -133,12 +134,12 @@
 						</li>
 						<li>
 							<strong>Verifiable by services.</strong> A delegation is public on-chain state, so an off-chain service can confirm that a
-							request signed by the key comes from the account's authorized key.
+							request signed by the key comes from the account&rsquo;s authorized key.
 						</li>
 					</ul>
 
 					<h2 id="lifecycle">Lifecycle</h2>
-					<pre><code class="language-mermaid">sequenceDiagram
+					<pre data-diagram-size="1288 743"><code class="language-mermaid">sequenceDiagram
     participant FE as Front end
     participant Owner as Owner wallet
     participant Relayer as Relayer or solver
@@ -156,9 +157,9 @@
 
 					<h2 id="create">Creating and storing the key</h2>
 					<p>
-						Generate the key from fresh randomness in the client. Do not derive it from the owner's address or from a wallet signature: a
-						derived key needs an extra prompt, and anyone who can reproduce the derivation holds the key. The owner address only labels
-						which owner a stored key belongs to.
+						Generate the key from fresh randomness in the client. Do not derive it from the owner&rsquo;s address or from a wallet
+						signature: a derived key needs an extra prompt, and anyone who can reproduce the derivation holds the key. The owner address
+						only labels which owner a stored key belongs to.
 					</p>
 					<pre><code class="language-typescript">import { Wallet } from "ethers"
 
@@ -170,7 +171,7 @@ const sessionKey = Wallet.createRandom() // random; its address goes into the gr
 					<ul>
 						<li>
 							<strong>Encrypt it at rest.</strong> For example, encrypt the private key with AES-GCM under a non-extractable Web Crypto
-							key kept in IndexedDB, and store only the ciphertext, the key's address, and the owner it belongs to.
+							key kept in IndexedDB, and store only the ciphertext, the key&rsquo;s address, and the owner it belongs to.
 						</li>
 						<li>
 							<strong>Scope storage to the deployment.</strong> Include the chain and the contract addresses in the storage key, so a
@@ -189,8 +190,8 @@ const sessionKey = Wallet.createRandom() // random; its address goes into the gr
 					<h2 id="authorize">Authorizing the key</h2>
 					<p>
 						The owner authorizes the key by signing a delegation grant: a <code>SignedOperation</code> that targets InstantLayer with
-						<code>grantDelegation(DelegationInfo)</code>. It can travel in the same relayed batch as the key's first operations, because
-						InstantLayer applies the grant before it verifies the next operation. See
+						<code>grantDelegation(DelegationInfo)</code>. It can travel in the same relayed batch as the key&rsquo;s first operations,
+						because InstantLayer applies the grant before it verifies the next operation. See
 						<a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a> for the operation format and its
 						rules.
 					</p>
@@ -208,9 +209,9 @@ const grantCallData = instantLayer.interface.encodeFunctionData("grantDelegation
 							active or expire soon.
 						</li>
 						<li>
-							<strong>Sign the key's operations first.</strong> The key's signatures need no prompt, so prepare them before asking for
-							the owner's signature. A typical first batch is the grant followed by the key's <code>approveOperationalFee</code>, which
-							lets the relayer charge operational fees to the account.
+							<strong>Sign the key&rsquo;s operations first.</strong> The key&rsquo;s signatures need no prompt, so prepare them before
+							asking for the owner&rsquo;s signature. A typical first batch is the grant followed by the key&rsquo;s
+							<code>approveOperationalFee</code>, which lets the relayer charge operational fees to the account.
 						</li>
 						<li><strong>Verify after the batch.</strong> Read the delegation again before reporting that trading is enabled.</li>
 					</ul>
@@ -222,8 +223,8 @@ const grantCallData = instantLayer.interface.encodeFunctionData("grantDelegation
 					<h2 id="sign">Signing operations</h2>
 					<p>
 						The key signs each operation as EIP-712 typed data with the <code>SymmioInstantLayer</code> domain, version <code>1</code>,
-						the chain ID, and InstantLayer as the verifying contract. The operation's target can be a different contract, such as Core or
-						AccountLayer: InstantLayer verifies the signature, then calls the target.
+						the chain ID, and InstantLayer as the verifying contract. The operation&rsquo;s target can be a different contract, such as
+						Core or AccountLayer: InstantLayer verifies the signature, then calls the target.
 					</p>
 					<pre><code class="language-typescript">import { hexlify, randomBytes } from "ethers"
 
@@ -262,8 +263,8 @@ const signature = await sessionKey.signTypedData(
 					<p>InstantLayer enforces these limits on-chain, against the calldata that actually executes:</p>
 					<ul>
 						<li>
-							<strong>Only the granted functions.</strong> Each operation's function selector must have an active delegation to the key.
-							For AccountLayer timelock wrappers (<code>executeTimelockOp</code>), the check applies to the wrapped function.
+							<strong>Only the granted functions.</strong> Each operation&rsquo;s function selector must have an active delegation to
+							the key. For AccountLayer timelock wrappers (<code>executeTimelockOp</code>), the check applies to the wrapped function.
 						</li>
 						<li>
 							<strong>Only the granted account family.</strong> A grant covers the named SubAccount and its Virtual Accounts. Other
@@ -279,17 +280,18 @@ const signature = await sessionKey.signTypedData(
 						<li><strong>No PartyB accounts.</strong> PartyB accounts cannot grant delegations.</li>
 						<li>
 							<strong>Billed to the account.</strong> Operations relayed through Gasless Layer are billed to the account. The key can
-							cap each operation's charge with a signed fee limit; see <a href="gasless-layer.html#fee-limits">Signed fee limits</a>.
+							cap each operation&rsquo;s charge with a signed fee limit; see
+							<a href="gasless-layer.html#fee-limits">Signed fee limits</a>.
 						</li>
 					</ul>
 
 					<h3 id="limits-wallets">GaslessWallet operations</h3>
 					<p>
-						To sign operations for the owner's GaslessWallets, the key needs <code>WALLET_EXECUTION_SENTINEL_SELECTOR</code> plus the
-						selector of every call inside the wallet operation. It cannot send native currency from a wallet. Wallet permissions are
+						To sign operations for the owner&rsquo;s GaslessWallets, the key needs <code>WALLET_EXECUTION_SENTINEL_SELECTOR</code> plus
+						the selector of every call inside the wallet operation. It cannot send native currency from a wallet. Wallet permissions are
 						checked by selector, not by target contract or wallet ID, so a granted selector works through every wallet the owner has. With
 						the sentinel and a general token selector such as ERC-20 <code>transfer</code> or <code>approve</code>, the key could move any
-						wallet's tokens. See <a href="gasless-layer.html#wallet-operations">GaslessWallet operations</a>.
+						wallet&rsquo;s tokens. See <a href="gasless-layer.html#wallet-operations">GaslessWallet operations</a>.
 					</p>
 
 					<h2 id="services">Service delegates</h2>
@@ -297,7 +299,7 @@ const signature = await sessionKey.signTypedData(
 						An automated service, such as a take-profit and stop-loss bot, gets its own delegate address with its own functions and
 						expiry, usually fewer functions and a longer expiry than the session key. The session key then signs requests to the service
 						off-chain, for example "close this position at this price", and the service later executes them on-chain with its own
-						delegation. The service can confirm that a request came from the account's key with
+						delegation. The service can confirm that a request came from the account&rsquo;s key with
 						<code>isDelegationActive</code>.
 					</p>
 					<p>
@@ -325,7 +327,7 @@ const signature = await sessionKey.signTypedData(
 								<tr>
 									<td>Delegation</td>
 									<td><code>expiryTimestamp</code> in the grant</td>
-									<td>The key's signatures stop executing</td>
+									<td>The key&rsquo;s signatures stop executing</td>
 								</tr>
 								<tr>
 									<td>Operation</td>
@@ -388,8 +390,8 @@ if (!active) {
 							script running in the same origin can use it. It is not a hardware-wallet boundary.
 						</li>
 						<li>
-							<strong>The protocol, not the key, limits what executes.</strong> The key can sign any message. Only the delegation's
-							account, functions, and expiry decide what InstantLayer executes.
+							<strong>The protocol, not the key, limits what executes.</strong> The key can sign any message. Only the
+							delegation&rsquo;s account, functions, and expiry decide what InstantLayer executes.
 						</li>
 						<li>
 							<strong>Grant the minimum.</strong> Give each key and service only the functions it uses, give onboarding-only permissions
@@ -401,7 +403,7 @@ if (!active) {
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

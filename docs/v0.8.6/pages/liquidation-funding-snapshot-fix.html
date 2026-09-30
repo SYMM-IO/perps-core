@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -107,8 +107,8 @@
 							was marked disputed by the existing equality check.
 						</li>
 						<li>
-							In rare cases, wrong funding debts across positions or PartyBs could cancel out so PartyA's total UPNL stayed unchanged,
-							allowing liquidation to pass with wrong settlement accounting.
+							In rare cases, wrong funding debts across positions or PartyBs could cancel out so PartyA&rsquo;s total UPNL stayed
+							unchanged, allowing liquidation to pass with wrong settlement accounting.
 						</li>
 					</ul>
 					<h2 id="new-muon-payload">New Muon payload</h2>
@@ -180,7 +180,7 @@ mapping(address =&gt; mapping(bytes =&gt; mapping(address =&gt; mapping(uint256 
     int256 cumulativeShortFee;
 }
 </code></pre>
-					<p>The active PartyA liquidation's signed <code>liquidationId</code> is the storage key.</p>
+					<p>The active PartyA liquidation&rsquo;s signed <code>liquidationId</code> is the storage key.</p>
 					<p>In the multi-step path, these fields are populated in two calls:</p>
 					<ul>
 						<li>
@@ -350,7 +350,7 @@ function getPartyALiquidationSnapshots(
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

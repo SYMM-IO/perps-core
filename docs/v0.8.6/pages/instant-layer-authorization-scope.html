@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -84,11 +84,11 @@
 					<p>
 						That flag answers <em>&quot;is the protocol currently inside an InstantLayer batch?&quot;</em> It says nothing about who is
 						calling <code>MultiAccount</code>. While it is true, <code>_call</code> accepts any <code>msg.sender</code>, for any account,
-						for any selector, and the delegation map is skipped entirely. InstantLayer's <code>whitelistedTargets</code> map identifies
-						the external contracts a batch is allowed to call. A v0.8.5 batch could call one of those targets; any code reached while that
-						call was executing observed the same core-wide flag. During that window the delegation check was therefore off for every
-						MultiAccount sub-account at once. The v0.8.5 flag was persistent state, not automatically reset, and its lifecycle was the
-						caller's responsibility.
+						for any selector, and the delegation map is skipped entirely. InstantLayer&rsquo;s <code>whitelistedTargets</code> map
+						identifies the external contracts a batch is allowed to call. A v0.8.5 batch could call one of those targets; any code reached
+						while that call was executing observed the same core-wide flag. During that window the delegation check was therefore off for
+						every MultiAccount sub-account at once. The v0.8.5 flag was persistent state, not automatically reset, and its lifecycle was
+						the caller&rsquo;s responsibility.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -160,7 +160,7 @@
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

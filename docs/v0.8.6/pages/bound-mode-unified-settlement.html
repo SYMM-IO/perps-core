@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -64,8 +64,9 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						Bind mode is Symmio's oracle-less trading path. A partyA binds to a single solver, and that solver can open positions, fill
-						closes, and charge funding for the bound partyA without presenting Muon signatures. The deprecated <code>settleUpnl</code>
+						Bind mode is Symmio&rsquo;s oracle-less trading path. A partyA binds to a single solver, and that solver can open positions,
+						fill closes, and charge funding for the bound partyA without presenting Muon signatures. The deprecated
+						<code>settleUpnl</code>
 						already participated in this model. When the target partyA was bound to the caller, the Muon settlement signature was not
 						verified.
 					</p>
@@ -87,8 +88,8 @@
 					<ul>
 						<li>
 							<strong>The caller is <code>sig.partyB</code>.</strong> The solver is settling its own book. A third-party partyB settling
-							someone else's positions always needs a Muon signature, since it would otherwise control the upnl inputs to another
-							solver's settlement.
+							someone else&rsquo;s positions always needs a Muon signature, since it would otherwise control the upnl inputs to another
+							solver&rsquo;s settlement.
 						</li>
 						<li>
 							<strong>The caller is bindable.</strong> <code>isPartyBBindable</code> is still set. Revoking bindability immediately
@@ -169,14 +170,14 @@
 
 					<h2 id="safety">Why the bound path skips solvency checks</h2>
 					<p>
-						Settlement realizes unrealized PnL: it rewrites a quote's <code>openedPrice</code> and transfers exactly the corresponding
-						difference between allocated balances. It is equity-neutral by construction, so whatever prices the payload claims, each
-						party's allocated balance moves by precisely the amount its unrealized PnL moves the other way. A bound solver feeding
-						fabricated prices cannot change either party's equity, and the balance mutations are underflow-guarded so no settlement can
-						push a balance negative.
+						Settlement realizes unrealized PnL: it rewrites a quote&rsquo;s <code>openedPrice</code> and transfers exactly the
+						corresponding difference between allocated balances. It is equity-neutral by construction, so whatever prices the payload
+						claims, each party&rsquo;s allocated balance moves by precisely the amount its unrealized PnL moves the other way. A bound
+						solver feeding fabricated prices cannot change either party&rsquo;s equity, and the balance mutations are underflow-guarded so
+						no settlement can push a balance negative.
 					</p>
 					<p>
-						Binding gives PartyA no control over the settled price. A bound solver already opens and closes that partyA's positions
+						Binding gives PartyA no control over the settled price. A bound solver already opens and closes that partyA&rsquo;s positions
 						without an oracle, and realizing PnL on an open position applies the same authority applied to a position that already exists.
 					</p>
 					<p>
@@ -189,8 +190,8 @@
 					<p>
 						The draw is capped at <code>min(settled amount, mm)</code>, one wei more is refused, it does not compound across further
 						settlements, and the solver stays able to pay its bound partyA in full. So the solver can choose to run itself at minimum
-						margin without a market move. It draws down its own buffer, and nothing about the counterparty's claim or the protocol's
-						solvency changes.
+						margin without a market move. It draws down its own buffer, and nothing about the counterparty&rsquo;s claim or the
+						protocol&rsquo;s solvency changes.
 					</p>
 					<h2 id="unchanged">Flows that keep full verification</h2>
 					<ul>
@@ -238,7 +239,7 @@
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>

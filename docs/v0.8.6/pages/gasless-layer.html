@@ -33,7 +33,7 @@
 					<a class="trail-link" href="../index.html">v0.8.6</a>
 				</nav>
 				<nav class="top-actions" aria-label="Page actions">
-					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
 				</nav>
 			</div>
 		</header>
@@ -131,7 +131,7 @@
 					</div>
 
 					<h2 id="architecture">Architecture and authority</h2>
-					<pre><code class="language-mermaid">flowchart LR
+					<pre data-diagram-size="1437 354"><code class="language-mermaid">flowchart LR
     User[User or delegated signer] -- signed intent --> Relayer[Approved relayer]
     Relayer -- pays chain gas --> Layer[Gasless Layer proxy]
     Owner[Wallet owner] -- pays gas for direct withdrawal --> Layer
@@ -173,8 +173,8 @@
 					</p>
 					<aside class="callout callout-note">
 						<strong>Client migration</strong> Gasless Layer no longer exposes the standalone delegation relay. Clients must sign a new
-						operation using InstantLayer's operation replay rules; old delegation signatures cannot be reused. Configure fees for the
-						grant selectors and consume the normal batch and fee-routing events. See
+						operation using InstantLayer&rsquo;s operation replay rules; old delegation signatures cannot be reused. Configure fees for
+						the grant selectors and consume the normal batch and fee-routing events. See
 						<a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a> for the request format.
 					</aside>
 
@@ -185,7 +185,7 @@
 						address. Only the Gasless Layer proxy can make it transfer assets or execute calls.
 					</p>
 					<p>
-						A wallet operation reuses the <code>SignedOperation</code> envelope, but its target must equal the owner's selected
+						A wallet operation reuses the <code>SignedOperation</code> envelope, but its target must equal the owner&rsquo;s selected
 						GaslessWallet and its calldata must encode <code>GaslessWallet.execute(Call[])</code>. Gasless Layer verifies the
 						gateway-domain signature, deadline, and sequential nonce for that wallet and signer account before executing the calls.
 					</p>
@@ -194,15 +194,15 @@
 						<li>
 							A delegated signer needs an active InstantLayer delegation for the wallet-execution sentinel and every inner call
 							selector. For calls to AccountLayer, nested <code>executeTimelockOp</code> wrappers are unwrapped and the enclosed
-							operation's selector is checked; granting the wrapper selector does not authorize the enclosed operation.
+							operation&rsquo;s selector is checked; granting the wrapper selector does not authorize the enclosed operation.
 						</li>
 						<li>
 							Delegated calls must have zero native <code>value</code>. Only owner-signed wallet operations may send native currency;
 							ordinary selector grants do not grant native-spending authority.
 						</li>
 						<li>
-							Wallet calls have no target allowlist. The owner's signature binds the complete call list. A delegated signer is checked
-							by selector, not by target, so a grant authorizes that selector wherever the wallet can call it.
+							Wallet calls have no target allowlist. The owner&rsquo;s signature binds the complete call list. A delegated signer is
+							checked by selector, not by target, so a grant authorizes that selector wherever the wallet can call it.
 						</li>
 						<li>PartyB wallet operations are rejected.</li>
 						<li>Any failed inner call reverts the whole wallet operation and the surrounding relay transaction.</li>
@@ -250,9 +250,9 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 					</p>
 					<p>
 						To deploy a wallet before it is needed, relay a wallet operation whose calldata is <code>execute([])</code>. It runs no calls
-						and moves none of the wallet's funds, so it has no selector fee and does not use the daily free-operation quota. It charges
-						only <code>walletCreationFee</code>, and only if it deploys the wallet; on an existing wallet it just consumes the nonce. A
-						delegated signer needs only the wallet-execution sentinel. The same batch can grant that sentinel and approve the fee
+						and moves none of the wallet&rsquo;s funds, so it has no selector fee and does not use the daily free-operation quota. It
+						charges only <code>walletCreationFee</code>, and only if it deploys the wallet; on an existing wallet it just consumes the
+						nonce. A delegated signer needs only the wallet-execution sentinel. The same batch can grant that sentinel and approve the fee
 						allowance before the empty executions run, because fees are collected after the whole batch. That sentinel is not limited to
 						empty calls or to one wallet: with any other selector grant, the delegate can use that selector through every wallet of the
 						owner.
@@ -272,7 +272,7 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 					</p>
 					<aside class="callout callout-important">
 						<strong>Reserve the selected wallet in the service</strong> Any wallet can be used for deposits or withdrawals. Settlement
-						sweeps that wallet's entire collateral balance; the contract does not know which transfer those funds belong to. Assign
+						sweeps that wallet&rsquo;s entire collateral balance; the contract does not know which transfer those funds belong to. Assign
 						distinct indices to overlapping transfers and persist owner, index, destination SubAccount, and status before submitting a
 						bridge request. Coordinate this across subaccounts, tabs and devices. Reusing an index while a withdrawal is pending can mix
 						its funds with a deposit again. A zero balance alone does not mean a transfer is complete, since funds may still be in flight.
@@ -313,9 +313,9 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 					</p>
 					<p>
 						Use the ERC20 address as <code>token</code>, including the collateral token, or <code>address(0)</code> for native funds.
-						Amounts use the token's decimals or wei. Pass <code>type(uint256).max</code> to withdraw the entire balance remaining after
-						any creation fee. The recipient and resulting withdrawal amount must be nonzero. The function returns the amount sent and
-						emits <code>WalletFundsWithdrawn(owner, walletId, token, recipient, amount)</code>.
+						Amounts use the token&rsquo;s decimals or wei. Pass <code>type(uint256).max</code> to withdraw the entire balance remaining
+						after any creation fee. The recipient and resulting withdrawal amount must be nonzero. The function returns the amount sent
+						and emits <code>WalletFundsWithdrawn(owner, walletId, token, recipient, amount)</code>.
 					</p>
 					<p>
 						Direct withdrawals charge no operational or deposit fee. First deployment still charges <code>walletCreationFee</code> from
@@ -326,15 +326,15 @@ await gateway.relayInstantBatch([signedOp], [signature], [], [], walletIds)</cod
 					<p>
 						When deployment incurs a fee, GaslessLayer first transfers that collateral amount from the wallet to treasury, then transfers
 						the requested token to the recipient. Insufficient collateral makes the fee transfer revert, rolling back deployment and
-						leaving the wallet's funds in place. An already deployed wallet pays no creation fee. The owner's transaction account needs
-						native gas before calling and pays gas even if the transaction reverts.
+						leaving the wallet&rsquo;s funds in place. An already deployed wallet pays no creation fee. The owner&rsquo;s transaction
+						account needs native gas before calling and pays gas even if the transaction reverts.
 					</p>
 					<aside class="callout callout-important">
-						<strong>Example: WETH sent to an undeployed wallet</strong> Suppose Core's collateral is USDC, the creation fee is 3 USDC, and
-						the wallet holds only WETH. Withdrawing WETH reverts when the wallet attempts to pay the USDC fee. GaslessLayer does not
-						convert WETH into USDC or deduct an equivalent WETH amount. The owner can send 3 USDC directly to the gasless wallet and then
-						withdraw the WETH without opening a SYMMIO account. If the wallet is already deployed or the creation fee is zero, no USDC is
-						needed for that withdrawal.
+						<strong>Example: WETH sent to an undeployed wallet</strong> Suppose Core&rsquo;s collateral is USDC, the creation fee is 3
+						USDC, and the wallet holds only WETH. Withdrawing WETH reverts when the wallet attempts to pay the USDC fee. GaslessLayer does
+						not convert WETH into USDC or deduct an equivalent WETH amount. The owner can send 3 USDC directly to the gasless wallet and
+						then withdraw the WETH without opening a SYMMIO account. If the wallet is already deployed or the creation fee is zero, no
+						USDC is needed for that withdrawal.
 					</aside>
 					<pre><code class="language-typescript">import { MaxUint256 } from "ethers"
 import { quoteGaslessFee } from "./fee-quote"
@@ -349,10 +349,11 @@ const result = await quoteGaslessFee({
 if (result.status !== "quoted") throw new Error(result.errorName ?? result.data)
 await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDebit18)</code></pre>
 					<p>
-						Supply the owner's address as <code>from</code> in both preview and exact quotes. This selects the same wallet as submission.
-						The fee-limit wrapper retains that caller and reverts all transfers and deployment if the cap is exceeded. Withdrawals cover
-						funds already held at the GaslessWallet address. Funds still in Core or an in-flight bridge follow those systems' withdrawal
-						and settlement rules. A direct withdrawal does not revoke earlier signed operations or token allowances.
+						Supply the owner&rsquo;s address as <code>from</code> in both preview and exact quotes. This selects the same wallet as
+						submission. The fee-limit wrapper retains that caller and reverts all transfers and deployment if the cap is exceeded.
+						Withdrawals cover funds already held at the GaslessWallet address. Funds still in Core or an in-flight bridge follow those
+						systems&rsquo; withdrawal and settlement rules. A direct withdrawal does not revoke earlier signed operations or token
+						allowances.
 					</p>
 
 					<h2 id="native-top-ups">Native gas top-ups</h2>
@@ -368,7 +369,7 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						accepted on the same footing as 65-byte ECDSA signatures. Wallet operations and InstantLayer operations already validate
 						signers the same way. The smart account must produce the ERC-1271 signature for the supplied digest according to its own
 						policy. Coinbase Smart Wallet, for example, wraps that digest in its account-specific replay-safe EIP-712 domain before the
-						owner signs it; merely wrapping the owner's raw Gasless digest signature is not valid.
+						owner signs it; merely wrapping the owner&rsquo;s raw Gasless digest signature is not valid.
 					</p>
 					<p>
 						The actual native amount must meet <code>minNativeAmountOut</code> and must not exceed <code>maxNativeGasTopUpAmount</code>.
@@ -385,7 +386,7 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<h2 id="cross-chain-deposits">Cross-chain deposit settlement</h2>
 					<p>
 						A frontend reads <code>getGaslessWalletAddress(owner, walletId)</code> and routes bridged collateral to that address. The
-						relayer later settles the wallet's entire collateral balance through one of two paths:
+						relayer later settles the wallet&rsquo;s entire collateral balance through one of two paths:
 					</p>
 					<ul>
 						<li>
@@ -432,7 +433,7 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<aside class="callout callout-risk">
 						<strong>New-account settings are not user-signed</strong> The relayer supplies the affiliate and account settings for
 						<code>settleDepositToNewAccount</code>. The transaction still creates an account owned by the requested owner, but the service
-						must preserve the user's off-chain choice correctly.
+						must preserve the user&rsquo;s off-chain choice correctly.
 					</aside>
 
 					<h2 id="fees">Operational fees and billing</h2>
@@ -447,11 +448,11 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<p>
 						The creation fee is a fixed quantity of the configured collateral token. For 6-decimal USDC,
 						<code>walletCreationFee = 3_000_000</code> charges 3 USDC. If Core uses WETH as collateral, the configured quantity is in WETH
-						base units and its dollar value changes with WETH's price. GaslessLayer uses no price oracle or exchange rate for this fee and
-						does not convert it into the token being withdrawn or recovered.
+						base units and its dollar value changes with WETH&rsquo;s price. GaslessLayer uses no price oracle or exchange rate for this
+						fee and does not convert it into the token being withdrawn or recovered.
 					</p>
 					<ul>
-						<li>Deposit settlement deducts the fee from the wallet's incoming collateral and sends it to treasury.</li>
+						<li>Deposit settlement deducts the fee from the wallet&rsquo;s incoming collateral and sends it to treasury.</li>
 						<li>
 							Wallet execution charges the SYMMIO billing account after the batch, using its operational-fee allowance and the usual
 							Virtual Account fallback. The wallet can spend its full withdrawal balance.
@@ -466,7 +467,7 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						The fee applies once per wallet, including wallet ID zero, except when admin recovery performs the first deployment without
 						charging it. Reusing a wallet never charges it again, even if the fee was zero or waived for recovery when that wallet was
 						deployed. Free-operation quotas and selector-fee multipliers do not change the creation fee. Execution converts the fee to
-						Core's 18-decimal accounting units; deposit and owner-withdrawal payments use the token's decimals.
+						Core&rsquo;s 18-decimal accounting units; deposit and owner-withdrawal payments use the token&rsquo;s decimals.
 						<code>getWalletCreationFee(owner, walletId)</code> returns the fee due for that wallet at the current state, or zero if
 						deployed. <code>previewFeeQuote</code> includes execution creation fees once per distinct undeployed wallet in the supplied
 						batch, assigned to its first operation. Its <code>totalFee18</code> already includes those fees; do not add them again.
@@ -474,14 +475,15 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<p>
 						<code>WalletCreationFeeCollected(wallet, payer, amount)</code> reports the creation fee in collateral token units. For
 						execution, <code>OperationalFeeRouted</code> and <code>InstantBatchRelayed.totalFee18</code> include the converted fee in
-						Core's 18 decimals. Core sends execution fees to its configured operational-fee receiver. Any failure rolls back the
+						Core&rsquo;s 18 decimals. Core sends execution fees to its configured operational-fee receiver. Any failure rolls back the
 						deployment, fee, and other actions in that transaction.
 					</p>
 					<h3 id="selector-pricing">Selector pricing</h3>
 					<p>
 						The relayer never submits an operational-fee amount. Gasless Layer reads each operation selector, applies an explicit
 						<code>selectorFeeConfigs</code> value when configured, and otherwise uses <code>defaultSelectorFee</code>. Wallet operations
-						sum the prices of their inner call selectors. Core then applies the payer's approved multiplier for the Gasless Layer charger.
+						sum the prices of their inner call selectors. Core then applies the payer&rsquo;s approved multiplier for the Gasless Layer
+						charger.
 					</p>
 					<p>
 						The first <code>dailyFreeOpsLimit</code> operations for a billing account in each UTC day waive their base fee. A zero limit
@@ -499,13 +501,14 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					</p>
 					<p>
 						Billing and authorization deliberately use different account resolution. A deleted Virtual Account keeps its parent for
-						billing because its returned funds sit there. It does not inherit the parent's wallet or delegation authority after deletion.
+						billing because its returned funds sit there. It does not inherit the parent&rsquo;s wallet or delegation authority after
+						deletion.
 					</p>
 
 					<h3 id="fee-timing">Fee timing and atomicity</h3>
 					<p>
 						Batches and templates execute before Gasless Layer collects their operational fees. This lets an operation approve or increase
-						the Gasless Layer allowance used by the same transaction. Gasless Layer then consolidates each payer's amount and calls
+						the Gasless Layer allowance used by the same transaction. Gasless Layer then consolidates each payer&rsquo;s amount and calls
 						<code>core.chargeOperationalFee</code> once per distinct payer.
 					</p>
 					<p>
@@ -537,7 +540,7 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<h3 id="quote-funded-simulation">The money has arrived: try the settlement without committing it</h3>
 					<p>
 						The wallet now holds exactly 100 USDC. Call <code>simulateFeeQuote(callData)</code> through <code>eth_call</code>, using the
-						relayer's address as <code>from</code>.
+						relayer&rsquo;s address as <code>from</code>.
 						<strong><code>eth_call</code> asks the RPC node to run the call without submitting a blockchain transaction.</strong>
 						The user pays no transaction fee for this check.
 					</p>
@@ -576,7 +579,7 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						while preview is a Solidity <code>view</code> method.
 					</p>
 					<p>
-						These amounts are examples, assuming USDC is collateral. Settlement sweeps the wallet's whole collateral balance, so the
+						These amounts are examples, assuming USDC is collateral. Settlement sweeps the wallet&rsquo;s whole collateral balance, so the
 						example assumes exactly 100 USDC arrives and no other USDC is present. Quotes cover GaslessLayer charges; add transaction gas,
 						bridge fees, and Core trading fees separately when displaying the full cost.
 					</p>
@@ -585,8 +588,8 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<p>Each entry in <code>quote.payments</code> gives you a <code>payer</code> address and a <code>source</code>:</p>
 					<ul>
 						<li>
-							<strong><code>source = 0</code>:</strong> the fee is charged to <code>payer</code>'s balance in SYMMIO Core. This is not
-							the ERC20 balance in the user's browser wallet. The account also needs sufficient operational-fee allowance for
+							<strong><code>source = 0</code>:</strong> the fee is charged to <code>payer</code>&rsquo;s balance in SYMMIO Core. This is
+							not the ERC20 balance in the user&rsquo;s browser wallet. The account also needs sufficient operational-fee allowance for
 							GaslessLayer.
 						</li>
 						<li>
@@ -601,24 +604,24 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					</p>
 					<p>
 						Display every quote amount with <code>formatUnits(amount, 18)</code>, including USDC fees. For example,
-						<code>5000000000000000000n</code> means 5 USDC when USDC is collateral. <code>collateralDecimals</code> describes the token's
-						raw transfer units; it does not change the quote's 18-decimal units.
+						<code>5000000000000000000n</code> means 5 USDC when USDC is collateral. <code>collateralDecimals</code> describes the
+						token&rsquo;s raw transfer units; it does not change the quote&rsquo;s 18-decimal units.
 					</p>
 
 					<h3 id="quote-batch-accounts">A batch has more than one account</h3>
 					<p>
 						Suppose Alice submits two operations and Bob submits one, each costing 1 USDC. Preview the whole batch once:
-						<code>totalFee18</code> is 3 USDC, and <code>payments</code> contains one row per operation in batch order. To show Alice's
-						operations costing 2 USDC, select the rows whose <code>account</code> is Alice's signer account and add
+						<code>totalFee18</code> is 3 USDC, and <code>payments</code> contains one row per operation in batch order. To show
+						Alice&rsquo;s operations costing 2 USDC, select the rows whose <code>account</code> is Alice&rsquo;s signer account and add
 						<code>operationalFee18 + walletCreationFee18</code>. To show which balance needs the money, group by <code>payer</code> and
-						<code>source</code> instead. A Virtual Account's row keeps the Virtual Account as <code>account</code> even when its parent
-						pays.
+						<code>source</code> instead. A Virtual Account&rsquo;s row keeps the Virtual Account as <code>account</code> even when its
+						parent pays.
 					</p>
 					<p>
 						For a parent account and its Virtual Accounts together, include the rows for every signer belonging to that parent. Keep the
-						full batch when requesting the preview: removing other operations can change which operation pays a shared wallet's creation
-						fee or uses the remaining free quota. <code>freeOpsApplied</code> counts free operations across the whole batch;
-						<code>dailyFreeOpsRemaining(account)</code> reads one billing account's remaining quota.
+						full batch when requesting the preview: removing other operations can change which operation pays a shared wallet&rsquo;s
+						creation fee or uses the remaining free quota. <code>freeOpsApplied</code> counts free operations across the whole batch;
+						<code>dailyFreeOpsRemaining(account)</code> reads one billing account&rsquo;s remaining quota.
 					</p>
 					<p>
 						If quota exhaustion is configured to block execution, preview reverts with
@@ -634,9 +637,9 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						billing parent. This works before the signature or allowance is available. The same rule applies to an approval-only template.
 					</p>
 					<p>
-						This estimates the parent's charge; it does not prove that the parent can pay. Use simulation once the request is ready to
-						check whether execution charges a Virtual Account instead. For approvals mixed with other operations, or approvals using flex
-						fields, preview uses current state; simulation observes the completed approval and subsequent charges.
+						This estimates the parent&rsquo;s charge; it does not prove that the parent can pay. Use simulation once the request is ready
+						to check whether execution charges a Virtual Account instead. For approvals mixed with other operations, or approvals using
+						flex fields, preview uses current state; simulation observes the completed approval and subsequent charges.
 					</p>
 
 					<h3 id="quote-deposit-example">Code for the deposit preview</h3>
@@ -672,7 +675,7 @@ console.log("Taken from GaslessWallet:", depositQuote.payments[0].payer)</code><
 					</p>
 					<h3 id="quote-withdrawal-example">The user wants to withdraw everything from a GaslessWallet</h3>
 					<p>
-						Encode <code>withdrawWalletFunds</code> and preview it <strong>with the owner's address as <code>from</code></strong
+						Encode <code>withdrawWalletFunds</code> and preview it <strong>with the owner&rsquo;s address as <code>from</code></strong
 						>. The function selects the wallet belonging to the caller, so the caller address matters even for the preview.
 					</p>
 					<pre><code class="language-typescript">const withdrawalData = gateway.interface.encodeFunctionData("withdrawWalletFunds", [
@@ -757,7 +760,7 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 					<p>
 						Show the returned fees and payers on the confirmation screen. If they exceed what the user accepted, request approval and new
 						signatures where needed. The result describes the simulated block, not a reserved future price. Set the
-						<a href="#fee-limits">signed fee limits</a> before signing to enforce the user's maximum when the relayer submits. For a
+						<a href="#fee-limits">signed fee limits</a> before signing to enforce the user&rsquo;s maximum when the relayer submits. For a
 						direct owner withdrawal, the owner can submit the inner calldata through
 						<code>executeWithFeeLimit(callData, maxTotalDebit18)</code> to enforce their accepted maximum.
 					</p>
@@ -776,21 +779,21 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 								<tr>
 									<td>How much collateral a native gas top-up will debit</td>
 									<td>
-										Preview <code>relayNativeGasTopUp</code> calldata. Pass the proposed native wei as the helper's
-										<code>value</code>; it becomes <code>previewFeeQuote</code>'s second argument.
+										Preview <code>relayNativeGasTopUp</code> calldata. Pass the proposed native wei as the helper&rsquo;s
+										<code>value</code>; it becomes <code>previewFeeQuote</code>&rsquo;s second argument.
 									</td>
 									<td>
 										Use <code>totalDebit18</code>. Buying native gas for 10 USDC with a 0.1-USDC fee means a 10.1-USDC debit, even
-										though <code>totalFee18</code> is only 0.1 USDC. The payer's SYMMIO balance covers it. A sponsored top-up has
-										zero collateral debit; inspect <code>nativeSponsored</code>.
+										though <code>totalFee18</code> is only 0.1 USDC. The payer&rsquo;s SYMMIO balance covers it. A sponsored
+										top-up has zero collateral debit; inspect <code>nativeSponsored</code>.
 									</td>
 								</tr>
 								<tr>
 									<td>Only the cost to deploy a particular wallet</td>
 									<td><code>getWalletCreationFee(ownerAddress, walletId)</code></td>
 									<td>
-										The raw collateral-token amount, or zero if deployed. Format this getter with the token's decimals—for USDC,
-										normally 6. It is only the creation component, not a whole-action quote.
+										The raw collateral-token amount, or zero if deployed. Format this getter with the token&rsquo;s decimals—for
+										USDC, normally 6. It is only the creation component, not a whole-action quote.
 									</td>
 								</tr>
 								<tr>
@@ -810,9 +813,9 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 						For a batch or template operation, including a delegation grant, use <code>gaslessFeeLimitSalt(maxFee)</code> as
 						<code>replayAttackHeader.salt</code> before signing. The existing EIP-712 type and relay arguments stay the same. The salt
 						contains the first eight bytes of <code>keccak256("SYMMIO_GASLESS_FEE_LIMIT_V1")</code>, a 16-byte unsigned fee limit, and
-						eight random bytes. The limit uses 18 decimals and includes the operation's wallet creation fee, regardless of quota or payer
-						fallback. It applies per use of that operation; multi-use operations retain their existing replay rules. Set zero to allow
-						only free execution. Removing or changing the limit invalidates the signature.
+						eight random bytes. The limit uses 18 decimals and includes the operation&rsquo;s wallet creation fee, regardless of quota or
+						payer fallback. It applies per use of that operation; multi-use operations retain their existing replay rules. Set zero to
+						allow only free execution. Removing or changing the limit invalidates the signature.
 					</p>
 					<p>
 						For native top-ups, use <code>signCappedNativeGasTopUp(signer, gateway, request, maxTotalCharge)</code>. The maximum includes
@@ -827,9 +830,9 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 					</p>
 					<p>
 						For unsigned deposit settlement, admin recovery or direct owner withdrawals, the submitting account can call
-						<code>executeWithFeeLimit(callData, maxTotalDebit18)</code>. It enforces the caller's aggregate 18-decimal debit limit and
-						retains the original role checks and caller's wallet identity. For relayer/admin actions, this is a caller limit, not a user
-						signature or a restriction on other authorized relayer/admin calls. Quote the inner calldata and compare its
+						<code>executeWithFeeLimit(callData, maxTotalDebit18)</code>. It enforces the caller&rsquo;s aggregate 18-decimal debit limit
+						and retains the original role checks and caller&rsquo;s wallet identity. For relayer/admin actions, this is a caller limit,
+						not a user signature or a restriction on other authorized relayer/admin calls. Quote the inner calldata and compare its
 						<code>totalDebit18</code> with the chosen limit before using this wrapper. A limit failure reverts the entire action,
 						including wallet deployment and all transfers.
 					</p>
@@ -858,8 +861,8 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 								</tr>
 								<tr>
 									<td>Core</td>
-									<td>Set the proxy's operational-fee receiver to the treasury</td>
-									<td>Relay fees accrue to the proxy's Core balance, which has no withdrawal path</td>
+									<td>Set the proxy&rsquo;s operational-fee receiver to the treasury</td>
+									<td>Relay fees accrue to the proxy&rsquo;s Core balance, which has no withdrawal path</td>
 								</tr>
 								<tr>
 									<td>InstantLayer</td>
@@ -870,8 +873,8 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 									<td>AccountLayer</td>
 									<td><code>ACCOUNT_CREATOR_ROLE</code> for the proxy</td>
 									<td>
-										<code>settleDepositToNewAccount</code> reverts. The deployment tooling's post-deploy check does not cover this
-										grant, so verify it separately.
+										<code>settleDepositToNewAccount</code> reverts. The deployment tooling&rsquo;s post-deploy check does not
+										cover this grant, so verify it separately.
 									</td>
 								</tr>
 							</tbody>
@@ -888,7 +891,7 @@ console.log("Actual payers in this simulation:", checked.quote.payments)</code><
 					<h2 id="onboarding-guide">Onboarding guide for affiliates</h2>
 					<p>
 						This is the complete flow for an affiliate front end, such as Vibe, that gives each user one wallet for deposits and one for
-						withdrawals. Wallet IDs are the affiliate's choice; the examples use wallet 0 for deposits and wallet 1 for withdrawals.
+						withdrawals. Wallet IDs are the affiliate&rsquo;s choice; the examples use wallet 0 for deposits and wallet 1 for withdrawals.
 					</p>
 					<p>
 						<strong>Goal:</strong> onboarding with both wallets costs 1.00 USDC in total, and each later deposit costs 0.05 USDC. A config
@@ -916,11 +919,11 @@ const ready = balance >= (await gateway.minimumDeposit())</code></pre>
 						</li>
 						<li>
 							<p>
-								<strong>Settle into a new account.</strong> The relayer deploys the deposit wallet, sweeps it, creates the owner's
-								SubAccount, and deposits the rest. It charges 0.90 USDC: 0.80 settlement and 0.10 wallet creation. After the preview,
-								the relayer either calls the settlement directly, which charges the fees current at execution, or wraps it in
-								<code>executeWithFeeLimit(callData, maxTotalDebit18)</code>, which reverts the whole settlement if the charge exceeds
-								the cap.
+								<strong>Settle into a new account.</strong> The relayer deploys the deposit wallet, sweeps it, creates the
+								owner&rsquo;s SubAccount, and deposits the rest. It charges 0.90 USDC: 0.80 settlement and 0.10 wallet creation. After
+								the preview, the relayer either calls the settlement directly, which charges the fees current at execution, or wraps
+								it in <code>executeWithFeeLimit(callData, maxTotalDebit18)</code>, which reverts the whole settlement if the charge
+								exceeds the cap.
 							</p>
 							<pre><code class="language-typescript">const settle = gateway.interface.encodeFunctionData("settleDepositToNewAccount", [owner, 0n, affiliate, accountData])
 const quote = await gateway.previewFeeQuote(settle, 0) // quote.totalDebit18 == 0.90e18
@@ -934,21 +937,21 @@ const subAccount = settled.args.subAccount</code></pre>
 							<p>
 								<strong>Set up the account and create the withdrawal wallet in one relayed batch.</strong> The user signs only once.
 								That signature authorizes a <a href="session-keys.html">session key</a>: a key pair the front end generates and keeps,
-								which then signs the user's operations so the user does not approve each one in their own wallet. The batch runs three
-								operations, in this order:
+								which then signs the user&rsquo;s operations so the user does not approve each one in their own wallet. The batch runs
+								three operations, in this order:
 							</p>
 							<ul>
 								<li>
 									<strong>Delegation grant, signed by the owner.</strong> Lets the session key act for the SubAccount (see
 									<a href="#delegation-relay">Delegation through signed operations</a>). It lists
 									<code>approveOperationalFee</code>, so the session key can approve fees, and
-									<code>WALLET_EXECUTION_SENTINEL_SELECTOR</code>, so it can operate the user's GaslessWallets, plus any trading
-									functions the front end needs. It comes first because the other two operations rely on it.
+									<code>WALLET_EXECUTION_SENTINEL_SELECTOR</code>, so it can operate the user&rsquo;s GaslessWallets, plus any
+									trading functions the front end needs. It comes first because the other two operations rely on it.
 								</li>
 								<li>
-									<strong>Fee approval, signed by the session key.</strong> Lets Gasless Layer charge the SubAccount's Core balance.
-									Fees are charged once, after the whole batch runs, so this approval already applies to this batch. It must cover
-									every fee in it: here, 0.10 USDC to deploy the withdrawal wallet.
+									<strong>Fee approval, signed by the session key.</strong> Lets Gasless Layer charge the SubAccount&rsquo;s Core
+									balance. Fees are charged once, after the whole batch runs, so this approval already applies to this batch. It
+									must cover every fee in it: here, 0.10 USDC to deploy the withdrawal wallet.
 								</li>
 								<li>
 									<strong>Wallet creation, signed by the session key.</strong> A wallet operation on wallet 1 with no calls,
@@ -1069,7 +1072,7 @@ const bridgeOut = gaslessWallet.interface.encodeFunctionData("execute", [[
 								</tr>
 								<tr>
 									<td><code>WalletDepositSettled</code></td>
-									<td>Owner, wallet ID, destination SubAccount, net deposit, and the destination's flat settlement fee</td>
+									<td>Owner, wallet ID, destination SubAccount, net deposit, and the destination&rsquo;s flat settlement fee</td>
 								</tr>
 								<tr>
 									<td><code>WalletFundsWithdrawn</code></td>
@@ -1088,7 +1091,7 @@ const bridgeOut = gaslessWallet.interface.encodeFunctionData("execute", [[
 						<li>A relayer may refuse or delay a request. It cannot forge a valid InstantLayer, wallet, or native-top-up signature.</li>
 						<li>
 							<code>DEFAULT_ADMIN_ROLE</code> can authorize UUPS upgrades. <code>CONFIG_ADMIN_ROLE</code> can change fees, quotas,
-							sponsorship policy, and the deposit-fee treasury. Core's fee admin separately controls the operational-fee receiver.
+							sponsorship policy, and the deposit-fee treasury. Core&rsquo;s fee admin separately controls the operational-fee receiver.
 						</li>
 						<li>
 							The current collateral token cannot be recovered or charged as a fee through
@@ -1104,7 +1107,7 @@ const bridgeOut = gaslessWallet.interface.encodeFunctionData("execute", [[
 		</div>
 
 		<footer class="site-footer">
-			<span>Symmio Core v0.8.6 documentation.</span>
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
 		</footer>
 	</body>
 </html>
