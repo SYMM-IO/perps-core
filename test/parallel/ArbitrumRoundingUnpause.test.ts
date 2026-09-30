@@ -12,13 +12,13 @@ import {
 	verifyStageFundingRoles,
 	inspectRoundingUpgrade,
 } from "../../tasks/deploy/arbitrumRoundingUpgrade.js"
-import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
+import { initializeLegacyPauseFixture } from "../helpers/legacy-pause-fixture.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 
 describe("Arbitrum rounding release Safe unpause", function () {
 	it("stage Safe grants only missing roles before separate pause, cut and unpause files", async function () {
-		const context = await loadFixture(initializeFixture)
+		const context = await loadFixture(initializeLegacyPauseFixture)
 		const admin = context.signers.admin
 		const input = {
 			profile: "stage-funding",
@@ -67,7 +67,7 @@ describe("Arbitrum rounding release Safe unpause", function () {
 	})
 
 	it("stage inspection accepts installed rounding without pause roles and rejects selector or runtime drift", async function () {
-		const context = await loadFixture(initializeFixture)
+		const context = await loadFixture(initializeLegacyPauseFixture)
 		const admin = context.signers.admin
 		await context.pauseControlFacet.connect(admin).activateAccumulatedFunding()
 		for (const role of ["PAUSER_ROLE", "UNPAUSER_ROLE"]) await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id(role))
@@ -102,7 +102,7 @@ describe("Arbitrum rounding release Safe unpause", function () {
 		await expectFailure(() => inspectRoundingUpgrade(ethers, input, report), /Preserved rounding facet changed/)
 	})
 	it("production executes only a Ledger-owner cut without pause roles and preserves all pause flags", async function () {
-		const context = await loadFixture(initializeFixture)
+		const context = await loadFixture(initializeLegacyPauseFixture)
 		const admin = context.signers.admin
 		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))
 		await context.pauseControlFacet.connect(admin).pauseAccounting()
@@ -154,7 +154,7 @@ describe("Arbitrum rounding release Safe unpause", function () {
 	})
 
 	it("stage still requires both pause roles and a verified pause before unpause", async function () {
-		const context = await loadFixture(initializeFixture)
+		const context = await loadFixture(initializeLegacyPauseFixture)
 		const admin = context.signers.admin
 		const input = { profile: "stage-funding", target: { core: context.diamond, safe: admin.address } }
 		await context.controlFacet.connect(admin).revokeRole(admin.address, ethers.id("UNPAUSER_ROLE"))
@@ -166,7 +166,7 @@ describe("Arbitrum rounding release Safe unpause", function () {
 	})
 
 	it("exports one read-only planned unpause call whose execution clears only the global flag", async function () {
-		const context = await loadFixture(initializeFixture)
+		const context = await loadFixture(initializeLegacyPauseFixture)
 		const admin = context.signers.admin
 		await context.controlFacet.connect(admin).grantRole(admin.address, ethers.id("UNPAUSER_ROLE"))
 		await context.pauseControlFacet.connect(admin).pauseGlobal()
@@ -192,7 +192,7 @@ describe("Arbitrum rounding release Safe unpause", function () {
 	})
 
 	it("refuses an unverified cut or a multisig without the unpauser role", async function () {
-		const context = await loadFixture(initializeFixture)
+		const context = await loadFixture(initializeLegacyPauseFixture)
 		await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
 		const other = (await ethers.getSigners())[1]
 		const input = { release: "version_0.8.6.2", target: { core: context.diamond, safe: other.address } }

@@ -15,61 +15,61 @@ import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 
 contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	/// @notice Pauses all protocol operations globally. No trading, deposits, or withdrawals will be possible.
-	function pauseGlobal() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseGlobal() external onlyRole(LibAccessibility.GLOBAL_PAUSER_ROLE) {
 		GlobalAppStorage.layout().globalPaused = true;
 		emit PauseGlobal();
 	}
 
 	/// @notice Pauses all liquidation operations. Positions cannot be liquidated while paused.
-	function pauseLiquidation() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseLiquidation() external onlyRole(LibAccessibility.LIQUIDATION_PAUSER_ROLE) {
 		GlobalAppStorage.layout().liquidationPaused = true;
 		emit PauseLiquidation();
 	}
 
 	/// @notice Pauses accounting operations including deposits, withdrawals, allocations, and deallocations.
-	function pauseAccounting() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseAccounting() external onlyRole(LibAccessibility.ACCOUNTING_PAUSER_ROLE) {
 		GlobalAppStorage.layout().accountingPaused = true;
 		emit PauseAccounting();
 	}
 
 	/// @notice Pauses all Party A (trader) actions including sending quotes, closing positions, and other trading operations.
-	function pausePartyAActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyAActions() external onlyRole(LibAccessibility.PARTY_A_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyAActionsPaused = true;
 		emit PausePartyAActions();
 	}
 
 	/// @notice Pauses all Party B (market maker/hedger) actions including accepting quotes and filling positions.
-	function pausePartyBActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyBActions() external onlyRole(LibAccessibility.PARTY_B_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBActionsPaused = true;
 		emit PausePartyBActions();
 	}
 
 	/// @notice Restricts Party B to closing positions only; opening positions and locking quotes are blocked.
-	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PARTY_B_OPENING_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBOpenPositionsPaused = true;
 		emit PausePartyBOpenPositions();
 	}
 
 	/// @notice Pauses internal transfers between accounts within the protocol.
-	function pauseInternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseInternalTransfer() external onlyRole(LibAccessibility.INTERNAL_TRANSFER_PAUSER_ROLE) {
 		GlobalAppStorage.layout().internalTransferPaused = true;
 		emit PauseInternalTransfer();
 	}
 
 	/// @notice Pauses external transfers to addresses outside the protocol (e.g., to other protocols or wallets).
-	function pauseExternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseExternalTransfer() external onlyRole(LibAccessibility.EXTERNAL_TRANSFER_PAUSER_ROLE) {
 		ExternalTransferStorage.layout().externalTransferPaused = true;
 		emit PauseExternalTransfer();
 	}
 
 	/// @notice Pauses instant layer operations for bound PartyAs.
-	function pauseInstantLayer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseInstantLayer() external onlyRole(LibAccessibility.INSTANT_LAYER_PAUSER_ROLE) {
 		GlobalAppStorage.layout().instantLayerPaused = true;
 		emit PauseInstantLayer();
 	}
 
 	/// @notice Pauses early withdrawal advances from registered express providers.
-	function pauseWithdrawAdvance() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseWithdrawAdvance() external onlyRole(LibAccessibility.WITHDRAW_ADVANCE_PAUSER_ROLE) {
 		GlobalAppStorage.layout().withdrawAdvancePaused = true;
 		emit PauseWithdrawAdvance();
 	}
@@ -166,7 +166,7 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	/// @dev Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still close positions,
 	///      deallocate funds, and receive correct fund routing in ClearingHouse distributions.
 	/// @param partyB The address of the Party B to pause.
-	function pausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.PARTY_B_OPENING_PAUSER_ROLE) {
 		require(partyB != address(0), "PauseControlFacet: Zero address");
 		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = true;
 		emit SetPartyBOpenPositionsPausedForPartyB(partyB, true);
