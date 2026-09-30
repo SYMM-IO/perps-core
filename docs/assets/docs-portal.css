@@ -727,12 +727,11 @@ body.doc-page .doc-article > :is(.code-frame, .table-wrap, .tool-panel, figure, 
 	max-width: none;
 }
 
-/* Prose is capped at a readable measure; code, tables, tools and figures above
-   keep the full width. */
+/* Prose runs the full reader width, like code, tables, tools and figures above. */
 body.doc-page .reader-hero .hero-copy,
 body.doc-page .doc-article > :is(p, ul, ol, blockquote, .callout, h1, h2, h3, h4, h5, h6) {
 	width: 100%;
-	max-width: var(--measure);
+	max-width: none;
 	text-align: start;
 }
 
@@ -1191,7 +1190,7 @@ body.doc-page .doc-article p {
 
 .version-catalog-page .hero-copy {
 	width: 100%;
-	max-width: var(--measure);
+	max-width: none;
 }
 
 .version-catalog-shell {

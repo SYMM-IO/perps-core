@@ -107,7 +107,7 @@
 	--radius-sm: 3px;
 	--rail: 268px;
 	--gutter: clamp(24px, 5vw, 72px);
-	--measure: 56ch;
+	--measure: 78ch;
 	--sans: Manrope, ui-sans-serif, system-ui, sans-serif;
 	--display: Inter, ui-sans-serif, system-ui, sans-serif;
 	--mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -791,7 +791,6 @@ code {
 }
 
 .doc-list-main > span:last-child {
-	max-width: var(--measure);
 	color: var(--muted);
 	font-size: var(--text-ui);
 	line-height: 1.55;
@@ -1231,7 +1230,7 @@ code {
 
 .reader-hero .hero-copy {
 	width: 100%;
-	max-width: var(--measure);
+	max-width: none;
 	margin-top: 18px;
 	font-size: var(--text-body);
 	line-height: 1.6;
