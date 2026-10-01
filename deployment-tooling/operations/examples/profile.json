@@ -1,0 +1,14 @@
+{
+	"schemaVersion": 1,
+	"kind": "symmio.deployment-profile",
+	"id": "example-local",
+	"network": { "name": "localhost", "chainId": 31337, "mode": "local" },
+	"credentialRecipe": "../../../deployment-recipes/localhost.json",
+	"components": {
+		"core": {
+			"address": "REPLACE_WITH_CORE_ADDRESS",
+			"upgradeAuthority": "REPLACE_WITH_CORE_OWNER",
+			"baseline": { "id": "reviewed-core-baseline", "facetCodeHashes": ["REPLACE_WITH_ALL_INSTALLED_FACET_CODE_HASHES"] }
+		}
+	}
+}

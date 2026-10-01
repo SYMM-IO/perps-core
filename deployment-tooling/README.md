@@ -1,5 +1,9 @@
 # Deployment tooling
 
+The new [`operations/`](./operations/) module defines versioned JSON contracts and a reusable Core upgrade planner.
+Its deployment profiles, release manifests and standard outputs are documented in the [operations platform guide](../docs/operations-platform.md).
+The existing deployment recipe below remains the credential bridge and the input for established deployment workflows.
+
 This directory contains the checked-in code and schema used to define and validate deployments.
 It does not describe a deployed network. Operator-owned recipe instances live under
 [`deployment-recipes/`](../deployment-recipes/).

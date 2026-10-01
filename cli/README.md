@@ -6,6 +6,10 @@ Run the checkout-local operator application in an interactive terminal:
 ./symmio
 ```
 
+For the generic JSON input/output platform, select **Other maintenance scripts → Plan a Core upgrade from JSON**.
+It loads a deployment profile and a pinned release manifest, reads the installed Core, and writes a standard selector plan and review.
+This first delivery is planning-only; see the [operations platform guide](../docs/operations-platform.md) for schemas, examples, evidence and limits.
+
 For disputed virtual-account liquidation, select **Other maintenance scripts → Settle a disputed account using Clearing House**. Load the prefilled case JSON, review the calculated solver, liquidator and parent shares, and let the named admin sign with Ledger or keystore. See the [disputed-settlement runbook](../docs/disputed-settlement.md) for the input rules, exact calculations and recovery behavior.
 
 For the liquidation-fee policy rollout, select **Other maintenance scripts → Update symbol
