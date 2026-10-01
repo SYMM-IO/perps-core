@@ -1,5 +1,5 @@
 import { OperationError, operationDigest, validateDocument } from "./inputs.js";
-import { Contract, Interface, getAddress, keccak256 } from "ethers";
+import { Contract, Fragment, Interface, getAddress, keccak256 } from "ethers";
 
 const CUT = "0x1f931c1c";
 const LOUPE = ["function getOwner() view returns(address)", "function facets() view returns ((address facetAddress,bytes4[] functionSelectors)[])"];
@@ -75,8 +75,14 @@ export function buildCorePlan(bundle, snapshot) {
 		}
 	if (!current.has(CUT)) fail("missing-cut", "Installed diamondCut selector is missing");
 	for (const [index, artifact] of bundle.artifacts.entries()) {
-		const name = `${artifact.sourceName}:${artifact.contractName}`,
-			iface = new Interface(artifact.abi);
+		const name = `${artifact.sourceName}:${artifact.contractName}`;
+		let iface;
+		try {
+			// Interface alone warns and skips invalid entries, which could silently omit a selector.
+			iface = new Interface(artifact.abi.map(entry => Fragment.from(entry)));
+		} catch {
+			fail("invalid-artifact", "Release artifact contains an invalid ABI entry");
+		}
 		const selectors = [];
 		for (const fragment of iface.fragments.filter(f => f.type === "function" && f.format("sighash") !== "init(bytes)")) {
 			const selector = iface.getFunction(fragment.format("sighash")).selector;
