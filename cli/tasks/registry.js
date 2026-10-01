@@ -25,6 +25,7 @@ import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.j
 import { createDisputedSettlementTask } from "./disputed-settlement.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
 import { createLfUpdateTask } from "./lf-update.js";
+import { createOperationPlanTask } from "./operation-plan.js";
 import { isAddress } from "ethers";
 import fs from "node:fs";
 import path from "node:path";
@@ -1323,6 +1324,7 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 });
 
 const MAINTENANCE_TASKS = [
+	createOperationPlanTask(common),
 	createArbitrumCoreUpgradeTask(common),
 	createDisputedSettlementTask(common),
 	createLfUpdateTask(common),

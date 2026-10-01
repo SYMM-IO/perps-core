@@ -18,6 +18,7 @@ import { liquidatorTask } from "./liquidator.js"
 import { completeLocalHandoverTask } from "./localHandover.js"
 import { multiaccountTask } from "./multiaccount.js"
 import { multicallTask } from "./multicall.js"
+import { operationsInspectTask } from "./operationsInspect.js"
 import { partyBTask } from "./partyB.js"
 import { reconcileTransactionsTask } from "./reconcileTransactions.js"
 import { proposeSafeBatchTask } from "./safeProposal.js"
@@ -28,6 +29,7 @@ import { upgradeProxyTask } from "./upgrade.js"
 import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
+	operationsInspectTask,
 	arbitrumCoreUpgradeTask,
 	accountLayerDiamondTask,
 	accountInstantUpgradeTask,

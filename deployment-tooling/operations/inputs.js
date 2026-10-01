@@ -106,7 +106,7 @@ export function loadOperation(requestFile) {
 		request: requestDoc.hash,
 		profile: profileDoc.hash,
 		release: releaseDoc.hash,
-		recipe: hashBytes(fs.readFileSync(recipePath)),
+		recipe: operationDigest({ file: hashBytes(fs.readFileSync(recipePath)), validated: recipe.digest }),
 		artifacts: release.components.core.facets.map(f => f.sha256),
 	};
 	const resolved = validateDocument("resolved", {

@@ -28,7 +28,13 @@ export function operationFixture(root) {
 		id: "fixture",
 		network: recipe.network,
 		credentialRecipe: "credentials.json",
-		components: { core: { address: operationAddress(1), upgradeAuthority: operationAddress(2) } },
+		components: {
+			core: {
+				address: operationAddress(1),
+				upgradeAuthority: operationAddress(2),
+				baseline: { id: "core-fixture", facetCodeHashes: [operationHash(3)] },
+			},
+		},
 	};
 	const profileFile = path.join(dir, "profile.json");
 	write(profileFile, profile);
@@ -44,7 +50,7 @@ export function operationFixture(root) {
 					{ artifactPath: "facet.json", sha256: "sha256:" + createHash("sha256").update(fs.readFileSync(artifactFile)).digest("hex") },
 				],
 				allowedRemovedSelectors: [],
-				baselineFacetCodeHashes: [operationHash(3)],
+				supportedBaselines: ["core-fixture"],
 				migrations: [],
 			},
 		},
