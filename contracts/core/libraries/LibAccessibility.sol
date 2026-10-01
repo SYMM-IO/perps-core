@@ -31,7 +31,16 @@ library LibAccessibility {
 	bytes32 public constant SYMBOL_MANAGER_ROLE = keccak256("SYMBOL_MANAGER_ROLE");
 	bytes32 public constant SYMBOL_LISTING_ROLE = keccak256("SYMBOL_LISTING_ROLE");
 	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
-	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+	// Each role authorizes only its corresponding pause scope; resuming requires UNPAUSER_ROLE.
+	bytes32 public constant GLOBAL_PAUSER_ROLE = keccak256("GLOBAL_PAUSER_ROLE");
+	bytes32 public constant PARTY_A_PAUSER_ROLE = keccak256("PARTY_A_PAUSER_ROLE");
+	bytes32 public constant PARTY_B_PAUSER_ROLE = keccak256("PARTY_B_PAUSER_ROLE");
+	bytes32 public constant ACCOUNTING_PAUSER_ROLE = keccak256("ACCOUNTING_PAUSER_ROLE");
+	bytes32 public constant INTERNAL_TRANSFER_PAUSER_ROLE = keccak256("INTERNAL_TRANSFER_PAUSER_ROLE");
+	bytes32 public constant EXTERNAL_TRANSFER_PAUSER_ROLE = keccak256("EXTERNAL_TRANSFER_PAUSER_ROLE");
+	bytes32 public constant LIQUIDATION_PAUSER_ROLE = keccak256("LIQUIDATION_PAUSER_ROLE");
+	bytes32 public constant INSTANT_LAYER_PAUSER_ROLE = keccak256("INSTANT_LAYER_PAUSER_ROLE");
+	bytes32 public constant WITHDRAW_ADVANCE_PAUSER_ROLE = keccak256("WITHDRAW_ADVANCE_PAUSER_ROLE");
 	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
 	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
 	bytes32 public constant SOFT_LIQUIDATOR_ROLE = keccak256("SOFT_LIQUIDATOR_ROLE");
