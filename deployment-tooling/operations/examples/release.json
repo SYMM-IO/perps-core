@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"kind": "symmio.release",
+	"id": "example-core-release",
+	"sourceCommit": "REPLACE_WITH_EXACT_SOURCE_COMMIT",
+	"buildProfile": "production",
+	"components": {
+		"core": {
+			"facets": [
+				{
+					"artifactPath": "../../../artifacts/contracts/core/facets/PauseControl/PauseControlFacet.sol/PauseControlFacet.json",
+					"sha256": "REPLACE_WITH_SHA256_PREFIXED_ARTIFACT_HASH"
+				}
+			],
+			"allowedRemovedSelectors": [],
+			"supportedBaselines": ["reviewed-core-baseline"],
+			"migrations": []
+		}
+	}
+}

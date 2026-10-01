@@ -1,0 +1,8 @@
+{
+	"schemaVersion": 1,
+	"kind": "symmio.operation",
+	"deploymentProfile": "profile.json",
+	"operation": "upgrade",
+	"parameters": { "components": ["core"], "releaseManifest": "release.json" },
+	"execution": { "mode": "plan" }
+}
