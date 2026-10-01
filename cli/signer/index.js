@@ -109,6 +109,8 @@ export async function selectSigner(
 		safeAddress,
 		expectedAddress,
 		nested = false,
+		existingKeystoreOnly = false,
+		initialKeystoreKey = "NEW_DEPLOYER",
 	} = {},
 ) {
 	const allowed = [...new Set(allowedModes)].filter(mode => Object.values(SIGNER_MODES).includes(mode));
@@ -130,10 +132,10 @@ export async function selectSigner(
 	if (mode === SIGNER_MODES.KEYSTORE) {
 		const key = await ui.text({
 			message: `${role} keystore key`,
-			initialValue: "NEW_DEPLOYER",
+			initialValue: initialKeystoreKey,
 			validate: value => (keyName(value) ? undefined : "Use an environment-style key name such as NEW_DEPLOYER"),
 		});
-		if (key === null || !(await configureKeystore(ui, key, key))) return null;
+		if (key === null || (!existingKeystoreOnly && !(await configureKeystore(ui, key, key)))) return null;
 		selection = { mode, key, ...(nonZeroAddress(expectedAddress) ? { address: getAddress(expectedAddress) } : {}) };
 	} else if (mode === SIGNER_MODES.PRIVATE_KEY) {
 		const secret = await askPrivateKey(ui, expectedAddress);
