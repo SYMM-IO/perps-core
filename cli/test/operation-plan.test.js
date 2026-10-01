@@ -77,6 +77,15 @@ test("a reviewed removal is explicit and does not become executable calldata", t
 	assert.equal(plan.calldata, undefined);
 });
 
+test("malformed ABI entries cannot silently disappear from the release plan", t => {
+	const f = fixture(t);
+	f.bundle.artifacts[0].abi.push("function malformed(");
+	assert.throws(
+		() => buildCorePlan(f.bundle, f.snapshot),
+		error => error.code === "invalid-artifact",
+	);
+});
+
 test("snapshot pins every read, uses provider-only calls and refuses a changed block hash", async t => {
 	const f = fixture(t);
 	const loupe = new Interface([
