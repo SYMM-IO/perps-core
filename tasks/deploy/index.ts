@@ -1,4 +1,6 @@
+import { accountInstantUpgradeTask } from "./accountInstantUpgrade.js"
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
+import { arbitrumCoreUpgradeTask } from "./arbitrumCoreUpgrade.js"
 import { arbitrumPerpsUpgradeTask } from "./arbitrumPerpsUpgrade.js"
 import { arbitrumRoundingUpgradeTask } from "./arbitrumRoundingUpgrade.js"
 import { checkComponentTask } from "./checkComponent.js"
@@ -7,6 +9,7 @@ import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
 import { deployComponentTask } from "./deployComponent.js"
 import { diamondTask } from "./diamond.js"
+import { disputedSettlementTask } from "./disputedSettlement.js"
 import { feeDistributorTask } from "./feeDistributor.js"
 import { executeGovernanceHandoverTask } from "./governanceHandover.js"
 import { enableBigBlocksTask, disableBigBlocksTask } from "./hyperevm.js"
@@ -25,7 +28,9 @@ import { upgradeProxyTask } from "./upgrade.js"
 import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
+	arbitrumCoreUpgradeTask,
 	accountLayerDiamondTask,
+	accountInstantUpgradeTask,
 	arbitrumPerpsUpgradeTask,
 	arbitrumRoundingUpgradeTask,
 	checkComponentTask,
@@ -35,6 +40,7 @@ export const deployTasks = [
 	deployAllTask,
 	deployComponentTask,
 	diamondTask,
+	disputedSettlementTask,
 	disableBigBlocksTask,
 	enableBigBlocksTask,
 	feeDistributorTask,

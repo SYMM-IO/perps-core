@@ -6,7 +6,17 @@ Run the checkout-local operator application in an interactive terminal:
 ./symmio
 ```
 
-The fixed Arbitrum v0.8.6 production upgrade is available under **Other maintenance scripts** as **Arbitrum Perps Core v0.8.6 upgrade**. Its resumable phases and standard JSON input/report contract are documented in [the Arbitrum upgrade runbook](../docs/arbitrum-perps-upgrade.md).
+For disputed virtual-account liquidation, select **Other maintenance scripts → Settle a disputed account using Clearing House**. Load the prefilled case JSON, review the calculated solver, liquidator and parent shares, and let the named admin sign with Ledger or keystore. See the [disputed-settlement runbook](../docs/disputed-settlement.md) for the input rules, exact calculations and recovery behavior.
+
+For the liquidation-fee policy rollout, select **Other maintenance scripts → Update symbol
+LF minimums**. It uses an existing keystore wallet and network RPC, reviews every symbol,
+and applies resumable 3% BTC/ETH and 4% other-symbol batches. See the
+[LF update runbook](../docs/symbol-lf-update.md) for prerequisites, classification review,
+announcement timing, and transaction evidence.
+
+For Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, select **Other maintenance scripts → Arbitrum Vibe Core upgrade — current contracts, preserve existing layers**. The [Core upgrade runbook](../docs/arbitrum-core-upgrade.md) covers both mandatory fork rehearsals, current addresses, paused storage/funding checks, the atomic Safe batch and separate verified unpause. The older full-system and rounding/funding entries retain their historical migration targets.
+
+The separate **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values** task has its own migration-specific configuration and baseline. Review those targets and [its runbook](../docs/arbitrum-account-instant-upgrade.md) before starting that migration; it is not part of the Core-only upgrade.
 
 `./symmio --help` only explains how to launch the application. Every other argument and
 non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
