@@ -82,8 +82,8 @@
 
 					<h2 id="core-roles">Core roles</h2>
 					<p>
-						Four roles are added to <code>LibAccessibility</code>. Each split is strict: the original role no longer covers the moved
-						functions.
+						Four existing role bundles are split in <code>LibAccessibility</code>. Each split is strict: the original role no longer
+						covers the moved functions.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -143,6 +143,11 @@
 						<code>setLegacyDeallocateDeprecated</code> and <code>setLegacyPartyALiquidationDeprecated</code> are migration switches, so
 						they now require <code>MIGRATION_ROLE</code> and live on <code>PauseControlFacet</code> next to the other deprecation
 						switches. Their selectors are removed from <code>ControlFacet</code>.
+					</p>
+
+					<p>
+						The <a href="pledge-token-whitelist.html">Pledge Token Whitelist</a> also adds <code>PLEDGE_TOKEN_MANAGER_ROLE</code> for
+						token approval and removal. Pledge withdrawal approval and slashing remain under <code>PARTY_B_MANAGER_ROLE</code>.
 					</p>
 
 					<h2 id="granular-core-pause-roles">Granular Core pause roles</h2>
