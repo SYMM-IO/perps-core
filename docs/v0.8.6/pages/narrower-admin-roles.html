@@ -150,6 +150,122 @@
 						token approval and removal. Pledge withdrawal approval and slashing remain under <code>PARTY_B_MANAGER_ROLE</code>.
 					</p>
 
+					<h2 id="granular-core-pause-roles">Granular Core pause roles</h2>
+					<p>
+						Core replaces <code>PAUSER_ROLE</code> with nine independent roles. Each role authorizes only the listed pause entry points.
+						There is no combined trading role, and deposits and withdrawals stay together under accounting. Role identifiers are
+						<code>keccak256</code> hashes of the exact names below.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Role</th>
+									<th>Authorized functions</th>
+									<th>Blocked functionality</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>GLOBAL_PAUSER_ROLE</code></td>
+									<td><code>pauseGlobal()</code></td>
+									<td>Operations protected by global pause checks, including guarded trading, accounting and liquidation.</td>
+								</tr>
+								<tr>
+									<td><code>PARTY_A_PAUSER_ROLE</code></td>
+									<td><code>pausePartyAActions()</code></td>
+									<td>
+										Guarded PartyA trading and binding actions across all traders. Ordinary deposits and withdrawals remain
+										available.
+									</td>
+								</tr>
+								<tr>
+									<td><code>PARTY_B_PAUSER_ROLE</code></td>
+									<td>
+										<code>pausePartyBActions(), pausePartyBOpenPositions(), pausePartyBOpenPositionsFor(partyB)</code>
+									</td>
+									<td>
+										The actions pause blocks guarded PartyB trading, settlement, funding and PartyB accounting across all solvers.
+										The opening pauses block quote locking and position opening for all solvers or one selected solver; closing
+										remains available subject to other guards. These functions set separate flags.
+									</td>
+								</tr>
+								<tr>
+									<td><code>ACCOUNTING_PAUSER_ROLE</code></td>
+									<td><code>pauseAccounting()</code></td>
+									<td>
+										Guarded deposits and withdrawals together, plus guarded allocations, deallocations and transfers. Does not
+										replace the PartyB actions guard.
+									</td>
+								</tr>
+								<tr>
+									<td><code>INTERNAL_TRANSFER_PAUSER_ROLE</code></td>
+									<td><code>pauseInternalTransfer()</code></td>
+									<td>Internal transfers protected by the internal-transfer guard.</td>
+								</tr>
+								<tr>
+									<td><code>EXTERNAL_TRANSFER_PAUSER_ROLE</code></td>
+									<td><code>pauseExternalTransfer()</code></td>
+									<td>External-transfer operations protected by the external-transfer guard.</td>
+								</tr>
+								<tr>
+									<td><code>LIQUIDATION_PAUSER_ROLE</code></td>
+									<td><code>pauseLiquidation()</code></td>
+									<td>Liquidation operations protected by the liquidation guard.</td>
+								</tr>
+								<tr>
+									<td><code>INSTANT_LAYER_PAUSER_ROLE</code></td>
+									<td><code>pauseInstantLayer()</code></td>
+									<td>Entry into Core InstantLayer execution context.</td>
+								</tr>
+								<tr>
+									<td><code>WITHDRAW_ADVANCE_PAUSER_ROLE</code></td>
+									<td><code>pauseWithdrawAdvance()</code></td>
+									<td>Provider withdrawal advances before finalization.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						This changes authorization only. Core pause function selectors, events, pause flags, balances and storage layout are unchanged
+						by the role split. Existing guard coverage is preserved: for example, <code>internalTransferToBalance</code> and
+						<code>zeroUpnlDeallocate</code> remain governed by their existing role checks, without acquiring new pause checks.
+					</p>
+					<p>
+						<code>UNPAUSER_ROLE</code> continues to authorize all existing unpause functions. Suspension, unsuspension and emergency
+						administration retain their separate roles. <code>GLOBAL_PAUSER_ROLE</code> authorizes only <code>pauseGlobal()</code>; it
+						does not grant access to the other pause setters. AccountLayer, ExpressProvider and helper contracts retain their own role
+						schemes.
+					</p>
+					<p>
+						Fresh Core setup grants all nine roles to the configured admin, and deployment verification checks each grant. An emergency
+						operator receives only the roles selected by governance; holding a pause role does not authorize granting another role.
+						<code>DEFAULT_ADMIN_ROLE</code> can still administer every role but does not itself authorize pause calls.
+					</p>
+					<h3>Pause-role cutover</h3>
+					<ol>
+						<li>
+							Review the intended holders and per-role administrators. Explicitly grant each required new role before replacing the
+							pause facet, or include the grants in an atomic, rehearsed governance batch. Preserve a working
+							<code>UNPAUSER_ROLE</code> holder. Existing broad-role holders and administrators do not automatically inherit the new
+							roles.
+						</li>
+						<li>
+							Replace the relevant <code>PauseControlFacet</code> selectors. The role split needs no storage initializer. Older
+							deployments with the two-way <code>setPartyBOpenPositionsPaused(address,bool)</code> must also remove that selector and
+							install both directional replacements; inspect the actual deployed selector map.
+						</li>
+						<li>
+							Verify each intended grant, successful authorized calls and rejected calls outside the holder&rsquo;s scope on a fork.
+							Confirm pause flags and balances survive the cut. Verify the executed receipt, deployed code and post-state separately.
+						</li>
+						<li>
+							After the new facet is installed, old Core <code>PAUSER_ROLE</code> grants remain in storage but authorize none of these
+							pause functions. Revoke obsolete grants and role-admin entries after verifying the cut. Do not reuse old broad-role Safe
+							exports for this release.
+						</li>
+					</ol>
+
 					<h2 id="pause-only-entry-points">Pause-only entry points</h2>
 					<p>
 						A bool-argument setter under a pause role lets the same holder both stop and resume. That defeats the purpose of a separate
@@ -157,7 +273,7 @@
 					</p>
 					<pre><code class="language-solidity">// Core PauseControlFacet
 // removed: setPartyBOpenPositionsPaused(address partyB, bool status)
-function pausePartyBOpenPositionsFor(address partyB) external;   // PAUSER_ROLE
+function pausePartyBOpenPositionsFor(address partyB) external;   // PARTY_B_PAUSER_ROLE
 function unpausePartyBOpenPositionsFor(address partyB) external; // UNPAUSER_ROLE
 
 // ExpressProvider ControlFacet

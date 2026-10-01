@@ -9,6 +9,7 @@ import { createRunContext, RunContext } from "../test/models/RunContext.js"
 import { symbolsMock } from "../test/models/SymbolManager.js"
 import { decimal } from "../test/utils/Common.js"
 import { runTx } from "../test/utils/TxUtils.js"
+import { CORE_PAUSE_ROLES } from "../utils/corePauseRoles.js"
 import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 import { assertLocalExecution } from "./utils/localNetworkGuard.js"
 
@@ -70,9 +71,9 @@ export async function initialize(): Promise<RunContext> {
 	await runTx(
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SETTER_ROLE"))),
 	)
-	await runTx(
-		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PAUSER_ROLE"))),
-	)
+	for (const role of CORE_PAUSE_ROLES) {
+		await runTx(context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes(role))))
+	}
 	await runTx(
 		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PARTY_B_MANAGER_ROLE"))),
 	)

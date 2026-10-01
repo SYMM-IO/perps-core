@@ -4,6 +4,7 @@ import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
+import { CORE_PAUSE_ROLES } from "../../utils/corePauseRoles.js"
 import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { inspectGaslessLayerPostState } from "./componentDeployment.js"
@@ -520,7 +521,7 @@ export const CORE_ADMIN_ROLES = [
 	"DEFAULT_ADMIN_ROLE",
 	"SYMBOL_MANAGER_ROLE",
 	"SYMBOL_LISTING_ROLE",
-	"PAUSER_ROLE",
+	...CORE_PAUSE_ROLES,
 	"UNPAUSER_ROLE",
 	"PARTY_B_MANAGER_ROLE",
 	"PLEDGE_TOKEN_MANAGER_ROLE",

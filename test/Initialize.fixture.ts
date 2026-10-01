@@ -6,6 +6,7 @@ import { deployDiamond } from "../tasks/deploy/diamond.js"
 import { deployInstantLayer } from "../tasks/deploy/instantLayer.js"
 import { deploySymmioPartyB } from "../tasks/deploy/partyB.js"
 import { deployStablecoin } from "../tasks/deploy/stablecoin.js"
+import { CORE_PAUSE_ROLES } from "../utils/corePauseRoles.js"
 import { ethers, hre } from "./helpers/hardhat-connection.js"
 import { createRunContext, RunContext } from "./models/RunContext.js"
 import { decimal } from "./utils/Common.js"
@@ -140,7 +141,7 @@ export async function initializeFixture(): Promise<RunContext> {
 	const rolesToGrant = [
 		"SYMBOL_MANAGER_ROLE",
 		"SYMBOL_LISTING_ROLE",
-		"PAUSER_ROLE",
+		...CORE_PAUSE_ROLES,
 		"UNPAUSER_ROLE",
 		"PARTY_B_MANAGER_ROLE",
 		"PLEDGE_TOKEN_MANAGER_ROLE",
@@ -255,12 +256,11 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 
 	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
 
-	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
 	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
 	const protocolConfigRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_CONFIG_ROLE"))
 	const protocolLimitsRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_LIMITS_ROLE"))
 
-	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	for (const role of CORE_PAUSE_ROLES) await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, ethers.id(role))
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolConfigRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolLimitsRole)
@@ -300,14 +300,13 @@ export async function initializeVirtualFixture(): Promise<{
 
 	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
 
-	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
 	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
 	const virtualRole = ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
 	const protocolConfigRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_CONFIG_ROLE"))
 	const protocolLimitsRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_LIMITS_ROLE"))
 	const providerAdminRole = ethers.keccak256(toUtf8Bytes("PROVIDER_ADMIN_ROLE"))
 
-	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	for (const role of CORE_PAUSE_ROLES) await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, ethers.id(role))
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolConfigRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolLimitsRole)
