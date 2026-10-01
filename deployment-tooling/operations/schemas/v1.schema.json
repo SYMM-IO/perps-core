@@ -1,0 +1,678 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://schemas.symm.io/operations/v1",
+	"$defs": {
+		"request": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.operation"
+				},
+				"deploymentProfile": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 1024,
+					"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+				},
+				"operation": {
+					"const": "upgrade"
+				},
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"components": {
+							"const": ["core"]
+						},
+						"releaseManifest": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						}
+					},
+					"required": ["components", "releaseManifest"],
+					"additionalProperties": false
+				},
+				"execution": {
+					"type": "object",
+					"properties": {
+						"mode": {
+							"const": "plan"
+						}
+					},
+					"required": ["mode"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["schemaVersion", "kind", "deploymentProfile", "operation", "parameters", "execution"],
+			"additionalProperties": false
+		},
+		"profile": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.deployment-profile"
+				},
+				"id": {
+					"type": "string",
+					"pattern": "^[a-z][a-z0-9.-]*$",
+					"maxLength": 128
+				},
+				"network": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"pattern": "^[a-z][a-z0-9.-]*$",
+							"maxLength": 128
+						},
+						"chainId": {
+							"type": "integer",
+							"minimum": 1,
+							"maximum": 9007199254740991
+						},
+						"mode": {
+							"enum": ["local", "fork", "live"]
+						}
+					},
+					"required": ["name", "chainId", "mode"],
+					"additionalProperties": false
+				},
+				"credentialRecipe": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 1024,
+					"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+				},
+				"components": {
+					"type": "object",
+					"properties": {
+						"core": {
+							"type": "object",
+							"properties": {
+								"address": {
+									"type": "string",
+									"format": "address"
+								},
+								"upgradeAuthority": {
+									"type": "string",
+									"format": "address"
+								}
+							},
+							"required": ["address", "upgradeAuthority"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["core"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["schemaVersion", "kind", "id", "network", "credentialRecipe", "components"],
+			"additionalProperties": false
+		},
+		"release": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.release"
+				},
+				"id": {
+					"type": "string",
+					"pattern": "^[a-z][a-z0-9.-]*$",
+					"maxLength": 128
+				},
+				"sourceCommit": {
+					"type": "string",
+					"pattern": "^[0-9a-f]{40}$"
+				},
+				"buildProfile": {
+					"const": "production"
+				},
+				"components": {
+					"type": "object",
+					"properties": {
+						"core": {
+							"type": "object",
+							"properties": {
+								"facets": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"artifactPath": {
+												"type": "string",
+												"minLength": 1,
+												"maxLength": 1024,
+												"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+											},
+											"sha256": {
+												"type": "string",
+												"pattern": "^sha256:[0-9a-f]{64}$"
+											}
+										},
+										"required": ["artifactPath", "sha256"],
+										"additionalProperties": false
+									},
+									"minItems": 1,
+									"uniqueItems": true
+								},
+								"allowedRemovedSelectors": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^0x[0-9a-f]{8}$"
+									},
+									"minItems": 0,
+									"uniqueItems": true
+								},
+								"baselineFacetCodeHashes": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^0x[0-9a-fA-F]{64}$"
+									},
+									"minItems": 1,
+									"uniqueItems": true
+								},
+								"migrations": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[a-z][a-z0-9.-]*$",
+										"maxLength": 128
+									},
+									"minItems": 0,
+									"uniqueItems": true
+								}
+							},
+							"required": ["facets", "allowedRemovedSelectors", "baselineFacetCodeHashes", "migrations"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["core"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["schemaVersion", "kind", "id", "sourceCommit", "buildProfile", "components"],
+			"additionalProperties": false
+		},
+		"bindings": {
+			"type": "object",
+			"properties": {
+				"request": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"profile": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"release": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"recipe": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"artifacts": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^sha256:[0-9a-f]{64}$"
+					},
+					"minItems": 1,
+					"uniqueItems": true
+				}
+			},
+			"required": ["request", "profile", "release", "recipe", "artifacts"],
+			"additionalProperties": false
+		},
+		"resolved": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.resolved-input"
+				},
+				"request": {
+					"$ref": "#/$defs/request"
+				},
+				"profile": {
+					"$ref": "#/$defs/profile"
+				},
+				"release": {
+					"$ref": "#/$defs/release"
+				},
+				"bindings": {
+					"$ref": "#/$defs/bindings"
+				},
+				"inputDigest": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				}
+			},
+			"required": ["schemaVersion", "kind", "request", "profile", "release", "bindings", "inputDigest"],
+			"additionalProperties": false
+		},
+		"snapshot": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.snapshot"
+				},
+				"inputDigest": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"chainId": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"blockNumber": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"blockHash": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{64}$"
+				},
+				"core": {
+					"type": "string",
+					"format": "address"
+				},
+				"owner": {
+					"type": "string",
+					"format": "address"
+				},
+				"coreCodeHash": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{64}$"
+				},
+				"facets": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"address": {
+								"type": "string",
+								"format": "address"
+							},
+							"codeHash": {
+								"type": "string",
+								"pattern": "^0x[0-9a-fA-F]{64}$"
+							},
+							"selectors": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"pattern": "^0x[0-9a-f]{8}$"
+								},
+								"minItems": 1,
+								"uniqueItems": true
+							}
+						},
+						"required": ["address", "codeHash", "selectors"],
+						"additionalProperties": false
+					},
+					"minItems": 1,
+					"uniqueItems": true
+				}
+			},
+			"required": ["schemaVersion", "kind", "inputDigest", "chainId", "blockNumber", "blockHash", "core", "owner", "coreCodeHash", "facets"],
+			"additionalProperties": false
+		},
+		"change": {
+			"type": "object",
+			"properties": {
+				"selector": {
+					"type": "string",
+					"pattern": "^0x[0-9a-f]{8}$"
+				},
+				"change": {
+					"enum": ["add", "replace", "remove"]
+				},
+				"currentFacet": {
+					"anyOf": [
+						{
+							"type": "string",
+							"format": "address"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"targetArtifact": {
+					"anyOf": [
+						{
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 256
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": ["selector", "change", "currentFacet", "targetArtifact"],
+			"additionalProperties": false
+		},
+		"plan": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.plan"
+				},
+				"inputDigest": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"snapshotDigest": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"operation": {
+					"const": "upgrade"
+				},
+				"component": {
+					"const": "core"
+				},
+				"target": {
+					"type": "string",
+					"format": "address"
+				},
+				"authority": {
+					"type": "string",
+					"format": "address"
+				},
+				"executable": {
+					"const": false
+				},
+				"changes": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/change"
+					},
+					"minItems": 0,
+					"uniqueItems": true
+				},
+				"artifacts": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {
+								"type": "string",
+								"minLength": 1,
+								"maxLength": 256
+							},
+							"sha256": {
+								"type": "string",
+								"pattern": "^sha256:[0-9a-f]{64}$"
+							},
+							"selectors": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"pattern": "^0x[0-9a-f]{8}$"
+								},
+								"minItems": 1,
+								"uniqueItems": true
+							},
+							"libraries": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 256
+								},
+								"minItems": 0,
+								"uniqueItems": true
+							}
+						},
+						"required": ["name", "sha256", "selectors", "libraries"],
+						"additionalProperties": false
+					},
+					"minItems": 1,
+					"uniqueItems": true
+				},
+				"migrations": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-z][a-z0-9.-]*$",
+						"maxLength": 128
+					},
+					"minItems": 0,
+					"uniqueItems": true
+				},
+				"requiredChecks": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 256
+					},
+					"minItems": 1,
+					"uniqueItems": true
+				}
+			},
+			"required": [
+				"schemaVersion",
+				"kind",
+				"inputDigest",
+				"snapshotDigest",
+				"operation",
+				"component",
+				"target",
+				"authority",
+				"executable",
+				"changes",
+				"artifacts",
+				"migrations",
+				"requiredChecks"
+			],
+			"additionalProperties": false
+		},
+		"verification": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.verification"
+				},
+				"inputDigest": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"status": {
+					"const": "not-run"
+				},
+				"reason": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256
+				}
+			},
+			"required": ["schemaVersion", "kind", "inputDigest", "status", "reason"],
+			"additionalProperties": false
+		},
+		"result": {
+			"type": "object",
+			"properties": {
+				"schemaVersion": {
+					"const": 1
+				},
+				"kind": {
+					"const": "symmio.result"
+				},
+				"runId": {
+					"type": "string",
+					"pattern": "^[a-z][a-z0-9.-]*$",
+					"maxLength": 128
+				},
+				"operation": {
+					"const": "upgrade"
+				},
+				"chainId": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"target": {
+					"type": "string",
+					"format": "address"
+				},
+				"inputDigest": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$"
+				},
+				"status": {
+					"enum": ["planned", "paused", "cancelled"]
+				},
+				"planDigest": {
+					"anyOf": [
+						{
+							"type": "string",
+							"pattern": "^sha256:[0-9a-f]{64}$"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"transactions": {
+					"const": []
+				},
+				"verification": {
+					"const": "not-run"
+				},
+				"artifacts": {
+					"type": "object",
+					"properties": {
+						"request": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"resolvedInput": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"snapshot": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"plan": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"review": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"verification": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"transactions": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"events": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						},
+						"summary": {
+							"type": "string",
+							"minLength": 1,
+							"maxLength": 1024,
+							"pattern": "^(?!.*://)[^\\u0000-\\u001f]+$"
+						}
+					},
+					"required": ["request", "resolvedInput", "snapshot", "plan", "review", "verification", "transactions", "events", "summary"],
+					"additionalProperties": false
+				},
+				"errors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"code": {
+								"type": "string",
+								"pattern": "^[a-z][a-z0-9.-]*$",
+								"maxLength": 128
+							},
+							"message": {
+								"type": "string",
+								"minLength": 1,
+								"maxLength": 256
+							}
+						},
+						"required": ["code", "message"],
+						"additionalProperties": false
+					},
+					"minItems": 0,
+					"uniqueItems": true
+				},
+				"nextAction": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256
+				}
+			},
+			"required": [
+				"schemaVersion",
+				"kind",
+				"runId",
+				"operation",
+				"chainId",
+				"target",
+				"inputDigest",
+				"status",
+				"planDigest",
+				"transactions",
+				"verification",
+				"artifacts",
+				"errors",
+				"nextAction"
+			],
+			"additionalProperties": false
+		}
+	}
+}
