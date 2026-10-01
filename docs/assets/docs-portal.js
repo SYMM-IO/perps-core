@@ -118,6 +118,7 @@
 			["diamond-role-management", "Access Control", "Consistent Diamond Role Management"],
 			["liquidation-rounding-and-funding-aggregate-repair", "Liquidation & Funding", "Liquidation Rounding and Funding Aggregate Repair"],
 			["narrower-admin-roles", "Access Control", "Narrower Admin Roles"],
+			["pledge-token-whitelist", "Pledge Collateral", "Pledge Token Whitelist"],
 		],
 	};
 

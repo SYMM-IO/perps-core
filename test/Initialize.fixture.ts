@@ -144,6 +144,7 @@ export async function initializeFixture(): Promise<RunContext> {
 		...CORE_PAUSE_ROLES,
 		"UNPAUSER_ROLE",
 		"PARTY_B_MANAGER_ROLE",
+		"PLEDGE_TOKEN_MANAGER_ROLE",
 		"PARTY_B_REGISTRAR_ROLE",
 		"SUSPENDER_ROLE",
 		"DISPUTE_ROLE",
@@ -170,6 +171,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	for (const role of rolesToGrant) {
 		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, ethers.keccak256(toUtf8Bytes(role)))
 	}
+
+	// Pledge tokens are denied by default; explicitly approve the fixture's reviewed collateral.
+	await context.pledgeFacet.connect(context.signers.admin).setPledgeTokenWhitelist(await collateral.getAddress(), true)
 
 	// Grant liquidator roles (PARTYB_LIQUIDATOR_ROLE is now merged into LIQUIDATOR_ROLE)
 	await context.controlFacet

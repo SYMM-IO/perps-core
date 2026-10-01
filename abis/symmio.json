@@ -13333,6 +13333,25 @@
         "inputs": [
             {
                 "internalType": "address",
+                "name": "token",
+                "type": "address"
+            }
+        ],
+        "name": "isPledgeTokenWhitelisted",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
                 "name": "partyA",
                 "type": "address"
             },
@@ -13422,6 +13441,24 @@
             }
         ],
         "name": "deferredSetSymbolsPrice",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "internalType": "bool",
+                "name": "whitelisted",
+                "type": "bool"
+            }
+        ],
+        "name": "setPledgeTokenWhitelist",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -14001,6 +14038,25 @@
             }
         ],
         "name": "PledgeCollateralDeposited",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "whitelisted",
+                "type": "bool"
+            }
+        ],
+        "name": "PledgeTokenWhitelistUpdated",
         "type": "event"
     },
     {
@@ -23721,6 +23777,19 @@
     {
         "inputs": [],
         "name": "PARTY_B_MANAGER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "PLEDGE_TOKEN_MANAGER_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",
