@@ -47,6 +47,7 @@ import { getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { deployInstantLayer } from "./instantLayer.js"
 import { deploySymmioLiquidator } from "./liquidator.js"
+import { ensureLiquidatorMetadata, LIQUIDATOR_METADATA } from "./liquidatorMetadata.js"
 import { logger } from "./logger.js"
 import {
 	assertConfiguredMuonPermissionsAuthorized,
@@ -193,6 +194,7 @@ interface SystemDeploymentReport {
  *   PARTY_B_REGISTRAR_ROLE registerPartyB
  *   MUON_SETTER_ROLE       setMuonIds, setMuonConfig
  *   PROVIDER_ADMIN_ROLE   registerExpressProvider
+ *   AFFILIATE_REGISTRAR_ROLE setAffiliateMetadata for the liquidator
  */
 export const DEPLOYER_SETUP_ROLES = [
 	"PROTOCOL_CONFIG_ROLE",
@@ -204,6 +206,7 @@ export const DEPLOYER_SETUP_ROLES = [
 	"PARTY_B_REGISTRAR_ROLE",
 	"MUON_SETTER_ROLE",
 	"PROVIDER_ADMIN_ROLE",
+	"AFFILIATE_REGISTRAR_ROLE",
 ]
 
 /**
@@ -1624,9 +1627,17 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 								deployedContracts.symmioLiquidator = address
 								deployedContracts.symmioLiquidatorImplementation = checkpoint.contracts.symmioLiquidator?.implementation
 								logger.info(`SymmioLiquidator deployed at: ${address}`)
+								await ensureLiquidatorMetadata(ethers, liquidator, deployedContracts.diamond!, deployer)
 
 								const manualActions: SafeManualAction[] = []
-								const checks: ComponentHealthCheck[] = []
+								const checks: ComponentHealthCheck[] = [
+									{
+										check: "Core liquidator metadata",
+										status: "passed",
+										expected: JSON.stringify(LIQUIDATOR_METADATA),
+										actual: JSON.stringify(LIQUIDATOR_METADATA),
+									},
+								]
 								const defaultAdminRole = await liquidator.DEFAULT_ADMIN_ROLE()
 								const managerRole = await liquidator.MANAGER_ROLE()
 								const operatorRole = await liquidator.OPERATOR_ROLE()

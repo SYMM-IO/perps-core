@@ -13,6 +13,7 @@ import {
 	getUpgradeAddresses,
 	requireArg,
 } from "./helpers.js"
+import { ensureLiquidatorMetadata, requireLiquidatorMetadataAuthority } from "./liquidatorMetadata.js"
 import { logger } from "./logger.js"
 
 type DeploySymmioLiquidatorArgs = {
@@ -97,19 +98,40 @@ export const liquidatorTask = task("deploy:symmioLiquidator", "Deploys the Symmi
 		defaultValue: undefined,
 	})
 	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({
+		name: "liquidatorAddress",
+		description: "Resume setup for an existing proxy",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
-		default: async ({ symmioAddress, admin, logData }, hre) => {
+		default: async ({ symmioAddress, admin, logData, liquidatorAddress }, hre) => {
 			await assertStandaloneDeploymentTaskAllowed(
 				hre,
 				"deploy:symmioLiquidator",
 				"Use `scripts/deployLiquidator.ts` with EXECUTE=true and the exact CONFIRM_CHAIN_ID for a guarded live deployment.",
 			)
-			return deploySymmioLiquidator(hre, {
-				symmioAddress: requireArg(symmioAddress, "symmio-address"),
-				admin: requireArg(admin, "admin"),
-				logData,
-			})
+			const core = checksumAddress(requireArg(symmioAddress, "symmio-address"))
+			const finalAdmin = requireArg(admin, "admin")
+			const { ethers } = await getConnection(hre)
+			const [signer] = await ethers.getSigners()
+			const view = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
+			if (!liquidatorAddress) await requireLiquidatorMetadataAuthority(view, signer)
+			if (liquidatorAddress && (await ethers.provider.getCode(liquidatorAddress)) === "0x")
+				throw new Error(`No SymmioLiquidator code at ${liquidatorAddress}`)
+			const liquidator = liquidatorAddress
+				? await ethers.getContractAt("SymmioLiquidator", liquidatorAddress)
+				: await deploySymmioLiquidator(hre, { symmioAddress: core, admin: finalAdmin, logData })
+			const address = await liquidator.getAddress()
+			try {
+				await ensureLiquidatorMetadata(ethers, liquidator, core, signer)
+			} catch (error) {
+				throw new Error(
+					`Metadata setup failed for ${address}; resume with --liquidator-address ${address}: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+			return liquidator
 		},
 	}))
 	.build()
