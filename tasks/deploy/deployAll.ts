@@ -5,6 +5,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import { normalizeDeploymentSummary, renderDeploymentMarkdown, renderDeploymentTerminal } from "../../deployment-tooling/deployment-report.js"
 import { createDeploymentPlan, type ComponentMode, type DeploymentRecipe } from "../../deployment-tooling/recipe.js"
 import { ControlFacet } from "../../src/types/index.js"
+import { CORE_PAUSE_ROLES } from "../../utils/corePauseRoles.js"
 import { atomicWriteFile, getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { deployAccountLayerDiamond } from "./accountLayerDiamond.js"
 import {
@@ -218,7 +219,7 @@ export const DEPLOYER_SETUP_ROLES = [
 export const CORE_ADMIN_ROLES = [
 	"SYMBOL_MANAGER_ROLE",
 	"SYMBOL_LISTING_ROLE",
-	"PAUSER_ROLE",
+	...CORE_PAUSE_ROLES,
 	"UNPAUSER_ROLE",
 	"PARTY_B_MANAGER_ROLE",
 	"PLEDGE_TOKEN_MANAGER_ROLE",
