@@ -103,9 +103,30 @@
 								"upgradeAuthority": {
 									"type": "string",
 									"format": "address"
+								},
+								"baseline": {
+									"type": "object",
+									"properties": {
+										"id": {
+											"type": "string",
+											"pattern": "^[a-z][a-z0-9.-]*$",
+											"maxLength": 128
+										},
+										"facetCodeHashes": {
+											"type": "array",
+											"items": {
+												"type": "string",
+												"pattern": "^0x[0-9a-fA-F]{64}$"
+											},
+											"minItems": 1,
+											"uniqueItems": true
+										}
+									},
+									"required": ["id", "facetCodeHashes"],
+									"additionalProperties": false
 								}
 							},
-							"required": ["address", "upgradeAuthority"],
+							"required": ["address", "upgradeAuthority", "baseline"],
 							"additionalProperties": false
 						}
 					},
@@ -174,15 +195,6 @@
 									"minItems": 0,
 									"uniqueItems": true
 								},
-								"baselineFacetCodeHashes": {
-									"type": "array",
-									"items": {
-										"type": "string",
-										"pattern": "^0x[0-9a-fA-F]{64}$"
-									},
-									"minItems": 1,
-									"uniqueItems": true
-								},
 								"migrations": {
 									"type": "array",
 									"items": {
@@ -192,9 +204,19 @@
 									},
 									"minItems": 0,
 									"uniqueItems": true
+								},
+								"supportedBaselines": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[a-z][a-z0-9.-]*$",
+										"maxLength": 128
+									},
+									"minItems": 1,
+									"uniqueItems": true
 								}
 							},
-							"required": ["facets", "allowedRemovedSelectors", "baselineFacetCodeHashes", "migrations"],
+							"required": ["facets", "allowedRemovedSelectors", "supportedBaselines", "migrations"],
 							"additionalProperties": false
 						}
 					},
