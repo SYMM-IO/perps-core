@@ -427,7 +427,7 @@ export function createArbitrumPerpsUpgradeTask(common) {
 		version: 5,
 		category: "maintenance",
 		risk: "transaction",
-		title: "Arbitrum Perps Core v0.8.6 upgrade",
+		title: "Historical Arbitrum Perps Core v0.8.6 full-system upgrade",
 		description:
 			"Deploy, publish, upgrade, wire, cut over, and verify the fixed Arbitrum production target through its Safe, with a rehearsal or explicit waiver.",
 		supportedNetworks: ["arbitrum"],

@@ -18,9 +18,13 @@ import {
 	signerEnvironment,
 } from "../signer/index.js";
 import { ownershipAcceptanceAction, roleGrantAction } from "../signer/safe-batch.js";
+import { createAccountInstantUpgradeTask } from "./account-instant-upgrade.js";
+import { createArbitrumCoreUpgradeTask } from "./arbitrum-core-upgrade.js";
 import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.js";
+import { createDisputedSettlementTask } from "./disputed-settlement.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
+import { createLfUpdateTask } from "./lf-update.js";
 import { isAddress } from "ethers";
 import fs from "node:fs";
 import path from "node:path";
@@ -1319,10 +1323,14 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 });
 
 const MAINTENANCE_TASKS = [
+	createArbitrumCoreUpgradeTask(common),
+	createDisputedSettlementTask(common),
+	createLfUpdateTask(common),
 	createArbitrumRoundingUpgradeTask(common),
 	createArbitrumRoundingUpgradeTask(common, "stage-funding"),
 	createArbitrumRoundingUpgradeTask(common, "production"),
 	createArbitrumPerpsUpgradeTask(common),
+	createAccountInstantUpgradeTask(common),
 	SETTLEMENT_TEMPLATE_REPAIR_TASK,
 	SYMBOL_SYNC_FETCH_TASK,
 	SYMBOL_SYNC_ASSIGNMENT_TASK,

@@ -75,7 +75,8 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 15);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 19);
+	assert.equal(entries.find(item => item.id === "maintenance.disputed-settlement").risk, "transaction");
 	const stageFunding = entries.find(item => item.id === "maintenance.arbitrum-vibe-stage-funding-upgrade-863");
 	assert.equal(stageFunding.title, "Arbitrum Vibe stage / Safe funding upgrade (863)");
 	assert.deepEqual(stageFunding.supportedNetworks, ["arbitrum"]);
@@ -87,7 +88,7 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	assert.deepEqual(productionRounding.supportedNetworks, ["arbitrum"]);
 	assert.equal(productionRounding.risk, "transaction");
 	const arbitrumUpgrade = entries.find(item => item.id === "maintenance.arbitrum-perps-upgrade");
-	assert.equal(arbitrumUpgrade.title, "Arbitrum Perps Core v0.8.6 upgrade");
+	assert.equal(arbitrumUpgrade.title, "Historical Arbitrum Perps Core v0.8.6 full-system upgrade");
 	assert.deepEqual(arbitrumUpgrade.supportedNetworks, ["arbitrum"]);
 	assert.equal(arbitrumUpgrade.risk, "transaction");
 	assert.deepEqual(
@@ -193,6 +194,7 @@ test("full deployment plans give every contract batch entry a unique stable id",
 	const liveItems = productionPlan.find(step => step.id === "execute").items;
 	assert.ok(liveItems.some(item => item.startsWith("live.party-b.grant-trusted-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.deploy-proxy"));
+	assert.ok(liveItems.includes("live.liquidator.set-core-metadata"));
 	assert.ok(liveItems.some(item => item.startsWith("live.liquidator.grant-operator-")));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-liquidator-role"));
 	assert.ok(liveItems.includes("live.liquidator.grant-core-partyb-liquidator-role"));
