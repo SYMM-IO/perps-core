@@ -145,7 +145,16 @@ function createUi({ input, output, controllerRef }) {
 		text: options => prompt(clack.text, options),
 		password: options => prompt(clack.password, options),
 		multiselect: options => prompt(clack.multiselect, options),
-		note: (message, title) => clack.note(message, title, common),
+		note(message, title) {
+			// Clear the live frame before appending durable output. Otherwise the next
+			// prompt or heartbeat erases the note using the old frame's cursor offset.
+			controllerRef.current?.stop();
+			try {
+				clack.note(message, title, common);
+			} finally {
+				controllerRef.current?.start();
+			}
+		},
 		runInteractive(command, args) {
 			controllerRef.current?.stop();
 			try {

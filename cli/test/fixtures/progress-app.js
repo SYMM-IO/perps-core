@@ -8,6 +8,25 @@ const wait = milliseconds => new Promise(resolve => setTimeout(resolve, millisec
 const holdMilliseconds = Number(process.env.SYMMIO_PTY_HOLD_MS || 700);
 const run = async ctx => {
 	await ctx.step("broadcast", "Broadcast transaction", async () => {
+		if (process.env.SYMMIO_PTY_CSV_PATH) {
+			ctx.ui.note(
+				[
+					"Network: arbitrum (42161)",
+					"Manager: 0x5D1E5DD0463DcE32c6502E0fC98b2081cBa55c73",
+					"Wallet: 0x86E99594c904160924AA6d629cfeb5F0F73e916F",
+					"3689 changes; 10 BTC/ETH IDs at 3%; 3679 other IDs at 4%.",
+					"Existing minimum quote values are preserved.",
+					"Announcement: synthetic terminal regression test",
+					"Enforcement: 2026-09-17T11:01:46Z",
+					`Review all names, IDs, old/new rates and quote minima: ${process.env.SYMMIO_PTY_CSV_PATH}`,
+				].join("\n"),
+				"LF rollout preview",
+			);
+			await ctx.ui.text({ message: "After reviewing the CSV, type 42161 to authorize these LF changes" });
+			// This fixture only exercises review; it must never reach the synthetic broadcast.
+			ctx.requestPause();
+			ctx.checkpoint();
+		}
 		if (process.env.SYMMIO_PTY_FAIL === "true") {
 			await ctx.runProcess(process.execPath, [
 				"-e",

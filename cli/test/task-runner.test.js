@@ -646,3 +646,48 @@ test("a blocked cancellation names the hashes and the exact recovery path", asyn
 	assert.match(cancelled.lastError, /DEPLOY_TX_REPLACEMENTS/);
 	assert.match(cancelled.lastError, /CONFIRM_DROPPED_TX_HASHES/);
 });
+
+test("resume detects changes to the compiler configuration", async () => {
+	const task = mutating({
+		run: async () => {
+			throw new Error("pause");
+		},
+	});
+	const { root, runner } = runnerFor(task);
+	fs.writeFileSync(path.join(root, "hardhat.config.ts"), "solc 0.8.36");
+	await runner.start("maintenance.test");
+	fs.writeFileSync(path.join(root, "hardhat.config.ts"), "solc 0.8.37");
+	await assert.rejects(runner.resumeActive(), /Task source changed/);
+});
+
+test("nested TLS failures surface the connection error instead of Hardhat's generic banner", async () => {
+	const run = async ctx => {
+		await ctx.runProcess(process.execPath, [
+			"-e",
+			`process.stderr.write("An unexpected error occurred:\\nUnknownError: Failed to make POST request to https://private-rpc.example/secret-token\\n  [cause]: RequestError: Failed to make POST request\\n    code: 'ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR'\\n"); process.exit(1);`,
+		]);
+	};
+	const { runner } = runnerFor(mutating({ run, handler: run }));
+	const paused = await runner.start("maintenance.test");
+	assert.match(paused.lastError, /ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR/);
+	assert.doesNotMatch(paused.lastError, /unexpected error|secret-token|private-rpc/);
+});
+
+for (const captureEvents of [false, true])
+	test(`subprocess event capture ${captureEvents ? "records live events" : "isolates test transactions and signer bindings"}`, async () => {
+		const transaction = { hash: "0x" + "1".repeat(64), from: "0x" + "2".repeat(40), status: "confirmed" };
+		const event = JSON.stringify({ type: "tx.submitted", detail: { transaction } }) + "\n";
+		const run = async ctx => {
+			await ctx.runProcess(
+				process.execPath,
+				["-e", `require('node:fs').writeSync(3, ${JSON.stringify(event)}); console.log('local test output');`],
+				{ captureEvents },
+			);
+		};
+		const { runner } = runnerFor(mutating({ run, handler: run }));
+		const result = await runner.start("maintenance.test");
+		assert.equal(result.status, "completed");
+		assert.equal(result.transactions.length, captureEvents ? 1 : 0);
+		assert.equal(result.signer, captureEvents ? transaction.from : undefined);
+		assert.match(fs.readFileSync(result.logPath, "utf8"), /local test output/);
+	});
