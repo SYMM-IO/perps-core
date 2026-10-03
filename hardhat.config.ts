@@ -71,7 +71,9 @@ export function recipeAccountsForPersistentLocal(readOnly: boolean): [] | "remot
 // Recipe mode resolves only its declared secret references. Legacy invocations preserve
 // the existing env/keystore behavior when SYMMIO_DEPLOYMENT_RECIPE is absent.
 const useKeystore = activeDeploymentRecipe ? false : parseBooleanEnv("USE_KEYSTORE")
-const recipeReadOnly = activeDeploymentRecipe ? parseBooleanEnv("SYMMIO_RECIPE_READ_ONLY") : false
+// Standalone operator inspections use this flag too, without a deployment recipe.
+// RPC credentials may still come from the keystore; signing accounts must not.
+const recipeReadOnly = parseBooleanEnv("SYMMIO_RECIPE_READ_ONLY")
 const recipeCredentials = recipeCredentialPolicy(recipeReadOnly)
 const operatorSignerMode = process.env.SYMMIO_SIGNER_MODE
 const safeOnlySigner = operatorSignerMode === "safe-file" || operatorSignerMode === "safe-service"
@@ -95,7 +97,7 @@ const configuredProtocolAdminKey =
 						? resolveRecipeSecret("deployer")
 						: undefined
 					: process.env.NEW_DEPLOYER || process.env.TEAM_DEPLOYER || (useKeystore ? configVariable(keystoreDeployerKey) : undefined)
-if (operatorSignerMode === "private-key" && !configuredProtocolAdminKey) {
+if (!recipeReadOnly && operatorSignerMode === "private-key" && !configuredProtocolAdminKey) {
 	throw new Error("The selected private-key signer was not hydrated into the operator process")
 }
 const protocolAdminKey = configuredProtocolAdminKey || DUMMY_PRIVATE_KEY
@@ -119,7 +121,7 @@ const rpcUrl = (network: string, defaultUrl: string, configuredNetwork = network
 }
 
 const accountsForNetwork = (network: string) => {
-	if (safeOnlySigner || operatorSignerMode === "ledger") return []
+	if (recipeReadOnly || safeOnlySigner || operatorSignerMode === "ledger") return []
 	if (operatorSignerMode === "local-node") return "remote"
 	if (activeDeploymentRecipe) {
 		return recipeAccountsForNetwork(network, activeDeploymentRecipe.recipe.network.name, configuredProtocolAdminKey, recipeReadOnly)
@@ -135,8 +137,8 @@ const simulatedAccounts = () => {
 	return undefined
 }
 
-const ledgerAddress = operatorSignerMode === "ledger" ? process.env.SYMMIO_LEDGER_ADDRESS : undefined
-if (operatorSignerMode === "ledger" && (!ledgerAddress || !/^0x[0-9a-fA-F]{40}$/.test(ledgerAddress))) {
+const ledgerAddress = !recipeReadOnly && operatorSignerMode === "ledger" ? process.env.SYMMIO_LEDGER_ADDRESS : undefined
+if (!recipeReadOnly && operatorSignerMode === "ledger" && (!ledgerAddress || !/^0x[0-9a-fA-F]{40}$/.test(ledgerAddress))) {
 	throw new Error("The selected Ledger signer requires SYMMIO_LEDGER_ADDRESS")
 }
 const ledgerConfig = ledgerAddress
@@ -400,13 +402,15 @@ export default defineConfig({
 			// This keeps public development keys out of recipe/task state and makes the persistent-node
 			// rehearsal work immediately after starting the node. Every non-local recipe stays on the
 			// explicit private-key path and therefore fails closed when its secret is unavailable.
-			accounts: (operatorSignerMode
-				? accountsForNetwork("localhost")
-				: activeDeploymentRecipe?.recipe.network.mode === "local"
-					? recipeAccountsForPersistentLocal(recipeReadOnly)
-					: activeDeploymentRecipe
-						? recipeAccountsForNetwork("localhost", activeDeploymentRecipe.recipe.network.name, protocolAdminKey, recipeReadOnly)
-						: [protocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean)) as "remote" | string[],
+			accounts: (recipeReadOnly
+				? []
+				: operatorSignerMode
+					? accountsForNetwork("localhost")
+					: activeDeploymentRecipe?.recipe.network.mode === "local"
+						? recipeAccountsForPersistentLocal(recipeReadOnly)
+						: activeDeploymentRecipe
+							? recipeAccountsForNetwork("localhost", activeDeploymentRecipe.recipe.network.name, protocolAdminKey, recipeReadOnly)
+							: [protocolAdminKey, migratorKey, upgradeOperatorKey, proposerKey].filter(Boolean)) as "remote" | string[],
 			...ledgerConfig,
 		},
 		bsc: createNetworkConfig("bsc", 56, "https://bsc-rpc.publicnode.com"),
