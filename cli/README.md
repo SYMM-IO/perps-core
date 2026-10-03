@@ -246,3 +246,13 @@ InstantLayer, AccountLayer, and verifier primitives remain hidden dependencies.
 
 Fuzzing, test runners, package hooks, build helpers, local initialization, and shell wrappers
 are development tooling, not maintenance menu entries.
+
+## Core balance withdrawal
+
+Under **Other maintenance scripts**, use **Check Core balance and withdrawal readiness**
+for a read-only snapshot, or **Deallocate and withdraw Core collateral** for the reviewed,
+resumable direct-wallet flow. Network, Core, account, recipient, amount and Muon endpoint
+are configurable. The task supports legacy withdrawals and same-chain classic request
+finalization, uses the shared signer/journal, and waits externally through the cooldown.
+See [Core account deallocation and withdrawal](../docs/core-withdrawal-operations.md) for
+supported accounts, units, signature expiry, recovery and verification boundaries.
