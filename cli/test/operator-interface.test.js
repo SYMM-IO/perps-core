@@ -75,8 +75,10 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 20);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 22);
 	assert.equal(entries.find(item => item.id === "operations.plan").risk, "local-write");
+	assert.equal(entries.find(item => item.id === "maintenance.core-withdrawal-check").risk, "read-only");
+	assert.equal(entries.find(item => item.id === "maintenance.core-withdrawal").risk, "transaction");
 	assert.equal(entries.find(item => item.id === "maintenance.disputed-settlement").risk, "transaction");
 	const stageFunding = entries.find(item => item.id === "maintenance.arbitrum-vibe-stage-funding-upgrade-863");
 	assert.equal(stageFunding.title, "Arbitrum Vibe stage / Safe funding upgrade (863)");
