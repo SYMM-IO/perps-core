@@ -691,3 +691,20 @@ for (const captureEvents of [false, true])
 		assert.equal(result.signer, captureEvents ? transaction.from : undefined);
 		assert.match(fs.readFileSync(result.logPath, "utf8"), /local test output/);
 	});
+
+test("preparation receives the runner's configured history storage", async t => {
+	const root = temporaryRoot();
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const stateRoot = path.join(root, "custom-state");
+	let received;
+	const task = definition({
+		prepare: async context => {
+			received = context;
+			return {};
+		},
+	});
+	const runner = createTaskRunner({ root, stateRoot, definitions: [task] });
+	await runner.start(task.id);
+	assert.equal(received.root, root);
+	assert.equal(received.stateRoot, stateRoot);
+});

@@ -707,7 +707,7 @@ export function createTaskRunner(options = {}) {
 			if (definition.risk !== "read-only" && getActive()) {
 				throw new Error("Finish or cancel the active task before starting another mutating task");
 			}
-			const input = runtime.input ?? (await definition.prepare({ root, ui: runtime.ui, catalog: catalog() }));
+			const input = runtime.input ?? (await definition.prepare({ root, stateRoot, ui: runtime.ui, catalog: catalog() }));
 			if (input === null || input === undefined) return null;
 			const plan = validatePlan(definition.id, await definition.plan({ root, ui: runtime.ui }, input));
 			const state = createState(definition, input, plan, runId);

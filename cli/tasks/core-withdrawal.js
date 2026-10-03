@@ -1,5 +1,6 @@
 import { digest, json, validateWithdrawalInput, verifyWithdrawalPlan, withdrawalPreview } from "../../deployment-tooling/core-withdrawal.js";
 import { CHAINS, rpcEnvKey } from "../lib/context.js";
+import { PROJECT_ROOT } from "../lib/paths.js";
 import { hydrateSigner, SIGNER_MODES, signerEnvironment } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
 import { getAddress, isAddress, ZeroAddress } from "ethers";
@@ -96,25 +97,82 @@ async function address(ui, message, initialValue) {
 		validate: v => (isAddress(v) && getAddress(v) !== ZeroAddress ? undefined : "Enter a non-zero EVM address"),
 	});
 }
-async function prepare({ ui }, checkOnly = false) {
+// Suggestions contain public configuration only, never execution evidence or signer state.
+export function withdrawalHistory(stateRoot) {
+	const directory = path.join(stateRoot, "history");
+	let entries;
+	try {
+		entries = fs.readdirSync(directory, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	return entries
+		.filter(entry => entry.isDirectory())
+		.flatMap(entry => {
+			try {
+				const state = read(path.join(directory, entry.name, "state.json"));
+				if (state.taskId !== "maintenance.core-withdrawal" || state.status !== "completed") return [];
+				const input = operation(state.input);
+				validateWithdrawalInput(input);
+				const chain = CHAINS[input.network];
+				if (!chain || chain.chainId !== input.chainId || (chain.simulated && input.network !== "localhost") || input.action === "check")
+					return [];
+				const finishedAt = new Date(state.finishedAt).toISOString();
+				return [{ input, finishedAt }];
+			} catch {
+				return [];
+			}
+		})
+		.sort((a, b) => b.finishedAt.localeCompare(a.finishedAt));
+}
+async function prepare(
+	{ ui, root = PROJECT_ROOT, stateRoot = process.env.SYMMIO_TASK_STATE_DIR || path.join(root, ".symmio", "tasks") },
+	checkOnly = false,
+) {
+	const history = withdrawalHistory(stateRoot);
 	const network = await ui.select({
 		message: "Core network",
+		...(history.length ? { initialValue: history[0].input.network } : {}),
 		options: Object.entries(CHAINS)
 			.filter(([n, c]) => !c.simulated || n === "localhost")
 			.map(([value, c]) => ({ value, label: c.name })),
 	});
 	if (!network) return null;
-	const core = await address(ui, "Core diamond address");
+	const candidates = history.filter(row => row.input.network === network && row.input.chainId === CHAINS[network].chainId);
+	let previous;
+	if (candidates.length) {
+		const selection = await ui.select({
+			message: "Suggestions from completed withdrawals on this chain",
+			initialValue: "0",
+			options: [
+				...candidates.map((row, index) => ({
+					value: String(index),
+					label: `${row.finishedAt} | Core ${row.input.core} | account ${row.input.account} | ${row.input.action} ${row.input.amount}`,
+				})),
+				{ value: "new", label: "Enter a new configuration" },
+			],
+		});
+		if (selection == null) return null;
+		previous = candidates[Number(selection)]?.input;
+		if (previous)
+			ui.note(
+				"Edit any suggestion below. Amount and recipient apply only to the same Core and account. Balances, Muon signatures, cooldown and transfer proof are checked fresh; previous approvals and transactions are never reused.",
+				"Previous completed run",
+			);
+	}
+	const core = await address(ui, "Core diamond address", previous?.core);
 	if (!core) return null;
-	const account = await address(ui, "Account holding the Core balance (must be the signing wallet)");
+	const sameCore = previous && getAddress(core) === getAddress(previous.core);
+	const account = await address(ui, "Account holding the Core balance (must be the signing wallet)", sameCore ? previous.account : undefined);
 	if (!account) return null;
-	const recipient = checkOnly ? account : await address(ui, "Collateral recipient", account);
+	const sameAccount = sameCore && getAddress(account) === getAddress(previous.account);
+	const recipient = checkOnly ? account : await address(ui, "Collateral recipient", sameAccount ? previous.recipient : account);
 	if (!recipient) return null;
 	const action = checkOnly
 		? "check"
 		: await ui.select({
 				message: "Operation",
-				initialValue: "all",
+				initialValue: sameAccount ? previous.action : "all",
 				options: [
 					{ value: "all", label: "Deallocate as needed, check cooldown, then withdraw" },
 					{ value: "deallocate", label: "Deallocate only" },
@@ -126,7 +184,7 @@ async function prepare({ ui }, checkOnly = false) {
 		? "all"
 		: await ui.text({
 				message: "Collateral amount, or all (frozen at inspection)",
-				initialValue: "all",
+				initialValue: sameAccount ? previous.amount : "all",
 				validate: v =>
 					v === "all" || (/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(v) && Number(v) > 0)
 						? undefined
@@ -137,7 +195,7 @@ async function prepare({ ui }, checkOnly = false) {
 		? "auto"
 		: await ui.select({
 				message: "Withdrawal interface",
-				initialValue: "auto",
+				initialValue: sameCore ? previous.route : "auto",
 				options: [
 					{ value: "auto", label: "Auto: classic request flow if installed, otherwise legacy" },
 					{ value: "legacy", label: "Legacy withdrawTo" },
@@ -149,7 +207,7 @@ async function prepare({ ui }, checkOnly = false) {
 		? "https://muon-oracle3.rasa.capital/"
 		: await ui.text({
 				message: "Muon HTTPS URL (root or /v1/)",
-				initialValue: "https://muon-oracle3.rasa.capital/",
+				initialValue: sameCore ? previous.muonUrl : "https://muon-oracle3.rasa.capital/",
 				validate: v => {
 					try {
 						const u = new URL(v);
