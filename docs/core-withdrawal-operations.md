@@ -9,7 +9,7 @@ Use the pinned Node version and existing installed dependencies. The runner uses
 
 ## Operator workflow
 
-1. Select the network and enter the Core diamond, account, and recipient. These are configurable; the task is not tied to a chain or liquidator address. The recipient defaults to the account.
+1. Select the network and enter the Core diamond, account, and recipient. The most recent completed withdrawal suggests the network. If that network has completed withdrawals, choose a dated previous configuration or **Enter a new configuration**. Every value remains editable; the task is not tied to a chain or liquidator address.
 2. Select **Deallocate as needed, check cooldown, then withdraw**, **Deallocate only**, or **Withdraw existing free balance only**.
 3. Enter a positive token-unit amount such as `180.590469769171672952`, or `all`. For withdrawal, existing free balance is used first; only the shortfall is deallocated. `all` is resolved once at inspection and frozen in the approved plan. Later credits are not swept by the same run. A newly started run is a new intent, not a continuation of a completed withdrawal.
 4. Choose automatic, classic, or legacy withdrawal. Automatic uses the classic request flow when all required selectors are installed; otherwise it requires `withdrawTo`. Interface and collateral bytecode bindings are saved and rechecked before subsequent actions. The legacy route is probed before deallocation; an unavailable/deprecated route is not silently substituted after approval.
@@ -21,6 +21,10 @@ Use the pinned Node version and existing installed dependencies. The runner uses
 ## Supported interfaces and units
 
 Deallocation uses `deallocate(uint256, SingleUpnlSig)` for a directly controlled Party A or liquidator wallet. It fetches `app=symmio&method=uPnl_A` immediately before the operation, maps the gateway/Schnorr fields, verifies response identity and account nonce, requires at least 15 seconds of remaining validity, and runs `eth_call` from the actual account. Signature acceptance is ultimately checked by Core, not just by the oracle's `success` field. The validity window is read from Core, including the AccountManagement override when exposed. Slow hardware-wallet approval may outlast the signature; receipt reconciliation is required before another attempt.
+
+Suggestions come from completed `maintenance.core-withdrawal` runs in the runner's local history (`.symmio/tasks/history`, or the configured task state directory), newest first. They are isolated by network and chain ID. Read-only checks, cancelled, failed and unfinished runs are excluded. Both the check and withdrawal tasks can use this history; a first run keeps the normal manual prompts.
+
+A selected run suggests Core and account, plus recipient, amount, operation, interface and Muon endpoint. Changing Core clears all dependent suggestions; changing account clears recipient, amount and operation. The recipient then defaults to the newly entered account. Interface and Muon endpoint suggestions require the same Core. A suggested `all` resolves against fresh balances, and a fixed amount is checked again before approval. Suggestions are configuration only: signing credentials, approval, signatures, request IDs, transactions and prior readiness are not copied. The new run still fetches fresh signatures when needed, previews and confirms its plan, journals its own transactions, reads the current cooldown and verifies the final transfer.
 
 The task deliberately refuses contract accounts (including AccountLayer, Safe and CallProxy accounts), Party B balances, suspended accounts, and deployments that disable this legacy deallocation signature. These require their own account/caller or newer-signature adapter. It never grants roles or substitutes an administrator for the balance owner. The read-only check can still report these accounts, but does not establish transaction eligibility.
 
