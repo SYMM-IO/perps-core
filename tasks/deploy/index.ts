@@ -5,6 +5,7 @@ import { arbitrumPerpsUpgradeTask } from "./arbitrumPerpsUpgrade.js"
 import { arbitrumRoundingUpgradeTask } from "./arbitrumRoundingUpgrade.js"
 import { checkComponentTask } from "./checkComponent.js"
 import { checkStandaloneDeploymentTask } from "./checkStandaloneDeployment.js"
+import { coreWithdrawalTask } from "./coreWithdrawal.js"
 import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
 import { deployComponentTask } from "./deployComponent.js"
@@ -29,6 +30,7 @@ import { upgradeProxyTask } from "./upgrade.js"
 import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
+	coreWithdrawalTask,
 	operationsInspectTask,
 	arbitrumCoreUpgradeTask,
 	accountLayerDiamondTask,
