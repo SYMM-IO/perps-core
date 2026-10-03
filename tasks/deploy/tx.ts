@@ -8,6 +8,11 @@ import {
 	type ContractTransactionResponse,
 } from "ethers"
 
+import {
+	waitForCanonicalReceipt,
+	type ReceiptConfirmationObservation,
+	type ReceiptConfirmationPolicy,
+} from "../../deployment-tooling/transaction-receipt.js"
 import { emitTaskEvent } from "./logger.js"
 
 // Awaiting a contract call in ethers v6 resolves as soon as the transaction is
@@ -35,10 +40,12 @@ export interface DeploymentTransactionRecord {
 	durationMs: number
 	confirmations: number
 	blockNumber?: number
+	blockHash?: string
 	gasUsed?: string
 	effectiveGasPrice?: string
 	nativeCostWei?: string
 	error?: string
+	confirmation?: ReceiptConfirmationObservation
 	/** Exact contract-creation intent, used to restore a missing component checkpoint. */
 	deployment?: DeploymentCreationBinding
 }
@@ -67,6 +74,7 @@ export type DeploymentCreationBinding =
 export interface SendOptions {
 	deployment?: DeploymentCreationBinding
 	onSubmitted?: (record: DeploymentTransactionRecord) => void | Promise<void>
+	receiptPolicy?: ReceiptConfirmationPolicy
 }
 
 export interface DeploymentConfirmationOptions {
@@ -86,10 +94,35 @@ let transactionWriteAheadSink: ((record: DeploymentTransactionRecord) => void | 
 
 type ReconciliationProvider = {
 	getBlockNumber(): Promise<number>
+	getBlock(blockNumber: number): Promise<any | null>
 	getTransaction(hash: string): Promise<any | null>
 	getTransactionReceipt(hash: string): Promise<any | null>
 	getTransactionCount(address: string, blockTag: "latest" | "pending"): Promise<number>
 	getCode?(address: string): Promise<string>
+}
+
+function canonicalProgress(message: string): void {
+	console.log(`      … ${message}`)
+	emitTaskEvent("activity", { message })
+}
+
+function confirmRecordedReceipt(
+	record: DeploymentTransactionRecord,
+	provider: any,
+	hash: string,
+	policy: ReceiptConfirmationPolicy = {},
+): Promise<any> {
+	return waitForCanonicalReceipt({
+		...policy,
+		provider,
+		hash,
+		confirmations: record.confirmations,
+		label: record.label,
+		onObservation: observation => {
+			record.confirmation = observation
+		},
+		onProgress: canonicalProgress,
+	})
 }
 
 function transactionIdentity(tx: ContractTransactionResponse | any): Pick<DeploymentTransactionRecord, "from" | "to" | "data" | "value"> {
@@ -148,6 +181,7 @@ function applyReceipt(
 	record.confirmedAt = new Date().toISOString()
 	record.durationMs = Math.max(record.durationMs, Date.now() - Date.parse(record.submittedAt))
 	record.blockNumber = Number(receipt.blockNumber)
+	record.blockHash = receipt.blockHash
 	record.gasUsed = BigInt(receipt.gasUsed).toString()
 	record.effectiveGasPrice = effectiveGasPrice?.toString()
 	record.nativeCostWei = effectiveGasPrice === undefined ? undefined : (BigInt(receipt.gasUsed) * effectiveGasPrice).toString()
@@ -283,6 +317,7 @@ export async function recoverConfirmedDeployment(
 	records: DeploymentTransactionRecord[],
 	component: string,
 	provider: ReconciliationProvider,
+	receiptPolicy: ReceiptConfirmationPolicy = {},
 ): Promise<string | null> {
 	const candidates = successfulDeploymentRecords(records, component)
 	if (candidates.length === 0) return null
@@ -301,10 +336,11 @@ export async function recoverConfirmedDeployment(
 
 	for (const record of candidates) {
 		const effectiveHash = record.replacementHash || record.hash
-		const receipt = await provider.getTransactionReceipt(effectiveHash)
+		let receipt = await provider.getTransactionReceipt(effectiveHash)
 		if (!receipt || Number(receipt.status) !== 1) {
 			throw new Error(`${component} recovery record ${effectiveHash} has no successful receipt on the connected chain`)
 		}
+		receipt = await confirmRecordedReceipt(record, provider, effectiveHash, receiptPolicy)
 		const currentBlock = await provider.getBlockNumber()
 		const confirmations = receiptConfirmations(receipt, currentBlock)
 		if (confirmations < record.confirmations) {
@@ -332,21 +368,29 @@ export async function reconcileDeploymentTransactions(
 	provider: ReconciliationProvider,
 	deployerAddress?: string,
 	env: NodeJS.ProcessEnv = process.env,
+	receiptPolicy: ReceiptConfirmationPolicy = {},
 ): Promise<number> {
 	const uncertain = records.filter(record => record.status === "timed_out" || record.status === "unresolved")
 	if (uncertain.length === 0) return 0
 
 	const replacements = parseReplacementMap(env.DEPLOY_TX_REPLACEMENTS)
 	const confirmedDropped = parseHashSet(env.CONFIRM_DROPPED_TX_HASHES, "CONFIRM_DROPPED_TX_HASHES")
-	const currentBlock = await provider.getBlockNumber()
 	const unresolved: string[] = []
 	let reconciled = 0
 
 	for (const record of uncertain) {
 		const originalHash = record.hash.toLowerCase()
-		const originalReceipt = await provider.getTransactionReceipt(record.hash)
+		let originalReceipt = await provider.getTransactionReceipt(record.hash)
 		if (originalReceipt) {
-			const confirmations = receiptConfirmations(originalReceipt, currentBlock)
+			if (Number(originalReceipt.status) === 1) {
+				try {
+					originalReceipt = await confirmRecordedReceipt(record, provider, record.hash, receiptPolicy)
+				} catch (error) {
+					unresolved.push(`${record.hash}: ${error instanceof Error ? error.message : String(error)}`)
+					continue
+				}
+			}
+			const confirmations = receiptConfirmations(originalReceipt, await provider.getBlockNumber())
 			if (confirmations < record.confirmations) {
 				unresolved.push(
 					`${record.hash} is mined in block ${originalReceipt.blockNumber} but has ${confirmations}/${record.confirmations} confirmations`,
@@ -369,14 +413,22 @@ export async function reconcileDeploymentTransactions(
 			continue
 		}
 
-		const replacementHash = replacements.get(originalHash)
+		const replacementHash = replacements.get(originalHash) || record.replacementHash
 		if (replacementHash) {
-			const replacementReceipt = await provider.getTransactionReceipt(replacementHash)
+			let replacementReceipt = await provider.getTransactionReceipt(replacementHash)
 			if (!replacementReceipt) {
 				unresolved.push(`replacement ${replacementHash} for ${record.hash} has no receipt`)
 				continue
 			}
-			const confirmations = receiptConfirmations(replacementReceipt, currentBlock)
+			if (Number(replacementReceipt.status) === 1) {
+				try {
+					replacementReceipt = await confirmRecordedReceipt(record, provider, replacementHash, receiptPolicy)
+				} catch (error) {
+					unresolved.push(`replacement ${replacementHash}: ${error instanceof Error ? error.message : String(error)}`)
+					continue
+				}
+			}
+			const confirmations = receiptConfirmations(replacementReceipt, await provider.getBlockNumber())
 			if (confirmations < record.confirmations) {
 				unresolved.push(`replacement ${replacementHash} has ${confirmations}/${record.confirmations} confirmations`)
 				continue
@@ -614,17 +666,19 @@ export async function send(
 				throw error
 			}
 		}
+		if (receipt?.status === 1) receipt = await confirmRecordedReceipt(record, tx.provider, replacementHash || tx.hash, options.receiptPolicy)
 	} catch (error) {
 		const durationMs = Date.now() - startedAt
 		const message = error instanceof Error ? error.message : String(error)
 		const errorReceipt = (error as any)?.receipt as ContractTransactionReceipt | undefined
 		const cancelledReplacement = (error as any)?.code === "TRANSACTION_REPLACED" && (error as any)?.cancelled === true && errorReceipt
-		record.status = message.includes("was not mined within")
-			? "timed_out"
-			: errorReceipt?.status === 0 || cancelledReplacement
-				? "failed"
-				: "unresolved"
-		record.replacementHash = cancelledReplacement ? ((error as any)?.replacement?.hash ?? errorReceipt?.hash) : undefined
+		record.status =
+			message.includes("was not mined within") || (error as any)?.code === "CANONICAL_RECEIPT_TIMEOUT"
+				? "timed_out"
+				: errorReceipt?.status === 0 || cancelledReplacement
+					? "failed"
+					: "unresolved"
+		record.replacementHash = cancelledReplacement ? ((error as any)?.replacement?.hash ?? errorReceipt?.hash) : replacementHash
 		record.confirmedAt = errorReceipt ? new Date().toISOString() : undefined
 		record.durationMs = durationMs
 		record.blockNumber = errorReceipt?.blockNumber

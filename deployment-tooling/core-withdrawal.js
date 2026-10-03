@@ -45,6 +45,7 @@ export const tokenInterface = new Interface([
 export const SOURCE_FILES = [
 	"deployment-tooling/core-withdrawal.js",
 	"deployment-tooling/operation-transaction.js",
+	"deployment-tooling/transaction-receipt.js",
 	"tasks/deploy/coreWithdrawal.ts",
 	"cli/tasks/core-withdrawal.js",
 	"tasks/deploy/tx.ts",
@@ -376,6 +377,7 @@ export async function runWithdrawalPhase({
 	fetchImpl,
 	transaction,
 	onConfirmed = () => {},
+	onProgress = () => {},
 }) {
 	validateWithdrawalInput(input);
 	check(Number((await provider.getNetwork()).chainId) === input.chainId, "RPC chain ID mismatch");
@@ -418,6 +420,7 @@ export async function runWithdrawalPhase({
 			send,
 			suppliedHash: phase === p ? transaction : undefined,
 			label: "Core withdrawal",
+			onProgress,
 		});
 		const req = verifyWithdrawalReceipt(plan, p, receipt);
 		if (req) report.request = req;
@@ -502,6 +505,7 @@ export async function runWithdrawalPhase({
 		completeRequest,
 		send,
 		label: "Core withdrawal",
+		onProgress,
 	});
 	await reconcile(phase);
 	const after = await readWithdrawalSnapshot(provider, input);

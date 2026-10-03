@@ -25,13 +25,14 @@ function record(): DeploymentTransactionRecord {
 }
 
 function receipt(hash: string, status = 1) {
-	return { hash, status, blockNumber: 100, gasUsed: 21_000n, gasPrice: 2n }
+	return { hash, status, blockNumber: 100, blockHash: `0x${"33".repeat(32)}`, gasUsed: 21_000n, gasPrice: 2n }
 }
 
 describe("deployment transaction reconciliation", function () {
 	it("recovers a timed-out transaction only after its receipt is confirmed", async function () {
 		const item = record()
 		const provider = {
+			getBlock: async () => ({ hash: `0x${"33".repeat(32)}` }),
 			getBlockNumber: async () => 100,
 			getTransactionReceipt: async (hash: string) => (hash === ORIGINAL_HASH ? receipt(hash) : null),
 			getTransaction: async () => null,
@@ -39,13 +40,14 @@ describe("deployment transaction reconciliation", function () {
 		}
 
 		expect(await reconcileDeploymentTransactions([item], provider, FROM, {})).to.equal(1)
-		expect(item).to.include({ status: "confirmed", blockNumber: 100, gasUsed: "21000", nativeCostWei: "42000" })
+		expect(item).to.include({ status: "confirmed", blockNumber: 100, blockHash: `0x${"33".repeat(32)}`, gasUsed: "21000", nativeCostWei: "42000" })
 		expect(item.error).to.equal(undefined)
 	})
 
 	it("blocks resume while a broadcast has no receipt or explicit reconciliation", async function () {
 		const item = record()
 		const provider = {
+			getBlock: async () => ({ hash: `0x${"33".repeat(32)}` }),
 			getBlockNumber: async () => 100,
 			getTransactionReceipt: async () => null,
 			getTransaction: async () => null,
@@ -67,6 +69,7 @@ describe("deployment transaction reconciliation", function () {
 		for (const sameIntent of [true, false]) {
 			const item = record()
 			const provider = {
+				getBlock: async () => ({ hash: `0x${"33".repeat(32)}` }),
 				getBlockNumber: async () => 101,
 				getTransactionReceipt: async (hash: string) => (hash === REPLACEMENT_HASH ? receipt(hash) : null),
 				getTransaction: async (hash: string) =>

@@ -154,6 +154,7 @@ function harness(classic = false, decimals = 18) {
 				receipt: any = { hash, status: 1, blockNumber: height, blockHash: block(height).hash, gasUsed: 100000n, gasPrice: 2n, logs }
 			receipts.set(hash, receipt)
 			const tx = {
+				provider,
 				...r,
 				from: account,
 				hash,
@@ -332,4 +333,30 @@ test("same-intent replacement succeeds; changed recipient and reverted receipts 
 		} else await assert.rejects(h.run("deallocate", false, replacement))
 		assert.equal(h.stats().sends, 1)
 	}
+})
+
+test("classic flow waits out preconfirmed receipts for every transaction without duplicate sends", async () => {
+	const h = harness(true, 6)
+	const originalReceipt = h.provider.getTransactionReceipt
+	const reads = new Map<string, number>()
+	h.provider.getTransactionReceipt = async (hash: string) => {
+		const receipt = await originalReceipt(hash)
+		const count = (reads.get(hash) || 0) + 1
+		reads.set(hash, count)
+		return receipt && count === 1 ? { ...receipt, blockHash: "0x" + "00".repeat(32) } : receipt
+	}
+	await h.run("inspect")
+	h.approve()
+	await h.run("deallocate", true)
+	await h.run("initiate", true)
+	await h.run("ready")
+	assert.equal(h.report.readiness.ready, false)
+	h.advance()
+	await h.run("withdraw", true)
+	await h.run("verify")
+	assert.equal(h.report.completed, true)
+	assert.equal(h.stats().sends, 3)
+	for (const phase of ["deallocate", "initiate", "withdraw"]) assert(h.report.proofs[phase].eventsVerified)
+	await h.run("withdraw", true)
+	assert.equal(h.stats().sends, 3)
 })

@@ -60,6 +60,10 @@ export const coreWithdrawalTask = task("internal:core-withdrawal", "Inspect, dea
 					transaction: args.transaction,
 					completeRequest: completeGovernanceTransactionRequest,
 					send,
+					onProgress: (message: string) => {
+						console.log(message)
+						emitTaskEvent("activity", { message })
+					},
 					onConfirmed: (transaction: any) => {
 						emitTaskEvent("tx.confirmed", { transaction })
 					},

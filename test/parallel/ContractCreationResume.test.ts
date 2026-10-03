@@ -116,11 +116,13 @@ describe("contract creation timeout recovery", function () {
 			hash: REPLACEMENT_HASH,
 			status: 1,
 			blockNumber: 100,
+			blockHash: `0x${"33".repeat(32)}`,
 			gasUsed: 100_000n,
 			gasPrice: 2n,
 			contractAddress: expectedAddress,
 		}
 		const provider = {
+			getBlock: async () => ({ hash: `0x${"33".repeat(32)}` }),
 			getBlockNumber: async () => 100,
 			getTransactionReceipt: async (hash: string) => (hash === REPLACEMENT_HASH ? replacementReceipt : null),
 			getTransaction: async (hash: string) => (hash === REPLACEMENT_HASH ? replacement : null),
@@ -219,6 +221,17 @@ describe("contract creation timeout recovery", function () {
 			Promise.resolve({
 				hash: REPLACEMENT_HASH,
 				nonce: 10,
+				provider: {
+					getBlock: async () => ({ hash: `0x${"33".repeat(32)}` }),
+					getTransactionReceipt: async () => ({
+						status: 1,
+						hash: REPLACEMENT_HASH,
+						blockNumber: 101,
+						blockHash: `0x${"33".repeat(32)}`,
+						gasUsed: 21_000n,
+						gasPrice: 1n,
+					}),
+				},
 				wait: async () => ({ status: 1, hash: REPLACEMENT_HASH, blockNumber: 101, gasUsed: 21_000n, gasPrice: 1n }),
 			} as any),
 			"explicit write-ahead fixture",

@@ -9,4 +9,7 @@ export function submitOperation(options: {
 	send: any
 	suppliedHash?: string
 	label?: string
+	receiptAttempts?: number
+	receiptIntervalMs?: number
+	onProgress?: (message: string) => void
 }): Promise<any>

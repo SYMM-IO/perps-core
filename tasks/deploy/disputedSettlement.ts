@@ -61,7 +61,17 @@ export async function runSettlementPhase({
 	const reconcile = async (action: any, suppliedHash?: string) => {
 		const operation = report.operations[action.phase]
 		const originalHash = operation.journal?.hash || operation.hash
-		const receipt = await submitOperation({ provider, plan, action, report, save, completeRequest, send: sendTransaction, suppliedHash })
+		const receipt = await submitOperation({
+			provider,
+			plan,
+			action,
+			report,
+			save,
+			completeRequest,
+			send: sendTransaction,
+			suppliedHash,
+			onProgress: console.log,
+		})
 		verifyOperationEvents(plan, action, receipt, core.interface)
 		report.proofs ||= {}
 		report.proofs[action.phase] = {
@@ -138,6 +148,7 @@ export async function runSettlementPhase({
 		completeRequest,
 		send: sendTransaction,
 		suppliedHash: transaction,
+		onProgress: console.log,
 	})
 	verifyOperationEvents(plan, action, receipt, core.interface)
 	completed.push(phase)

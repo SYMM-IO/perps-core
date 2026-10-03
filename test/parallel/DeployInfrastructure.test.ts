@@ -246,14 +246,23 @@ describe("deployment infrastructure", function () {
 		resetDeploymentTransactionJournal()
 		const receipt = {
 			status: 1,
-			hash: "0xconfirmed",
+			hash: `0x${"11".repeat(32)}`,
+			blockHash: `0x${"33".repeat(32)}`,
 			blockNumber: 10,
 			gasUsed: 21_000n,
 			gasPrice: 2n,
 		}
-		await send(Promise.resolve({ hash: "0xsubmitted", nonce: 7, wait: async () => receipt } as any), "test confirmation")
+		await send(
+			Promise.resolve({
+				hash: `0x${"11".repeat(32)}`,
+				nonce: 7,
+				provider: { getTransactionReceipt: async () => receipt, getBlock: async () => ({ hash: receipt.blockHash }) },
+				wait: async () => receipt,
+			} as any),
+			"test confirmation",
+		)
 		expect(getDeploymentTransactionJournal()[0]).to.include({
-			hash: "0xsubmitted",
+			hash: `0x${"11".repeat(32)}`,
 			nonce: 7,
 			status: "confirmed",
 			gasUsed: "21000",
@@ -261,11 +270,12 @@ describe("deployment infrastructure", function () {
 		})
 
 		resetDeploymentTransactionJournal()
-		const replacement = { ...receipt, hash: "0xreplacement", blockNumber: 11 }
+		const replacement = { ...receipt, hash: `0x${"22".repeat(32)}`, blockNumber: 11 }
 		await send(
 			Promise.resolve({
-				hash: "0xoriginal",
+				hash: `0x${"44".repeat(32)}`,
 				nonce: 8,
+				provider: { getTransactionReceipt: async () => replacement, getBlock: async () => ({ hash: replacement.blockHash }) },
 				wait: async () => {
 					throw { code: "TRANSACTION_REPLACED", cancelled: false, receipt: replacement, replacement: { hash: replacement.hash } }
 				},
@@ -273,8 +283,8 @@ describe("deployment infrastructure", function () {
 			"test replacement",
 		)
 		expect(getDeploymentTransactionJournal()[0]).to.include({
-			hash: "0xoriginal",
-			replacementHash: "0xreplacement",
+			hash: `0x${"44".repeat(32)}`,
+			replacementHash: `0x${"22".repeat(32)}`,
 			status: "replaced",
 		})
 	})

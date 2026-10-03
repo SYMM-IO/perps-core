@@ -16,6 +16,7 @@ export const plain = value => JSON.parse(json(value));
 export const SOURCE_FILES = [
 	"deployment-tooling/disputed-settlement.js",
 	"deployment-tooling/operation-transaction.js",
+	"deployment-tooling/transaction-receipt.js",
 	"tasks/deploy/disputedSettlement.ts",
 	"tasks/deploy/governanceActions.ts",
 	"tasks/deploy/executionGuard.ts",
