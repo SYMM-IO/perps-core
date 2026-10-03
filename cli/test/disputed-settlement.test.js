@@ -267,6 +267,7 @@ function transactionFixture() {
 	};
 	const args = {
 		provider,
+		receiptAttempts: 1,
 		plan,
 		action,
 		report,
@@ -317,6 +318,7 @@ test("reconciliation accepts the same-intent replacement, and rejects nonce, cal
 	const f = transactionFixture();
 	await submitOperation(f.args);
 	const replacement = `0x${"ef".repeat(32)}`;
+	f.receipt.hash = replacement;
 	await submitOperation({ ...f.args, signer: undefined, suppliedHash: replacement });
 	assert.equal(f.report.operations.grant.hash, replacement);
 	assert.equal(f.sends(), 1);

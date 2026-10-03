@@ -15,7 +15,7 @@ const connection = await hre.network.getOrCreate()
 assert.equal(connection.networkConfig.type, "edr-simulated")
 const { ethers } = connection
 // All deployment records and checkpoints stay in the isolated test directory.
-for (const name of ["contracts", "hardhat.config.ts", "package.json", "package-lock.json"])
+for (const name of ["contracts", "deployment-tooling", "hardhat.config.ts", "package.json", "package-lock.json"])
 	fs.symlinkSync(path.join(originalDirectory, name), path.join(scratch, name))
 for (const name of ["deploy", "utils", "config"])
 	fs.cpSync(path.join(originalDirectory, "tasks", name), path.join(scratch, "tasks", name), { recursive: true })

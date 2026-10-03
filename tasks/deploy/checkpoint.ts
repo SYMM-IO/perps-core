@@ -401,7 +401,15 @@ export function createDeploymentManifest(intent: unknown, options: { deploymentI
 	const deploymentId = options.deploymentId || randomUUID()
 	const intentHash = sha256(stableSerialize(intent))
 	const sourceHash = hashSourceTree(
-		options.sourcePaths || ["contracts", "tasks/deploy", "tasks/utils/diamondCut.ts", "hardhat.config.ts", "package.json", "package-lock.json"],
+		options.sourcePaths || [
+			"contracts",
+			"tasks/deploy",
+			"tasks/utils/diamondCut.ts",
+			"deployment-tooling/transaction-receipt.js",
+			"hardhat.config.ts",
+			"package.json",
+			"package-lock.json",
+		],
 	)
 	return {
 		version: 1,

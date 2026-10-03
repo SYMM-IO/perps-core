@@ -40,4 +40,7 @@ export function submitOperation(options: {
 	completeRequest: any
 	send: any
 	suppliedHash?: string
+	receiptAttempts?: number
+	receiptIntervalMs?: number
+	onProgress?: (message: string) => void
 }): Promise<any>

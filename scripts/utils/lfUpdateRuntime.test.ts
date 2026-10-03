@@ -44,14 +44,15 @@ test("LF recovery ignores confirmed history and emits only recovered transaction
 		fs.writeFileSync(file, JSON.stringify(report))
 		const receiptReads: string[] = []
 		const provider = {
+			getBlock: async () => ({ hash: `0x${"33".repeat(32)}` }),
 			getBlockNumber: async () => 100,
 			getTransactionReceipt: async (hash: string) => {
 				receiptReads.push(hash)
-				return { hash, status: 1, blockNumber: 100, gasUsed: 21_000n, gasPrice: 2n }
+				return { hash, status: 1, blockNumber: 100, blockHash: `0x${"33".repeat(32)}`, gasUsed: 21_000n, gasPrice: 2n }
 			},
 		}
 		const recovered = await reconcileLfReport(provider, file, "reviewed", authority)
-		assert.deepEqual(receiptReads, [unresolvedHash])
+		assert.deepEqual(receiptReads, [unresolvedHash, unresolvedHash])
 		assert.equal(recovered.transactions[1].status, "confirmed")
 		const emitted = fs
 			.readFileSync(events, "utf8")

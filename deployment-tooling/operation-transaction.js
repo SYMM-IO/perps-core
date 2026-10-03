@@ -1,3 +1,4 @@
+import { waitForCanonicalReceipt } from "./transaction-receipt.js";
 import { createHash } from "node:crypto";
 
 const json = value => JSON.stringify(value, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2);
@@ -9,7 +10,23 @@ const check = (condition, message) => {
 
 // An uncertain send is never retried. Reconciliation needs the original/replacement hash
 // and proves the entire transaction intent, nonce, receipt and canonical block.
-export async function submitOperation({ provider, signer, plan, action, report, save, completeRequest, send, suppliedHash, label = "operation" }) {
+export async function submitOperation({
+	provider,
+	signer,
+	plan,
+	action,
+	report,
+	save,
+	completeRequest,
+	send,
+	suppliedHash,
+	label = "operation",
+	receiptAttempts = 31,
+	receiptIntervalMs = 1000,
+	onProgress = () => {},
+}) {
+	check(Number.isInteger(receiptAttempts) && receiptAttempts >= 1 && receiptAttempts <= 31, "Invalid receipt polling attempts");
+	check(Number.isInteger(receiptIntervalMs) && receiptIntervalMs >= 0 && receiptIntervalMs <= 1000, "Invalid receipt polling interval");
 	const from = plan.input.operator,
 		intent = { from, to: action.to, data: action.data, value: action.value, chainId: plan.input.chainId };
 	report.operations ||= {};
@@ -34,12 +51,18 @@ export async function submitOperation({ provider, signer, plan, action, report, 
 		operation.hash = response.hash;
 		operation.status = "submitted";
 		save();
-		const receipt = await send(Promise.resolve(response), `${label} ${action.phase}`, 1, {
-			onSubmitted: record => {
-				operation.journal = record;
-				save();
-			},
-		});
+		let receipt;
+		try {
+			receipt = await send(Promise.resolve(response), `${label} ${action.phase}`, 1, {
+				onSubmitted: record => {
+					operation.journal = record;
+					save();
+				},
+			});
+		} catch (error) {
+			save();
+			throw error;
+		}
 		operation.hash = receipt.hash;
 		save();
 	}
@@ -48,19 +71,28 @@ export async function submitOperation({ provider, signer, plan, action, report, 
 		/^0x[0-9a-fA-F]{64}$/.test(hash || ""),
 		`Interrupted ${action.phase} at nonce ${operation.nonce}: provide the original or replacement transaction hash; no automatic resend`,
 	);
-	const [tx, receipt] = await Promise.all([provider.getTransaction(hash), provider.getTransactionReceipt(hash)]);
-	check(
-		tx &&
-			sameAddress(tx.from, from) &&
-			sameAddress(tx.to, intent.to) &&
-			tx.data.toLowerCase() === intent.data.toLowerCase() &&
-			BigInt(tx.value) === BigInt(intent.value) &&
-			tx.nonce === operation.nonce &&
-			Number(tx.chainId) === intent.chainId,
-		"Reconciliation transaction does not match the reviewed intent and nonce",
-	);
-	check(receipt && Number(receipt.status) === 1, "Transaction is pending, missing or reverted; resolve it before continuing");
-	check((await provider.getBlock(receipt.blockNumber))?.hash === receipt.blockHash, "Receipt is not on the canonical chain");
+	const receipt = await waitForCanonicalReceipt({
+		provider,
+		hash,
+		receiptAttempts,
+		receiptIntervalMs,
+		onProgress,
+		label: `${label} ${action.phase}`,
+		validateTransaction: tx =>
+			check(
+				sameAddress(tx.from, from) &&
+					sameAddress(tx.to, intent.to) &&
+					tx.data.toLowerCase() === intent.data.toLowerCase() &&
+					BigInt(tx.value) === BigInt(intent.value) &&
+					tx.nonce === operation.nonce &&
+					Number(tx.chainId) === intent.chainId,
+				"Reconciliation transaction does not match the reviewed intent and nonce",
+			),
+		onObservation: observation => {
+			operation.confirmation = observation;
+			save();
+		},
+	});
 	Object.assign(operation, { hash, status: "confirmed", blockNumber: receipt.blockNumber, blockHash: receipt.blockHash });
 	if (operation.journal) {
 		operation.journal.status = "confirmed";
