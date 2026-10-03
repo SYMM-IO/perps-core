@@ -45,6 +45,12 @@ External balance changes or facet upgrades after approval stop execution. Reconc
 
 The underlying Hardhat adapter defaults to inspection and requires the shared `EXECUTE=true` plus matching `CONFIRM_CHAIN_ID` interlock for sending. Operators should use the registered `./symmio` tasks, which own confirmation, signer prompts, journaling, pause and resume.
 
+## Signer configuration and restarting an empty run
+
+Read-only inspection, cooldown checks and reconciliation configure no signing accounts. They may still resolve RPC credentials from the Hardhat keystore. Private-key execution uses the transient key supplied through the masked signer prompt; only the keystore signer flow requests the selected signing entry (default `NEW_DEPLOYER`). Do not add a deployer key to fix a private-key inspection failure.
+
+Older versions could fail before inspection with `HHE7: Configuration Variable "NEW_DEPLOYER" not found`. After updating, a paused run is subject to the normal source-change guard. If it has zero completed steps, no journaled transactions and no operation evidence, choose **Cancel active task**, then start the withdrawal task again and select your signer. If transaction evidence exists, reconcile it before cancelling or restarting. Do not edit the saved source hash to bypass the guard.
+
 ## Validation boundary
 
 Automated tests cover both withdrawal routes, six-decimal token accounting, exact amounts and dust, Muon identity/nonce/expiry rejection, dry-run behavior, cooldown continuation, completed-operation replay, unknown broadcasts, replacements/reverts, Ledger-compatible gas/fee completion, unexpected balance changes and missing token-transfer proof. Shared runner/signer/PTY tests cover the reused execution infrastructure.
