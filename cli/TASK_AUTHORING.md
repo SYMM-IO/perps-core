@@ -87,6 +87,22 @@ steps after inspection:
 - **Verify:** read the chain again and compare every intended invariant. A receipt alone
   proves inclusion, not correctness.
 
+`send()` and persisted-transaction recovery share `waitForCanonicalReceipt()` from
+`deployment-tooling/transaction-receipt.js`. A successful `tx.wait()` can be a
+preconfirmation: the shared layer refreshes the receipt and canonical block, checks the
+requested confirmation depth, and bounds the entire read sequence to 30 seconds. Zero
+or mismatched block hashes and missing data remain unresolved while it polls. Reverted
+receipts stop execution; a persistent mismatch or RPC timeout retains the transaction
+hash and observed hashes for reconciliation. The receipt returned to the caller is the
+fresh canonical receipt, so event and accounting checks use its final logs.
+
+Do not add per-task sleeps, weaken the hash comparison, or resend on verification timeout.
+Use the shared read-only receipt helper when recovering a saved hash, and keep exact
+transaction intent, replacement identity, contract events and post-state verification in
+the owning workflow. Receipt verification observes the current canonical chain; it does
+not establish finality beyond the requested confirmation depth. Include imported receipt
+helper code in workflow source bindings; the common deployment manifest already does.
+
 The default execution must be non-mutating when the underlying script can be invoked
 directly. Live broadcasts require explicit execution and chain-ID confirmation. The CLI may
 collect those controls for the operator, but the adapter must still fail closed when run by
