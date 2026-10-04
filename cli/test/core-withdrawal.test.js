@@ -1,4 +1,10 @@
-import { buildWithdrawalPlan, validateWithdrawalInput, mapMuonSignature, withdrawalReadiness } from "../../deployment-tooling/core-withdrawal.js";
+import {
+	buildWithdrawalPlan,
+	validateWithdrawalInput,
+	mapMuonSignature,
+	withdrawalReadiness,
+	fetchMuon,
+} from "../../deployment-tooling/core-withdrawal.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -104,4 +110,21 @@ test("Muon binds identity, nonce and freshness; malformed or expired responses a
 		mutate(r);
 		assert.throws(() => mapMuonSignature(r, input(), snapshot()));
 	}
+});
+test("Muon fetch keeps identity parameters and requests a response without local caching", async () => {
+	const r = response();
+	assert.equal(
+		await fetchMuon(input(), async (url, options) => {
+			assert.equal(url.pathname, "/v1/");
+			assert.equal(url.searchParams.get("app"), "symmio");
+			assert.equal(url.searchParams.get("method"), "uPnl_A");
+			assert.equal(url.searchParams.get("params[partyA]"), account);
+			assert.equal(url.searchParams.get("params[symmio]"), core);
+			assert.equal(url.searchParams.get("params[chainId]"), "56");
+			assert.equal(options.cache, "no-store");
+			assert.equal(options.redirect, "error");
+			return { ok: true, json: async () => r };
+		}),
+		r,
+	);
 });
