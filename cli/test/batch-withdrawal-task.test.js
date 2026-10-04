@@ -84,6 +84,18 @@ test("batch tasks are registered with per-account signers and distinct read-only
 	assert.equal(tasks.find(task => task.id.endsWith("-check")).risk, "read-only");
 	assert.equal(tasks.find(task => task.id.endsWith("-ready")).transactionJournal, true);
 });
+test("inspection failure before a report exists preserves the subprocess error and stops before authorization", async t => {
+	const h = batchHarness({ count: 1 }),
+		c = context(t, h),
+		failure = new Error("hardhat exited with code 1: HHE50000: Invalid password or corrupted keystore file");
+	c.ctx.runProcess = async () => {
+		throw failure;
+	};
+	await assert.rejects(createBatchWithdrawalTasks(task => task)[0].run(c.ctx, h.input), error => error === failure);
+	assert.equal(fs.existsSync(c.file), false);
+	assert.deepEqual([...c.completed], []);
+	assert.deepEqual(c.signing, {});
+});
 test("public-address import deduplicates accounts without asking for private keys", async t => {
 	const h = batchHarness({ count: 1 });
 	const testUi = ui({

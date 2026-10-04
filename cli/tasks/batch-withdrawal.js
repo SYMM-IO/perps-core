@@ -361,6 +361,9 @@ async function eachAccount(ctx, input, phase, { execute = false, onlyReady = fal
 			await runBatchAdapter(ctx, input, account, phase, { execute: Boolean(needsSigner) });
 		} catch (error) {
 			ctx.checkpoint?.();
+			// Startup failures (for example, a rejected keystore unlock) have no report
+			// to review. Preserve their cause instead of replacing it with ENOENT.
+			if (!fs.existsSync(bound.file)) throw error;
 			ctx.ui.note(`${account}: ${redactSignerSecrets(error.message)}\nOther accounts will continue.`, "Account needs investigation");
 		}
 	}
