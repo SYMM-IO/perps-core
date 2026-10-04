@@ -6,6 +6,7 @@ export function submitOperation(options: {
 	report: any
 	save: () => void
 	completeRequest: any
+	beforeSubmit?: () => Promise<void>
 	send: any
 	suppliedHash?: string
 	label?: string

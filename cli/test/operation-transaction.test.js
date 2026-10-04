@@ -113,3 +113,47 @@ test("invalid polling bounds fail before any send", async () => {
 		assert.equal(f.sends(), 0);
 	}
 });
+test("submission guard runs after fee and nonce reads, before journaling or signing", async () => {
+	const f = fixture();
+	const order = [];
+	f.args.completeRequest = async (_provider, request) => {
+		order.push("fees");
+		return request;
+	};
+	f.args.provider.getTransactionCount = async () => {
+		order.push("nonce");
+		return 7;
+	};
+	await assert.rejects(
+		submitOperation({
+			...f.args,
+			beforeSubmit: async () => {
+				order.push("guard");
+				assert.equal(f.report.operations.deallocate, undefined);
+				throw new Error("signature expired");
+			},
+		}),
+		/signature expired/,
+	);
+	assert.deepEqual(order, ["fees", "nonce", "guard"]);
+	assert.equal(f.sends(), 0);
+	assert.equal(f.report.operations.deallocate, undefined);
+	assert.equal(f.saved.length, 0);
+});
+test("submission guard never runs during reconciliation of an existing operation", async () => {
+	const f = fixture();
+	let checks = 0;
+	const beforeSubmit = async () => {
+		checks++;
+	};
+	await submitOperation({ ...f.args, beforeSubmit });
+	await submitOperation({
+		...f.args,
+		signer: undefined,
+		beforeSubmit: async () => {
+			throw new Error("expired now");
+		},
+	});
+	assert.equal(checks, 1);
+	assert.equal(f.sends(), 1);
+});
