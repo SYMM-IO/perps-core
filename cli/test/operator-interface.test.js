@@ -75,7 +75,10 @@ test("catalog is explicit, complete, and hides deployment primitives", () => {
 	);
 	assert.equal(entries.filter(item => item.category === "patch").length, 1);
 	assert.equal(entries.filter(item => item.category === "checklist").length, 1);
-	assert.equal(entries.filter(item => item.category === "maintenance").length, 22);
+	assert.equal(entries.filter(item => item.category === "maintenance").length, 25);
+	assert.equal(entries.find(item => item.id === "maintenance.batch-withdrawal").risk, "transaction");
+	assert.equal(entries.find(item => item.id === "maintenance.batch-withdrawal-check").risk, "read-only");
+	assert.equal(entries.find(item => item.id === "maintenance.batch-withdrawal-ready").risk, "transaction");
 	assert.equal(entries.find(item => item.id === "operations.plan").risk, "local-write");
 	assert.equal(entries.find(item => item.id === "maintenance.core-withdrawal-check").risk, "read-only");
 	assert.equal(entries.find(item => item.id === "maintenance.core-withdrawal").risk, "transaction");

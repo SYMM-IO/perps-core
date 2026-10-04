@@ -3,6 +3,7 @@ import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
 import { arbitrumCoreUpgradeTask } from "./arbitrumCoreUpgrade.js"
 import { arbitrumPerpsUpgradeTask } from "./arbitrumPerpsUpgrade.js"
 import { arbitrumRoundingUpgradeTask } from "./arbitrumRoundingUpgrade.js"
+import { batchWithdrawalTask } from "./batchWithdrawal.js"
 import { checkComponentTask } from "./checkComponent.js"
 import { checkStandaloneDeploymentTask } from "./checkStandaloneDeployment.js"
 import { coreWithdrawalTask } from "./coreWithdrawal.js"
@@ -31,6 +32,7 @@ import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
 	coreWithdrawalTask,
+	batchWithdrawalTask,
 	operationsInspectTask,
 	arbitrumCoreUpgradeTask,
 	accountLayerDiamondTask,

@@ -21,6 +21,8 @@ test("batch isolates locked accounts, queues cooldowns, processes free balance a
 	assert.equal(h.row(allocated).status, "waiting_cooldown");
 	assert.equal(h.row(free).status, "completed");
 	assert.equal(h.row(pending).status, "waiting_cooldown");
+	assert.match(batchSummary(h.report), /Existing request 1 \| waiting_cooldown/);
+	assert.match(batchSummary(h.report), /New request 1 \| waiting_cooldown/);
 	assert.equal(h.row(blocked).status, "needs_investigation");
 	assert.equal(h.stats().sends, 4);
 	h.advance();
@@ -140,5 +142,34 @@ test("batch input rejects duplicates, raw credentials and unapproved mutations",
 	h.states.get(account).free = 10n ** 18n;
 	await h.run(account, "inspect");
 	await assert.rejects(h.run(account, "process", true), /not been approved/);
+	assert.equal(h.stats().sends, 0);
+});
+test("a supplied deallocation hash recovers a lost broadcast response without resending", async () => {
+	const h = batchHarness({ count: 1 }),
+		account = h.addresses[0];
+	h.states.get(account).allocated = 10n ** 18n;
+	await h.run(account, "inspect");
+	h.approve();
+	h.timeout(true);
+	await assert.rejects(h.run(account, "process", true));
+	const operation = h.row(account).fresh.operations.deallocate,
+		hash = operation.hash;
+	delete operation.hash;
+	operation.status = "prepared";
+	h.timeout(false);
+	await h.run(account, "reconcile", false, { transaction: hash, transactionPhase: "deallocate" });
+	await h.run(account, "process", true);
+	assert.equal(h.stats().sends, 2);
+	assert.equal(h.stats().fetches, 1);
+	assert.equal(h.row(account).status, "waiting_cooldown");
+});
+test("new requests created outside the reviewed batch require investigation even if free balances are unchanged", async () => {
+	const h = batchHarness({ count: 1 }),
+		account = h.addresses[0];
+	await h.run(account, "inspect");
+	h.request(account, 1_000_000n, { ready: true });
+	h.approve();
+	await assert.rejects(h.run(account, "process", true), /history changed outside this batch/);
+	assert.equal(h.row(account).status, "needs_investigation");
 	assert.equal(h.stats().sends, 0);
 });
