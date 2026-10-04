@@ -5,6 +5,8 @@ Start `./symmio` and choose **Other maintenance scripts**. Two tasks are availab
 - **Check Core balance and withdrawal readiness** (`maintenance.core-withdrawal-check`): reads the account, token decimals, allocated/free balances, installed interfaces and withdrawal cooldown. No signer, Muon request or transaction is used.
 - **Deallocate and withdraw Core collateral** (`maintenance.core-withdrawal`): review an exact amount and recipient, deallocate if needed, wait for the on-chain cooldown, withdraw, and verify the receipt and collateral transfer.
 
+For a list of accounts and existing requests, use the separate [batch workflow](batch-core-withdrawal-operations.md), with a first pass, read-only cooldown recheck, and ready-account withdrawal pass.
+
 Use the pinned Node version and existing installed dependencies. The runner uses the existing network registry and RPC credential resolution. Live RPC credentials come from the network's Hardhat keystore entry (for example `RPC_BSC`); no private RPC URL or key is saved in task inputs. Signing uses the selected Hardhat keystore wallet, Ledger, or transient private key. Local rehearsal can use an exact unlocked localhost account. The selected signer must equal the account holding the balance.
 
 ## Operator workflow

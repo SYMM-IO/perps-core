@@ -256,3 +256,10 @@ are configurable. The task supports legacy withdrawals and same-chain classic re
 finalization, uses the shared signer/journal, and waits externally through the cooldown.
 See [Core account deallocation and withdrawal](../docs/core-withdrawal-operations.md) for
 supported accounts, units, signature expiry, recovery and verification boundaries.
+
+For a list of accounts, use **Batch deallocate and withdraw Core collateral**, then
+**Recheck pending batch withdrawals** and **Withdraw ready batch accounts**. The first
+pass processes accounts sequentially and saves cooldowns; follow-up checks are read-only,
+and ready withdrawals request each required account's private key locally. See
+[Batch Core deallocation and withdrawal](../docs/batch-core-withdrawal-operations.md)
+for request discovery, the saved queue, per-account recovery and totals.
