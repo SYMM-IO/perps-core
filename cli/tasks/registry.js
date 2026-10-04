@@ -22,6 +22,7 @@ import { createAccountInstantUpgradeTask } from "./account-instant-upgrade.js";
 import { createArbitrumCoreUpgradeTask } from "./arbitrum-core-upgrade.js";
 import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.js";
+import { createBatchWithdrawalTasks } from "./batch-withdrawal.js";
 import { createCoreWithdrawalTasks } from "./core-withdrawal.js";
 import { createDisputedSettlementTask } from "./disputed-settlement.js";
 import { atomicWrite, prepareDeploymentRecipe, prepareExpressPatch } from "./guided-recipe.js";
@@ -53,6 +54,7 @@ function common(definition) {
 	const inputs = [
 		...(definition.inputs || []),
 		...(definition.risk === "transaction" &&
+		!definition.perAccountSigners &&
 		!(definition.inputs || []).some(input => (typeof input === "string" ? input === "signer" : input.id === "signer"))
 			? [{ id: "signer", label: "Transaction signer", type: "selection", required: true }]
 			: []),
@@ -88,7 +90,7 @@ function common(definition) {
 		const input = await originalPrepare(context);
 		if (input === null || input === undefined) return input;
 		let prepared = input;
-		if (definition.risk === "transaction" && !input.signer) {
+		if (definition.risk === "transaction" && !definition.perAccountSigners && !input.signer) {
 			const policy = typeof definition.signerPolicy === "function" ? definition.signerPolicy(input) : definition.signerPolicy || {};
 			const allowedModes = policy.allowedModes || EOA_SIGNER_MODES;
 			const signer = await selectSigner(context.ui, {
@@ -1328,6 +1330,7 @@ const MAINTENANCE_TASKS = [
 	createOperationPlanTask(common),
 	createArbitrumCoreUpgradeTask(common),
 	...createCoreWithdrawalTasks(common),
+	...createBatchWithdrawalTasks(common),
 	createDisputedSettlementTask(common),
 	createLfUpdateTask(common),
 	createArbitrumRoundingUpgradeTask(common),

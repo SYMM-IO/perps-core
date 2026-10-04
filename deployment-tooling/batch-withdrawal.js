@@ -19,7 +19,13 @@ const check = (ok, message) => {
 };
 const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
 const plain = value => JSON.parse(json(value));
-export const BATCH_SOURCE_FILES = [...SOURCE_FILES, "deployment-tooling/batch-withdrawal.js", "cli/signer/index.js"];
+export const BATCH_SOURCE_FILES = [
+	...SOURCE_FILES,
+	"deployment-tooling/batch-withdrawal.js",
+	"cli/signer/index.js",
+	"tasks/deploy/batchWithdrawal.ts",
+	"cli/tasks/batch-withdrawal.js",
+];
 export const batchSourceDigest = root => digest(BATCH_SOURCE_FILES.map(file => [file, fs.readFileSync(path.join(root, file), "utf8")]));
 export const REQUEST_STATUSES = ["PENDING", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "COMPLETED", "CANCEL_REQUESTED", "CANCELLED", "SUSPENDED"];
 const normalizeRequest = request =>
@@ -151,6 +157,7 @@ function rowDigest(row) {
 	return digest({
 		input: row.input,
 		freshPlan: row.fresh.plan.digest,
+		requestCount: row.history?.length,
 		requests: Object.values(row.requests).map(item => item.binding),
 		issues: row.issues,
 	});
@@ -291,6 +298,11 @@ export async function runBatchAccount(options) {
 		let snapshot = await readWithdrawalSnapshot(provider, value);
 		check(digest(snapshot.bindings) === digest(row.fresh.plan.baseline.bindings), "Core implementation or collateral changed after review");
 		check(!snapshot.suspended && !snapshot.isPartyB && snapshot.accountCode === "0x", "Account authority or status needs investigation");
+		if (snapshot.hasClassic) {
+			const last = (await read(provider, value, "getLastWithdrawRequestId", [address], snapshot.blockNumber))[0];
+			const known = BigInt(row.fresh.request?.id || row.history.length);
+			check(last === known, "Withdrawal request history changed outside this batch; investigate before processing more funds");
+		}
 		for (const item of Object.values(row.requests)) {
 			item.current = normalizeRequest(
 				(await read(provider, value, "getWithdrawRequests", [address, item.binding.id], snapshot.blockNumber))[0],
@@ -337,6 +349,14 @@ export async function runBatchAccount(options) {
 			if (phase === "process") {
 				if (BigInt(row.fresh.plan.deallocate) > 0n) await fresh("deallocate", true);
 				if (row.fresh.plan.route === "classic" && BigInt(row.fresh.plan.withdrawToken) > 0n) await fresh("initiate", true);
+			} else if (
+				row.fresh.plan.route === "classic" &&
+				!row.fresh.operations.initiate &&
+				BigInt(row.fresh.plan.withdrawToken) > 0n &&
+				(BigInt(row.fresh.plan.deallocate) === 0n || row.fresh.operations.deallocate?.status === "confirmed") &&
+				snapshot.timestamp >= snapshot.withdrawableAt
+			) {
+				await fresh("initiate", true);
 			}
 		}
 		const freshStarted = BigInt(row.fresh.plan.deallocate) === 0n || row.fresh.operations.deallocate?.status === "confirmed";
@@ -351,6 +371,12 @@ export async function runBatchAccount(options) {
 				await fresh("withdraw", true);
 				await fresh("verify");
 			}
+		} else if (freshStarted) {
+			row.fresh.readiness = {
+				ready: snapshot.timestamp >= snapshot.withdrawableAt,
+				readyAt: snapshot.withdrawableAt,
+				route: row.fresh.plan.route,
+			};
 		}
 		snapshot = row.fresh.snapshot;
 		const waiting = Object.values(row.requests).filter(item => item.status === "waiting_cooldown");
@@ -409,7 +435,18 @@ export function batchSummary(report) {
 		}
 		totals.planned += planned;
 		totals.withdrawn += withdrawn;
-		return `${row.input.account} | ${row.status} | free ${formatUnits(plan?.baseline.free || 0, 18)} | allocated ${formatUnits(plan?.baseline.allocated || 0, 18)} | deallocate ${formatUnits(plan?.deallocate || 0, 18)} | requested ${decimals === undefined ? "unknown" : formatUnits(planned, decimals)} | recipient ${row.input.recipient} | ${row.readyAt ? new Date(row.readyAt * 1000).toISOString() : "—"}${row.error || row.issues?.length ? ` | ${row.error || row.issues.join("; ")}` : ""}`;
+		const requests = Object.values(row.requests || {}).map(
+			item =>
+				`  Existing request ${item.binding.id} | ${item.status || "reviewed"} | amount ${formatUnits(item.binding.totalAmount, decimals)} | recipient ${item.binding.parts[0].receiver} | cooldown ${new Date(item.readyAt * 1000).toISOString()} | remaining ${item.remainingSeconds} seconds`,
+		);
+		if (row.fresh?.request)
+			requests.push(
+				`  New request ${row.fresh.request.id} | ${row.fresh.completed ? "completed" : row.fresh.readiness?.ready ? "ready" : "waiting_cooldown"} | cooldown ${new Date((row.fresh.readiness?.readyAt || row.fresh.request.cooldownEndTime) * 1000).toISOString()}`,
+			);
+		return [
+			`${row.input.account} | ${row.status} | free ${formatUnits(plan?.baseline.free || 0, 18)} | allocated ${formatUnits(plan?.baseline.allocated || 0, 18)} | deallocate ${formatUnits(plan?.deallocate || 0, 18)} | requested ${decimals === undefined ? "unknown" : formatUnits(planned, decimals)} | recipient ${row.input.recipient} | ${row.readyAt ? new Date(row.readyAt * 1000).toISOString() : "—"}${row.error || row.issues?.length ? ` | ${row.error || row.issues.join("; ")}` : ""}`,
+			...requests,
+		].join("\n");
 	});
 	return [
 		"Account | Status | Core balances and deallocation | Requested collateral | Recipient | Next cooldown end UTC",
