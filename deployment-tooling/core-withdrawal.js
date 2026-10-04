@@ -32,6 +32,8 @@ export const coreInterface = new Interface([
 	`function initiateWithdraw(${PART}[] parts,bool speedUp,bytes data) returns(uint256,uint256)`,
 	"function finalizeWithdrawRequest(address,uint256)",
 	`function getWithdrawRequests(address,uint256) view returns(${REQUEST})`,
+	"function getLastWithdrawRequestId(address) view returns(uint256)",
+	`function getWithdrawRequestsBatch(address,uint256,uint256) view returns(${REQUEST}[])`,
 	`event WithdrawInitiated(uint256 indexed requestId,address indexed user,${PART}[] parts,bool speedUp,bytes providerData,uint256 cooldownEndTime)`,
 	"event DeallocatePartyA(address partyA,uint256 amount,uint256 allocatedBalance)",
 	"event Withdraw(address sender,address user,uint256 amount)",
@@ -303,7 +305,10 @@ export function verifyWithdrawalReceipt(plan, phase, receipt) {
 	} else {
 		check(
 			events(receipt, i.core, coreInterface, "Withdraw").some(
-				e => same(e.sender, i.account) && same(e.user, i.recipient) && e.amount === BigInt(plan.withdrawToken),
+				e =>
+					same(e.sender, i.account) &&
+					same(e.user, plan.route === "classic" ? i.account : i.recipient) &&
+					e.amount === BigInt(plan.withdrawToken),
 			),
 			"Receipt lacks exact Core withdrawal event",
 		);
