@@ -14,6 +14,8 @@ describe("batch withdrawal Hardhat adapter", function () {
 		const context = await loadFixture(initializeFixture)
 		const accounts = [context.signers.user, (await ethers.getSigners())[18]]
 		const recipient = (await ethers.getSigners())[19].address
+		// Exercise the effective account-management deadline, independent of the fixture's long global window.
+		await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(1, 60)
 		await context.controlFacet.setMaxWithdrawParts(50)
 		await context.controlFacet.setWithdrawCooldownPeriod(120)
 		for (const [index, signer] of accounts.entries()) {
@@ -71,7 +73,7 @@ describe("batch withdrawal Hardhat adapter", function () {
 						method: "uPnl_A",
 						reqId: "0x1234",
 						data: {
-							timestamp: (await ethers.provider.getBlock("latest"))!.timestamp,
+							timestamp: (await ethers.provider.getBlock("latest"))!.timestamp - (signatureRequests === 1 ? 10000 : 0),
 							result: {
 								chainId: "31337",
 								symmio: context.diamond,
@@ -115,7 +117,11 @@ describe("batch withdrawal Hardhat adapter", function () {
 			expect(await context.viewFacet.allocatedBalanceOfPartyA(input.accounts[0])).to.equal(0n)
 			expect(await context.viewFacet.getLastWithdrawRequestId(input.accounts[0])).to.equal(1n)
 			expect(readReport().rows[input.accounts[0].toLowerCase()].fresh.proofs.withdraw.eventsVerified).to.equal(true)
-			expect(signatureRequests).to.equal(1)
+			expect(signatureRequests).to.equal(2)
+			const attempts = readReport().rows[input.accounts[0].toLowerCase()].fresh.muonAttempts
+			expect(attempts[0].timing.reason).to.equal("expired")
+			expect(attempts[1].timing.validitySeconds).to.equal(60)
+			expect(attempts[0].response.result.data.timestamp).to.be.lessThan(attempts[1].response.result.data.timestamp)
 		} finally {
 			globalThis.fetch = previousFetch
 			for (const name of envNames) {

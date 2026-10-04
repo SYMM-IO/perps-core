@@ -1,3 +1,4 @@
+import { assertMuonSignatureFresh, muonSignatureTiming, MuonFreshnessError, MUON_FETCH_ATTEMPTS, MUON_CLOCK_WAIT_SECONDS } from "./muon-signature.js";
 import { submitOperation } from "./operation-transaction.js";
 import { Interface, ZeroAddress, getAddress, isHexString, keccak256, parseUnits, formatUnits } from "ethers";
 import { createHash } from "node:crypto";
@@ -46,6 +47,7 @@ export const tokenInterface = new Interface([
 ]);
 export const SOURCE_FILES = [
 	"deployment-tooling/core-withdrawal.js",
+	"deployment-tooling/muon-signature.js",
 	"deployment-tooling/operation-transaction.js",
 	"deployment-tooling/transaction-receipt.js",
 	"tasks/deploy/coreWithdrawal.ts",
@@ -221,12 +223,6 @@ export function mapMuonSignature(response, input, snapshot) {
 		"Muon signature chain/Core/account mismatch",
 	);
 	check(String(d.nonce) === String(snapshot.nonce), "Muon account nonce is stale");
-	check(
-		Number.isSafeInteger(r.data.timestamp) &&
-			r.data.timestamp <= snapshot.timestamp &&
-			r.data.timestamp + snapshot.upnlValidTime >= snapshot.timestamp + 15,
-		"Muon signature is expired, future-dated, or has less than 15 seconds remaining",
-	);
 	check(typeof d.uPnl === "string" && /^-?\d+$/.test(d.uPnl), "Invalid Muon UPNL");
 	check(isHexString(r.reqId) && r.reqId !== "0x" && isHexString(r.shieldSignature, 65), "Malformed Muon request ID or gateway signature");
 	const sig = r.signatures?.[0];
@@ -234,6 +230,7 @@ export function mapMuonSignature(response, input, snapshot) {
 	const owner = getAddress(sig.owner),
 		nonce = getAddress(r.data.init.nonceAddress);
 	check(owner !== ZeroAddress && nonce !== ZeroAddress, "Muon signature contains a zero signer or nonce");
+	assertMuonSignatureFresh(r.data.timestamp, snapshot);
 	return {
 		reqId: r.reqId,
 		timestamp: r.data.timestamp,
@@ -253,7 +250,7 @@ export async function fetchMuon(input, fetchImpl = fetch) {
 		"params[symmio]": input.core,
 	}))
 		url.searchParams.set(k, String(v));
-	const response = await fetchImpl(url, { signal: AbortSignal.timeout(20000), redirect: "error" });
+	const response = await fetchImpl(url, { signal: AbortSignal.timeout(20000), redirect: "error", cache: "no-store" });
 	check(response.ok, `Muon request failed with HTTP ${response.status}`);
 	return response.json();
 }
@@ -383,6 +380,7 @@ export async function runWithdrawalPhase({
 	transaction,
 	onConfirmed = () => {},
 	onProgress = () => {},
+	wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
 }) {
 	validateWithdrawalInput(input);
 	check(Number((await provider.getNetwork()).chainId) === input.chainId, "RPC chain ID mismatch");
@@ -470,48 +468,143 @@ export async function runWithdrawalPhase({
 	if (phase !== "deallocate" && BigInt(plan.withdrawInternal) === 0n) return report;
 	if (phase === "initiate" && plan.route !== "classic") return report;
 	if (phase !== "deallocate") check(BigInt(plan.deallocate) === 0n || done("deallocate"), "Deallocate before withdrawing");
-	let action;
-	if (phase === "deallocate") {
-		const response = await fetchMuon(input, fetchImpl);
-		const fresh = await readWithdrawalSnapshot(provider, input);
-		validateBalances(plan, fresh, report.operations);
-		const signature = mapMuonSignature(response, input, fresh);
-		report.muon = { response, signature, expiresAt: signature.timestamp + fresh.upnlValidTime };
+	const perform = async (action, beforeSubmit, onStage = () => {}) => {
+		onStage("simulation");
+		await provider.call({ from: input.account, to: input.core, data: action.data, value: 0n });
+		report.previewAction = action;
 		save();
-		action = actionFor(input, phase, "deallocate", [plan.deallocate, signature]);
-	} else if (phase === "initiate") action = actionFor(input, phase, "initiateWithdraw", [partsFor(plan), false, "0x"]);
+		if (!execute) return;
+		check(report.approvedDigest === plan.digest, "Exact withdrawal plan has not been approved");
+		check(signer && same(await signer.getAddress(), input.account), "Signer must be the account that owns the Core balance");
+		report.actions ||= {};
+		report.actions[phase] = action;
+		save();
+		onStage("submission");
+		await submitOperation({
+			provider,
+			signer,
+			plan: { input: { operator: input.account, chainId: input.chainId } },
+			action,
+			report,
+			save,
+			completeRequest,
+			beforeSubmit,
+			send,
+			label: "Core withdrawal",
+			onProgress,
+		});
+	};
+	if (phase === "deallocate") {
+		report.muonAttempts ||= [];
+		for (let number = 1; number <= MUON_FETCH_ATTEMPTS; number++) {
+			const attempt = { attempt: report.muonAttempts.length + 1, fetchAttempt: number, stage: "fetch", checks: [] };
+			report.muonAttempts.push(attempt);
+			delete report.muon;
+			if (report.previewAction?.phase === phase) delete report.previewAction;
+			if (!report.operations?.[phase] && report.actions) delete report.actions[phase];
+			save();
+			let action;
+			// Check pinned state, then reread chain time after the potentially slow RPC reads.
+			// Small oracle clock leads wait for the chain, without accepting future timestamps.
+			const validateCandidate = async stage => {
+				attempt.stage = stage;
+				for (let poll = 0; ; poll++) {
+					const fresh = await readWithdrawalSnapshot(provider, input);
+					validateBalances(plan, fresh, report.operations);
+					const head = await provider.getBlock("latest");
+					check(head && head.timestamp >= fresh.timestamp, "RPC chain time moved backwards during Muon validation");
+					const clock = { ...fresh, timestamp: head.timestamp };
+					attempt.timing = muonSignatureTiming(attempt.response.result?.data?.timestamp, clock);
+					attempt.checks.push({
+						stage,
+						blockNumber: fresh.blockNumber,
+						blockHash: fresh.blockHash,
+						clockBlockNumber: head.number,
+						clockBlockHash: head.hash,
+						...attempt.timing,
+					});
+					report.snapshot = fresh;
+					report.muon = { response: attempt.response, ...attempt.timing };
+					save();
+					try {
+						const signature = mapMuonSignature(attempt.response, input, clock);
+						report.muon.signature = signature;
+						save();
+						return signature;
+					} catch (error) {
+						if (
+							error instanceof MuonFreshnessError &&
+							error.timing.reason === "future_dated" &&
+							error.timing.timestamp - head.timestamp <= MUON_CLOCK_WAIT_SECONDS &&
+							poll < MUON_CLOCK_WAIT_SECONDS
+						) {
+							onProgress(`Waiting for chain time to reach Muon timestamp ${error.timing.timestamp}`);
+							await wait(1000);
+							continue;
+						}
+						throw error;
+					}
+				}
+			};
+			try {
+				attempt.response = await fetchMuon(input, fetchImpl);
+				// Persist even rejected responses, so expiry and oracle clock errors are distinguishable.
+				report.muon = { response: attempt.response };
+				save();
+				const signature = await validateCandidate("validation");
+				action = actionFor(input, phase, "deallocate", [plan.deallocate, signature]);
+				attempt.action = action;
+				await perform(
+					action,
+					async () => {
+						await validateCandidate("before_submit");
+					},
+					stage => {
+						attempt.stage = stage;
+					},
+				);
+				// A preview also needs a valid deadline after simulation.
+				if (!execute) await validateCandidate("after_simulation");
+				attempt.status = execute ? report.operations[phase].status : "previewed";
+				if (execute) attempt.transactionHash = report.operations[phase].hash;
+				save();
+				break;
+			} catch (error) {
+				// An expiry revert in simulation/estimation is retryable only if a fresh
+				// read confirms that this candidate expired and no intent was journaled.
+				if (
+					!(error instanceof MuonFreshnessError) &&
+					action &&
+					!report.operations?.[phase] &&
+					String(error.reason || error.message).includes("LibMuon: Expired signature")
+				) {
+					try {
+						await validateCandidate(attempt.stage);
+					} catch (freshnessError) {
+						error = freshnessError;
+					}
+				}
+				attempt.error = { name: error.name, message: error.message };
+				if (error instanceof MuonFreshnessError) attempt.timing = error.timing;
+				save();
+				if (!(error instanceof MuonFreshnessError) || report.operations?.[phase] || number === MUON_FETCH_ATTEMPTS) throw error;
+				onProgress(`Refreshing Muon signature (${error.timing.reason}); attempt ${number + 1}/${MUON_FETCH_ATTEMPTS}`);
+				await wait(1000);
+			}
+		}
+	} else if (phase === "initiate") await perform(actionFor(input, phase, "initiateWithdraw", [partsFor(plan), false, "0x"]));
 	else {
 		if (plan.route === "classic") check(request, "Initiate a classic withdrawal first");
 		report.readiness = withdrawalReadiness(plan, snapshot, request);
 		save();
 		check(report.readiness.ready, `Withdrawal cooldown ends at ${new Date(report.readiness.readyAt * 1000).toISOString()}; check again then`);
-		action =
+		const action =
 			plan.route === "classic"
 				? actionFor(input, phase, "finalizeWithdrawRequest", [input.account, request.id])
 				: actionFor(input, phase, "withdrawTo", [input.recipient, plan.withdrawToken]);
+		await perform(action);
 	}
-	await provider.call({ from: input.account, to: input.core, data: action.data, value: 0n });
-	report.previewAction = action;
-	save();
 	if (!execute) return report;
-	check(report.approvedDigest === plan.digest, "Exact withdrawal plan has not been approved");
-	check(signer && same(await signer.getAddress(), input.account), "Signer must be the account that owns the Core balance");
-	report.actions ||= {};
-	report.actions[phase] = action;
-	save();
-	// Adapter supplies shared gas/fee completion and write-ahead transaction journal.
-	await submitOperation({
-		provider,
-		signer,
-		plan: { input: { operator: input.account, chainId: input.chainId } },
-		action,
-		report,
-		save,
-		completeRequest,
-		send,
-		label: "Core withdrawal",
-		onProgress,
-	});
 	await reconcile(phase);
 	const after = await readWithdrawalSnapshot(provider, input);
 	validateBalances(plan, after, report.operations);

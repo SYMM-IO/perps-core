@@ -37,6 +37,11 @@ function harness(classic = false, decimals = 18) {
 		badEvent = false,
 		reject = false,
 		unknown = false
+	let offsets: number[] = [],
+		waits = 0,
+		estimateDelay = 0,
+		simulationDelay = 0
+	let mutateMuon = (_response: any) => {}
 	const txs = new Map(),
 		receipts = new Map(),
 		saved: any[] = []
@@ -53,6 +58,8 @@ function harness(classic = false, decimals = 18) {
 		getTransactionReceipt: async (h: string) => receipts.get(h),
 		estimateGas: async (r: any) => {
 			assert.equal(r.from, account)
+			time += estimateDelay
+			estimateDelay = 0
 			return 100000n
 		},
 		getFeeData: async () => ({ maxFeePerGas: 4n, maxPriorityFeePerGas: 1n, gasPrice: 2n }),
@@ -64,6 +71,9 @@ function harness(classic = false, decimals = 18) {
 			if (["deallocate", "initiateWithdraw", "withdrawTo", "finalizeWithdrawRequest"].includes(name)) {
 				assert.equal(r.from, account)
 				if (name === "deallocate") {
+					time += simulationDelay
+					simulationDelay = 0
+					if (time > Number(args[1].timestamp) + 60) throw new Error("LibMuon: Expired signature")
 					assert(BigInt(args[0]) <= allocated)
 					assert.equal(args[1].upnl, 0n)
 				}
@@ -171,24 +181,29 @@ function harness(classic = false, decimals = 18) {
 	}
 	const fetchImpl = async () => {
 		fetches++
+		const timestamp = time + (offsets.shift() || 0)
 		return {
 			ok: true,
-			json: async () => ({
-				success: true,
-				result: {
-					confirmed: true,
-					app: "symmio",
-					method: "uPnl_A",
-					reqId: "0x1234",
-					data: {
-						timestamp: time,
-						result: { chainId: "31337", symmio: core, partyA: account, nonce: "3", uPnl: "0" },
-						init: { nonceAddress: account },
+			json: async () => {
+				const response = {
+					success: true,
+					result: {
+						confirmed: true,
+						app: "symmio",
+						method: "uPnl_A",
+						reqId: "0x1234",
+						data: {
+							timestamp,
+							result: { chainId: "31337", symmio: core, partyA: account, nonce: "3", uPnl: "0" },
+							init: { nonceAddress: account },
+						},
+						shieldSignature: "0x" + "01".repeat(65),
+						signatures: [{ signature: "0x" + "02".repeat(32), owner: account }],
 					},
-					shieldSignature: "0x" + "01".repeat(65),
-					signatures: [{ signature: "0x" + "02".repeat(32), owner: account }],
-				},
-			}),
+				}
+				mutateMuon(response)
+				return response
+			},
 		}
 	}
 	const run = (phase: string, execute = false, transaction?: string) =>
@@ -204,6 +219,11 @@ function harness(classic = false, decimals = 18) {
 			completeRequest: completeGovernanceTransactionRequest,
 			send,
 			fetchImpl,
+			wait: async () => {
+				waits++
+				time++
+				height++
+			},
 		})
 	return {
 		input,
@@ -214,9 +234,9 @@ function harness(classic = false, decimals = 18) {
 		receipts,
 		saved,
 		signer,
-		stats: () => ({ sends, fetches, free, allocated }),
-		advance: () => {
-			time += 101
+		stats: () => ({ sends, fetches, free, allocated, waits }),
+		advance: (seconds = 101) => {
+			time += seconds
 			height++
 		},
 		approve: () => (report.approvedDigest = report.plan.digest),
@@ -225,6 +245,10 @@ function harness(classic = false, decimals = 18) {
 		reject: () => (reject = true),
 		unknown: () => (unknown = true),
 		drift: () => free++,
+		offsets: (values: number[]) => (offsets = values),
+		mutateMuon: (fn: (response: any) => void) => (mutateMuon = fn),
+		delayEstimate: (seconds: number) => (estimateDelay = seconds),
+		delaySimulation: (seconds: number) => (simulationDelay = seconds),
 	}
 }
 
@@ -283,6 +307,7 @@ test("unknown pre-hash outcome never retries; explicit device rejection is retry
 	h.approve()
 	h.unknown()
 	await assert.rejects(h.run("deallocate", true), /connection lost/)
+	h.advance()
 	await assert.rejects(h.run("deallocate", true), /no automatic resend/)
 	assert.equal(h.stats().fetches, 1)
 	assert.equal(h.report.operations.deallocate.status, "prepared")
@@ -359,4 +384,149 @@ test("classic flow waits out preconfirmed receipts for every transaction without
 	for (const phase of ["deallocate", "initiate", "withdraw"]) assert(h.report.proofs[phase].eventsVerified)
 	await h.run("withdraw", true)
 	assert.equal(h.stats().sends, 3)
+})
+
+test("expired and nearly expired Muon responses are journaled and refreshed before a single send", async () => {
+	for (const offset of [-61, -46]) {
+		const h = harness()
+		await h.run("inspect")
+		h.approve()
+		h.offsets([offset, 0])
+		await h.run("deallocate", true)
+		assert.equal(h.stats().fetches, 2)
+		assert.equal(h.stats().sends, 1)
+		assert.equal(h.report.muonAttempts[0].timing.reason, offset === -61 ? "expired" : "near_expiry")
+		assert.equal(h.report.muonAttempts[0].response.result.data.timestamp, 1000 + offset)
+		assert.equal(h.report.muon.expiresAt, h.report.muon.signature.timestamp + 60)
+		assert.equal(h.report.muon.refreshAt, h.report.muon.expiresAt - 15)
+		assert.equal(h.report.operations.deallocate.status, "confirmed")
+	}
+})
+test("persistent stale Muon responses stop after three fetches without a prepared transaction", async () => {
+	const h = harness()
+	await h.run("inspect")
+	h.approve()
+	h.offsets([-61, -61, -61])
+	await assert.rejects(h.run("deallocate", true), /expired/)
+	assert.equal(h.stats().fetches, 3)
+	assert.equal(h.stats().sends, 0)
+	assert.equal(h.report.operations.deallocate, undefined)
+	assert.equal(h.report.muonAttempts.length, 3)
+	assert(h.report.muonAttempts.every((attempt: any) => attempt.error && attempt.timing.reason === "expired"))
+})
+test("signature nearing expiry during gas completion is refreshed with new calldata before journaling", async () => {
+	const h = harness()
+	await h.run("inspect")
+	h.approve()
+	h.delayEstimate(46)
+	await h.run("deallocate", true)
+	assert.equal(h.stats().fetches, 2)
+	assert.equal(h.stats().sends, 1)
+	assert.equal(h.report.muonAttempts[0].stage, "before_submit")
+	assert.equal(h.report.muonAttempts[0].timing.reason, "near_expiry")
+	const tx = h.txs.get(h.report.operations.deallocate.hash)
+	assert.equal(Number(api.parseTransaction(tx)!.args[1].timestamp), h.report.muon.signature.timestamp)
+	assert(h.report.muon.signature.timestamp > 1000)
+	assert(h.saved.filter(s => s.operations.deallocate).every(s => s.muon.signature.timestamp > 1000))
+})
+test("expiry during simulation refreshes, but unrelated simulation errors do not", async () => {
+	const h = harness()
+	await h.run("inspect")
+	h.approve()
+	h.delaySimulation(61)
+	await h.run("deallocate", true)
+	assert.equal(h.stats().fetches, 2)
+	assert.equal(h.stats().sends, 1)
+	const b = harness()
+	await b.run("inspect")
+	b.approve()
+	const call = b.provider.call
+	b.provider.call = async (request: any) => {
+		if (request.from) throw new Error("insufficient headroom")
+		return call(request)
+	}
+	await assert.rejects(b.run("deallocate", true), /insufficient headroom/)
+	assert.equal(b.stats().fetches, 1)
+	assert.equal(b.stats().sends, 0)
+})
+test("small oracle clock lead waits for chain time; large future timestamps exhaust bounded refreshes", async () => {
+	const h = harness()
+	await h.run("inspect")
+	h.approve()
+	h.offsets([2])
+	await h.run("deallocate", true)
+	assert.equal(h.stats().fetches, 1)
+	assert.equal(h.stats().waits, 2)
+	assert.equal(h.stats().sends, 1)
+	const b = harness()
+	await b.run("inspect")
+	b.approve()
+	b.offsets([20, 20, 20])
+	await assert.rejects(b.run("deallocate", true), /future/)
+	assert.equal(b.stats().fetches, 3)
+	assert.equal(b.stats().sends, 0)
+	assert.equal(b.report.operations.deallocate, undefined)
+})
+test("identity, nonce and malformed responses are saved but never automatically retried", async () => {
+	for (const mutate of [
+		(response: any) => (response.result.data.result.nonce = "4"),
+		(response: any) => (response.result.data.result.chainId = "1"),
+		(response: any) => {
+			response.result.shieldSignature = "0x"
+			response.result.data.timestamp = 1
+		},
+	]) {
+		const h = harness()
+		await h.run("inspect")
+		h.approve()
+		h.mutateMuon(mutate)
+		await assert.rejects(h.run("deallocate", true))
+		assert.equal(h.stats().fetches, 1)
+		assert.equal(h.stats().sends, 0)
+		assert(h.report.muonAttempts[0].response)
+		assert(h.report.muonAttempts[0].error)
+	}
+})
+
+test("freshness uses the latest chain clock after slow pinned-state reads", async () => {
+	const h = harness()
+	await h.run("inspect")
+	h.approve()
+	const call = h.provider.call
+	let slow = true
+	h.provider.call = async (request: any) => {
+		const result = await call(request)
+		if (slow && api.parseTransaction(request)?.name === "nonceOfPartyA") {
+			slow = false
+			h.advance(46)
+		}
+		return result
+	}
+	// The first snapshot precedes fetching; only delay the snapshot after a response exists.
+	const delayed = h.provider.call
+	h.provider.call = async (request: any) => (h.stats().fetches ? delayed(request) : call(request))
+	await h.run("deallocate", true)
+	assert.equal(h.stats().fetches, 2)
+	assert.equal(h.stats().sends, 1)
+	assert.equal(h.report.muonAttempts[0].timing.remainingSeconds, 14)
+})
+test("a changed Core account nonce during gas preparation stops before journaling", async () => {
+	const h = harness()
+	await h.run("inspect")
+	h.approve()
+	let changed = false
+	const estimate = h.provider.estimateGas
+	h.provider.estimateGas = async (request: any) => {
+		changed = true
+		return estimate(request)
+	}
+	const call = h.provider.call
+	h.provider.call = async (request: any) => {
+		if (changed && api.parseTransaction(request)?.name === "nonceOfPartyA") return api.encodeFunctionResult("nonceOfPartyA", [4])
+		return call(request)
+	}
+	await assert.rejects(h.run("deallocate", true), /nonce is stale/)
+	assert.equal(h.stats().fetches, 1)
+	assert.equal(h.stats().sends, 0)
+	assert.equal(h.report.operations.deallocate, undefined)
 })
