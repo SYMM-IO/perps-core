@@ -18,6 +18,7 @@ export async function submitOperation({
 	report,
 	save,
 	completeRequest,
+	beforeSubmit,
 	send,
 	suppliedHash,
 	label = "operation",
@@ -35,7 +36,11 @@ export async function submitOperation({
 	else {
 		check(signer && sameAddress(await signer.getAddress(), from), "Connected signer differs from the reviewed operator");
 		const request = await completeRequest(provider, { from, to: action.to, data: action.data, value: BigInt(action.value) });
-		operation = report.operations[action.phase] = { intent, nonce: await provider.getTransactionCount(from, "pending"), status: "prepared" };
+		const nonce = await provider.getTransactionCount(from, "pending");
+		// Expiring prerequisites may be refreshed only before the write-ahead intent exists.
+		// Recovery of an existing intent always bypasses this hook and never signs again.
+		await beforeSubmit?.();
+		operation = report.operations[action.phase] = { intent, nonce, status: "prepared" };
 		save();
 		let response;
 		try {
