@@ -254,6 +254,8 @@ for a read-only snapshot, or **Deallocate and withdraw Core collateral** for the
 resumable direct-wallet flow. Network, Core, account, recipient, amount and Muon endpoint
 are configurable. The task supports legacy withdrawals and same-chain classic request
 finalization, uses the shared signer/journal, and waits externally through the cooldown.
+Expired or nearly expired Muon signatures are refetched before signing, with at most
+three fetches per deallocation phase and saved deadline/failure diagnostics.
 See [Core account deallocation and withdrawal](../docs/core-withdrawal-operations.md) for
 supported accounts, units, signature expiry, recovery and verification boundaries.
 
