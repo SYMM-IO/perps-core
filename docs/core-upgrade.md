@@ -102,8 +102,14 @@ Evidence lives under `tasks/data/<chain-id>/core-upgrades/<run-id>/`. Cancellati
 At the end of an implementation stage, run `npm run lint:ts`. Refresh compilation/size checks once at the stage boundary when the target Solidity artifacts need rebuilding. Use targeted verification:
 
 ```bash
-node --test cli/test/core-upgrade-input.test.js cli/test/core-upgrade.test.js cli/test/arbitrum-core-upgrade.test.js
-npx hardhat test mocha --no-compile -- test/parallel/CoreUpgrade.test.ts test/parallel/CoreUpgradeGovernance.test.ts
+npm run test:upgrade -- preflight --match Core
+npm run test:upgrade -- governance --match Core
+npm run test:upgrade -- verification --match Core
+npm run test:upgrade -- recovery --match Core
+npm run test:upgrade -- input --chain-bound --match core
+npm run test:upgrade -- workflow --chain-bound --match core
 ```
+
+Upgrade tests are separated by stage under `test/upgrade/`; contract tests retain their own runners. Deployment-specific checks and their fixtures live in the Git-ignored `test/upgrade/chain-bound/` directory and remain local. See the [upgrade test layout and targeted commands](../test/upgrade/README.md). The stage runner never compiles; prepare current artifacts once when needed.
 
 Local mocked runner tests cover Arbitrum/Base with Safe/EOA governance; local mined-transaction tests cover receipt rejection and interrupted broadcast recovery. Neither replaces the two deployment-specific fork rehearsals.
