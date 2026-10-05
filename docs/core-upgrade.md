@@ -32,7 +32,11 @@ The task generates internal live/fork credential recipes and a source-bound run 
 
 Preparation pins HEAD, target and baseline commits, the target contracts tree, the original input digest and both generated recipes. Continuation refuses changes to these bindings. Commit reviewed tracked changes before starting, and keep source and inputs fixed until completion.
 
-Git baseline provenance is separate from deployed bytecode parity: naming the baseline tag does not prove that every deployed facet was compiled from that commit. Snapshot ABI/storage checks and both fork rehearsals remain necessary.
+Git baseline provenance is separate from deployed bytecode parity: naming the baseline tag does not prove that every deployed facet was compiled from that commit. Snapshot ABI/storage and deployed runtime checks remain required. Fork rehearsal is a separate optional action.
+
+## Optional rehearsal
+
+Choose **Other maintenance scripts → Rehearse a Core upgrade on fork (optional)** (`maintenance.core-upgrade-rehearse`) and select the same standard input. This creates an independent source/input-bound run, pins an inspection block, and rehearses manifest deployment, governance, preservation checks and pause restoration on that fork. It sends no live transactions. Run it whenever needed before the live upgrade; changed source, input or chain state makes earlier evidence historical rather than evidence for the changed upgrade. The live workflow neither launches a fork nor requires a rehearsal report.
 
 ## Prepare credentials and authority
 
@@ -66,14 +70,13 @@ Full historical funding/balance reconciliation and both production fork rehearsa
 ## Guided execution
 
 1. Compile the target and enforce its size budget. Capture a block-pinned snapshot of authority, known peripheral wiring, runtime hashes, selectors, all historical quotes, balances, symbols, liquidation/restatement state and aggregate funding. Reject incomplete scans, populated adjustments and active liquidations/restatements.
-2. Rehearse the complete manifest deployment and upgrade on the initial fork, using the actual configured governance type. Require preserved state, desired selectors, funding reconciliation, role grants and restoration of the original pause state. Verify the fork's block number and hash. No rehearsal waiver is available.
-3. Review the report and type the selected chain ID to authorize contract deployment. Deploy all libraries/facets with recovery checkpoints, verify linked runtime bytecode, and publish every deployment on the configured explorer.
-4. Review the generated `core-abi.json`, client/indexer changes and operator inventory. The supplied grants cover known pause scopes and Symbol Manager listing. Review registrar, metadata, protocol-limit and pledge operators separately and add required grants to the input before starting. This task does not enable pledge tokens.
-5. Execute or export the maintenance pause through the configured owner. Verify exact execution receipts, then capture a fresh paused snapshot. Preserve a pause that was already active when the run began.
-6. Build one complete `diamondCut`, the missing input role grants and any funding repair calculated from the paused snapshot. Funding repairs carry checked old pair values. If needed, temporarily grant the owner's migration role and restore its original state after the repair.
-7. Rehearse the exact deployed addresses and governance envelope on the paused fork. Bind that rehearsal to the deployed manifest, paused snapshot and complete action list.
-8. Execute the reviewed governance plan and verify its receipts and post-state. Core stays paused throughout.
-9. Confirm application reads, liquidator queries and indexer consumption with the new ABI. Restore the original global pause state only after these checks. Verify the unpause receipt and final configuration/roles/selectors.
+2. Review the report and type the selected chain ID to authorize contract deployment. Deploy all libraries/facets with recovery checkpoints and verify linked runtime bytecode. Explorer submission happens after restoration.
+3. Review the generated `core-abi.json`, client/indexer changes and operator inventory. The supplied grants cover known pause scopes and Symbol Manager listing. Review registrar, metadata, protocol-limit and pledge operators separately and add required grants to the input before starting. This task does not enable pledge tokens.
+4. Execute or export the maintenance pause through the configured owner. Verify exact execution receipts, then capture a fresh paused snapshot. Preserve a pause that was already active when the run began.
+5. Build one complete `diamondCut`, the missing input role grants and any funding repair calculated from the paused snapshot. Funding repairs carry checked old pair values. If needed, temporarily grant the owner's migration role and restore its original state after the repair.
+6. Execute the reviewed governance plan and verify its receipts and post-state. Core stays paused throughout.
+7. Confirm application reads, liquidator queries and indexer consumption with the new ABI. Restore the original global pause state only after these checks. Verify the unpause receipt and final configuration/roles/selectors.
+8. Publish every replacement facet and library through the configured explorer. The report distinguishes `publication-pending` from `complete`. Explorer failure retains per-contract progress and the verified restoration evidence; continuing retries publication without repeating deployments or governance. Publication does not keep Core paused. The generated combined diamond ABI is available independently of scanner UI support.
 
 ### Safe governance
 
@@ -112,4 +115,4 @@ npm run test:upgrade -- workflow --chain-bound --match core
 
 Upgrade tests are separated by stage under `test/upgrade/`; contract tests retain their own runners. Deployment-specific checks and their fixtures live in the Git-ignored `test/upgrade/chain-bound/` directory and remain local. See the [upgrade test layout and targeted commands](../test/upgrade/README.md). The stage runner never compiles; prepare current artifacts once when needed.
 
-Local mocked runner tests cover Arbitrum/Base with Safe/EOA governance; local mined-transaction tests cover receipt rejection and interrupted broadcast recovery. Neither replaces the two deployment-specific fork rehearsals.
+Tracked runner tests cover optional rehearsal and final-publication retry without duplicate execution; local mined-transaction tests cover receipt rejection and interrupted broadcast recovery. These are local evidence, not proof of production execution or scanner publication.

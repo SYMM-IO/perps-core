@@ -1,0 +1,133 @@
+import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js";
+import { publishUpgradeItems, rehearsalStatus, upgradeCompletionStatus } from "../../deployment-tooling/operations/upgrade-lifecycle.js";
+import { createTaskRunner } from "../task-runner.js";
+import { CORE_UPGRADE_PLAN } from "../tasks/arbitrum-core-upgrade.js";
+import { TASK_DEFINITIONS } from "../tasks/registry.js";
+import { coreUpgradeFixture, read, write } from "./fixtures/core-upgrade.js";
+import assert from "node:assert/strict";
+import path from "node:path";
+import test from "node:test";
+
+test("live upgrades omit fork steps and publish only after restoration", () => {
+	const ids = CORE_UPGRADE_PLAN.map(step => step.id);
+	assert.equal(
+		ids.some(id => id.startsWith("rehearse-")),
+		false,
+	);
+	assert.equal(ids.at(-1), "publish");
+	assert.ok(ids.indexOf("deploy") < ids.indexOf("cut"));
+	assert.ok(ids.indexOf("cut") < ids.indexOf("unpause"));
+});
+
+test("optional rehearsal evidence becomes outdated when its bindings change", () => {
+	const bindings = { source: "reviewed", snapshot: "block-1" };
+	assert.equal(rehearsalStatus(undefined, bindings), "not-run");
+	assert.equal(rehearsalStatus({ status: "complete", bindings }, bindings), "complete");
+	assert.equal(rehearsalStatus({ status: "complete", bindings }, { ...bindings, snapshot: "block-2" }), "outdated");
+	assert.equal(upgradeCompletionStatus({ executionVerified: true, serviceRestored: true, publicationVerified: false }), "publication-pending");
+});
+
+test("publication retry skips completed items and rejects changed item intent", async () => {
+	const progress = {},
+		published = [],
+		items = [
+			{ id: "facet-a", codeHash: "a" },
+			{ id: "facet-b", codeHash: "b" },
+		];
+	let fail = true;
+	const publish = async item => {
+		if (item.id === "facet-b" && fail) throw new Error("Explorer unavailable");
+		published.push(item.id);
+	};
+	await assert.rejects(
+		publishUpgradeItems(items, progress, () => {}, publish),
+		/Explorer unavailable/,
+	);
+	assert.deepEqual(published, ["facet-a"]);
+	fail = false;
+	await publishUpgradeItems(items, progress, () => {}, publish);
+	assert.deepEqual(published, ["facet-a", "facet-b"]);
+	await assert.rejects(
+		publishUpgradeItems([{ ...items[0], codeHash: "changed" }], progress, () => {}, publish),
+		/changed/,
+	);
+});
+
+test("real runner retries final publication without deploying, cutting or restoring twice", async t => {
+	const f = await coreUpgradeFixture(t),
+		definition = TASK_DEFINITIONS.find(task => task.id === "maintenance.core-upgrade");
+	const phases = [];
+	let failPublication = true;
+	const run = (ctx, input) =>
+		definition.run(
+			{
+				...ctx,
+				runProcess: async (_command, args, options) => {
+					const phase = args.includes("--phase") ? args[args.indexOf("--phase") + 1] : "compile";
+					phases.push(phase);
+					const report = read(input.output);
+					if (phase === "inspect") {
+						report.initial = { blockNumber: 100 };
+						report.client = { changes: [], abiDigest: digest([]) };
+						write(path.join(path.dirname(input.output), "core-abi.json"), []);
+					}
+					if (phase === "deploy") report.deployments = { facets: {} };
+					if (phase.startsWith("plan-"))
+						report[phase === "plan-cut" ? "batch" : `${phase.slice(5)}Batch`] = {
+							actions: [{ to: f.config.target.core, value: "0", data: "0x12345678", description: "Reviewed operation" }],
+							envelope: {},
+						};
+					if (phase === "execute-governance") {
+						const key = options.env.SYMMIO_CORE_UPGRADE_BATCH;
+						report.governanceExecutions ||= {};
+						report.governanceExecutions[key] = { receipts: "[]" };
+					}
+					if (phase === "verify-pause") report.paused = { blockNumber: 200 };
+					if (phase === "verify-cut") report.verifiedCut = { success: true };
+					if (phase === "verify-unpause") {
+						report.restoredService = { cutDigest: ctx.state.coreEvidence.verifiedCut };
+						report.status = "publication-pending";
+					}
+					if (phase === "publish") {
+						assert.ok(ctx.state.completedSteps.includes("unpause"));
+						if (failPublication) throw new Error("Explorer unavailable");
+						report.publication = { complete: true };
+						report.status = "complete";
+					}
+					write(input.output, report);
+				},
+			},
+			input,
+		);
+	const task = { ...definition, run, handler: run },
+		runner = createTaskRunner({ root: f.root, definitions: [task] });
+	const ui = { note() {}, confirm: async () => true, text: async () => String(f.config.network.chainId) };
+	let state = await runner.start(task.id, { input: f.input, ui });
+	assert.equal(state.status, "paused", state.lastError);
+	assert.match(state.lastError, /Explorer unavailable/);
+	assert.equal(read(f.input.output).status, "publication-pending");
+	failPublication = false;
+	state = await runner.resumeActive({ ui });
+	assert.equal(state.status, "completed", state.lastError);
+	assert.equal(phases.filter(phase => phase === "deploy").length, 1);
+	assert.equal(phases.filter(phase => phase === "verify-cut").length, 1);
+	assert.equal(phases.filter(phase => phase === "verify-unpause").length, 1);
+	assert.equal(
+		phases.some(phase => phase.startsWith("rehearse-")),
+		false,
+	);
+});
+
+test("standalone rehearsal is registered without a live transaction signer", () => {
+	const task = TASK_DEFINITIONS.find(task => task.id === "maintenance.core-upgrade-rehearse");
+	assert.ok(task);
+	assert.equal(task.risk, "local-write");
+	assert.equal(
+		task.inputs.some(input => input.id === "signer"),
+		false,
+	);
+	assert.deepEqual(
+		task.plan().map(step => step.id),
+		["compile", "inspect", "rehearse-initial"],
+	);
+});

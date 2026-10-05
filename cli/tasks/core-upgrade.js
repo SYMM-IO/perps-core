@@ -1,7 +1,14 @@
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js";
 import { validateCoreUpgradeInput, coreUpgradeRecipe } from "../../deployment-tooling/core-upgrade-input.js";
 import { loadRecipeContext } from "../lib/recipe-context.js";
-import { createArbitrumCoreUpgradeTask, CORE_UPGRADE_PLAN } from "./arbitrum-core-upgrade.js";
+import {
+	createArbitrumCoreUpgradeTask,
+	CORE_UPGRADE_PLAN,
+	runCoreUpgradePhase,
+	rehearseCoreUpgrade,
+	validateCoreTaskInput,
+	coreUpgradeEnvironment,
+} from "./arbitrum-core-upgrade.js";
 import { atomicWrite } from "./guided-recipe.js";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -56,7 +63,7 @@ export async function prepareStandardCoreUpgrade({ root, ui }) {
 	atomicWrite(input, standard);
 	atomicWrite(output, { inputDigest, transactions: [] });
 	ui.note(
-		`Network: ${config.network.name} (${config.network.chainId})\nCore: ${config.target.core}\nOwner: ${config.governance.owner} (${config.governance.kind})\nBaseline: ${config.release.baselineRef} (${baselineCommit})\nRelease: ${config.release.ref} (${releaseCommit})\nInput: ${inputSource}\nReport: ${output}\nBoth fork rehearsals are mandatory.`,
+		`Network: ${config.network.name} (${config.network.chainId})\nCore: ${config.target.core}\nOwner: ${config.governance.owner} (${config.governance.kind})\nBaseline: ${config.release.baselineRef} (${baselineCommit})\nRelease: ${config.release.ref} (${releaseCommit})\nInput: ${inputSource}\nReport: ${output}\nFork rehearsal is a separate optional action. Explorer publication runs after service restoration.`,
 		"Core upgrade input",
 	);
 	const key = config.credentials.deployer.split("://")[1];
@@ -80,7 +87,7 @@ export function createCoreUpgradeTask(common) {
 		title: "Upgrade Core from a standard input file",
 		supportedNetworks: ["any"],
 		description:
-			"Load a reviewed Core input, rehearse twice, deploy and publish the complete manifest, execute through the configured EOA or Safe owner, and verify before restoring service.",
+			"Load a reviewed Core input, deploy the manifest, execute through its EOA or Safe owner, verify and restore service, then publish on the explorer.",
 		prepare: prepareStandardCoreUpgrade,
 		upgradePlan: CORE_UPGRADE_PLAN.map(step => ({
 			...step,
@@ -97,8 +104,42 @@ export function createCoreUpgradeTask(common) {
 			"initial and paused snapshots",
 			"deployment and governance journals",
 			"core-abi.json",
-			"two fork rehearsals",
+			"optional separate fork rehearsal",
 			"reviewed governance payloads and canonical execution receipts",
 		],
+	});
+}
+
+export function createCoreUpgradeRehearsalTask(common) {
+	const steps = [
+		{ id: "compile", phase: "prepare", title: "Compile the reviewed release" },
+		{ id: "inspect", phase: "prepare", title: "Inspect the deployment at one block" },
+		{ id: "rehearse-initial", phase: "rehearsal", title: "Rehearse deployment, upgrade and restoration on the fork" },
+	];
+	return common({
+		id: "maintenance.core-upgrade-rehearse",
+		version: 1,
+		category: "maintenance",
+		risk: "local-write",
+		title: "Rehearse a Core upgrade on fork (optional)",
+		description:
+			"Run the complete reviewed upgrade on a pinned fork without broadcasting live transactions. This creates independent rehearsal evidence.",
+		inputs: [{ id: "input", label: "Upgrade input", type: "string", required: true }],
+		artifacts: ["source-bound input and report", "pinned snapshot", "complete fork rehearsal"],
+		prepare: prepareStandardCoreUpgrade,
+		plan: () => steps.map(step => ({ ...step })),
+		validateResume: validateCoreTaskInput,
+		reconcile: () => ({ unresolved: [] }),
+		run: async (ctx, input) => {
+			validateCoreTaskInput(ctx, input);
+			await ctx.step("compile", steps[0].title, () =>
+				ctx.runProcess("npm", ["run", "compile"], {
+					env: coreUpgradeEnvironment(input, { SYMMIO_RECIPE_READ_ONLY: "true", SYMMIO_SIGNER_MODE: "safe-file" }),
+				}),
+			);
+			await ctx.step("inspect", steps[1].title, () => runCoreUpgradePhase(ctx, input, "inspect"));
+			await ctx.step("rehearse-initial", steps[2].title, () => rehearseCoreUpgrade(ctx, input));
+			ctx.ui.note(`Fork rehearsal complete. Report: ${input.output}\nNo live upgrade was executed.`, "Rehearsal");
+		},
 	});
 }
