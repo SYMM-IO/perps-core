@@ -5,6 +5,8 @@ import {
 	captureConfigurationSnapshot,
 	verifyConfigurationMigration,
 } from "../../deployment-tooling/operations/configuration-migration.js"
+import { prepareConfiguration, verifyPreparedConfiguration } from "../../deployment-tooling/operations/configuration-request.js"
+import { operationDigest } from "../../deployment-tooling/operations/inputs.js"
 import { buildRoleMigration, captureRoleMigration, verifyRoleMigration } from "../../deployment-tooling/operations/role-migration.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 
@@ -188,5 +190,88 @@ describe("Configuration-only replacement", function () {
 		} catch (e: any) {
 			expect(e.message).to.include("append configuration differs")
 		}
+	})
+	it("prepares and verifies configuration, enumerated administrative roles and consumer reconnections together", async function () {
+		const f = await fixture()
+		const consumer = await (await ethers.getContractFactory("InstantLayer")).deploy(await f.source.symmio(), f.admin.address)
+		await consumer.setAccountLayer(f.source.target)
+		await consumer.grantRole(await consumer.OPERATOR_ROLE(), f.source.target)
+		const call = (signature: string, args: any[] = []) => ({ signature, args })
+		const authority = (role: string) => ({
+			address: f.admin.address,
+			read: call("function hasRole(bytes32,address) view returns(bool)", [role, { ref: "authority" }]),
+		})
+		const consumerBinding = { address: String(consumer.target), codeHash: ethers.keccak256(await ethers.provider.getCode(consumer.target)) }
+		const member = (id: string, role: string) => ({
+			id,
+			dependency: "instant",
+			source: String(f.source.target),
+			consumer: consumerBinding,
+			authority: authority(ethers.ZeroHash),
+			kind: "membership",
+			read: call("function hasRole(bytes32,address) view returns(bool)", [role, { ref: "source" }]),
+			set: call("function grantRole(bytes32,address)", [role, { ref: "replacement" }]),
+			clear: call("function revokeRole(bytes32,address)", [role, { ref: "source" }]),
+		})
+		const roles = {
+			schemaVersion: 1,
+			chainId: f.profile.chainId,
+			source: f.profile.source,
+			target: f.targetBinding,
+			transitions: [
+				{
+					id: "template-manager",
+					sourceRole: await f.source.SETTER_ROLE(),
+					targetRole: await f.target.TEMPLATE_MANAGER_ROLE(),
+					adminRole: ethers.ZeroHash,
+					authority: f.admin.address,
+					policy: "exact-source-members",
+				},
+			],
+		}
+		const wiring = {
+			schemaVersion: 1,
+			chainId: f.profile.chainId,
+			bindings: [
+				member("operator", await consumer.OPERATOR_ROLE()),
+				member("unused-revoker", await consumer.REVOKER_ROLE()),
+				{
+					id: "pointer",
+					dependency: "instant",
+					source: String(f.source.target),
+					consumer: consumerBinding,
+					authority: authority(await consumer.SETTER_ROLE()),
+					kind: "address",
+					read: call("function accountLayer() view returns(address)"),
+					set: call("function setAccountLayer(address)", [{ ref: "replacement" }]),
+				},
+			],
+		}
+		const before = await f.checkpoint()
+		const bundle = {
+			inputDigest: operationDigest({ profile: f.profile, roles, wiring }),
+			profile: f.profile,
+			roles,
+			wiring,
+			request: {
+				sourceCheckpoint: before,
+				target: { contract: f.targetBinding, checkpoint: before },
+				roles: { maxMembersPerRole: 10 },
+				wiring: { dependency: "instant" },
+			},
+		}
+		const prepared = await prepareConfiguration(ethers.provider, bundle),
+			reviewedDigest = operationDigest(prepared)
+		expect(prepared.roles.inventory[0].members).to.have.length(2)
+		for (const action of [...prepared.plan.actions, ...prepared.roles.plan.actions, ...prepared.wiring.plan.activate, ...prepared.wiring.plan.retire])
+			await (await f.admin.sendTransaction({ to: action.to, data: action.data })).wait()
+		const verified = await verifyPreparedConfiguration(ethers.provider, bundle, prepared, await f.checkpoint(), reviewedDigest)
+		expect(verified.configuration.fields).to.equal(f.profile.fields.length)
+		expect(verified.roles.transitions).to.equal(1)
+		expect(verified.wiring.checks).to.equal(5)
+		expect(await consumer.accountLayer()).to.equal(f.target.target)
+		expect(await consumer.hasRole(await consumer.OPERATOR_ROLE(), f.source.target)).to.equal(false)
+		expect(await consumer.hasRole(await consumer.OPERATOR_ROLE(), f.target.target)).to.equal(true)
+		expect(await consumer.hasRole(await consumer.REVOKER_ROLE(), f.target.target)).to.equal(false)
 	})
 })

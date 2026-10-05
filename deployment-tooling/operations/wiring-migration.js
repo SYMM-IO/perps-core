@@ -32,7 +32,7 @@ function requireReferences(spec, allowed, required) {
 	if (refs.some(ref => !allowed.includes(ref)) || (required && !refs.includes(required)))
 		throw new Error("Wiring call does not bind the required argument reference");
 }
-function validateBindings(profile) {
+export function validateWiringProfile(profile) {
 	if (profile.schemaVersion !== 1 || !Number.isSafeInteger(profile.chainId) || profile.chainId <= 0 || !Array.isArray(profile.bindings))
 		throw new Error("Invalid wiring profile");
 	const ids = new Set();
@@ -111,7 +111,7 @@ async function readValue(provider, consumer, spec, context, blockTag) {
 
 /** Read-only, block-pinned discovery of actual pointers, optional permissions and their authorities. */
 export async function captureWiringSnapshot(provider, profile, checkpoint) {
-	validateBindings(profile);
+	validateWiringProfile(profile);
 	if (!Number.isSafeInteger(checkpoint.blockNumber) || checkpoint.blockNumber < 0 || !/^0x[0-9a-fA-F]{64}$/.test(checkpoint.blockHash))
 		throw new Error("Invalid wiring checkpoint");
 	const tag = toBeHex(checkpoint.blockNumber),
@@ -145,7 +145,7 @@ export async function captureWiringSnapshot(provider, profile, checkpoint) {
 
 /** Produces exact governance calls; inactive source memberships remain inactive at the replacement. */
 export function buildWiringMigration(profile, snapshot, replacements) {
-	validateBindings(profile);
+	validateWiringProfile(profile);
 	if (snapshot.schemaVersion !== 1 || snapshot.profileDigest !== operationDigest(profile) || snapshot.chainId !== profile.chainId)
 		throw new Error("Wiring snapshot binding changed");
 	if (snapshot.observations.length !== profile.bindings.length || new Set(snapshot.observations.map(o => o.id)).size !== profile.bindings.length)

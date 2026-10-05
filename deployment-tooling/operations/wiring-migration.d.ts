@@ -1,3 +1,4 @@
+export function validateWiringProfile(profile: any): any
 export function captureWiringSnapshot(
 	provider: { send(method: string, args: any[]): Promise<any> },
 	profile: any,
