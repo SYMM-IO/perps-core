@@ -3,7 +3,7 @@ import { expect } from "chai"
 import { digest, CUT_SELECTOR } from "../../deployment-tooling/arbitrum-core-upgrade.js"
 import { buildCoreUpgradeActions, assertCoreDeployments, assertCoreUpgradeExecution } from "../../tasks/deploy/arbitrumCoreUpgrade.js"
 import { SAFE_EXECUTION_ABI, verifyCoreSafeReceipt } from "../../tasks/deploy/coreUpgradeSafe.js"
-import { assertCoreSnapshotPreserved, assertEmptySymbolAdjustment, coreUpgradeABI } from "../../tasks/deploy/coreUpgradeSnapshot.js"
+import { assertCoreSnapshotPreserved, assertEmptySymbolAdjustment, coreUpgradeABI, coreQuoteScanIds } from "../../tasks/deploy/coreUpgradeSnapshot.js"
 import { ethers, hre } from "../helpers/hardhat-connection.js"
 
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0")
@@ -18,6 +18,12 @@ async function rejects(fn: () => Promise<any>, pattern: RegExp) {
 }
 
 describe("Current Core upgrade safety gates", () => {
+	it("includes the last assigned quote ID, accepts empty history and refuses a truncated scan", () => {
+		expect(coreQuoteScanIds(0n, 10000)).to.deep.equal([])
+		expect(coreQuoteScanIds(3n, 3)).to.deep.equal([1, 2, 3])
+		expect(coreQuoteScanIds(5290n, 10000).at(-1)).to.equal(5290)
+		for (const value of [-1, 4, Number.MAX_SAFE_INTEGER + 1, 1.5]) expect(() => coreQuoteScanIds(value, 3)).to.throw(/no partial snapshot/)
+	})
 	it("refuses live rehearsals and deployment without both execution and chain authorization", () => {
 		const live = { networkName: "arbitrum", networkConfig: { type: "http" } }
 		const fork = { networkName: "fork-arbitrum", networkConfig: { type: "edr-simulated" } }
