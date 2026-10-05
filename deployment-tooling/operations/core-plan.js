@@ -121,7 +121,7 @@ export function buildCorePlan(bundle, snapshot) {
 			"Verify storage compatibility, economic invariants and each declared migration with a supported release adapter",
 			"Review role transitions and maintenance policy against the installed contracts",
 			"Deploy or verify replacement addresses and bind exact transaction calldata",
-			"Rehearse the complete migration and final payload, then revalidate the chain state before authorization",
+			"Optionally rehearse the complete migration on a pinned fork; revalidate chain state before execution",
 			"Execute through the required authority and independently verify receipts and resulting state",
 		],
 	});

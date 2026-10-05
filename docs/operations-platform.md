@@ -4,6 +4,8 @@ Launch `./symmio`, choose **Other maintenance scripts**, then **Plan a Core upgr
 
 This is the first platform delivery: **Core upgrade planning only**. It does not deploy contracts, simulate a migration, export executable Safe calldata, sign, or send transactions. Existing deployment and upgrade entries retain their own behavior and recovery rules. A generic execution engine and version-specific migration adapters are subsequent work.
 
+The shared lifecycle helpers in `deployment-tooling/operations/upgrade-lifecycle.js` define inspection, deployment, service preparation, checkpoint, application, verification, restoration and final publication. Rehearsal is independent and optional. The existing standard Core execution adapter now follows that ordering and uses resumable per-item publication. See [Core execution and optional rehearsal](core-upgrade.md). The v1 JSON planner remains planning-only; these helpers do not authorize execution of arbitrary migration IDs.
+
 ## Inputs
 
 The runtime uses the [version 1 JSON Schema](../deployment-tooling/operations/schemas/v1.schema.json) through Ajv. Definitions in `$defs` are `request`, `profile`, `release`, `resolved`, `snapshot`, `plan`, `verification`, and `result`. Every document has `schemaVersion: 1` and a distinct `kind`. Unknown fields and unsupported versions are rejected. The schema deliberately accepts only `upgrade`, component `core`, and execution mode `plan` in this delivery.

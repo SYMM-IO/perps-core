@@ -19,17 +19,15 @@ import path from "node:path";
 export const CORE_UPGRADE_PLAN = Object.freeze([
 	{ id: "compile", phase: "prepare", title: "Compile the current Core release and enforce the size budget" },
 	{ id: "inspect", phase: "prepare", title: "Inspect the supplied deployment, storage and funding" },
-	{ id: "rehearse-initial", phase: "rehearsal", title: "Rehearse the complete Core upgrade on the initial fork" },
 	{ id: "authorize", phase: "authorization", title: "Review and authorize the Core deployments" },
 	{ id: "deploy", phase: "deployment", title: "Deploy all Core libraries and facets with recovery checkpoints" },
-	{ id: "publish", phase: "publication", title: "Verify runtime bytecode and publish the deployments" },
 	{ id: "client-ready", phase: "verification", title: "Confirm consumer ABI and operator role readiness" },
 	{ id: "pause", phase: "execution", title: "Export and verify the Safe maintenance pause" },
 	{ id: "plan-cut", phase: "prepare", title: "Bind the paused state and atomic Core upgrade batch" },
-	{ id: "rehearse-cut", phase: "rehearsal", title: "Execute the exact deployed Safe payload on the paused fork" },
 	{ id: "cut", phase: "execution", title: "Export the atomic Core upgrade and verify its Safe receipt" },
 	{ id: "service-ready", phase: "verification", title: "Confirm application and indexer checks before restoring service" },
 	{ id: "unpause", phase: "execution", title: "Restore the original pause state after verification" },
+	{ id: "publish", phase: "publication", title: "Publish verified implementations, facets and libraries on the explorer" },
 ]);
 const read = file => JSON.parse(fs.readFileSync(file, "utf8"));
 const BINDINGS = {
@@ -43,6 +41,7 @@ const BINDINGS = {
 	"rehearse-cut": ["cutRehearsal"],
 	"verify-cut": ["verifiedCut"],
 	"plan-unpause": ["unpauseBatch"],
+	"verify-unpause": ["restoredService"],
 };
 
 export function validateCoreTaskInput(ctx, input) {
@@ -72,6 +71,8 @@ export function validateCoreTaskInput(ctx, input) {
 	if (signer.mode === SIGNER_MODES.LOCAL_NODE) throw new Error("Live deployments require an EOA signer");
 	const report = read(input.output);
 	if (report.inputDigest !== input.inputDigest) throw new Error("Core report/input mismatch");
+	if (ctx.state.corePublicationProgressDigest && digest(report.publicationProgress) !== ctx.state.corePublicationProgressDigest)
+		throw new Error("Explorer publication checkpoints changed");
 	for (const [field, hash] of Object.entries(ctx.state.coreEvidence || {})) assertCoreEvidence(report, field, hash);
 	if (ctx.state.coreEvidence?.client && digest(read(path.join(path.dirname(input.output), "core-abi.json"))) !== report.client.abiDigest)
 		throw new Error("Client ABI artifact changed");
@@ -91,35 +92,42 @@ export function coreUpgradeEnvironment(input, extra = {}, fork = false) {
 	};
 }
 
-async function runPhase(ctx, input, phase, { fork = false, env = {} } = {}) {
+export async function runCoreUpgradePhase(ctx, input, phase, { fork = false, env = {} } = {}) {
 	validateCoreTaskInput(ctx, input);
-	await ctx.runProcess(
-		"./node_modules/.bin/hardhat",
-		[
-			isStandardCoreInput(read(input.input).config) ? "internal:core-upgrade" : "internal:arbitrum-core-upgrade",
-			"--phase",
-			phase,
-			"--input",
-			input.input,
-			"--output",
-			input.output,
-			"--network",
-			fork ? coreUpgradeNetwork(read(input.input).config).fork : input.network,
-		],
-		{
-			env: coreUpgradeEnvironment(
-				input,
-				{
-					...(!["deploy", "execute-governance"].includes(phase)
-						? { SYMMIO_RECIPE_READ_ONLY: phase === "publish" ? "false" : "true", SYMMIO_SIGNER_MODE: "safe-file" }
-						: {}),
-					SYMMIO_CORE_UPGRADE_EVIDENCE: JSON.stringify(ctx.state.coreEvidence || {}),
-					...env,
-				},
-				fork,
-			),
-		},
-	);
+	try {
+		await ctx.runProcess(
+			"./node_modules/.bin/hardhat",
+			[
+				isStandardCoreInput(read(input.input).config) ? "internal:core-upgrade" : "internal:arbitrum-core-upgrade",
+				"--phase",
+				phase,
+				"--input",
+				input.input,
+				"--output",
+				input.output,
+				"--network",
+				fork ? coreUpgradeNetwork(read(input.input).config).fork : input.network,
+			],
+			{
+				env: coreUpgradeEnvironment(
+					input,
+					{
+						...(!["deploy", "execute-governance"].includes(phase)
+							? { SYMMIO_RECIPE_READ_ONLY: phase === "publish" ? "false" : "true", SYMMIO_SIGNER_MODE: "safe-file" }
+							: {}),
+						SYMMIO_CORE_UPGRADE_EVIDENCE: JSON.stringify(ctx.state.coreEvidence || {}),
+						...env,
+					},
+					fork,
+				),
+			},
+		);
+	} finally {
+		if (phase === "publish") {
+			const progress = read(input.output).publicationProgress;
+			if (progress) ctx.state.corePublicationProgressDigest = digest(progress);
+		}
+	}
 	const report = read(input.output);
 	ctx.state.coreEvidence ||= {};
 	for (const field of BINDINGS[phase] || []) {
@@ -130,6 +138,23 @@ async function runPhase(ctx, input, phase, { fork = false, env = {} } = {}) {
 	}
 	ctx.emit("upgrade.core-evidence", { phase, bindings: ctx.state.coreEvidence });
 	return report;
+}
+
+const runPhase = runCoreUpgradePhase;
+
+export async function rehearseCoreUpgrade(ctx, input, phase = "rehearse-initial") {
+	if (!["rehearse-initial", "rehearse-cut"].includes(phase)) throw new Error("Unknown Core rehearsal phase");
+	const snapshot = read(input.output)[phase === "rehearse-initial" ? "initial" : "paused"];
+	if (!snapshot) throw new Error("Inspect the deployment before rehearsal");
+	return runPhase(ctx, input, phase, {
+		fork: true,
+		env: {
+			FORK_BLOCK_NUMBER: String(snapshot.blockNumber),
+			SYMMIO_SIGNER_MODE: "local-node",
+			SYMMIO_EXPECTED_SIGNER: "",
+			SYMMIO_RECIPE_READ_ONLY: "false",
+		},
+	});
 }
 
 export async function deliverCoreBatch(ctx, input, key) {
@@ -260,7 +285,7 @@ async function prepare({ root, ui }) {
 	atomicWrite(input, standard);
 	atomicWrite(output, { inputDigest, transactions: [] });
 	ui.note(
-		`Core: ${config.target.core}\nSafe: ${config.target.safe}\nSource: ${sourceCommit}\nReport: ${output}\nBoth fork rehearsals are mandatory. The task upgrades Core and preserves the current Account, Instant and Gasless layers.`,
+		`Core: ${config.target.core}\nSafe: ${config.target.safe}\nSource: ${sourceCommit}\nReport: ${output}\nFork rehearsal is optional and separate. The task upgrades Core and preserves the current Account, Instant and Gasless layers.`,
 		"Current Arbitrum Core upgrade",
 	);
 	return { network: "arbitrum", chainId: 42161, mode: "live", config: recipe.path, forkConfig, input, output, inputDigest, sourceCommit };
@@ -286,12 +311,12 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 	const { upgradePlan: _plan, ...taskOverrides } = overrides;
 	return common({
 		id: "maintenance.arbitrum-core-upgrade",
-		version: 1,
+		version: 3,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum Vibe Core upgrade — current contracts, preserve existing layers",
 		description:
-			"Rehearse, deploy and publish every Core facet; pause through the Dev Safe, bind a fresh storage/funding snapshot, rehearse the exact atomic Safe batch, verify execution and restore service.",
+			"Deploy every Core facet, bind paused state, execute the reviewed upgrade, verify and restore service, then publish source on the explorer. Fork rehearsal is separate and optional.",
 		supportedNetworks: ["arbitrum"],
 		inputs: [
 			{ id: "network", label: "Network", type: "network", required: true },
@@ -304,7 +329,7 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 			"initial and paused snapshots",
 			"deployment journal and runtime/publication evidence",
 			"core-abi.json",
-			"two fork rehearsals",
+			"optional separate fork rehearsal",
 			"atomic Safe batches and verified execution receipts",
 		],
 		signerPolicy: {
@@ -319,25 +344,12 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 		run: async (ctx, input) => {
 			validateCoreTaskInput(ctx, input);
 			const step = (id, fn) => ctx.step(id, upgradePlan.find(s => s.id === id).title, fn);
-			const rehearse = async phase => {
-				const block = read(input.output)[phase === "rehearse-initial" ? "initial" : "paused"].blockNumber;
-				return runPhase(ctx, input, phase, {
-					fork: true,
-					env: {
-						FORK_BLOCK_NUMBER: String(block),
-						SYMMIO_SIGNER_MODE: "local-node",
-						SYMMIO_EXPECTED_SIGNER: "",
-						SYMMIO_RECIPE_READ_ONLY: "false",
-					},
-				});
-			};
 			await step("compile", () =>
 				ctx.runProcess("npm", ["run", "compile"], {
 					env: coreUpgradeEnvironment(input, { SYMMIO_RECIPE_READ_ONLY: "true", SYMMIO_SIGNER_MODE: "safe-file" }),
 				}),
 			);
 			await step("inspect", () => runPhase(ctx, input, "inspect"));
-			await step("rehearse-initial", () => rehearse("rehearse-initial"));
 			await step("authorize", async () => {
 				ctx.ui.note(
 					`Source ${input.sourceCommit}\nReview ${input.output}. This deploys all current Core libraries and facets; governance actions use the owner configured in the input.`,
@@ -349,7 +361,6 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 			await step("deploy", () =>
 				runPhase(ctx, input, "deploy", { env: { SYMMIO_CORE_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) } }),
 			);
-			await step("publish", () => runPhase(ctx, input, "publish"));
 			await step("client-ready", async () => {
 				ctx.ui.note(
 					`${path.join(path.dirname(input.output), "core-abi.json")}\n${read(input.output).client.changes.join("\n")}`,
@@ -366,7 +377,6 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 			});
 			await step("pause", () => deliverCoreBatch(ctx, input, "pause"));
 			await step("plan-cut", () => runPhase(ctx, input, "plan-cut"));
-			await step("rehearse-cut", () => rehearse("rehearse-cut"));
 			await step("cut", () => deliverCoreBatch(ctx, input, "cut"));
 			await step("service-ready", async () => {
 				const report = read(input.output);
@@ -384,6 +394,7 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 				ctx.state.coreServiceReadiness = { verifiedCutDigest: ctx.state.coreEvidence.verifiedCut, confirmedAt: new Date().toISOString() };
 			});
 			await step("unpause", () => deliverCoreBatch(ctx, input, "unpause"));
+			await step("publish", () => runPhase(ctx, input, "publish"));
 			ctx.ui.note(`Core upgrade verified. Report: ${input.output}`, "Complete");
 		},
 		...taskOverrides,

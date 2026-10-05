@@ -15,6 +15,7 @@ import {
 } from "../../deployment-tooling/arbitrum-core-upgrade.js"
 import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js"
 import { isStandardCoreInput, coreUpgradeNetwork, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
+import { publishUpgradeItems, upgradeCompletionStatus } from "../../deployment-tooling/operations/upgrade-lifecycle.js"
 import { FacetSpecs, LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
 import { atomicWriteFile } from "../utils/fs.js"
 import { json, selectorsAt } from "./accountInstantSnapshot.js"
@@ -354,8 +355,6 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			report.initialRehearsal = await rehearseInitialCoreUpgrade(hre, ethers, input, report, directory)
 			return
 		}
-		if (!bindings.initialRehearsal || report.initialRehearsal.status !== "complete" || report.initialRehearsal.initialDigest !== bindings.initial)
-			throw new Error("A bound initial fork rehearsal is required")
 		if (phase === "deploy") {
 			assertStaticBaseline(report.initial, await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true))
 			await deployCore(hre, ethers, input, report, directory, false)
@@ -364,31 +363,35 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 		if (!bindings.deployments) throw new Error("Missing bound deployment evidence")
 		const records = await assertCoreDeployments(hre, ethers, report.deployments)
 		if (phase === "publish") {
+			if (!bindings.verifiedCut || !bindings.restoredService || report.restoredService.cutDigest !== bindings.verifiedCut)
+				throw new Error("Verify execution and service restoration before explorer publication")
+			report.status = "publication-pending"
 			report.publicationProgress ||= {}
-			for (const record of records) {
-				if (report.publicationProgress[record.name] === record.codeHash) continue
-				try {
-					await verifyContract(
-						{
-							address: record.address,
-							constructorArgs: [],
-							contract: await resolveVerificationContractName(hre.artifacts, record.artifact),
-							libraries: record.libraries,
-							provider: verificationProviderForChain(coreUpgradeNetwork(input.config).chainId),
-						},
-						hre,
-					)
-				} catch (error) {
-					if (!(error instanceof Error && /already verified/i.test(error.message))) throw error
-				}
-				report.publicationProgress[record.name] = record.codeHash
-				persist()
-			}
+			await publishUpgradeItems(
+				records.map(record => ({ ...record, id: record.name })),
+				report.publicationProgress,
+				persist,
+				async record => {
+					try {
+						await verifyContract(
+							{
+								address: record.address,
+								constructorArgs: [],
+								contract: await resolveVerificationContractName(hre.artifacts, record.artifact),
+								libraries: record.libraries,
+								provider: verificationProviderForChain(coreUpgradeNetwork(input.config).chainId),
+							},
+							hre,
+						)
+					} catch (error) {
+						if (!(error instanceof Error && /already verified/i.test(error.message))) throw error
+					}
+				},
+			)
 			report.publication = { records, deploymentDigest: bindings.deployments }
+			report.status = upgradeCompletionStatus({ executionVerified: true, serviceRestored: true, publicationVerified: true })
 			return
 		}
-		if (!bindings.publication || report.publication.deploymentDigest !== bindings.deployments)
-			throw new Error("Bound explorer publication is required")
 		if (phase === "execute-governance") {
 			if (
 				coreGovernanceKind(input.config) !== "eoa" ||
@@ -399,17 +402,12 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			const key = process.env.SYMMIO_CORE_UPGRADE_BATCH
 			if (!["pause", "cut", "unpause"].includes(key || "")) throw new Error("Unknown governance phase")
 			const field = key === "cut" ? "batch" : `${key}Batch`
-			if (!bindings[field] || (key === "cut" && !bindings.cutRehearsal) || (key === "unpause" && !bindings.verifiedCut))
-				throw new Error("Missing reviewed governance evidence")
+			if (!bindings[field] || (key === "unpause" && !bindings.verifiedCut)) throw new Error("Missing reviewed governance evidence")
 			if (
 				key === "cut" &&
-				(!bindings.paused ||
-					report.batch.pausedDigest !== bindings.paused ||
-					report.batch.deploymentDigest !== bindings.deployments ||
-					report.cutRehearsal.status !== "complete" ||
-					report.cutRehearsal.batchDigest !== bindings.batch)
+				(!bindings.paused || report.batch.pausedDigest !== bindings.paused || report.batch.deploymentDigest !== bindings.deployments)
 			)
-				throw new Error("Exact deployed governance payload must pass its bound paused fork rehearsal")
+				throw new Error("Governance payload must match the bound deployments and paused snapshot")
 			report.governanceExecutions ||= {}
 			const journal = (report.governanceExecutions[key!] ||= {})
 			if (key === "cut" && !(await core.pauseState())[0]) throw new Error("Core must stay paused throughout direct governance")
@@ -488,8 +486,6 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 					deploymentDigest: bindings.deployments,
 				}
 			else same(batch.actions, report.batch.actions, "Saved Core actions changed")
-			if (phase === "check-export" && (!bindings.cutRehearsal || report.cutRehearsal.batchDigest !== bindings.batch))
-				throw new Error("Exact governance payload rehearsal is required before execution or export")
 			if (phase === "check-export")
 				same(
 					report.batch.envelope,
@@ -509,7 +505,6 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			report.cutRehearsal = { status: "complete", batchDigest: bindings.batch, execution, blockNumber: report.paused.blockNumber }
 			return
 		}
-		if (!bindings.cutRehearsal || report.cutRehearsal.batchDigest !== bindings.batch) throw new Error("Missing bound Safe rehearsal")
 		if (phase === "verify-cut") {
 			report.cutReceipt = await verifyCoreGovernanceReceipt(ethers, input.config, report.batch.envelope, receiptHash, report.paused.blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report, report.cutReceipt.blockNumber)
@@ -543,7 +538,8 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			} else await verifyCoreUpgradePostState(hre, ethers, input, report)
 			same(report.batch.desired, await selectorsAt(ethers, t.core), "Selectors changed after upgrade")
 			same(Array.from(await core.pauseState()), report.initial.pause, "Final pause flags differ from their original values")
-			report.status = "complete"
+			report.restoredService = { cutDigest: bindings.verifiedCut, pause: report.initial.pause, receipt: report.unpauseReceipt || null }
+			report.status = upgradeCompletionStatus({ executionVerified: true, serviceRestored: true, publicationVerified: false })
 			return
 		}
 	} finally {
