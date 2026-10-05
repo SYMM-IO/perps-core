@@ -1,0 +1,255 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"title": "Core upgrade input",
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"$schema": {
+			"type": "string"
+		},
+		"apiVersion": {
+			"const": "operations.symm.io/core-upgrade-input-v1"
+		},
+		"kind": {
+			"const": "CoreUpgradeInput"
+		},
+		"name": {
+			"type": "string",
+			"pattern": "^[a-z][a-z0-9-]*$"
+		},
+		"network": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"name": {
+					"type": "string",
+					"minLength": 1
+				},
+				"chainId": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"fork": {
+					"type": "string",
+					"minLength": 1
+				}
+			},
+			"required": ["name", "chainId", "fork"]
+		},
+		"release": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"ref": {
+					"type": "string",
+					"minLength": 1
+				}
+			},
+			"required": ["ref"]
+		},
+		"credentials": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"deployer": {
+					"type": "string",
+					"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+				},
+				"rpc": {
+					"type": "string",
+					"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+				},
+				"explorer": {
+					"type": "string",
+					"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+				}
+			},
+			"required": ["deployer", "rpc", "explorer"]
+		},
+		"execution": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"confirmations": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"txTimeoutSeconds": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"slowNoticeSeconds": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"verify": {
+					"const": true
+				},
+				"logLevel": {
+					"enum": ["quiet", "normal", "verbose"]
+				}
+			},
+			"required": ["confirmations", "txTimeoutSeconds", "slowNoticeSeconds", "verify", "logLevel"]
+		},
+		"governance": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"kind": {
+					"enum": ["safe", "eoa"]
+				},
+				"owner": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"signerMode": {
+					"enum": ["safe-file", "ledger", "hardhat-keystore"]
+				},
+				"signerKey": {
+					"type": "string",
+					"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+				}
+			},
+			"required": ["kind", "owner", "signerMode"]
+		},
+		"target": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"core": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"collateral": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"accountLayer": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"instantLayer": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"signatureVerifier": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"symbolManager": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"gaslessLayer": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"liquidator": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"gaslessReceiver": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"partyB": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				},
+				"multicall": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
+				}
+			},
+			"required": [
+				"core",
+				"collateral",
+				"accountLayer",
+				"instantLayer",
+				"signatureVerifier",
+				"symbolManager",
+				"gaslessLayer",
+				"liquidator",
+				"gaslessReceiver",
+				"partyB",
+				"multicall"
+			]
+		},
+		"limits": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"maxQuotes": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"maxSymbols": {
+					"type": "integer",
+					"minimum": 1
+				}
+			},
+			"required": ["maxQuotes", "maxSymbols"]
+		},
+		"storage": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"legacyAdjustmentWords": {
+					"const": 15
+				},
+				"upgradedAdjustmentWords": {
+					"const": 17
+				},
+				"requireEmptyAdjustments": {
+					"const": true
+				}
+			},
+			"required": ["legacyAdjustmentWords", "upgradedAdjustmentWords", "requireEmptyAdjustments"]
+		},
+		"repairAggregateFunding": {
+			"const": true
+		},
+		"allowedRemovedSelectors": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"pattern": "^0x[0-9a-f]{8}$"
+			},
+			"uniqueItems": true
+		},
+		"roleGrants": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"properties": {
+					"holder": {
+						"type": "string",
+						"pattern": "^0x[0-9a-fA-F]{40}$"
+					},
+					"role": {
+						"type": "string",
+						"pattern": "^[A-Z][A-Z0-9_]*_ROLE$"
+					}
+				},
+				"required": ["holder", "role"]
+			}
+		}
+	},
+	"required": [
+		"apiVersion",
+		"kind",
+		"name",
+		"network",
+		"release",
+		"credentials",
+		"execution",
+		"governance",
+		"target",
+		"limits",
+		"storage",
+		"repairAggregateFunding",
+		"allowedRemovedSelectors",
+		"roleGrants"
+	]
+}
