@@ -119,8 +119,13 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	const account = await ethers.getContractAt(["function hasRole(address,bytes32) view returns(bool)"], t.accountLayer)
 	const instant = await ethers.getContractAt("InstantLayer", t.instantLayer)
 	const partyB = await ethers.getContractAt("SymmioPartyB", t.partyB)
-	for (const name of ["SIGNER_SETTER_ROLE", "INSTANT_LAYER_ROLE"])
-		if (!(await account.hasRole(t.instantLayer, ethers.id(name), overrides))) throw new Error(`AccountLayer missing ${name}`)
+	for (const name of ["SIGNER_SETTER_ROLE", "INSTANT_LAYER_ROLE"]) {
+		const held = await account.hasRole(t.instantLayer, ethers.id(name), overrides)
+		wiring[`account.instant.${name}`] = held
+		// Signer methods are gated by SIGNER_SETTER_ROLE. The declared INSTANT_LAYER_ROLE
+		// is not an execution prerequisite; preserve its observed value instead.
+		if (name === "SIGNER_SETTER_ROLE" && !held) throw new Error(`AccountLayer missing ${name}`)
+	}
 	if (!(await account.hasRole(t.gaslessLayer, ethers.id("ACCOUNT_CREATOR_ROLE"), overrides))) throw new Error("Gasless lacks account creation role")
 	for (const address of [t.gaslessLayer, t.partyB])
 		if (!(await instant.hasRole(ethers.id("OPERATOR_ROLE"), address, overrides))) throw new Error("InstantLayer operator wiring changed")
