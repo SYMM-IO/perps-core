@@ -5,6 +5,7 @@ const access = new Interface([
 	"function hasRole(bytes32 role,address account) view returns(bool)",
 	"function getRoleAdmin(bytes32 role) view returns(bytes32)",
 	"function getRoleMemberCount(bytes32 role) view returns(uint256)",
+	"function getRoleMember(bytes32 role,uint256 index) view returns(address)",
 	"function grantRole(bytes32 role,address account)",
 ]);
 const hash = value => /^0x[0-9a-fA-F]{64}$/.test(value);
@@ -13,7 +14,7 @@ const address = value => {
 	if (result === ZeroAddress) throw new Error("Role migration address cannot be zero");
 	return result;
 };
-function validate(profile) {
+export function validateRoleProfile(profile) {
 	if (profile.schemaVersion !== 1 || !Number.isSafeInteger(profile.chainId) || profile.chainId < 1 || !Array.isArray(profile.transitions))
 		throw new Error("Invalid role migration profile");
 	for (const contract of [profile.source, profile.target]) {
@@ -26,7 +27,7 @@ function validate(profile) {
 		if (
 			!/^[a-z][a-z0-9.-]*$/.test(row.id || "") ||
 			ids.has(row.id) ||
-			![row.sourceRole, row.targetRole, row.adminRole].every(hash) ||
+			![row.sourceRole, row.targetRole, row.adminRole, row.sourceAdminRole === undefined ? row.adminRole : row.sourceAdminRole].every(hash) ||
 			roles.has(row.targetRole.toLowerCase()) ||
 			row.policy !== "exact-source-members"
 		)
@@ -63,15 +64,43 @@ async function authority(provider, profile, row, tag) {
 		throw new Error("Role migration admin or authority differs");
 }
 
-/** Explicit capability changes, after raw import. Count + distinct positive memberships prove the supplied role list is complete. */
+/** Enumerate only declared roles through their bounded standard views. */
+export async function readRoleInventory(provider, profile, atBlock, maxMembersPerRole) {
+	validateRoleProfile(profile);
+	if (!Number.isSafeInteger(maxMembersPerRole) || maxMembersPerRole < 1) throw new Error("Provide a positive role enumeration limit");
+	const tag = await checkpoint(provider, profile.chainId, atBlock);
+	await runtime(provider, profile.source, tag);
+	const inventory = [];
+	for (const role of new Set(profile.transitions.map(row => row.sourceRole.toLowerCase()))) {
+		const count = await read(provider, profile.source.address, "getRoleMemberCount", [role], tag);
+		if (count > BigInt(maxMembersPerRole)) throw new Error("Role enumeration limit exceeded; no partial inventory was accepted");
+		const members = [];
+		for (let index = 0n; index < count; index++) {
+			const member = address(await read(provider, profile.source.address, "getRoleMember", [role, index], tag));
+			if (!(await read(provider, profile.source.address, "hasRole", [role, member], tag))) throw new Error("Enumerated role member differs");
+			members.push(member);
+		}
+		if (new Set(members).size !== members.length) throw new Error("Enumerated role members are duplicated");
+		inventory.push({ role, members: members.sort() });
+	}
+	await checkpoint(provider, profile.chainId, atBlock);
+	return inventory;
+}
+
+/** Explicit capability changes. Count + distinct positive memberships prove the supplied role list is complete. */
 export async function captureRoleMigration(provider, profile, sourceRoles, checkpoints) {
-	validate(profile);
+	validateRoleProfile(profile);
 	const sourceTag = await checkpoint(provider, profile.chainId, checkpoints.source),
 		targetTag = await checkpoint(provider, profile.chainId, checkpoints.target);
 	await runtime(provider, profile.source, sourceTag);
 	await runtime(provider, profile.target, targetTag);
 	const observations = [];
 	for (const row of profile.transitions) {
+		if (
+			(await read(provider, profile.source.address, "getRoleAdmin", [row.sourceRole], sourceTag)).toLowerCase() !==
+			(row.sourceAdminRole || row.adminRole).toLowerCase()
+		)
+			throw new Error("Source role administrator differs from the reviewed transition");
 		const roles = sourceRoles.filter(role => role.role.toLowerCase() === row.sourceRole.toLowerCase());
 		if (roles.length !== 1 || !Array.isArray(roles[0].members)) throw new Error("Source role inventory is missing or duplicated");
 		const members = roles[0].members.map(address);
@@ -97,7 +126,7 @@ export async function captureRoleMigration(provider, profile, sourceRoles, check
 }
 
 export function buildRoleMigration(profile, snapshot) {
-	validate(profile);
+	validateRoleProfile(profile);
 	if (
 		snapshot.schemaVersion !== 1 ||
 		snapshot.profileDigest !== operationDigest(profile) ||

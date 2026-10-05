@@ -52,6 +52,27 @@ The request binds a clean source checkout, an existing credential recipe and a p
 
 Omit `target` to capture configuration before deploying a replacement. Including it also produces a migration plan. Requests reject unknown fields, including user-state inputs. The result is saved under `tasks/data/<chain[-fork]>/configuration/<run-id>/prepared-configuration.json`. Resumption rejects changes to the request, recipe, profile, source checkout or saved evidence.
 
+To prepare administrative roles and all declared consumer reconnections in the same report, add optional file references:
+
+```json
+{
+	"roles": {
+		"file": "./instant-role-profile.json",
+		"sha256": "sha256:<profile file hash>",
+		"maxMembersPerRole": 100
+	},
+	"wiring": {
+		"file": "./instant-consumer-profile.json",
+		"sha256": "sha256:<profile file hash>",
+		"dependency": "instant"
+	}
+}
+```
+
+Both require a deployed `target`. Role profiles bind exactly the same source and target contract records; wiring profiles bind that source and dependency on every edge. Every profile must select the same chain. Role members are enumerated automatically through `getRoleMemberCount` and `getRoleMember`, with an explicit per-role limit. An exceeded limit rejects the whole result. No member-list export is required for enumerable roles.
+
+The report keeps configuration setters, role grants, wiring activations and old-permission retirements separate, with each call's actual authority. Preparation rejects source-setting, source-role or consumer-membership drift between the source and target checkpoints. Retirements require the execution adapter's reviewed ordering and receipt checks; the preparation task sends none of these calls.
+
 ## Configuration profile
 
 A profile has `schemaVersion: 1`, `kind: "symmio.configuration-profile"`, `chainId`, `source: { address, codeHash }` and `fields`. For a proxy, bind its implementation with `implementation: { slot, address, codeHash }` on the source and target contract records. Runtime parity and implementation identity are checked separately from scanner publication.
@@ -72,7 +93,9 @@ For example, a cooldown field reads `function revocationCooldown() view returns(
 
 An append field additionally declares `cursor: { read, index }`, where `index` is a decimal string and `read` returns `uint256`. `afterWrite` can reproduce flags after creating an entry. Keep an entry's creation and follow-up calls atomic, or use an execution journal that checks the confirmed prefix before recovery; rerunning preparation is not a substitute for reconciling a partially executed append.
 
-Snapshot preparation checks expected input values when supplied, source/runtime identity and canonical block hashes. Planning rereads the pinned source and rejects altered snapshots. It emits target/value/calldata/authority for each required setter, plus final getter expectations and a digest. Existing matching settings produce no calls. Verification checks the plan digest, target runtime/implementation, final getters and canonical block again.
+Declare setter side effects through `dependsOn` on a later `copy` or `flag` field. For example, the AccountLayer whitelist field depends on the account-address field: setting the account address automatically enables its whitelist, so a source whitelist value of `false` must be written afterward even when the replacement initially returned `false`. Dependencies must name earlier fields; cycles and forward references are rejected. The extra setter is included only when a dependency has planned calls. Release adapters must account for all cross-field effects and implicit role grants when ordering configuration and administrative changes.
+
+Snapshot preparation checks expected input values when supplied, source/runtime identity and canonical block hashes. Planning rereads both the pinned source and source configuration at the target checkpoint, rejecting altered snapshots and configuration drift. It emits target/value/calldata/authority for each required setter, plus final getter expectations and a digest. Existing matching settings produce no calls. Verification checks the plan digest, target runtime/implementation, final getters and canonical block again. `verifyPreparedConfiguration` verifies the configuration, roles and consumers together, against the saved reviewed evidence digest; it produces post-state evidence and does not replace transaction-receipt verification.
 
 ## Coverage and non-enumerable keys
 
@@ -84,6 +107,6 @@ Gasless function-specific fee overrides use bytes4 function selectors as keys. U
 
 `deployment-tooling/operations/wiring-migration.js` captures declared address pointers and memberships with consumer runtime and authority bindings. It migrates active memberships, preserves inactive ones and checks retirement and post-state. Declare every consumer; the planner cannot discover unknown integrations.
 
-`deployment-tooling/operations/role-migration.js` uses explicit `sourceRole → targetRole` transitions and an `exact-source-members` policy. It proves enumerable source member counts and each positive membership, verifies the target role's administrator, and grants only missing members. Extra target members are rejected. Bootstrap authority handover or removal needs a separate reviewed policy. For the older InstantLayer release, moving template administration from `SETTER_ROLE` to `TEMPLATE_MANAGER_ROLE` is an explicit release transition, not an inferred new permission.
+`deployment-tooling/operations/role-migration.js` uses explicit `sourceRole → targetRole` transitions and an `exact-source-members` policy. It proves enumerable source member counts and each positive membership, verifies both source and target role administrators, and grants only missing members. `sourceAdminRole` defaults to the declared target `adminRole`; supply it explicitly for a reviewed administrator-role transition. Extra target members are rejected. Bootstrap authority handover or removal needs a separate reviewed policy. For the older InstantLayer release, moving template administration from `SETTER_ROLE` to `TEMPLATE_MANAGER_ROLE` is an explicit release transition, not an inferred new permission.
 
 Prepared calls, a successful local test, a fork rehearsal, a Safe export and explorer publication are different evidence. Production completion requires the reviewed complete configuration inventory, actual authorities, executed canonical receipts and verified post-state.

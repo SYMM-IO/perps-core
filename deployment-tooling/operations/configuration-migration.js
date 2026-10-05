@@ -89,6 +89,14 @@ export function validateConfigurationProfile(profile) {
 		)
 			throw new Error("Configuration fields need unique IDs and a supported mode");
 		ids.add(field.id);
+		if (
+			field.dependsOn !== undefined &&
+			(!Array.isArray(field.dependsOn) ||
+				!["copy", "flag"].includes(field.mode) ||
+				new Set(field.dependsOn).size !== field.dependsOn.length ||
+				field.dependsOn.some(dependency => dependency === field.id || !ids.has(dependency)))
+		)
+			throw new Error("Configuration dependencies must name earlier fields and use copy or flag mode");
 		for (const read of [field.read, field.targetRead || field.read, ...(field.mode === "append" ? [field.cursor?.read] : [])]) {
 			const fn = fragment(read);
 			if (!["view", "pure"].includes(fn.stateMutability) || fn.outputs.length < 1 || hasReference(read.args))
@@ -202,10 +210,14 @@ export async function buildConfigurationMigration(provider, profile, snapshot, t
 		throw new Error("Configuration snapshot binding changed");
 	if (operationDigest(await captureConfigurationSnapshot(provider, profile, snapshot.checkpoint)) !== operationDigest(snapshot))
 		throw new Error("Configuration snapshot differs from its pinned source");
+	const currentSource = await captureConfigurationSnapshot(provider, profile, checkpoint);
+	if (operationDigest(currentSource.fields) !== operationDigest(snapshot.fields))
+		throw new Error("Configuration source changed since the reviewed snapshot");
 	const tag = await blockTag(provider, profile.chainId, checkpoint);
 	await runtime(provider, target, tag);
 	const actions = [],
 		checks = [],
+		changed = new Set(),
 		cursors = new Map();
 	for (const field of profile.fields) {
 		const observed = snapshot.fields.find(item => item.id === field.id);
@@ -229,10 +241,12 @@ export async function buildConfigurationMigration(provider, profile, snapshot, t
 			cursors.set(key, count + 1n);
 		} else {
 			current = await read(provider, target.address, spec, tag);
-			if (operationDigest(current) === operationDigest(observed.value)) continue;
+			if (operationDigest(current) === operationDigest(observed.value) && !(field.dependsOn || []).some(dependency => changed.has(dependency)))
+				continue;
 			if (field.mode === "immutable") throw new Error(`Configuration immutable differs: ${field.id}`);
 		}
 		await authority(provider, target.address, field.authority, tag);
+		changed.add(field.id);
 		const writes = field.mode === "flag" ? [field.write[observed.value ? "whenTrue" : "whenFalse"]] : [field.write, ...(field.afterWrite || [])];
 		for (const [index, write] of writes.entries()) {
 			const fn = fragment(write),
