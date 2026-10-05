@@ -43,9 +43,13 @@
 				"ref": {
 					"type": "string",
 					"minLength": 1
+				},
+				"baselineRef": {
+					"type": "string",
+					"minLength": 1
 				}
 			},
-			"required": ["ref"]
+			"required": ["ref", "baselineRef"]
 		},
 		"credentials": {
 			"type": "object",
@@ -53,15 +57,15 @@
 			"properties": {
 				"deployer": {
 					"type": "string",
-					"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+					"pattern": "^hardhat-keystore://[A-Za-z_][A-Za-z0-9_]*$"
 				},
 				"rpc": {
 					"type": "string",
-					"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+					"pattern": "^hardhat-keystore://[A-Za-z_][A-Za-z0-9_]*$"
 				},
 				"explorer": {
 					"type": "string",
-					"pattern": "^(hardhat-keystore|env)://[A-Za-z_][A-Za-z0-9_]*$"
+					"pattern": "^hardhat-keystore://[A-Za-z_][A-Za-z0-9_]*$"
 				}
 			},
 			"required": ["deployer", "rpc", "explorer"]
@@ -108,9 +112,16 @@
 				"signerKey": {
 					"type": "string",
 					"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+				},
+				"ledgerDerivation": {
+					"enum": ["ledger-live", "legacy"]
+				},
+				"accountLayerOwner": {
+					"type": "string",
+					"pattern": "^0x[0-9a-fA-F]{40}$"
 				}
 			},
-			"required": ["kind", "owner", "signerMode"]
+			"required": ["kind", "owner", "signerMode", "accountLayerOwner"]
 		},
 		"target": {
 			"type": "object",
@@ -233,6 +244,41 @@
 					}
 				},
 				"required": ["holder", "role"]
+			}
+		},
+		"inventory": {
+			"type": "object",
+			"additionalProperties": {
+				"oneOf": [
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"properties": {
+							"kind": {
+								"enum": ["contract", "account"]
+							},
+							"address": {
+								"type": "string",
+								"pattern": "^0x[0-9a-fA-F]{40}$"
+							}
+						},
+						"required": ["kind", "address"]
+					},
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"properties": {
+							"kind": {
+								"const": "subgraph"
+							},
+							"url": {
+								"type": "string",
+								"pattern": "^https://[^\\s]+$"
+							}
+						},
+						"required": ["kind", "url"]
+					}
+				]
 			}
 		}
 	},

@@ -14,18 +14,34 @@ export function validateCoreUpgradeInput(input) {
 		fork = CHAINS[input.network.fork];
 	if (!network || network.simulated || network.chainId !== input.network.chainId || !fork?.simulated || fork.upstream !== input.network.name)
 		throw new Error("Input must select a configured live network and its matching rehearsal fork");
-	for (const [key, value] of Object.entries({ ...input.target, owner: input.governance.owner }))
+	for (const [key, value] of Object.entries({
+		...input.target,
+		owner: input.governance.owner,
+		accountLayerOwner: input.governance.accountLayerOwner,
+	}))
 		if (getAddress(value) === ZeroAddress) throw new Error(`Zero ${key} address`);
 	for (const [purpose, ref] of Object.entries(input.credentials)) parseSecretRef(ref, `credentials.${purpose}`);
+	if (!input.credentials.deployer.startsWith("hardhat-keystore://")) throw new Error("Deployment signer must use the input keystore reference");
 	if (input.governance.kind === "safe" && input.governance.signerMode !== "safe-file")
 		throw new Error("Safe governance requires safe-file delivery");
 	if (input.governance.kind === "eoa" && !["ledger", "hardhat-keystore"].includes(input.governance.signerMode))
 		throw new Error("EOA governance requires Ledger or Hardhat keystore signing");
 	if (input.governance.signerMode === "hardhat-keystore" && !input.governance.signerKey)
 		throw new Error("Governance keystore reference is required");
+	if (input.governance.signerMode === "ledger" && !input.governance.ledgerDerivation)
+		throw new Error("Ledger derivation family is required in the input");
+	if (
+		(input.governance.signerMode !== "ledger" && input.governance.ledgerDerivation) ||
+		(input.governance.signerMode !== "hardhat-keystore" && input.governance.signerKey)
+	)
+		throw new Error("Governance credential fields must match the selected signer mode");
+	for (const item of Object.values(input.inventory || {}))
+		if (item.kind !== "subgraph" && getAddress(item.address) === ZeroAddress) throw new Error("Zero inventory address");
 	const grants = new Set();
 	for (const grant of input.roleGrants) {
 		if (getAddress(grant.holder) === ZeroAddress) throw new Error("Zero role holder");
+		if (grant.role === "MIGRATION_ROLE" && grant.holder.toLowerCase() === input.governance.owner.toLowerCase())
+			throw new Error("The Core owner's migration role must be restored, not persistently granted");
 		const key = `${grant.holder.toLowerCase()}:${id(grant.role)}`;
 		if (grants.has(key)) throw new Error("Duplicate role grant");
 		grants.add(key);
