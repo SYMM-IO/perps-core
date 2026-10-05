@@ -6,6 +6,7 @@ import { arbitrumRoundingUpgradeTask } from "./arbitrumRoundingUpgrade.js"
 import { batchWithdrawalTask } from "./batchWithdrawal.js"
 import { checkComponentTask } from "./checkComponent.js"
 import { checkStandaloneDeploymentTask } from "./checkStandaloneDeployment.js"
+import { configurationPrepareTask } from "./configurationPrepare.js"
 import { coreWithdrawalTask } from "./coreWithdrawal.js"
 import { create2FactoryTask } from "./create2Factory.js"
 import { deployAllTask } from "./deployAll.js"
@@ -31,6 +32,7 @@ import { upgradeProxyTask } from "./upgrade.js"
 import { checkDeploymentTask, verifyAllTask } from "./verify.js"
 
 export const deployTasks = [
+	configurationPrepareTask,
 	coreWithdrawalTask,
 	batchWithdrawalTask,
 	operationsInspectTask,
