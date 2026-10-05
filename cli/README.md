@@ -20,6 +20,8 @@ announcement timing, and transaction evidence.
 
 For Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, select **Other maintenance scripts → Arbitrum Vibe Core upgrade — current contracts, preserve existing layers**. The [Core upgrade runbook](../docs/arbitrum-core-upgrade.md) covers both mandatory fork rehearsals, current addresses, paused storage/funding checks, the atomic Safe batch and separate verified unpause. The older full-system and rounding/funding entries retain their historical migration targets.
 
+For the supplied Arbitrum production Core `0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A`, or a separately configured Base deployment, select **Other maintenance scripts → Upgrade Core from a standard input file**. Load `core-upgrade.<deployment>.input.json`; all deployment parameters and credential references come from that file. The [standard Core upgrade runbook](../docs/core-upgrade.md) covers source/baseline binding, Safe and EOA governance, both required fork rehearsals, receipt checks, recovery and the Base template. Use Node 22.15.0.
+
 The separate **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values** task has its own migration-specific configuration and baseline. Review those targets and [its runbook](../docs/arbitrum-account-instant-upgrade.md) before starting that migration; it is not part of the Core-only upgrade.
 
 `./symmio --help` only explains how to launch the application. Every other argument and

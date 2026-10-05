@@ -1,0 +1,111 @@
+{
+	"kind": "ReadOnlyCoreUpgradePreflight",
+	"status": "partial-preflight",
+	"readOnly": true,
+	"chainId": 42161,
+	"blockNumber": 511862962,
+	"blockHash": "0xfb0d7189a88146ed941c8010e50c651fef6d0a8bdc60cbc29ff88758e15192ce",
+	"blockTimestamp": 1791187259,
+	"canonicalAtObservation": true,
+	"sourceCommitAtObservation": "25436adfb1d9f6858accfd092263548733362d2e",
+	"targetReleaseRef": "version_0.8.6",
+	"targetReleaseCommit": "c55c14aa8da721b905dc6e4b3ecb57dd0e83108a",
+	"baselineRef": "version_0.8.6.2",
+	"baselineCommit": "76715ff1e6a776e525433250921090899c92f121",
+	"baselineProvenance": "User-supplied baseline tag; deployed bytecode parity to the tag was not proven",
+	"targetContractsTree": "e31f146db7ab231901632385d9af77c8f1de64ae",
+	"reads": {
+		"core.getOwner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"core.pendingOwner": "0x0000000000000000000000000000000000000000",
+		"core.pauseState": [false, false, false, false, false, false, false, false, false, false],
+		"core.getNextQuoteId": "5290",
+		"core.isAccumulatedFundingActivated": true,
+		"accountLayer.getOwner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"role.liveOwner.DEFAULT_ADMIN_ROLE": true,
+		"role.liveOwner.PAUSER_ROLE": true,
+		"role.liveOwner.UNPAUSER_ROLE": true,
+		"role.liveOwner.MIGRATION_ROLE": true,
+		"role.symbolManager.SYMBOL_MANAGER_ROLE": true,
+		"role.symbolManager.SYMBOL_LISTING_ROLE": false,
+		"role.configuredSafe.DEFAULT_ADMIN_ROLE": false,
+		"role.configuredSafe.PAUSER_ROLE": false,
+		"role.configuredSafe.UNPAUSER_ROLE": false
+	},
+	"ownerCode": {
+		"address": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"bytes": 0,
+		"codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+	},
+	"selectorManifestComparison": {
+		"facetCount": 32,
+		"libraryCount": 9,
+		"installedCount": 464,
+		"desiredCount": 479,
+		"added": [
+			["0xa83cf606", "isPledgeTokenWhitelisted(address)"],
+			["0x21fcf6f7", "setPledgeTokenWhitelist(address,bool)"],
+			["0xffcf37d0", "resyncAggregateFunding((address,address,uint256,uint8,int256,int256,int256)[])"],
+			["0x895b6cb3", "setEntityMetadata(address,(string,string,string))"],
+			["0xd548eb41", "cancelStalePendingQuotes(uint256[])"],
+			["0x51c546b3", "startRestatement(uint256,uint256)"],
+			["0x238208e9", "pausePartyBOpenPositionsFor(address)"],
+			["0xf8d38a70", "unpausePartyBOpenPositionsFor(address)"],
+			["0xf28074f9", "getPartyALiquidationSnapshots(address,bytes,(address,uint256)[])"],
+			["0xecc553d6", "getLiquidationStartNonce()"],
+			["0x8c8e09b6", "getPendingQuoteIdCutoff(uint256)"],
+			["0x34e4e7cc", "getQuoteFundingSettledEpoch(uint256)"],
+			["0x8d77a59e", "getRestatementFundingSettlementProgress(uint256)"],
+			["0x108f3213", "isPendingQuoteStale(uint256)"],
+			["0x8a647b7b", "getPartyAExactNotionalUpnlData(address,address,uint256,uint256)"],
+			["0x9196ffe3", "getPartyBExactNotionalUpnlData(address,address,uint256,uint256)"],
+			["0xf0e9fbfa", "getPartyBGlobalExactNotionalUpnlData(address,uint256,uint256)"]
+		],
+		"removed": [
+			["0x9dcdbdda", "0xbB41c0D1F2887fDe674680d356Bd70b408df6861"],
+			["0xff363ccc", "0xbf7e813D345f1E76fBeB0155a47C9Fd430521861"]
+		],
+		"retainedCount": 462
+	},
+	"symbolCount": 241,
+	"symbolAdjustmentScan": {
+		"scanned": 241,
+		"failed": 0,
+		"nonzero": [],
+		"wordCounts": [15]
+	},
+	"activeSymbolRestatements": [],
+	"newOwnerRoleSnapshot": {
+		"blockNumber": 511863730,
+		"blockHash": "0x454a495483ff11ce3b425dc078de8f224dcdf8f1d529ffb2f6b04725347ea7f6",
+		"owner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
+		"roles": {
+			"GLOBAL_PAUSER_ROLE": false,
+			"PARTY_A_PAUSER_ROLE": false,
+			"PARTY_B_PAUSER_ROLE": false,
+			"ACCOUNTING_PAUSER_ROLE": false,
+			"INTERNAL_TRANSFER_PAUSER_ROLE": false,
+			"EXTERNAL_TRANSFER_PAUSER_ROLE": false,
+			"LIQUIDATION_PAUSER_ROLE": false,
+			"INSTANT_LAYER_PAUSER_ROLE": false,
+			"WITHDRAW_ADVANCE_PAUSER_ROLE": false,
+			"PARTY_B_REGISTRAR_ROLE": false,
+			"AFFILIATE_REGISTRAR_ROLE": false,
+			"ENTITY_METADATA_MANAGER_ROLE": false,
+			"PROTOCOL_LIMITS_ROLE": false,
+			"PLEDGE_TOKEN_MANAGER_ROLE": false
+		}
+	},
+	"pendingChecks": [
+		"Full historical quote, balance and aggregate-funding reconciliation",
+		"Initial complete deployment-specific fork rehearsal",
+		"Paused exact-payload deployment-specific fork rehearsal",
+		"Explorer publication of newly deployed contracts",
+		"Client and indexer ABI compatibility",
+		"Governance execution and receipt/post-state verification"
+	],
+	"limitations": [
+		"Public RPC rejects older pinned state requests without archive access",
+		"No live deployments, signatures or governance broadcasts were performed",
+		"Subgraph availability and the possible fee collector business role were not established"
+	]
+}
