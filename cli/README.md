@@ -24,6 +24,8 @@ For the supplied Arbitrum production Core `0x57331027091994FCb9c5Aec48ea92cEf0a9
 
 The separate **Arbitrum AccountLayer and InstantLayer upgrade — preserve current values** task has its own migration-specific configuration and baseline. Review those targets and [its runbook](../docs/arbitrum-account-instant-upgrade.md) before starting that migration; it is not part of the Core-only upgrade.
 
+Upgrade tests have a [separate stage layout](../test/upgrade/README.md). Use `npm run test:upgrade -- <stage> --match <component>` to run a targeted stage with existing artifacts. Chain/deployment-specific checks remain local in the ignored `test/upgrade/chain-bound/` folder and require `--chain-bound`; the general CLI and contract test runners exclude upgrade tests.
+
 `./symmio --help` only explains how to launch the application. Every other argument and
 non-TTY execution is refused. The CLI executes the checked-in ESM source directly; there is
 no generated CLI bundle.
