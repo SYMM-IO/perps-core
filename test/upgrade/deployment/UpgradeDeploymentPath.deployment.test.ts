@@ -3,15 +3,11 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 
-import { deployFacets } from "../../tasks/deploy/diamondUpgrade.js"
-import { ethers } from "../helpers/hardhat-connection.js"
+import { deployFacets } from "../../../tasks/deploy/diamondUpgrade.js"
+import { ethers } from "../../helpers/hardhat-connection.js"
+import { DeploymentOutput } from "../helpers/UpgradeDeploymentPath.fixture.js"
 
-type DeploymentOutput = {
-	libraries: Record<string, string>
-	facets: Record<string, { address: string; selectors: string[] }>
-}
-
-describe("upgrade facet deployment", function () {
+describe("upgrade facet deployment (deployment)", function () {
 	it("deploys and resumes the complete linked core and AccountLayer graphs", async function () {
 		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-upgrade-facets-"))
 		const coreFile = path.join(tempDir, "core.json")
