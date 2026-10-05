@@ -12,6 +12,8 @@ Event logs and lists of known users cannot establish all hash-key replay counter
 
 `buildStorageImport` revalidates a saved snapshot and creates a deterministic Merkle commitment with a proof for each indexed raw slot/value. The import commitment also records a digest of the source checkpoint and account proof. A migration authority approves that commitment after checking the source evidence. Merkle import proofs authenticate approved values; they do not authenticate a chain header on-chain.
 
+`StorageMigration` is a temporary implementation behind a fresh transparent proxy. Chunks must follow the committed, strictly sorted slot order. Progress is kept in a reserved ERC-7201 namespace; ERC-1967 proxy slots cannot be imported. Invalid chunks revert atomically, and a retry starts at the on-chain next index. Sealing requires every entry. `StorageMigrationCoordinator` prevents activation before sealing, upgrades to its bound implementation, then hands the standard ProxyAdmin to the configured upgrade authority. Operational source roles come from imported state, not the deployment wallet.
+
 Raw import is permitted only for a release adapter that proves storage compatibility, excludes proxy and migration metadata slots, and specifies any necessary transformations. Source immutables, constructors and signature domains require separate checks: copying storage alone is insufficient.
 
 ## InstantLayer replacement
