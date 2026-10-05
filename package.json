@@ -8,7 +8,7 @@
 		"url": "https://github.com/SYMM-IO/symmio-core"
 	},
 	"devDependencies": {
-		"ajv": "8.20.0",
+		"@ethereumjs/mpt": "10.1.2",
 		"@ethers-ext/signer-ledger": "^6.0.0-beta.1",
 		"@nomicfoundation/hardhat-ethers": "^4.0.3",
 		"@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.10",
@@ -29,6 +29,7 @@
 		"@types/fs-extra": "^11.0.4",
 		"@types/mocha": "^10.0.7",
 		"@types/node": "^22.19.0",
+		"ajv": "8.20.0",
 		"builder-pattern": "^2.2.0",
 		"chai": "^5.1.2",
 		"cross-env": "^10.1.0",
