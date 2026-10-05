@@ -1,4 +1,5 @@
 import { digest } from "./account-instant-upgrade.js";
+import { isStandardCoreInput, validateCoreUpgradeInput } from "./core-upgrade-input.js";
 import { Interface, ZeroAddress, getAddress } from "ethers";
 
 export { digest };
@@ -10,6 +11,7 @@ export const CUT_SELECTOR = "0x1f931c1c";
 const cutInterface = new Interface(["function diamondCut((address facetAddress,uint8 action,bytes4[] functionSelectors)[],address,bytes)"]);
 
 export function validateCoreUpgradeConfig(config) {
+	if (isStandardCoreInput(config)) return validateCoreUpgradeInput(config);
 	if (config?.apiVersion !== "operations.symm.io/arbitrum-core-upgrade-config-v1" || config.chainId !== 42161)
 		throw new Error("Core upgrade requires the Arbitrum 42161 profile");
 	for (const key of Object.keys(config))

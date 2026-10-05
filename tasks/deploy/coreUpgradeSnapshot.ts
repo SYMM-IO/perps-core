@@ -2,6 +2,7 @@ import fs from "node:fs"
 
 import { IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js"
+import { isStandardCoreInput, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
 import { addFunding, calculateGroupFunding } from "../../scripts/utils/aggregateFundingResync.js"
 import { json, lower, selectorsAt } from "./accountInstantSnapshot.js"
 import { logger } from "./logger.js"
@@ -9,24 +10,31 @@ import { logger } from "./logger.js"
 export const coreUpgradeABI = JSON.parse(fs.readFileSync(new URL("../../abis/symmio.json", import.meta.url), "utf8"))
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
-export function assertEmptySymbolAdjustment(returnData: string, upgraded: boolean) {
-	if (returnData.length !== 2 + (upgraded ? 17 : 15) * 64 || !/^0x0+$/.test(returnData))
+export function assertEmptySymbolAdjustment(returnData: string, upgraded: boolean, policy?: any) {
+	if (
+		returnData.length !== 2 + (upgraded ? policy?.upgradedAdjustmentWords || 17 : policy?.legacyAdjustmentWords || 15) * 64 ||
+		!/^0x0+$/.test(returnData)
+	)
 		throw new Error("Nonzero or unexpected SymbolAdjustment layout; a separate storage migration is required")
 }
 
 /** Pin every read to one block and refuse incomplete scans. No signer is loaded. */
 export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgraded = false, atBlock?: number, configurationOnly = false) {
 	const t = config.target,
+		owner = coreUpgradeAuthority(config),
 		provider = ethers.provider
 	const block = await provider.getBlock(atBlock ?? "latest")
 	if (!block) throw new Error("Snapshot block unavailable")
+	const assertCanonical = async () => {
+		if ((await provider.getBlock(block.number))?.hash !== block.hash) throw new Error("Core snapshot block is no longer canonical")
+	}
 	const overrides = { blockTag: block.number }
 	logger.info(`Core snapshot at block ${block.number}: checking ownership, roles and peripheral wiring`)
 	const core = await ethers.getContractAt(coreUpgradeABI, t.core)
 	const call = (name: string, args: any[] = []) => core[name](...args, overrides)
 	const multicall = await ethers.getContractAt(
 		["function aggregate3((address target,bool allowFailure,bytes callData)[]) payable returns ((bool success,bytes returnData)[])"],
-		MULTICALL,
+		config.target.multicall || MULTICALL,
 	)
 	const batch = async (names: string[], args: any[][]) => {
 		const results: any[] = []
@@ -57,7 +65,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	])
 		preserved[name] = await call(name)
 	for (const [name, expected] of [
-		["getOwner", t.safe],
+		["getOwner", owner],
 		["pendingOwner", ethers.ZeroAddress],
 		["getCollateral", t.collateral],
 		["getSignatureVerifier", t.signatureVerifier],
@@ -65,9 +73,9 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		if (lower(preserved[name]) !== lower(expected)) throw new Error(`Unexpected Core ${name}`)
 	if (!preserved.isAccumulatedFundingActivated) throw new Error("This upgrade requires accumulated funding already enabled")
 	for (const role of ["DEFAULT_ADMIN_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"])
-		if (!(await call("hasRole", [t.safe, ethers.id(role)]))) throw new Error(`Dev Safe lacks ${role}`)
+		if (!(await call("hasRole", [owner, ethers.id(role)]))) throw new Error(`Core governance owner lacks ${role}`)
 	const roles = {
-		migration: await call("hasRole", [t.safe, ethers.id("MIGRATION_ROLE")]),
+		migration: await call("hasRole", [owner, ethers.id("MIGRATION_ROLE")]),
 		listing: await call("hasRole", [t.symbolManager, ethers.id("SYMBOL_LISTING_ROLE")]),
 	}
 	if (!(await call("hasRole", [t.symbolManager, ethers.id("SYMBOL_MANAGER_ROLE")]))) throw new Error("Symbol Manager identity/role changed")
@@ -88,7 +96,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		for (const name of getters) wiring[`${label}.${name}`] = await contract[name](overrides)
 	}
 	for (const [key, expected] of Object.entries({
-		"account.getOwner": t.safe,
+		"account.getOwner": isStandardCoreInput(config) ? config.governance.accountLayerOwner : owner,
 		"account.pendingOwner": ethers.ZeroAddress,
 		"instant.symmio": t.core,
 		"instant.accountLayer": t.accountLayer,
@@ -116,13 +124,31 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	])
 		if (!(await call("hasRole", [address, ethers.id(role)]))) throw new Error(`Core missing ${role}`)
 	if (!(await call("isOperationalFeeCharger", [t.gaslessLayer]))) throw new Error("Gasless fee charger wiring changed")
-	const safe = await ethers.getContractAt(["function getOwners() view returns(address[])", "function getThreshold() view returns(uint256)"], t.safe)
-	wiring.safeOwners = Array.from(await safe.getOwners(overrides))
-		.map(a => lower(a as string))
-		.sort()
-	wiring.safeThreshold = await safe.getThreshold(overrides)
+	if (coreGovernanceKind(config) === "safe") {
+		const safe = await ethers.getContractAt(["function getOwners() view returns(address[])", "function getThreshold() view returns(uint256)"], owner)
+		wiring.safeOwners = Array.from(await safe.getOwners(overrides))
+			.map(a => lower(a as string))
+			.sort()
+		wiring.safeThreshold = await safe.getThreshold(overrides)
+	} else if ((await provider.getCode(owner, block.number)) !== "0x") throw new Error("Configured EOA owner has contract code")
 	wiring.accountSelectors = await selectorsAt(ethers, t.accountLayer, block.number)
+	const plannedRoles: any[] = []
+	for (const grant of config.roleGrants || []) plannedRoles.push({ ...grant, held: await call("hasRole", [grant.holder, ethers.id(grant.role)]) })
+	if (isStandardCoreInput(config)) {
+		for (const [holder, role] of [
+			[owner, "GLOBAL_PAUSER_ROLE"],
+			[t.symbolManager, "SYMBOL_LISTING_ROLE"],
+		])
+			if (!(await call("hasRole", [holder, ethers.id(role)])) && !plannedRoles.some(g => lower(g.holder) === lower(holder) && g.role === role))
+				throw new Error(`Input must explicitly plan the missing ${role} grant for ${holder}`)
+	}
 	const code: any = {}
+	for (const [name, item] of Object.entries(config.inventory || {}) as [string, any][]) {
+		if (item.kind === "subgraph") continue
+		const runtime = await provider.getCode(item.address, block.number)
+		if (item.kind === "contract" && runtime === "0x") throw new Error(`No code at inventory ${name}`)
+		code[`inventory.${name}`] = ethers.keccak256(runtime)
+	}
 	for (const [name, address] of Object.entries(t) as [string, string][]) {
 		if (name === "gaslessReceiver") continue
 		const runtime = await provider.getCode(address, block.number)
@@ -140,8 +166,10 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	const selectors = await selectorsAt(ethers, t.core, block.number)
 	const facetCode: any = {}
 	for (const address of new Set(Object.values(selectors))) facetCode[address] = ethers.keccak256(await provider.getCode(address, block.number))
-	if (configurationOnly)
-		return json({ blockNumber: block.number, blockHash: block.hash, preserved, wiring, code, facetCode, selectors, pause, roles })
+	if (configurationOnly) {
+		await assertCanonical()
+		return json({ plannedRoles, blockNumber: block.number, blockHash: block.hash, preserved, wiring, code, facetCode, selectors, pause, roles })
+	}
 
 	const next = Number(await call("getNextQuoteId"))
 	if (!Number.isSafeInteger(next) || next < 1 || next - 1 > config.limits.maxQuotes)
@@ -172,7 +200,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		)
 		for (const row of rows) {
 			if (!row.success) throw new Error("SymbolAdjustment call failed")
-			assertEmptySymbolAdjustment(row.returnData, upgraded)
+			assertEmptySymbolAdjustment(row.returnData, upgraded, config.storage)
 		}
 	}
 	const restatements = await batch(
@@ -247,7 +275,9 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		g.stored = await call("getPartyBAggregatedFunding", [g.partyB, g.symbolId, g.positionType])
 		if (g.stored !== g.pairTotal) throw new Error("Global aggregate funding differs from pair totals; separate investigation required")
 	}
+	await assertCanonical()
 	return json({
+		plannedRoles,
 		blockNumber: block.number,
 		blockHash: block.hash,
 		preserved,
@@ -271,10 +301,11 @@ export function assertCoreSnapshotPreserved(before: any, after: any, upgraded = 
 	if (digest(expectedPause) !== digest(after.pause)) throw new Error("Unexpected Core pause flags")
 	if (after.roles.migration !== before.roles.migration) throw new Error("Temporary migration role was not restored")
 	if (upgraded) {
+		if ((after.plannedRoles || []).some((g: any) => !g.held)) throw new Error("Input role grants are incomplete")
 		if (!after.roles.listing) throw new Error("Symbol Manager listing role missing")
 		if (after.funding.some((g: any) => g.a !== g.expected || g.b !== g.expected) || after.globals.some((g: any) => g.stored !== g.expected))
 			throw new Error("Aggregate funding reconciliation incomplete")
 	} else
-		for (const key of ["roles", "funding", "globals", "selectors", "facetCode"])
-			if (digest(before[key]) !== digest(after[key])) throw new Error(`Paused snapshot ${key} changed`)
+		for (const key of ["roles", "plannedRoles", "funding", "globals", "selectors", "facetCode"])
+			if (digest(before[key] ?? []) !== digest(after[key] ?? [])) throw new Error(`Paused snapshot ${key} changed`)
 }

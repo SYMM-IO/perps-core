@@ -7,11 +7,14 @@ import path from "node:path"
 
 import {
 	CORE_UPGRADE_API,
+	CUT_SELECTOR,
 	assertCoreEvidence,
 	digest,
 	planCoreCut,
 	validateCoreUpgradeConfig,
 } from "../../deployment-tooling/arbitrum-core-upgrade.js"
+import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js"
+import { isStandardCoreInput, coreUpgradeNetwork, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
 import { FacetSpecs, LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
 import { atomicWriteFile } from "../utils/fs.js"
 import { json, selectorsAt } from "./accountInstantSnapshot.js"
@@ -25,7 +28,12 @@ import {
 	saveCheckpoint,
 	setCheckpointSimulated,
 } from "./checkpoint.js"
-import { prepareCoreSafePayload, rehearseCoreSafePayload, verifyCoreSafeReceipt } from "./coreUpgradeSafe.js"
+import {
+	prepareCoreGovernancePayload,
+	rehearseCoreGovernancePayload,
+	verifyCoreGovernanceReceipt,
+	executeCoreGovernancePayload,
+} from "./coreUpgradeGovernance.js"
 import { captureCoreUpgradeSnapshot, assertCoreSnapshotPreserved, coreUpgradeABI } from "./coreUpgradeSnapshot.js"
 import { persistSubmittedTransaction } from "./deploymentRecovery.js"
 import { resolveVerificationContractName, verificationProviderForChain } from "./explorer.js"
@@ -53,31 +61,45 @@ const PHASES = [
 	"plan-unpause",
 	"verify-unpause",
 	"reconcile",
+	"execute-governance",
 ]
 const write = (file: string, value: any) => atomicWriteFile(file, JSON.stringify(json(value), null, 2) + "\n", 0o600)
 const same = (a: any, b: any, message: string) => {
 	if (digest(a) !== digest(b)) throw new Error(message)
 }
 
-export function assertCoreUpgradeExecution(phase: string, connection: any, chainId: number, env: Record<string, string | undefined> = process.env) {
-	const simulated = connection.networkConfig?.type === "edr-simulated",
+export function assertCoreUpgradeExecution(
+	phase: string,
+	connection: any,
+	chainId: number,
+	env: Record<string, string | undefined> = process.env,
+	config?: any,
+) {
+	const target = coreUpgradeNetwork(
+			config || JSON.parse(fs.readFileSync(new URL("../config/arbitrum-core-upgrade-42161.json", import.meta.url), "utf8")),
+		),
+		simulated = connection.networkConfig?.type === "edr-simulated",
 		forkPhase = phase.startsWith("rehearse-")
-	if (chainId !== 42161 || simulated !== forkPhase || connection.networkName !== (forkPhase ? "fork-arbitrum" : "arbitrum"))
+	if (chainId !== target.chainId || simulated !== forkPhase || connection.networkName !== (forkPhase ? target.fork : target.name))
 		throw new Error("Incorrect network for Core upgrade phase")
-	if (phase === "deploy" && (env.SYMMIO_CORE_UPGRADE_EXECUTE !== "true" || env.CONFIRM_CHAIN_ID !== "42161"))
-		throw new Error("Live deployments require explicit Arbitrum authorization")
+	if (phase === "deploy" && (env.SYMMIO_CORE_UPGRADE_EXECUTE !== "true" || env.CONFIRM_CHAIN_ID !== String(target.chainId)))
+		throw new Error("Live deployments require explicit chain authorization")
 }
 
 export function buildCoreUpgradeActions(ethers: any, input: any, snapshot: any, deployments: any) {
 	if (!snapshot.pause[0]) throw new Error("A global pause is required before planning the Core cut")
 	const t = input.config.target,
+		owner = coreUpgradeAuthority(input.config),
 		iface = new ethers.Interface(coreUpgradeABI)
 	const plan = planCoreCut(snapshot.selectors, snapshot.selectors, deployments.facets, input.config.allowedRemovedSelectors)
 	if (!plan.calldata) throw new Error("Core already contains this release; start with its verification evidence")
 	const actions: any[] = [],
 		add = (data: string, description: string) => actions.push({ to: t.core, value: "0", data, description })
 	add(plan.calldata, `Atomically upgrade all Core facets (${plan.removed.length} removed selectors)`)
-	if (!snapshot.roles.listing)
+	if (isStandardCoreInput(input.config)) {
+		for (const grant of snapshot.plannedRoles.filter((g: any) => !g.held))
+			add(iface.encodeFunctionData("grantRole", [grant.holder, ethers.id(grant.role)]), `Grant ${grant.role} to ${grant.holder}`)
+	} else if (!snapshot.roles.listing)
 		add(
 			iface.encodeFunctionData("grantRole", [t.symbolManager, ethers.id("SYMBOL_LISTING_ROLE")]),
 			"Grant SYMBOL_LISTING_ROLE to the existing Symbol Manager",
@@ -87,13 +109,10 @@ export function buildCoreUpgradeActions(ethers: any, input: any, snapshot: any, 
 		.map((g: any) => [g.partyA, g.partyB, g.symbolId, g.positionType, g.a, g.b, g.expected])
 	if (repairs.length) {
 		if (!snapshot.roles.migration)
-			add(iface.encodeFunctionData("grantRole", [t.safe, ethers.id("MIGRATION_ROLE")]), "Temporarily grant MIGRATION_ROLE to the Dev Safe")
+			add(iface.encodeFunctionData("grantRole", [owner, ethers.id("MIGRATION_ROLE")]), "Temporarily grant MIGRATION_ROLE to the Core owner")
 		add(iface.encodeFunctionData("resyncAggregateFunding", [repairs]), `Reconcile ${repairs.length} funding groups against their checked old values`)
 		if (!snapshot.roles.migration)
-			add(
-				iface.encodeFunctionData("revokeRole", [t.safe, ethers.id("MIGRATION_ROLE")]),
-				"Revoke the temporary MIGRATION_ROLE in the same Safe transaction",
-			)
+			add(iface.encodeFunctionData("revokeRole", [owner, ethers.id("MIGRATION_ROLE")]), "Restore the Core owner's original MIGRATION_ROLE state")
 	}
 	return { actions, desired: plan.desired, removed: plan.removed, repairs }
 }
@@ -134,9 +153,10 @@ export async function assertCoreDeployments(hre: any, ethers: any, deployments: 
 async function deployCore(hre: any, ethers: any, input: any, report: any, directory: string, simulated: boolean) {
 	const scope = `core-upgrade-${digest(input).slice(0, 20)}${simulated ? `-${Date.now()}` : ""}`
 	setCheckpointSimulated(simulated)
-	const lock = acquireCheckpointLock(42161, scope)
+	const network = coreUpgradeNetwork(input.config)
+	const lock = acquireCheckpointLock(network.chainId, scope)
 	try {
-		const checkpoint = loadCheckpoint(42161, scope) || createCheckpoint(simulated ? "fork-arbitrum" : "arbitrum", 42161, scope)
+		const checkpoint = loadCheckpoint(network.chainId, scope) || createCheckpoint(simulated ? network.fork : network.name, network.chainId, scope)
 		const manifest = createDeploymentManifest({ input, simulated }, { deploymentId: checkpoint.deploymentId || checkpoint.manifest?.deploymentId })
 		if (checkpoint.manifest) assertCheckpointManifest(checkpoint, manifest)
 		checkpoint.manifest = manifest
@@ -172,9 +192,37 @@ async function deployCore(hre: any, ethers: any, input: any, report: any, direct
 }
 
 function assertStaticBaseline(before: any, after: any) {
-	for (const key of ["preserved", "wiring", "code", "selectors", "facetCode", "roles"])
-		same(before[key], after[key], `Initial ${key} changed; refuse upgrade drift`)
+	for (const key of ["preserved", "wiring", "code", "selectors", "facetCode", "roles", "plannedRoles"])
+		same(before[key] ?? [], after[key] ?? [], `Initial ${key} changed; refuse upgrade drift`)
 	if (digest(before.pause.slice(1)) !== digest(after.pause.slice(1))) throw new Error("Unrelated pause flags changed")
+}
+
+/** Derive the only permitted paused state after a confirmed prefix of the EOA plan. */
+export function assertCoreGovernanceProgress(ethers: any, before: any, after: any, batch: any, confirmed: number, config: any) {
+	if (!Number.isInteger(confirmed) || confirmed < 0 || confirmed > batch.actions.length) throw new Error("Invalid governance progress")
+	const expected = structuredClone(before),
+		iface = new ethers.Interface(coreUpgradeABI)
+	for (const action of batch.actions.slice(0, confirmed)) {
+		if (action.data.slice(0, 10) === CUT_SELECTOR) {
+			expected.selectors = batch.desired
+			continue
+		}
+		const parsed = iface.parseTransaction({ data: action.data })
+		if (parsed?.name === "grantRole" || parsed?.name === "revokeRole") {
+			const [holder, role] = parsed.args,
+				held = parsed.name === "grantRole"
+			for (const grant of expected.plannedRoles || [])
+				if (grant.holder.toLowerCase() === holder.toLowerCase() && ethers.id(grant.role) === role) grant.held = held
+			if (holder.toLowerCase() === before.preserved.getOwner.toLowerCase() && role === ethers.id("MIGRATION_ROLE")) expected.roles.migration = held
+			if (holder.toLowerCase() === config.target.symbolManager.toLowerCase() && role === ethers.id("SYMBOL_LISTING_ROLE"))
+				expected.roles.listing = held
+		} else if (parsed?.name === "resyncAggregateFunding") {
+			for (const group of expected.funding) group.a = group.b = group.expected
+			for (const group of expected.globals) group.stored = group.pairTotal = group.expected
+		} else throw new Error("Unexpected action in Core governance progress")
+	}
+	for (const key of ["preserved", "wiring", "code", "economy", "pause", "roles", "plannedRoles", "funding", "globals", "selectors"])
+		same(expected[key] ?? [], after[key] ?? [], `Core governance progress changed ${key}`)
 }
 
 export async function verifyCoreUpgradePostState(hre: any, ethers: any, input: any, report: any, atBlock?: number, unpaused = false) {
@@ -189,6 +237,7 @@ export async function rehearseInitialCoreUpgrade(hre: any, ethers: any, input: a
 	const initial = report.initial,
 		metadata = await ethers.provider.send("hardhat_metadata", [])
 	if (Number(metadata.forkedNetwork?.forkBlockNumber) !== initial.blockNumber) throw new Error("Initial rehearsal fork mismatch")
+	if ((await ethers.provider.getBlock(initial.blockNumber))?.hash !== initial.blockHash) throw new Error("Initial rehearsal block hash mismatch")
 	const local: any = { transactions: [] }
 	const [signer] = await ethers.getSigners()
 	await ethers.provider.send("hardhat_setBalance", [await signer.getAddress(), "0x3635c9adc5dea00000"])
@@ -198,18 +247,13 @@ export async function rehearseInitialCoreUpgrade(hre: any, ethers: any, input: a
 		const actions = [
 			{ to: input.config.target.core, value: "0", data: core.interface.encodeFunctionData("pauseGlobal"), description: "Maintenance pause" },
 		]
-		await rehearseCoreSafePayload(
-			ethers,
-			input.config.target.safe,
-			await prepareCoreSafePayload(ethers, input.config.target.safe, actions),
-			initial.blockNumber,
-		)
+		await rehearseCoreGovernancePayload(ethers, input.config, await prepareCoreGovernancePayload(ethers, input.config, actions), initial.blockNumber)
 	}
 	local.paused = await captureCoreUpgradeSnapshot(ethers, input.config)
 	assertStaticBaseline(initial, local.paused)
 	local.batch = { ...buildCoreUpgradeActions(ethers, input, local.paused, local.deployments) }
-	local.batch.envelope = await prepareCoreSafePayload(ethers, input.config.target.safe, local.batch.actions)
-	const execution = await rehearseCoreSafePayload(ethers, input.config.target.safe, local.batch.envelope, initial.blockNumber)
+	local.batch.envelope = await prepareCoreGovernancePayload(ethers, input.config, local.batch.actions)
+	const execution = await rehearseCoreGovernancePayload(ethers, input.config, local.batch.envelope, initial.blockNumber)
 	await verifyCoreUpgradePostState(hre, ethers, input, local)
 	if (!initial.pause[0]) {
 		const actions = [
@@ -220,12 +264,7 @@ export async function rehearseInitialCoreUpgrade(hre: any, ethers: any, input: a
 				description: "Restore global pause flag",
 			},
 		]
-		await rehearseCoreSafePayload(
-			ethers,
-			input.config.target.safe,
-			await prepareCoreSafePayload(ethers, input.config.target.safe, actions),
-			initial.blockNumber,
-		)
+		await rehearseCoreGovernancePayload(ethers, input.config, await prepareCoreGovernancePayload(ethers, input.config, actions), initial.blockNumber)
 		await verifyCoreUpgradePostState(hre, ethers, input, local, undefined, true)
 	}
 	return {
@@ -243,7 +282,11 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 	const input = JSON.parse(fs.readFileSync(inputFile, "utf8")),
 		inputDigest = digest(input)
 	validateCoreUpgradeConfig(input.config)
-	if (input.apiVersion !== CORE_UPGRADE_API || process.env.SYMMIO_CORE_UPGRADE_INPUT !== inputDigest)
+	assertCoreUpgradeSourceBinding(process.cwd(), input)
+	if (
+		input.apiVersion !== (isStandardCoreInput(input.config) ? "operations.symm.io/core-upgrade-run-v1" : CORE_UPGRADE_API) ||
+		process.env.SYMMIO_CORE_UPGRADE_INPUT !== inputDigest
+	)
 		throw new Error("Use the registered Core upgrade task")
 	if (
 		execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim() !== input.sourceCommit ||
@@ -253,7 +296,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 	const connection = await getConnection(hre),
 		{ ethers } = connection
 	const forkPhase = phase.startsWith("rehearse-")
-	assertCoreUpgradeExecution(phase, connection, Number((await ethers.provider.getNetwork()).chainId))
+	assertCoreUpgradeExecution(phase, connection, Number((await ethers.provider.getNetwork()).chainId), process.env, input.config)
 	const report = JSON.parse(fs.readFileSync(output, "utf8")),
 		directory = path.dirname(output)
 	if (report.inputDigest !== inputDigest) throw new Error("Core report/input binding changed")
@@ -261,8 +304,13 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 	for (const [field, hash] of Object.entries(bindings)) assertCoreEvidence(report, field, hash as string)
 	if (phase !== "inspect" && !bindings.initial) throw new Error("Missing bound initial snapshot")
 	const t = input.config.target,
+		owner = coreUpgradeAuthority(input.config),
 		core = await ethers.getContractAt(coreUpgradeABI, t.core)
-	const persist = () => write(output, report)
+	const persist = () => {
+		const governanceTransactions = Object.values(report.governanceExecutions || {}).flatMap((journal: any) => journal.transactions || [])
+		report.transactions = [...new Map([...(report.transactions || []), ...governanceTransactions].map(tx => [tx.hash, tx])).values()]
+		write(output, report)
+	}
 	const eventFd = process.env.SYMMIO_TASK_EVENT_FD
 	if (forkPhase) delete process.env.SYMMIO_TASK_EVENT_FD
 	try {
@@ -294,6 +342,12 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				).values(),
 			]
 			await reconcileDeploymentTransactions(report.transactions, ethers.provider)
+			for (const journal of Object.values(report.governanceExecutions || {}) as any[])
+				for (const tx of journal.transactions || [])
+					Object.assign(
+						tx,
+						report.transactions.find((record: any) => record.hash === tx.hash),
+					)
 			return
 		}
 		if (phase === "rehearse-initial") {
@@ -320,7 +374,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 							constructorArgs: [],
 							contract: await resolveVerificationContractName(hre.artifacts, record.artifact),
 							libraries: record.libraries,
-							provider: verificationProviderForChain(42161),
+							provider: verificationProviderForChain(coreUpgradeNetwork(input.config).chainId),
 						},
 						hre,
 					)
@@ -335,6 +389,42 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 		}
 		if (!bindings.publication || report.publication.deploymentDigest !== bindings.deployments)
 			throw new Error("Bound explorer publication is required")
+		if (phase === "execute-governance") {
+			if (
+				coreGovernanceKind(input.config) !== "eoa" ||
+				process.env.SYMMIO_CORE_UPGRADE_EXECUTE !== "true" ||
+				process.env.CONFIRM_CHAIN_ID !== String(coreUpgradeNetwork(input.config).chainId)
+			)
+				throw new Error("Direct governance requires explicit execution and chain authorization")
+			const key = process.env.SYMMIO_CORE_UPGRADE_BATCH
+			if (!["pause", "cut", "unpause"].includes(key || "")) throw new Error("Unknown governance phase")
+			const field = key === "cut" ? "batch" : `${key}Batch`
+			if (!bindings[field] || (key === "cut" && !bindings.cutRehearsal) || (key === "unpause" && !bindings.verifiedCut))
+				throw new Error("Missing reviewed governance evidence")
+			if (
+				key === "cut" &&
+				(!bindings.paused ||
+					report.batch.pausedDigest !== bindings.paused ||
+					report.batch.deploymentDigest !== bindings.deployments ||
+					report.cutRehearsal.status !== "complete" ||
+					report.cutRehearsal.batchDigest !== bindings.batch)
+			)
+				throw new Error("Exact deployed governance payload must pass its bound paused fork rehearsal")
+			report.governanceExecutions ||= {}
+			const journal = (report.governanceExecutions[key!] ||= {})
+			if (key === "cut" && !(await core.pauseState())[0]) throw new Error("Core must stay paused throughout direct governance")
+			journal.receipts = await executeCoreGovernancePayload(ethers, input.config, report[field].envelope, journal, persist, async confirmed => {
+				if (key === "pause") {
+					const current = await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true)
+					assertStaticBaseline(report.initial, current)
+					if (confirmed && !current.pause[0]) throw new Error("Executed maintenance pause is no longer active")
+				} else if (key === "cut") {
+					const current = await captureCoreUpgradeSnapshot(ethers, input.config, confirmed > 0)
+					assertCoreGovernanceProgress(ethers, report.paused, current, report.batch, confirmed, input.config)
+				} else if (!confirmed) await verifyCoreUpgradePostState(hre, ethers, input, report)
+			})
+			return
+		}
 		const exportKey = process.env.SYMMIO_CORE_UPGRADE_BATCH || "cut"
 		if (phase === "check-export" && exportKey !== "cut") {
 			if (!["pause", "unpause"].includes(exportKey) || !bindings[`${exportKey}Batch`]) throw new Error("Missing bound Safe export")
@@ -344,7 +434,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				await verifyCoreUpgradePostState(hre, ethers, input, report)
 			}
 			const batch = report[`${exportKey}Batch`]
-			same(batch.envelope, await prepareCoreSafePayload(ethers, t.safe, batch.actions), "Safe nonce or payload changed before export")
+			same(batch.envelope, await prepareCoreGovernancePayload(ethers, input.config, batch.actions), "Safe nonce or payload changed before export")
 			return
 		}
 		const makeBatch = async (method: string) => {
@@ -356,7 +446,11 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 					description: method === "pauseGlobal" ? "Pause Core for the upgrade" : "Restore the original global pause flag after verification",
 				},
 			]
-			return { actions, envelope: await prepareCoreSafePayload(ethers, t.safe, actions), blockNumber: Number(await ethers.provider.getBlockNumber()) }
+			return {
+				actions,
+				envelope: await prepareCoreGovernancePayload(ethers, input.config, actions),
+				blockNumber: Number(await ethers.provider.getBlockNumber()),
+			}
 		}
 		if (phase === "plan-pause") {
 			const current = await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true)
@@ -368,7 +462,13 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 		if (phase === "verify-pause") {
 			if (!bindings.pauseBatch) throw new Error("Missing bound pause plan")
 			if (!report.pauseBatch.alreadyPaused)
-				report.pauseReceipt = await verifyCoreSafeReceipt(ethers, t.safe, report.pauseBatch.envelope, receiptHash, report.pauseBatch.blockNumber)
+				report.pauseReceipt = await verifyCoreGovernanceReceipt(
+					ethers,
+					input.config,
+					report.pauseBatch.envelope,
+					receiptHash,
+					report.pauseBatch.blockNumber,
+				)
 			const current = await captureCoreUpgradeSnapshot(ethers, input.config)
 			if (!current.pause[0]) throw new Error("Core must remain globally paused")
 			assertStaticBaseline(report.initial, current)
@@ -383,29 +483,35 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			if (!report.batch)
 				report.batch = {
 					...batch,
-					envelope: await prepareCoreSafePayload(ethers, t.safe, batch.actions),
+					envelope: await prepareCoreGovernancePayload(ethers, input.config, batch.actions),
 					pausedDigest: bindings.paused,
 					deploymentDigest: bindings.deployments,
 				}
 			else same(batch.actions, report.batch.actions, "Saved Core actions changed")
 			if (phase === "check-export" && (!bindings.cutRehearsal || report.cutRehearsal.batchDigest !== bindings.batch))
-				throw new Error("Exact Safe payload rehearsal is required before export")
+				throw new Error("Exact governance payload rehearsal is required before execution or export")
 			if (phase === "check-export")
-				same(report.batch.envelope, await prepareCoreSafePayload(ethers, t.safe, report.batch.actions), "Safe nonce or payload changed before export")
+				same(
+					report.batch.envelope,
+					await prepareCoreGovernancePayload(ethers, input.config, report.batch.actions),
+					"Safe nonce or payload changed before export",
+				)
 			return
 		}
 		if (!bindings.batch || report.batch.pausedDigest !== bindings.paused || report.batch.deploymentDigest !== bindings.deployments)
 			throw new Error("Missing bound atomic Core batch")
 		if (phase === "rehearse-cut") {
+			if ((await ethers.provider.getBlock(report.paused.blockNumber))?.hash !== report.paused.blockHash)
+				throw new Error("Paused rehearsal block hash mismatch")
 			assertCoreSnapshotPreserved(report.paused, await captureCoreUpgradeSnapshot(ethers, input.config))
-			const execution = await rehearseCoreSafePayload(ethers, t.safe, report.batch.envelope, report.paused.blockNumber)
+			const execution = await rehearseCoreGovernancePayload(ethers, input.config, report.batch.envelope, report.paused.blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report)
 			report.cutRehearsal = { status: "complete", batchDigest: bindings.batch, execution, blockNumber: report.paused.blockNumber }
 			return
 		}
 		if (!bindings.cutRehearsal || report.cutRehearsal.batchDigest !== bindings.batch) throw new Error("Missing bound Safe rehearsal")
 		if (phase === "verify-cut") {
-			report.cutReceipt = await verifyCoreSafeReceipt(ethers, t.safe, report.batch.envelope, receiptHash, report.paused.blockNumber)
+			report.cutReceipt = await verifyCoreGovernanceReceipt(ethers, input.config, report.batch.envelope, receiptHash, report.paused.blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report, report.cutReceipt.blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report)
 			report.verifiedCut = { receipt: report.cutReceipt, batchDigest: bindings.batch }
@@ -420,9 +526,9 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 		if (phase === "verify-unpause") {
 			if (!bindings.unpauseBatch) throw new Error("Missing bound unpause plan")
 			if (!report.unpauseBatch.alreadyPaused) {
-				report.unpauseReceipt = await verifyCoreSafeReceipt(
+				report.unpauseReceipt = await verifyCoreGovernanceReceipt(
 					ethers,
-					t.safe,
+					input.config,
 					report.unpauseBatch.envelope,
 					receiptHash,
 					report.unpauseBatch.blockNumber,
@@ -432,7 +538,8 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				await verifyCoreUpgradePostState(hre, ethers, input, report, report.verifiedCut.receipt.blockNumber)
 				const current = await captureCoreUpgradeSnapshot(ethers, input.config, true, undefined, true)
 				for (const key of ["preserved", "wiring", "code"]) same(report.paused[key], current[key], `Post-unpause ${key} changed`)
-				if (!current.roles.listing || current.roles.migration !== report.paused.roles.migration) throw new Error("Post-unpause role mismatch")
+				if (!current.roles.listing || current.roles.migration !== report.paused.roles.migration || current.plannedRoles.some((g: any) => !g.held))
+					throw new Error("Post-unpause role mismatch")
 			} else await verifyCoreUpgradePostState(hre, ethers, input, report)
 			same(report.batch.desired, await selectorsAt(ethers, t.core), "Selectors changed after upgrade")
 			same(Array.from(await core.pauseState()), report.initial.pause, "Final pause flags differ from their original values")
@@ -445,15 +552,19 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 	}
 }
 
-export const arbitrumCoreUpgradeTask = task("internal:arbitrum-core-upgrade", "Internal adapter for the current Arbitrum Core-only workflow")
-	.addOption({ name: "phase", description: "Workflow phase", type: ArgumentType.STRING, defaultValue: "inspect" })
-	.addOption({ name: "input", description: "Bound upgrade input", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
-	.addOption({ name: "output", description: "Upgrade report", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
-	.setAction(async () => ({
-		default: async ({ phase, input, output }, hre) => {
-			if (!input || !output) throw new Error("Input and output are required")
-			logger.info(`Core upgrade: ${phase}`)
-			await runCoreUpgradePhase(hre, phase, path.resolve(input), path.resolve(output))
-		},
-	}))
-	.build()
+const coreUpgradeAdapter = (name: string) =>
+	task(name, "Internal adapter for the input-bound Core upgrade workflow")
+		.addOption({ name: "phase", description: "Workflow phase", type: ArgumentType.STRING, defaultValue: "inspect" })
+		.addOption({ name: "input", description: "Bound upgrade input", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+		.addOption({ name: "output", description: "Upgrade report", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+		.setAction(async () => ({
+			default: async ({ phase, input, output }, hre) => {
+				if (!input || !output) throw new Error("Input and output are required")
+				logger.info(`Core upgrade: ${phase}`)
+				await runCoreUpgradePhase(hre, phase, path.resolve(input), path.resolve(output))
+			},
+		}))
+		.build()
+
+export const arbitrumCoreUpgradeTask = coreUpgradeAdapter("internal:arbitrum-core-upgrade")
+export const coreUpgradeTask = coreUpgradeAdapter("internal:core-upgrade")

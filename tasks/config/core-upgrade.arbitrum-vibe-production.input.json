@@ -9,7 +9,8 @@
 		"fork": "fork-arbitrum"
 	},
 	"release": {
-		"ref": "version_0.8.6"
+		"ref": "version_0.8.6",
+		"baselineRef": "version_0.8.6.2"
 	},
 	"credentials": {
 		"deployer": "hardhat-keystore://TEAM_DEPLOYER",
@@ -26,7 +27,9 @@
 	"governance": {
 		"kind": "eoa",
 		"owner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-		"signerMode": "ledger"
+		"signerMode": "ledger",
+		"ledgerDerivation": "ledger-live",
+		"accountLayerOwner": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94"
 	},
 	"target": {
 		"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
@@ -93,5 +96,51 @@
 			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
 			"role": "WITHDRAW_ADVANCE_PAUSER_ROLE"
 		}
-	]
+	],
+	"inventory": {
+		"expressProvider": {
+			"kind": "contract",
+			"address": "0x5733105ab392829E5e20FA1eF6E6e07A2c7E073A"
+		},
+		"feesManager": {
+			"kind": "contract",
+			"address": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1"
+		},
+		"create2Factory": {
+			"kind": "contract",
+			"address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975"
+		},
+		"affiliate": {
+			"kind": "contract",
+			"address": "0x58bB5Bdc279321507DfB7AB54B9e7EF3DdA6E24D"
+		},
+		"rfl": {
+			"kind": "contract",
+			"address": "0x8C98c60116513D6F6C060450483a1ff44ec1c94b"
+		},
+		"vibeHook": {
+			"kind": "contract",
+			"address": "0xb08e1F492597901626CF363140b2057DA6A758ca"
+		},
+		"rakeback": {
+			"kind": "contract",
+			"address": "0x08CB9B122524B31f5220099042A31393B862063c"
+		},
+		"vibeRakebackHook": {
+			"kind": "contract",
+			"address": "0xcEF3Ec6c81c1a1119f3a8E537Cf9D26fd9Ff14f3"
+		},
+		"analytics": {
+			"kind": "subgraph",
+			"url": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-mainnet-analytics/latest/gn"
+		},
+		"events": {
+			"kind": "subgraph",
+			"url": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-mainnet-events/stage/gn"
+		},
+		"possibleFeeCollector": {
+			"kind": "account",
+			"address": "0xd4a61e8D4adD3382AFDCaC87ec4c98c6a6102B73"
+		}
+	}
 }

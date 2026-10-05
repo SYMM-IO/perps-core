@@ -6,8 +6,10 @@ import {
 	digest,
 	validateCoreUpgradeConfig,
 } from "../../deployment-tooling/arbitrum-core-upgrade.js";
+import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js";
+import { isStandardCoreInput, coreUpgradeNetwork, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
-import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, validateSignerSelection } from "../signer/index.js";
+import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, validateSignerSelection, hydrateSigner, signerEnvironment } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -44,11 +46,17 @@ const BINDINGS = {
 };
 
 export function validateCoreTaskInput(ctx, input) {
-	if (input.network !== "arbitrum" || input.chainId !== 42161 || input.mode !== "live")
-		throw new Error("Core upgrade requires live Arbitrum 42161");
 	const standard = read(input.input);
+	assertCoreUpgradeSourceBinding(ctx.root, standard);
+	const network = coreUpgradeNetwork(standard.config);
+	if (input.network !== network.name || input.chainId !== network.chainId || input.mode !== "live")
+		throw new Error("Core upgrade network differs from the input");
 	validateCoreUpgradeConfig(standard.config);
-	if (standard.apiVersion !== CORE_UPGRADE_API || digest(standard) !== input.inputDigest || standard.sourceCommit !== input.sourceCommit)
+	if (
+		standard.apiVersion !== (isStandardCoreInput(standard.config) ? "operations.symm.io/core-upgrade-run-v1" : CORE_UPGRADE_API) ||
+		digest(standard) !== input.inputDigest ||
+		standard.sourceCommit !== input.sourceCommit
+	)
 		throw new Error("Core upgrade input/source changed");
 	if (
 		loadRecipeContext(input.config, { plan: false }).digest !== standard.recipeDigest ||
@@ -56,6 +64,11 @@ export function validateCoreTaskInput(ctx, input) {
 	)
 		throw new Error("Upgrade credential recipe changed");
 	const signer = validateSignerSelection(input.signer, { allowSafe: false });
+	if (
+		isStandardCoreInput(standard.config) &&
+		(signer.mode !== SIGNER_MODES.KEYSTORE || signer.key !== standard.config.credentials.deployer.split("://")[1])
+	)
+		throw new Error("Deployment signer differs from the standard input");
 	if (signer.mode === SIGNER_MODES.LOCAL_NODE) throw new Error("Live deployments require an EOA signer");
 	const report = read(input.output);
 	if (report.inputDigest !== input.inputDigest) throw new Error("Core report/input mismatch");
@@ -71,8 +84,9 @@ export function coreUpgradeEnvironment(input, extra = {}, fork = false) {
 		SYMMIO_CORE_UPGRADE_INPUT: input.inputDigest,
 		SYMMIO_CORE_UPGRADE_EXECUTE: "false",
 		CONFIRM_CHAIN_ID: "",
-		DEPLOY_CONFIRMATIONS: "1",
-		DEPLOY_TX_TIMEOUT: "300",
+		DEPLOY_CONFIRMATIONS: String(read(input.input).config.execution?.confirmations || 1),
+		DEPLOY_TX_TIMEOUT: String(read(input.input).config.execution?.txTimeoutSeconds || 300),
+		DEPLOY_SLOW_TX_NOTICE: String(read(input.input).config.execution?.slowNoticeSeconds || 30),
 		...extra,
 	};
 }
@@ -82,7 +96,7 @@ async function runPhase(ctx, input, phase, { fork = false, env = {} } = {}) {
 	await ctx.runProcess(
 		"./node_modules/.bin/hardhat",
 		[
-			"internal:arbitrum-core-upgrade",
+			isStandardCoreInput(read(input.input).config) ? "internal:core-upgrade" : "internal:arbitrum-core-upgrade",
 			"--phase",
 			phase,
 			"--input",
@@ -90,13 +104,13 @@ async function runPhase(ctx, input, phase, { fork = false, env = {} } = {}) {
 			"--output",
 			input.output,
 			"--network",
-			fork ? "fork-arbitrum" : "arbitrum",
+			fork ? coreUpgradeNetwork(read(input.input).config).fork : input.network,
 		],
 		{
 			env: coreUpgradeEnvironment(
 				input,
 				{
-					...(phase !== "deploy"
+					...(!["deploy", "execute-governance"].includes(phase)
 						? { SYMMIO_RECIPE_READ_ONLY: phase === "publish" ? "false" : "true", SYMMIO_SIGNER_MODE: "safe-file" }
 						: {}),
 					SYMMIO_CORE_UPGRADE_EVIDENCE: JSON.stringify(ctx.state.coreEvidence || {}),
@@ -124,24 +138,36 @@ export async function deliverCoreBatch(ctx, input, key) {
 	let report = read(input.output);
 	if (key !== "cut" && !report[field]) report = await runPhase(ctx, input, `plan-${key}`);
 	const batch = report[field];
-	if (!batch) throw new Error("Missing reviewed Safe batch");
+	if (!batch) throw new Error("Missing reviewed governance batch");
 	if (batch.alreadyPaused) {
 		await runPhase(ctx, input, `verify-${key}`);
+		return;
+	}
+	if (coreGovernanceKind(standard.config) === "eoa") {
+		await deliverCoreEoaBatch(ctx, input, key, batch);
 		return;
 	}
 	if (!ctx.state.safeDispatches?.[key]) {
 		await runPhase(ctx, input, "check-export", { env: { SYMMIO_CORE_UPGRADE_BATCH: key } });
 		ctx.ui.note(batch.actions.map(a => `${a.description}\n${a.to} · value ${a.value}\n${a.data}`).join("\n\n"), `Review ${key} Safe batch`);
-		const approved = await ctx.ui.confirm({ message: `Export this ${key} batch for the Dev Safe?`, initialValue: false });
-		if (!approved) ctx.wait(`Review the ${key} batch and continue when ready to export it.`);
-		const delivery = await dispatchSafeActions(ctx, { mode: SIGNER_MODES.SAFE_FILE, safeAddress: standard.config.target.safe }, batch.actions, {
-			root: ctx.root,
-			chainId: 42161,
-			network: "arbitrum",
-			name: `Vibe Core upgrade ${key}`,
-			description: `Core upgrade ${input.inputDigest}; execute together as one Safe transaction. Expected Safe hash ${batch.envelope.safeTxHash}`,
-			stateKey: key,
+		const approved = await ctx.ui.confirm({
+			message: `Export this ${key} batch for Safe ${coreUpgradeAuthority(standard.config)}?`,
+			initialValue: false,
 		});
+		if (!approved) ctx.wait(`Review the ${key} batch and continue when ready to export it.`);
+		const delivery = await dispatchSafeActions(
+			ctx,
+			{ mode: SIGNER_MODES.SAFE_FILE, safeAddress: coreUpgradeAuthority(standard.config) },
+			batch.actions,
+			{
+				root: ctx.root,
+				chainId: input.chainId,
+				network: input.network,
+				name: `Core upgrade ${key}`,
+				description: `Core upgrade ${input.inputDigest}; execute together as one Safe transaction. Expected Safe hash ${batch.envelope.safeTxHash}`,
+				stateKey: key,
+			},
+		);
 		ctx.wait(
 			`Execute ${delivery.builderPath} as ONE Safe transaction. Match the saved payload in ${input.output} (Safe hash ${batch.envelope.safeTxHash}); then continue with its execution transaction hash.`,
 		);
@@ -156,6 +182,56 @@ export async function deliverCoreBatch(ctx, input, key) {
 	ctx.state.coreReceipts[key] = hash;
 	ctx.state.safeDispatches[key].status = "executed";
 	return verified;
+}
+
+export async function deliverCoreEoaBatch(ctx, input, key, batch) {
+	const standard = validateCoreTaskInput(ctx, input),
+		governance = standard.config.governance;
+	let report = read(input.output);
+	if (!report.governanceExecutions?.[key]?.receipts) {
+		if (!report.governanceExecutions?.[key]?.transactions?.length)
+			await runPhase(ctx, input, "check-export", { env: { SYMMIO_CORE_UPGRADE_BATCH: key } });
+		ctx.ui.note(
+			batch.actions.map(a => `${a.description}\n${a.to} · value ${a.value}\n${a.data}`).join("\n\n"),
+			`Review ${key} governance actions`,
+		);
+		const stateKey = "core-governance";
+		let selection = ctx.getSigner(stateKey);
+		if (!selection) {
+			selection = {
+				mode: governance.signerMode,
+				address: governance.owner,
+				...(governance.signerKey ? { key: governance.signerKey } : {}),
+				...(governance.ledgerDerivation ? { derivation: governance.ledgerDerivation } : {}),
+			};
+			selection = ctx.bindSigner(stateKey, selection);
+		}
+		if (
+			selection.mode !== governance.signerMode ||
+			selection.address.toLowerCase() !== governance.owner.toLowerCase() ||
+			selection.key !== governance.signerKey ||
+			selection.derivation !== governance.ledgerDerivation
+		)
+			throw new Error("Governance signer differs from the standard input");
+		selection = await hydrateSigner(selection, ctx.ui);
+		if (!selection) return ctx.wait("The Core owner signer is unavailable.");
+		if (!(await ctx.ui.confirm({ message: `Execute the reviewed ${key} actions using ${governance.owner}?`, initialValue: false })))
+			return ctx.wait(`The ${key} actions await owner confirmation.`);
+		await runPhase(ctx, input, "execute-governance", {
+			env: {
+				...signerEnvironment(selection),
+				SYMMIO_CORE_UPGRADE_EXECUTE: "true",
+				CONFIRM_CHAIN_ID: String(input.chainId),
+				SYMMIO_RECIPE_READ_ONLY: "false",
+				SYMMIO_CORE_UPGRADE_BATCH: key,
+			},
+		});
+		report = read(input.output);
+	}
+	const hash = report.governanceExecutions[key].receipts;
+	await runPhase(ctx, input, `verify-${key}`, { env: { SYMMIO_CORE_UPGRADE_RECEIPT: hash } });
+	ctx.state.coreReceipts ||= {};
+	ctx.state.coreReceipts[key] = hash;
 }
 
 async function prepare({ root, ui }) {
@@ -205,7 +281,9 @@ async function reconcile(ctx, input) {
 	return { unresolved: unresolved() };
 }
 
-export function createArbitrumCoreUpgradeTask(common) {
+export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
+	const upgradePlan = overrides.upgradePlan || CORE_UPGRADE_PLAN;
+	const { upgradePlan: _plan, ...taskOverrides } = overrides;
 	return common({
 		id: "maintenance.arbitrum-core-upgrade",
 		version: 1,
@@ -235,12 +313,12 @@ export function createArbitrumCoreUpgradeTask(common) {
 			initialMode: SIGNER_MODES.KEYSTORE,
 		},
 		prepare,
-		plan: () => CORE_UPGRADE_PLAN.map(step => ({ ...step })),
+		plan: () => upgradePlan.map(step => ({ ...step })),
 		validateResume: validateCoreTaskInput,
 		reconcile,
 		run: async (ctx, input) => {
 			validateCoreTaskInput(ctx, input);
-			const step = (id, fn) => ctx.step(id, CORE_UPGRADE_PLAN.find(s => s.id === id).title, fn);
+			const step = (id, fn) => ctx.step(id, upgradePlan.find(s => s.id === id).title, fn);
 			const rehearse = async phase => {
 				const block = read(input.output)[phase === "rehearse-initial" ? "initial" : "paused"].blockNumber;
 				return runPhase(ctx, input, phase, {
@@ -262,13 +340,15 @@ export function createArbitrumCoreUpgradeTask(common) {
 			await step("rehearse-initial", () => rehearse("rehearse-initial"));
 			await step("authorize", async () => {
 				ctx.ui.note(
-					`Source ${input.sourceCommit}\nReview ${input.output}. This deploys all current Core libraries and facets; governance actions are exported for the Dev Safe.`,
+					`Source ${input.sourceCommit}\nReview ${input.output}. This deploys all current Core libraries and facets; governance actions use the owner configured in the input.`,
 					"Deployment authorization",
 				);
-				const confirmation = await ctx.ui.text({ message: "Type 42161 to authorize Core contract deployments", initialValue: "" });
-				if (confirmation !== "42161") ctx.wait("Core deployments await explicit Arbitrum authorization.");
+				const confirmation = await ctx.ui.text({ message: `Type ${input.chainId} to authorize Core contract deployments`, initialValue: "" });
+				if (confirmation !== String(input.chainId)) ctx.wait("Core deployments await explicit chain authorization.");
 			});
-			await step("deploy", () => runPhase(ctx, input, "deploy", { env: { SYMMIO_CORE_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: "42161" } }));
+			await step("deploy", () =>
+				runPhase(ctx, input, "deploy", { env: { SYMMIO_CORE_UPGRADE_EXECUTE: "true", CONFIRM_CHAIN_ID: String(input.chainId) } }),
+			);
 			await step("publish", () => runPhase(ctx, input, "publish"));
 			await step("client-ready", async () => {
 				ctx.ui.note(
@@ -306,5 +386,6 @@ export function createArbitrumCoreUpgradeTask(common) {
 			await step("unpause", () => deliverCoreBatch(ctx, input, "unpause"));
 			ctx.ui.note(`Core upgrade verified. Report: ${input.output}`, "Complete");
 		},
+		...taskOverrides,
 	});
 }

@@ -1,6 +1,6 @@
 import { accountInstantUpgradeTask } from "./accountInstantUpgrade.js"
 import { accountLayerDiamondTask } from "./accountLayerDiamond.js"
-import { arbitrumCoreUpgradeTask } from "./arbitrumCoreUpgrade.js"
+import { arbitrumCoreUpgradeTask, coreUpgradeTask } from "./arbitrumCoreUpgrade.js"
 import { arbitrumPerpsUpgradeTask } from "./arbitrumPerpsUpgrade.js"
 import { arbitrumRoundingUpgradeTask } from "./arbitrumRoundingUpgrade.js"
 import { batchWithdrawalTask } from "./batchWithdrawal.js"
@@ -35,6 +35,7 @@ export const deployTasks = [
 	batchWithdrawalTask,
 	operationsInspectTask,
 	arbitrumCoreUpgradeTask,
+	coreUpgradeTask,
 	accountLayerDiamondTask,
 	accountInstantUpgradeTask,
 	arbitrumPerpsUpgradeTask,
