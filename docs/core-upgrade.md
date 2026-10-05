@@ -1,5 +1,7 @@
 # Core upgrade from a standard input
 
+For replacement-layer configuration, administrative roles and consumer wiring, see [configuration preservation](configuration-preserving-upgrades.md).
+
 Run `./symmio` and select **Other maintenance scripts → Upgrade Core from a standard input file** (`maintenance.core-upgrade`). Select `tasks/config/core-upgrade.arbitrum-vibe-production.input.json` for the supplied Arbitrum production Core. Base uses the same task with a separate input file.
 
 ```bash

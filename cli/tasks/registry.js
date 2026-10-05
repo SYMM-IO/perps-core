@@ -23,6 +23,7 @@ import { createArbitrumCoreUpgradeTask } from "./arbitrum-core-upgrade.js";
 import { createArbitrumPerpsUpgradeTask } from "./arbitrum-perps-upgrade.js";
 import { createArbitrumRoundingUpgradeTask } from "./arbitrum-rounding-upgrade.js";
 import { createBatchWithdrawalTasks } from "./batch-withdrawal.js";
+import { createConfigurationPrepareTask } from "./configuration-prepare.js";
 import { createCoreUpgradeTask, createCoreUpgradeRehearsalTask } from "./core-upgrade.js";
 import { createCoreWithdrawalTasks } from "./core-withdrawal.js";
 import { createDisputedSettlementTask } from "./disputed-settlement.js";
@@ -1329,6 +1330,7 @@ const SYMBOL_SYNC_ASSIGNMENT_TASK = common({
 
 const MAINTENANCE_TASKS = [
 	createOperationPlanTask(common),
+	createConfigurationPrepareTask(common),
 	createArbitrumCoreUpgradeTask(common),
 	createCoreUpgradeTask(common),
 	createCoreUpgradeRehearsalTask(common),
