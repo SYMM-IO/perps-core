@@ -10,6 +10,14 @@ import { logger } from "./logger.js"
 export const coreUpgradeABI = JSON.parse(fs.readFileSync(new URL("../../abis/symmio.json", import.meta.url), "utf8"))
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
+/** getNextQuoteId() returns the last assigned ID; include it, and allow an empty Core. */
+export function coreQuoteScanIds(lastId: bigint | number, maxQuotes: number) {
+	const count = Number(lastId)
+	if (!Number.isSafeInteger(count) || count < 0 || count > maxQuotes)
+		throw new Error("Quote scan exceeds reviewed limit or has an invalid counter; no partial snapshot accepted")
+	return Array.from({ length: count }, (_, i) => i + 1)
+}
+
 export function assertEmptySymbolAdjustment(returnData: string, upgraded: boolean, policy?: any) {
 	if (
 		returnData.length !== 2 + (upgraded ? policy?.upgradedAdjustmentWords || 17 : policy?.legacyAdjustmentWords || 15) * 64 ||
@@ -172,9 +180,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	}
 
 	const next = Number(await call("getNextQuoteId"))
-	if (!Number.isSafeInteger(next) || next < 1 || next - 1 > config.limits.maxQuotes)
-		throw new Error("Quote scan exceeds reviewed limit; no partial snapshot accepted")
-	const ids = Array.from({ length: next - 1 }, (_, i) => i + 1)
+	const ids = coreQuoteScanIds(next, config.limits.maxQuotes)
 	logger.info(`Reading all ${ids.length} historical quotes for storage and funding preservation`)
 	const quotes = await batch(
 		ids.map(() => "getQuote"),
