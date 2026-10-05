@@ -69,3 +69,6 @@ tasks/data/checkpoints/*.lock
 /tasks/data/
 /deployments/
 /deployment-recipes/
+
+# Local upgrade checks bound to a chain, deployment profile, or historical release.
+/test/upgrade/chain-bound/
