@@ -1,5 +1,12 @@
 export const CORE_INPUT_API: string
 export const CORE_INPUT_API_V2: string
+export interface CoreUpgradeLimits {
+	coreSnapshot: { maxHistoricalQuotes: number; maxRegisteredSymbols: number }
+	signatureVerifierSnapshot: { maxRoleMembers: number; maxSigners: number }
+}
+export function coreUpgradeLimits(config: any): CoreUpgradeLimits
+export function coreUpgradeMuonPolicy(config: any): any
+export function coreUpgradeInputReview(config: any): string
 export interface CoreUpgradeRoleGrant {
 	holder: string
 	role: string
