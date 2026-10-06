@@ -188,10 +188,12 @@ export async function runGitReleasePhase(root, intent, file, phase) {
 			git(root, ["tag", "-a", "-m", intent.annotation, "--", intent.tag, report.commit]);
 		}
 		report.tagObject = assertGitReleaseBinding(root, intent, report).tagObject;
-	} else if (phase === "publish") {
+	} else if (phase === "publish" || phase === "verify-publication") {
 		if (!report.commit || !report.tagObject) throw new Error("Bind the release commit and tag before publication");
+		if (phase === "verify-publication" && !report.publication) throw new Error("Git release publication has not been verified");
 		let remote = await remoteTag(root, intent);
 		if (remote.tagObject && remote.tagObject !== report.tagObject) throw new Error("Remote upgrade tag changed; refusing to replace it");
+		if (phase === "verify-publication" && !remote.tagObject) throw new Error("Published upgrade tag is missing on the remote");
 		if (!remote.tagObject) {
 			writeReport(file, report);
 			const ref = `refs/tags/${intent.tag}`;
@@ -200,6 +202,7 @@ export async function runGitReleasePhase(root, intent, file, phase) {
 		}
 		if (remote.tagObject !== report.tagObject || remote.commit !== report.commit)
 			throw new Error("Remote upgrade tag/commit verification failed");
+		if (phase === "verify-publication") return report;
 		report.publication = { ...remote, remote: intent.remote, verifiedAt: new Date().toISOString() };
 	} else throw new Error(`Unknown Git release phase ${phase}`);
 	assertGitReleaseBinding(root, intent, report);
