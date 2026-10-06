@@ -2,17 +2,9 @@
  * Canonical Muon permission metadata. The order and indices must stay aligned with
  * MuonFunction in contracts/core/interfaces/IMuonSignatureVerifier.sol.
  */
-export const MUON_FUNCTIONS = [
-	{ name: "Trading", index: 0 },
-	{ name: "AccountManagement", index: 1 },
-	{ name: "Settlement", index: 2 },
-	{ name: "ForceClose", index: 3 },
-	{ name: "Funding", index: 4 },
-	{ name: "LiquidationPartyA", index: 5 },
-	{ name: "LiquidationPartyB", index: 6 },
-	{ name: "RemoveMargin", index: 7 },
-	{ name: "ExpressCredit", index: 8 },
-] as const
+import { MUON_FUNCTIONS } from "../../deployment-tooling/muon-functions.js"
+
+export { MUON_FUNCTIONS }
 
 export type MuonFunctionDefinition = (typeof MUON_FUNCTIONS)[number]
 export type MuonFunctionName = MuonFunctionDefinition["name"]

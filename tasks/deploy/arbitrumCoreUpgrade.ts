@@ -193,6 +193,8 @@ async function deployCore(hre: any, ethers: any, input: any, report: any, direct
 }
 
 function assertStaticBaseline(before: any, after: any) {
+	if (!before.muon?.configuration || !after.muon?.configuration) throw new Error("Missing Muon configuration evidence")
+	same(before.muon?.configuration, after.muon?.configuration, "Initial Muon configuration changed")
 	for (const key of ["preserved", "wiring", "code", "selectors", "facetCode", "roles", "plannedRoles"])
 		same(before[key] ?? [], after[key] ?? [], `Initial ${key} changed; refuse upgrade drift`)
 	if (digest(before.pause.slice(1)) !== digest(after.pause.slice(1))) throw new Error("Unrelated pause flags changed")
@@ -224,6 +226,8 @@ export function assertCoreGovernanceProgress(ethers: any, before: any, after: an
 	}
 	for (const key of ["preserved", "wiring", "code", "economy", "pause", "roles", "plannedRoles", "funding", "globals", "selectors"])
 		same(expected[key] ?? [], after[key] ?? [], `Core governance progress changed ${key}`)
+	if (!before.muon?.configuration || !after.muon?.configuration) throw new Error("Missing Muon configuration evidence")
+	same(before.muon.configuration, after.muon.configuration, "Core governance changed Muon configuration")
 }
 
 export async function verifyCoreUpgradePostState(hre: any, ethers: any, input: any, report: any, atBlock?: number, unpaused = false) {
@@ -533,6 +537,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				await verifyCoreUpgradePostState(hre, ethers, input, report, report.verifiedCut.receipt.blockNumber)
 				const current = await captureCoreUpgradeSnapshot(ethers, input.config, true, undefined, true)
 				for (const key of ["preserved", "wiring", "code"]) same(report.paused[key], current[key], `Post-unpause ${key} changed`)
+				same(report.paused.muon.configuration, current.muon.configuration, "Post-unpause Muon configuration changed")
 				if (!current.roles.listing || current.roles.migration !== report.paused.roles.migration || current.plannedRoles.some((g: any) => !g.held))
 					throw new Error("Post-unpause role mismatch")
 			} else await verifyCoreUpgradePostState(hre, ethers, input, report)

@@ -5,6 +5,7 @@ import {
 	verifyConfigurationMigration,
 } from "./configuration-migration.js";
 import { operationDigest, readOperationJson } from "./inputs.js";
+import { captureMuonConfiguration, validateMuonProfile, verifyMuonConfiguration } from "./muon-upgrade.js";
 import { buildRoleMigration, captureRoleMigration, readRoleInventory, validateRoleProfile, verifyRoleMigration } from "./role-migration.js";
 import { buildWiringMigration, captureWiringSnapshot, validateWiringProfile, verifyWiringMigration } from "./wiring-migration.js";
 import { getAddress } from "ethers";
@@ -17,7 +18,7 @@ export function loadConfigurationRequest(file) {
 	if (
 		request?.schemaVersion !== 1 ||
 		request.kind !== "symmio.configuration-request" ||
-		Object.keys(request).some(key => ![...required, "target", "roles", "wiring"].includes(key)) ||
+		Object.keys(request).some(key => ![...required, "target", "roles", "wiring", "muon"].includes(key)) ||
 		required.some(key => !Object.hasOwn(request, key)) ||
 		!/^[0-9a-f]{40}$/.test(request.sourceCommit) ||
 		typeof request.credentialRecipe !== "string"
@@ -63,7 +64,7 @@ export function loadConfigurationRequest(file) {
 			!reference ||
 			typeof reference !== "object" ||
 			Array.isArray(reference) ||
-			!request.target ||
+			(name !== "muon" && !request.target) ||
 			Object.keys(reference).sort().join(",") !== ["file", "sha256", ...extras].sort().join(",") ||
 			typeof reference.file !== "string" ||
 			!/^sha256:[0-9a-f]{64}$/.test(reference.sha256)
@@ -75,7 +76,9 @@ export function loadConfigurationRequest(file) {
 		return document;
 	};
 	const roles = dependency("roles", ["maxMembersPerRole"]),
-		wiring = dependency("wiring", ["dependency"]);
+		wiring = dependency("wiring", ["dependency"]),
+		muon = dependency("muon", []);
+	if (muon) validateMuonProfile(muon.value);
 	if (roles) {
 		validateRoleProfile(roles.value);
 		if (
@@ -103,12 +106,14 @@ export function loadConfigurationRequest(file) {
 		profile: profile.value,
 		roles: roles?.value || null,
 		wiring: wiring?.value || null,
+		muon: muon?.value || null,
 		recipePath: path.resolve(path.dirname(file), request.credentialRecipe),
 		inputDigest: operationDigest({
 			request: loaded.hash,
 			profile: profile.hash,
 			...(roles ? { roles: roles.hash } : {}),
 			...(wiring ? { wiring: wiring.hash } : {}),
+			...(muon ? { muon: muon.hash } : {}),
 		}),
 	};
 }
@@ -142,6 +147,9 @@ export async function prepareConfiguration(provider, bundle) {
 			plan: buildWiringMigration(bundle.wiring, current, { [bundle.request.wiring.dependency]: bundle.request.target.contract.address }),
 		};
 	}
+	const muon = bundle.muon ? await captureMuonConfiguration(provider, bundle.muon, bundle.request.sourceCheckpoint) : null;
+	if (muon && bundle.request.target)
+		await verifyMuonConfiguration(provider, bundle.muon, muon, bundle.request.target.checkpoint, operationDigest(muon));
 	return {
 		schemaVersion: 1,
 		kind: "symmio.prepared-configuration",
@@ -151,6 +159,7 @@ export async function prepareConfiguration(provider, bundle) {
 		plan,
 		roles,
 		wiring,
+		muon,
 	};
 }
 
@@ -162,7 +171,8 @@ export async function verifyPreparedConfiguration(provider, bundle, prepared, ch
 		prepared.kind !== "symmio.prepared-configuration" ||
 		!prepared.plan ||
 		Boolean(prepared.roles) !== Boolean(bundle.roles) ||
-		Boolean(prepared.wiring) !== Boolean(bundle.wiring)
+		Boolean(prepared.wiring) !== Boolean(bundle.wiring) ||
+		Boolean(prepared.muon) !== Boolean(bundle.muon)
 	)
 		throw new Error("Prepared configuration binding differs");
 	if (
@@ -180,5 +190,6 @@ export async function verifyPreparedConfiguration(provider, bundle, prepared, ch
 		configuration: await verifyConfigurationMigration(provider, prepared.plan, checkpoint),
 		roles: prepared.roles ? await verifyRoleMigration(provider, prepared.roles.plan, checkpoint) : null,
 		wiring: prepared.wiring ? await verifyWiringMigration(provider, prepared.wiring.plan, checkpoint) : null,
+		muon: prepared.muon ? await verifyMuonConfiguration(provider, bundle.muon, prepared.muon, checkpoint, operationDigest(prepared.muon)) : null,
 	};
 }
