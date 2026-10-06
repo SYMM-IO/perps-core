@@ -1,17 +1,17 @@
-import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers"
-import {expect} from "chai"
+import { expect } from "chai"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {PositionType, QuoteStatus} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {limitOpenRequestBuilder} from "./models/requestModels/OpenRequest"
-import {AcceptCancelRequestValidator} from "./models/validators/AcceptCancelRequestValidator"
-import {CancelQuoteValidator} from "./models/validators/CancelQuoteValidator"
-import {OpenPositionValidator} from "./models/validators/OpenPositionValidator"
-import {decimal, getQuoteQuantity, pausePartyA, pausePartyB} from "./utils/Common"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { AcceptCancelRequestValidator } from "./models/validators/AcceptCancelRequestValidator.js"
+import { CancelQuoteValidator } from "./models/validators/CancelQuoteValidator.js"
+import { OpenPositionValidator } from "./models/validators/OpenPositionValidator.js"
+import { decimal, getQuoteQuantity, pausePartyA, pausePartyB } from "./utils/Common.js"
 
 export function shouldBehaveLikeCancelQuote(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -37,7 +37,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 	})
 
 	it("Should fail due to invalid quoteId", async function () {
-		await expect(user.requestToCancelQuote(3)).to.be.reverted
+		await expect(user.requestToCancelQuote(3)).to.be.revertedWith("Accessibility: Should be partyA of quote")
 	})
 
 	it("Should fail on invalid partyA", async function () {
@@ -53,7 +53,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 		await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
 		await hedger.lockQuote(2)
 		await hedger.openPosition(2)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)])
+		await user.liquidateAndSetSymbolPrices([1n], [decimal(2000n)], [2n])
 		await expect(user.requestToCancelQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
 	})
 
@@ -101,7 +101,7 @@ export function shouldBehaveLikeCancelQuote(): void {
 		})
 
 		it("Should fail to accept cancel request on invalid quoteId", async function () {
-			await expect(hedger.acceptCancelRequest(2)).to.be.reverted
+			await expect(hedger.acceptCancelRequest(2)).to.be.revertedWith("Accessibility: Should be partyB of quote")
 		})
 
 		it("Should fail to accept cancel request on invalid partyB", async function () {
@@ -188,13 +188,29 @@ export function shouldBehaveLikeCancelQuote(): void {
 				})
 			})
 
+			it("Should fail to accept cancel request on invalid state (not CANCEL_PENDING)", async function () {
+				// Quote is LOCKED, not CANCEL_PENDING
+				await expect(hedger.acceptCancelRequest(1)).to.be.revertedWith("PartyBFacet: Invalid state")
+			})
+
 			it("Should force cancel quote", async function () {
 				await expect(user.forceCancelQuote(1)).to.be.revertedWith("PartyAFacet: Invalid state")
 				await user.requestToCancelQuote(1)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.equal(QuoteStatus.CANCEL_PENDING)
 				await expect(user.forceCancelQuote(1)).to.be.revertedWith("PartyAFacet: Cooldown not reached")
+				const balanceBefore = await user.getBalanceInfo()
+				const hedgerBalanceBefore = await hedger.getBalanceInfo(await user.getAddress())
+				expect(balanceBefore.totalPendingLockedPartyA).to.be.greaterThan(0n)
+				expect(hedgerBalanceBefore.totalPendingLockedPartyB).to.be.greaterThan(0n)
 				await time.increase(300)
 				await user.forceCancelQuote(1)
-				expect((await context.viewFacet.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.CANCELED)
+				const balanceAfter = await user.getBalanceInfo()
+				const hedgerBalanceAfter = await hedger.getBalanceInfo(await user.getAddress())
+				expect(balanceAfter.totalPendingLockedPartyA).to.equal(0n)
+				expect(hedgerBalanceAfter.totalPendingLockedPartyB).to.equal(0n)
+				// Trading fee should be refunded
+				expect(balanceAfter.allocatedBalances).to.be.greaterThan(balanceBefore.allocatedBalances)
+				expect((await context.viewFacetQuote.getQuote(1)).quoteStatus).to.be.eq(QuoteStatus.CANCELED)
 			})
 		})
 	})

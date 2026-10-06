@@ -1,45 +1,38 @@
-import {Builder} from "builder-pattern"
+import { Builder } from "builder-pattern"
 // @ts-ignore
 import * as randomExt from "random-ext"
-import {concatMap, filter, from} from "rxjs"
+import { concatMap, filter, from } from "rxjs"
 
-import {
-	checkStatus,
-	getQuoteMinLeftQuantityForFill,
-	getQuoteQuantity,
-	getTotalLockedValuesForQuoteIds
-} from "../utils/Common"
-import {logger} from "../utils/LoggerUtils"
-import {getPrice} from "../utils/PriceUtils"
-import {pick, randomBigNumber} from "../utils/RandomUtils"
-import {safeDiv} from "../utils/SafeMath"
-import {Action, actionNamesMap, ActionWrapper, expandActions, hedgerActionsMap} from "./Actions"
-import {OrderType, QuoteStatus} from "./Enums"
-import {Hedger} from "./Hedger"
-import {RunContext} from "./RunContext"
-import {TestManager} from "./TestManager"
-import {FillCloseRequest} from "./requestModels/FillCloseRequest"
-import {OpenRequest} from "./requestModels/OpenRequest"
-import {
-	AcceptCancelCloseRequestValidator,
-	AcceptCancelCloseRequestValidatorBeforeOutput
-} from "./validators/AcceptCancelCloseRequestValidator"
-import {
-	AcceptCancelRequestValidator,
-	AcceptCancelRequestValidatorBeforeOutput
-} from "./validators/AcceptCancelRequestValidator"
-import {FillCloseRequestValidator, FillCloseRequestValidatorBeforeOutput} from "./validators/FillCloseRequestValidator"
-import {LockQuoteValidator, LockQuoteValidatorBeforeOutput} from "./validators/LockQuoteValidator"
-import {OpenPositionValidator, OpenPositionValidatorBeforeOutput} from "./validators/OpenPositionValidator"
-import {UnlockQuoteValidator, UnlockQuoteValidatorBeforeOutput} from "./validators/UnlockQuoteValidator"
-import {QuoteCheckpoint} from "./quoteCheckpoint"
-import {ethers} from "hardhat"
-import {QuoteStructOutput, SymbolStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { ethers } from "../helpers/hardhat-connection.js"
+import { checkStatus, getQuoteMinLeftQuantityForFill, getQuoteQuantity, getTotalLockedValuesForQuoteIds } from "../utils/Common.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { pick, randomBigNumber } from "../utils/RandomUtils.js"
+import { safeDiv } from "../utils/SafeMath.js"
+import { Action, actionNamesMap, ActionWrapper, expandActions, hedgerActionsMap } from "./Actions.js"
+import { OrderType, QuoteStatus } from "./Enums.js"
+import { Hedger } from "./Hedger.js"
+import { RunContext } from "./RunContext.js"
+import { TestManager } from "./TestManager.js"
+import { QuoteCheckpoint } from "./quoteCheckpoint.js"
+import { FillCloseRequest } from "./requestModels/FillCloseRequest.js"
+import { OpenRequest } from "./requestModels/OpenRequest.js"
+import { AcceptCancelCloseRequestValidator, AcceptCancelCloseRequestValidatorBeforeOutput } from "./validators/AcceptCancelCloseRequestValidator.js"
+import { AcceptCancelRequestValidator, AcceptCancelRequestValidatorBeforeOutput } from "./validators/AcceptCancelRequestValidator.js"
+import { FillCloseRequestValidator, FillCloseRequestValidatorBeforeOutput } from "./validators/FillCloseRequestValidator.js"
+import { LockQuoteValidator, LockQuoteValidatorBeforeOutput } from "./validators/LockQuoteValidator.js"
+import { OpenPositionValidator, OpenPositionValidatorBeforeOutput } from "./validators/OpenPositionValidator.js"
+import { UnlockQuoteValidator, UnlockQuoteValidatorBeforeOutput } from "./validators/UnlockQuoteValidator.js"
 
 export class HedgerController {
 	private readonly context: RunContext
 
-	constructor(private manager: TestManager, private hedger: Hedger, private checkpoint: QuoteCheckpoint) {
+	constructor(
+		private manager: TestManager,
+		private hedger: Hedger,
+		private checkpoint: QuoteCheckpoint,
+	) {
 		this.context = manager.context
 	}
 
@@ -51,7 +44,7 @@ export class HedgerController {
 				this.manager
 					.getQueueObservable(status)
 					.pipe(
-						concatMap(qId => from(this.context.viewFacet.getQuote(qId))),
+						concatMap(qId => from(this.context.viewFacetQuote.getQuote(qId))),
 						filter(quote => quote.quoteStatus == BigInt(status) && (quote.partyB == ethers.ZeroAddress || quote.partyB == userAddress)),
 					)
 					.subscribe(async quote => {
@@ -181,7 +174,7 @@ export class HedgerController {
 				const quantity = await getQuoteQuantity(this.context, quote.id)
 				let fillAmount = undefined
 				let partially = false
-				const symbol: SymbolStructOutput = await this.context.viewFacet.getSymbol(quote.symbolId)
+				const symbol: SymbolStructOutput = await this.context.viewFacetSymbol.getSymbol(quote.symbolId)
 				if (quote.orderType == BigInt(OrderType.LIMIT)) {
 					const locked = await getTotalLockedValuesForQuoteIds(this.context, [quote.id])
 					const minQuantity = safeDiv(symbol.minAcceptableQuoteValue * quantity, locked)
@@ -234,7 +227,7 @@ export class HedgerController {
 					break
 				}
 				let fillAmount = undefined
-				const symbol: SymbolStructOutput = await this.context.viewFacet.getSymbol(quote.symbolId)
+				const symbol: SymbolStructOutput = await this.context.viewFacetSymbol.getSymbol(quote.symbolId)
 				const minLeftQuantity = await getQuoteMinLeftQuantityForFill(this.manager.context, quote.id)
 				if (quote.orderType === BigInt(OrderType.LIMIT)) {
 					const maxFillAmount = quote.quantityToClose - minLeftQuantity
@@ -288,10 +281,9 @@ export class HedgerController {
 			}
 			case Action.NOTHING: {
 				if (actionWrapper.rethink) {
-					logger.info(`Hedger::ReThinking about quote: ${quote.id}`)
 					let status = quote.quoteStatus
 					setTimeout(async () => {
-						quote = await this.context.viewFacet.getQuote(quote.id)
+						quote = await this.context.viewFacetQuote.getQuote(quote.id)
 						if (quote.quoteStatus == status) {
 							this.manager.actionsLoop.next({
 								title: "User",

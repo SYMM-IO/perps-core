@@ -1,77 +1,60 @@
-import { ethers, run } from "hardhat"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { keccak256, toUtf8Bytes } from "ethers"
+import { tasks } from "hardhat"
 
-import { createRunContext, RunContext } from "../test/models/RunContext"
-import { decimal } from "../test/utils/Common"
-import { runTx } from "../test/utils/TxUtils"
-import { ControlFacet } from "../src/types"
-import { symbolsMock } from "../test/models/SymbolManager"
-import { Addresses, loadAddresses, saveAddresses } from "./utils/file"
-import { toUtf8Bytes } from "ethers"
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
+import { ControlFacet } from "../src/types/index.js"
+// Import to initialize the hardhat connection
+import "../test/helpers/hardhat-connection.js"
+import { createRunContext, RunContext } from "../test/models/RunContext.js"
+import { symbolsMock } from "../test/models/SymbolManager.js"
+import { decimal } from "../test/utils/Common.js"
+import { runTx } from "../test/utils/TxUtils.js"
+import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 
 export async function initialize(): Promise<RunContext> {
-	let collateral = await run("deploy:stablecoin")
-	let diamond = await run("deploy:diamond", {
+	const runTask = (taskName: string, params: Record<string, unknown> = {}) => tasks.getTask(taskName).run(params)
+	let collateral = await runTask("deploy:stablecoin")
+	let diamond = await runTask("deploy:diamond", {
 		logData: false,
 		genABI: false,
 		reportGas: true,
 	})
-	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await run("deploy:multicall") : undefined
+	let multicall = process.env.DEPLOY_MULTICALL == "true" ? await runTask("deploy:multicall") : undefined
 
-	const multiAccount = await run("deploy:multiAccount", {
-		symmioAddress: await diamond.getAddress(),
-		admin: process.env.ADMIN_PUBLIC_KEY,
-	})
-	const nextQuoteIdVerifier = await run("deploy:next-quote-id-verifier", {
-		symmioAddress: await diamond.getAddress(),
-		logData: false,
-	})
-	let context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), await multiAccount.getAddress(), undefined, true)
+	const multiAccount = await runTask("deploy:multiAccount", { symmioAddress: diamond.address, admin: process.env.ADMIN_PUBLIC_KEY })
+
+	let context = await createRunContext(diamond.address, collateral.address, multiAccount.address)
 
 	await runTx(context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.getAddress()))
 	await runTx(context.controlFacet.connect(context.signers.admin).setCollateral(await context.collateral.getAddress()))
 	await runTx(
-		context.controlFacet
-			.connect(context.signers.admin)
-			.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SYMBOL_MANAGER_ROLE"))),
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SYMBOL_MANAGER_ROLE"))),
+	)
+	await runTx(
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("SETTER_ROLE"))),
+	)
+	await runTx(
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PAUSER_ROLE"))),
+	)
+	await runTx(
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("PARTY_B_MANAGER_ROLE"))),
 	)
 	await runTx(
 		context.controlFacet
 			.connect(context.signers.admin)
-			.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("MUON_SETTER_ROLE"))),
+			.grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))),
 	)
 	await runTx(
-		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SETTER_ROLE"))),
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
 	)
 	await runTx(
-		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))),
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.user.getAddress(), keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
 	)
 	await runTx(
-		context.controlFacet
-			.connect(context.signers.admin)
-			.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("PARTY_B_MANAGER_ROLE"))),
+		context.controlFacet.connect(context.signers.admin).grantRole(context.signers.user2.getAddress(), keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
 	)
-	await runTx(
-		context.controlFacet
-			.connect(context.signers.admin)
-			.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE"))),
-	)
-	await runTx(
-		context.controlFacet
-			.connect(context.signers.admin)
-			.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
-	)
-	await runTx(
-		context.controlFacet
-			.connect(context.signers.admin)
-			.grantRole(context.signers.user.getAddress(), ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
-	)
-	await runTx(
-		context.controlFacet
-			.connect(context.signers.admin)
-			.grantRole(context.signers.user2.getAddress(), ethers.keccak256(toUtf8Bytes("LIQUIDATOR_ROLE"))),
-	)
-	const addSymbolAsync = async (controlFacet: ControlFacet, adminSigner: SignerWithAddress, sym: any) => {
+
+	const addSymbolAsync = async (controlFacet: ControlFacet, adminSigner: HardhatEthersSigner, sym: any) => {
 		await runTx(
 			controlFacet
 				.connect(adminSigner)
@@ -86,24 +69,16 @@ export async function initialize(): Promise<RunContext> {
 	await runTx(context.controlFacet.connect(context.signers.admin).setLiquidationTimeout(100))
 	await runTx(context.controlFacet.connect(context.signers.admin).setDeallocateCooldown(120))
 	await runTx(context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(100000n)))
-	await runTx(context.controlFacet.connect(context.signers.admin).registerAffiliate(context.multiAccount))
-	await runTx(context.controlFacet.connect(context.signers.admin).setFeeCollector(context.multiAccount, context.signers.feeCollector.address))
+	await runTx(context.controlFacet.connect(context.signers.admin).registerAffiliate(context.accountManager))
+	await runTx(context.controlFacet.connect(context.signers.admin).setFeeCollector(context.accountManager, context.signers.feeCollector.address))
 
 	let output: Addresses = loadAddresses()
-	output.collateralAddress = await collateral.getAddress()
-	output.symmioAddress = await diamond.getAddress()
-	output.MulticallAddress = await multicall?.getAddress()
-	output.nextQuoteIdVerifierAddress = await nextQuoteIdVerifier?.getAddress()
+	output.collateralAddress = collateral.address
+	output.symmioAddress = diamond.address
+	output.MulticallAddress = multicall?.address
 	saveAddresses(output)
 	return context
 }
 
-async function main() {
-	await initialize()
-	console.log("Initialized successfully")
-}
-
-main().catch(error => {
-	console.error(error)
-	process.exitCode = 1
-})
+await initialize()
+console.log("Initialized successfully")

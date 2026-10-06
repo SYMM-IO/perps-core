@@ -2,8 +2,7 @@ export class QuoteCheckpoint {
 	private static instance: QuoteCheckpoint | null = null
 	private _blockedQuotes: Map<string, boolean> = new Map<string, boolean>()
 
-	private constructor() {
-	}
+	private constructor() {}
 
 	public static getInstance(): QuoteCheckpoint {
 		if (!QuoteCheckpoint.instance) {

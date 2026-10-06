@@ -1,21 +1,24 @@
-import {loadFixture} from "@nomicfoundation/hardhat-network-helpers"
-import {expect} from "chai"
+import { expect } from "chai"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {PositionType} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {decimal, pausePartyB,} from "./utils/Common"
-import {emergencyCloseRequestBuilder} from "./models/requestModels/EmergencyCloseRequest"
-import {EmergencyCloseRequestValidator} from "./models/validators/EmergencyCloseRequestValidator"
-import {QuoteStructOutput} from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture } from "./helpers/network-helpers.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { emergencyCloseRequestBuilder } from "./models/requestModels/EmergencyCloseRequest.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { EmergencyCloseRequestValidator } from "./models/validators/EmergencyCloseRequestValidator.js"
+import { decimal, getBlockTimestamp, getQuoteQuantity, pausePartyB } from "./utils/Common.js"
 
 export function shouldBehaveLikeEmergencyClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
 	let context: RunContext
-	let quote1LongOpened: QuoteStructOutput, quote2ShortOpened: QuoteStructOutput, quote3JustSent: QuoteStructOutput,
+	let quote1LongOpened: QuoteStructOutput,
+		quote2ShortOpened: QuoteStructOutput,
+		quote3JustSent: QuoteStructOutput,
 		quote4LongOpened: QuoteStructOutput
 
 	beforeEach(async function () {
@@ -36,38 +39,39 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
 
 		// Quote1 LONG opened
-		quote1LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote1LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote1LongOpened.id)
 		await hedger.openPosition(quote1LongOpened.id)
 
 		// Quote2 SHORT opened
-		quote2ShortOpened = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote2ShortOpened = await context.viewFacetQuote.getQuote(
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()),
+		)
 		await hedger.lockQuote(quote2ShortOpened.id)
 		await hedger.openPosition(quote2ShortOpened.id)
 
 		// Quote3 SHORT sent
-		quote3JustSent = await context.viewFacet.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
+		quote3JustSent = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build()))
 
 		// Quote4 LONG sent
-		quote4LongOpened = await context.viewFacet.getQuote(await user.sendQuote())
+		quote4LongOpened = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await hedger.lockQuote(quote4LongOpened.id)
 		await hedger.openPosition(quote4LongOpened.id)
 	})
 
-
 	describe("Emergency Close", async function () {
-		beforeEach(async function () {
-		})
+		beforeEach(async function () {})
 
 		it("Should fail when not emergency mode", async function () {
-			await expect(hedger.emergencyClosePosition(1, emergencyCloseRequestBuilder().build()))
-				.to.be.revertedWith("PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted")
+			await expect(hedger.emergencyClosePosition(1, emergencyCloseRequestBuilder().build())).to.be.revertedWith(
+				"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted",
+			)
 		})
 
 		describe("Emergency status for partyB activated", async function () {
 			beforeEach(async function () {
-				await context.controlFacet.setPartyBEmergencyStatus([await hedger2.getAddress()], true)
-				await context.controlFacet.setPartyBEmergencyStatus([await hedger.getAddress()], true)
+				await context.pauseControlFacet.setPartyBEmergencyStatus([await hedger2.getAddress()], true)
+				await context.pauseControlFacet.setPartyBEmergencyStatus([await hedger.getAddress()], true)
 			})
 
 			it("Should fail on invalid partyB", async function () {
@@ -106,12 +110,62 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 					beforeOutput: beforeOut,
 				})
 			})
-		})
 
+			it("Should emergency close a SHORT position successfully", async function () {
+				const quoteId = quote2ShortOpened.id
+				const validator = new EmergencyCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quoteId),
+				})
+				await hedger.emergencyClosePosition(quoteId, emergencyCloseRequestBuilder().build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quoteId),
+					price: decimal(1n),
+					beforeOutput: beforeOut,
+				})
+			})
+
+			it("Should emergency close a quote that is already CLOSE_PENDING", async function () {
+				// First request a normal close on quote1
+				const quantity = await getQuoteQuantity(context, quote1LongOpened.id)
+				await user.requestToClosePosition(
+					quote1LongOpened.id,
+					limitCloseRequestBuilder()
+						.quantityToClose(quantity)
+						.closePrice(decimal(1n))
+						.deadline((await getBlockTimestamp()) + 1000n)
+						.build(),
+				)
+
+				// Verify it's in CLOSE_PENDING
+				const quoteBefore = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+				expect(quoteBefore.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+
+				// Emergency close should still work on CLOSE_PENDING quotes
+				const validator = new EmergencyCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quote1LongOpened.id),
+				})
+				await hedger.emergencyClosePosition(quote1LongOpened.id, emergencyCloseRequestBuilder().build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(quote1LongOpened.id),
+					price: decimal(1n),
+					beforeOutput: beforeOut,
+				})
+			})
+		})
 
 		describe("Emergency mode get activated", async function () {
 			beforeEach(async function () {
-				await context.controlFacet.activeEmergencyMode()
+				await context.pauseControlFacet.activeEmergencyMode()
 			})
 
 			it("Should run successfully", async function () {
@@ -134,7 +188,7 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 
 		describe("Symbol gets deListed", async function () {
 			beforeEach(async function () {
-				await context.controlFacet.setSymbolValidationState((await context.viewFacet.getQuote(1)).symbolId, false)
+				await context.symbolControlFacet.setSymbolValidationState((await context.viewFacetQuote.getQuote(1)).symbolId, false)
 			})
 
 			it("Should run successfully", async function () {

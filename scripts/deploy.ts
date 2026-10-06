@@ -1,23 +1,23 @@
-import {ethers, run} from "hardhat"
+import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
+import { ethers } from "../test/helpers/hardhat-connection.js"
 
+// Quick facet deploy helper.
+// Env/args:
+//   FACET (or argv[2]) - facet contract path/name (e.g., contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet)
+//   ACTION (optional)  - Add | Replace | Remove (default: Add) for the sample cut payload
+//   SELECTORS (optional) - comma-separated function names to include; defaults to all
+//
+// Example:
+//   FACET=contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet \
+//   ACTION=Add \
+//   ts-node scripts/deploy.ts
 
-async function main() {
-	const facetName = ""
-	const Facet = await ethers.getContractFactory(facetName)
-	const facet = await Facet.deploy()
+const facetName = "Multicall3"
 
-	await facet.waitForDeployment()
+const Facet = await ethers.getContractFactory(facetName)
+const facet = await Facet.deploy()
+await facet.waitForDeployment()
 
-	console.log(`${facetName} deployed: ${await facet.getAddress()}`)
-	await run("verify:verify", {
-		address: await facet.getAddress(),
-		constructorArguments: [],
-	})
-}
+const address = await facet.getAddress()
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-main().catch(error => {
-	console.error(error)
-	process.exitCode = 1
-})
+console.log(`Facet deployed: ${facetName} -> ${address}`)

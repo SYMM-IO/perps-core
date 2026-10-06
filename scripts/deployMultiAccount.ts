@@ -1,25 +1,19 @@
-import { run, ethers } from "hardhat";
-import { Addresses, loadAddresses, saveAddresses } from "./utils/file";
+import { tasks } from "hardhat"
 
-async function main() {
-	let deployedAddresses: Addresses = loadAddresses();
-	const symmioAddress = deployedAddresses.symmioAddress;
-	const admin = process.env.ADMIN_PUBLIC_KEY;
+// Import to initialize the hardhat connection
+import "../test/helpers/hardhat-connection.js"
+import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 
-	// Run the deploy:multiAccount task
-	const contract = await run("deploy:multiAccount", {
-		symmioAddress,
-		admin,
-		logData: true,
-	});
+const deployedAddresses: Addresses = loadAddresses()
+const symmioAddress = deployedAddresses.symmioAddress
+const admin = process.env.ADMIN_PUBLIC_KEY
 
-	deployedAddresses.multiAccountAddress = await contract.getAddress();
-	saveAddresses(deployedAddresses);
-}
+// Run the deploy:multiAccount task
+const contract = await tasks.getTask("deploy:multiAccount").run({
+	symmioAddress,
+	admin,
+	logData: true,
+})
 
-main()
-	.then(() => process.exit(0))
-	.catch(error => {
-		console.error(error);
-		process.exit(1);
-	});
+deployedAddresses.multiAccountAddress = contract.address
+saveAddresses(deployedAddresses)

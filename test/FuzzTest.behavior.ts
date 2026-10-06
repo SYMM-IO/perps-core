@@ -1,15 +1,19 @@
-import {ethers} from "hardhat"
-import {interval} from "rxjs"
-import {Hedger} from "./models/Hedger"
-import {HedgerController} from "./models/HedgerController"
-import {ManagedError} from "./models/ManagedError"
-import {createRunContext, RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {UserController} from "./models/UserController"
-import {decimal} from "./utils/Common"
 import fsPromise from "fs/promises"
-import {BigNumber} from "ethers"
-import {QuoteCheckpoint} from "./models/quoteCheckpoint"
+import { dirname, join } from "path"
+import { interval } from "rxjs"
+import { fileURLToPath } from "url"
+
+import { ethers } from "./helpers/hardhat-connection.js"
+import { Hedger } from "./models/Hedger.js"
+import { HedgerController } from "./models/HedgerController.js"
+import { ManagedError } from "./models/ManagedError.js"
+import { createRunContext, RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { UserController } from "./models/UserController.js"
+import { QuoteCheckpoint } from "./models/quoteCheckpoint.js"
+import { decimal } from "./utils/Common.js"
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export function shouldBehaveLikeFuzzTest(): void {
 	beforeEach(async function () {
@@ -32,7 +36,7 @@ export function shouldBehaveLikeFuzzTest(): void {
 		const hedger = new Hedger(context, hSigner)
 		await hedger.setup()
 		await hedger.setNativeBalance(100n ** 18n)
-		await hedger.setBalances(BigNumber.from("10").pow(`50`), BigNumber.from("10").pow(`50`))
+		await hedger.setBalances(10n ** 50n, 10n ** 50n)
 		await hedger.register()
 		const hedgerController = new HedgerController(manager, hedger, checkpoint)
 
