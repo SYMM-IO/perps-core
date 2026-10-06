@@ -7,7 +7,13 @@ import {
 	validateCoreUpgradeConfig,
 } from "../../deployment-tooling/arbitrum-core-upgrade.js";
 import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js";
-import { isStandardCoreInput, coreUpgradeNetwork, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js";
+import {
+	isStandardCoreInput,
+	coreUpgradeNetwork,
+	coreUpgradeAuthority,
+	coreGovernanceKind,
+	coreUpgradePolicyReview,
+} from "../../deployment-tooling/core-upgrade-input.js";
 import { loadRecipeContext, recipeHardhatEnvironment } from "../lib/recipe-context.js";
 import { EOA_SIGNER_MODES, SIGNER_MODES, dispatchSafeActions, validateSignerSelection, hydrateSigner, signerEnvironment } from "../signer/index.js";
 import { atomicWrite } from "./guided-recipe.js";
@@ -363,7 +369,7 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 			await step("inspect", () => runPhase(ctx, input, "inspect"));
 			await step("authorize", async () => {
 				ctx.ui.note(
-					`Source ${input.sourceCommit}\nReview ${input.output}. This deploys all current Core libraries and facets; governance actions use the owner configured in the input.`,
+					`Source ${input.sourceCommit}\n${coreUpgradePolicyReview(read(input.input).config)}\nReview ${input.output}. This deploys all current Core libraries and facets; governance actions use the owner configured in the input.`,
 					"Deployment authorization",
 				);
 				const confirmation = await ctx.ui.text({ message: `Type ${input.chainId} to authorize Core contract deployments`, initialValue: "" });

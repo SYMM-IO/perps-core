@@ -58,7 +58,8 @@ export function planCoreCut(baseline, current, facets, allowedRemovedSelectors) 
 	const removed = Object.keys(baseline)
 		.filter(s => !desired[s])
 		.sort();
-	if (removed.some(s => !allowedRemovedSelectors.includes(s))) throw new Error(`Unreviewed removed selectors: ${removed.join(", ")}`);
+	if (removed.some(s => !allowedRemovedSelectors.includes(s)))
+		throw new Error(`selectors.core: Unreviewed removed selectors: ${removed.join(", ")}`);
 	const same = (a, b) => digest(a) === digest(b);
 	if (same(current, desired)) return { desired, removed, cut: [], calldata: null };
 	if (!same(current, baseline)) throw new Error("Installed selectors differ from both baseline and completed atomic cut");

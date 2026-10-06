@@ -110,10 +110,17 @@ test("real runner blocks restoration on failed Muon readiness and retries final 
 		);
 	const task = { ...definition, run, handler: run },
 		runner = createTaskRunner({ root: f.root, definitions: [task] });
-	const ui = { note() {}, confirm: async () => true, text: async () => String(f.config.network.chainId) };
+	const notes = [];
+	const ui = {
+		note: (message, title) => notes.push({ message, title }),
+		confirm: async () => true,
+		text: async () => String(f.config.network.chainId),
+	};
 	let state = await runner.start(task.id, { input: f.input, ui });
 	assert.equal(state.status, "paused", state.lastError);
 	assert.match(state.lastError, /Muon readiness RPC unavailable/);
+	const review = notes.find(note => note.title === "Deployment authorization").message;
+	for (const category of ["storage.symbolAdjustment", "funding.aggregate", "selectors.core"]) assert.ok(review.includes(category));
 	assert.equal(phases.includes("plan-unpause"), false);
 	assert.equal(phases.includes("publish"), false);
 	failMuonReadiness = false;

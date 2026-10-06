@@ -12,6 +12,7 @@ describe("Current Core upgrade safety gates (governance)", function () {
 			config: {
 				target: { core: address(1), safe: address(2), symbolManager: address(3) },
 				allowedRemovedSelectors: [],
+				repairAggregateFunding: true,
 			},
 		}
 		const snapshot = {

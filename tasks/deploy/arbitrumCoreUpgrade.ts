@@ -14,7 +14,13 @@ import {
 	validateCoreUpgradeConfig,
 } from "../../deployment-tooling/arbitrum-core-upgrade.js"
 import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js"
-import { isStandardCoreInput, coreUpgradeNetwork, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
+import {
+	isStandardCoreInput,
+	coreUpgradeNetwork,
+	coreUpgradeAuthority,
+	coreGovernanceKind,
+	coreUpgradePolicies,
+} from "../../deployment-tooling/core-upgrade-input.js"
 import { operationDigest } from "../../deployment-tooling/operations/inputs.js"
 import { verifyMuonReadiness } from "../../deployment-tooling/operations/muon-readiness.js"
 import { publishUpgradeItems, upgradeCompletionStatus } from "../../deployment-tooling/operations/upgrade-lifecycle.js"
@@ -94,8 +100,9 @@ export function buildCoreUpgradeActions(ethers: any, input: any, snapshot: any, 
 	if (!snapshot.pause[0]) throw new Error("A global pause is required before planning the Core cut")
 	const t = input.config.target,
 		owner = coreUpgradeAuthority(input.config),
+		policies = coreUpgradePolicies(input.config),
 		iface = new ethers.Interface(coreUpgradeABI)
-	const plan = planCoreCut(snapshot.selectors, snapshot.selectors, deployments.facets, input.config.allowedRemovedSelectors)
+	const plan = planCoreCut(snapshot.selectors, snapshot.selectors, deployments.facets, policies.selectors.core.allowedRemovals)
 	if (!plan.calldata) throw new Error("Core already contains this release; start with its verification evidence")
 	const actions: any[] = [],
 		add = (data: string, description: string) => actions.push({ to: t.core, value: "0", data, description })
@@ -112,6 +119,7 @@ export function buildCoreUpgradeActions(ethers: any, input: any, snapshot: any, 
 		.filter((g: any) => g.a !== g.expected || g.b !== g.expected)
 		.map((g: any) => [g.partyA, g.partyB, g.symbolId, g.positionType, g.a, g.b, g.expected])
 	if (repairs.length) {
+		if (policies.funding.aggregate.repair !== true) throw new Error("funding.aggregate: required repairs are not authorized by the input")
 		if (!snapshot.roles.migration)
 			add(iface.encodeFunctionData("grantRole", [owner, ethers.id("MIGRATION_ROLE")]), "Temporarily grant MIGRATION_ROLE to the Core owner")
 		add(iface.encodeFunctionData("resyncAggregateFunding", [repairs]), `Reconcile ${repairs.length} funding groups against their checked old values`)
@@ -380,7 +388,8 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			write(path.join(directory, "core-abi.json"), coreUpgradeABI)
 			report.client = {
 				abiDigest: digest(coreUpgradeABI),
-				removedSelectors: input.config.allowedRemovedSelectors,
+				removedSelectors: coreUpgradePolicies(input.config).selectors.core.allowedRemovals,
+				policies: coreUpgradePolicies(input.config),
 				changes: [
 					"getSymbolAdjustment(uint256) now returns 17 fields instead of 15",
 					"startRestatement(uint256,uint256) requires the liquidation nonce",
