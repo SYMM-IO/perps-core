@@ -1,23 +1,25 @@
-import {setBalance} from "@nomicfoundation/hardhat-network-helpers"
-import {BigNumberish, ethers} from "ethers"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { BigNumberish, ethers } from "ethers"
 
-import {decimal, serializeToJson, unDecimal} from "../utils/Common"
-import {logger} from "../utils/LoggerUtils"
-import {getPrice} from "../utils/PriceUtils"
-import {getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig} from "../utils/SignatureUtils"
-import {PositionType} from "./Enums"
-import {RunContext} from "./RunContext"
-import {EmergencyCloseRequest, emergencyCloseRequestBuilder} from "./requestModels/EmergencyCloseRequest"
-import {FillCloseRequest, limitFillCloseRequestBuilder} from "./requestModels/FillCloseRequest"
-import {limitOpenRequestBuilder, OpenRequest} from "./requestModels/OpenRequest"
-import {runTx} from "../utils/TxUtils"
-import {PairUpnlSigStructOutput} from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
-import {QuoteStructOutput, SingleUpnlSigStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
-import {SettlementSigStructOutput} from "../../src/types/contracts/facets/Settlement/SettlementFacet"
+import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
+import type { SettlementSigStructOutput, UnifiedSettlementSigStruct } from "../../src/types/facets/Settlement/SettlementFacet.js"
+import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { setBalance } from "../helpers/network-helpers.js"
+import { decimal, serializeToJson, unDecimal } from "../utils/Common.js"
+import { logDetailedDebug } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "../utils/SignatureUtils.js"
+import { runTx } from "../utils/TxUtils.js"
+import { PositionType } from "./Enums.js"
+import { RunContext } from "./RunContext.js"
+import { PartyEntity } from "./partyEntitiy.js"
+import { EmergencyCloseRequest, emergencyCloseRequestBuilder } from "./requestModels/EmergencyCloseRequest.js"
+import { FillCloseRequest, limitFillCloseRequestBuilder } from "./requestModels/FillCloseRequest.js"
+import { limitOpenRequestBuilder, OpenRequest } from "./requestModels/OpenRequest.js"
 
-export class Hedger {
-	constructor(private context: RunContext, private signer: SignerWithAddress) {
+export class Hedger extends PartyEntity {
+	constructor(context: RunContext, signer: HardhatEthersSigner) {
+		super(context, signer)
 	}
 
 	public async setup() {
@@ -32,19 +34,6 @@ export class Hedger {
 		if (depositAmount) await runTx(this.context.accountFacet.connect(this.signer).deposit(depositAmount))
 	}
 
-	public async depositToReserveVault(amount: BigNumberish) {
-		await runTx(this.context.collateral.connect(this.signer).approve(this.context.diamond, ethers.MaxUint256))
-		await runTx(this.context.accountFacet.connect(this.signer).depositToReserveVault(amount, await this.signer.getAddress()))
-	}
-
-	public async withdrawFromReserveVault(amount: BigNumberish) {
-		await runTx(this.context.accountFacet.connect(this.signer).withdrawFromReserveVault(amount))
-	}
-
-	public async balanceOfReserveVault(): Promise<bigint> {
-		return await this.context.viewFacet.connect(this.signer).balanceOfReserveVault(await this.signer.getAddress())
-	}
-
 	public async setNativeBalance(amount: bigint) {
 		await setBalance(this.signer.address, amount)
 	}
@@ -54,54 +43,32 @@ export class Hedger {
 	}
 
 	public async lockQuote(id: BigNumberish, upnl: bigint = 0n, allocateCoefficient: bigint | null = decimal(12n, 17)) {
-		if (allocateCoefficient != null) {
-			const quote = await this.context.viewFacet.getQuote(id)
+		const isCrossPartyB = await this.context.viewFacet.isCrossPartyB(this.address)
+		if (allocateCoefficient != null && !isCrossPartyB) {
+			const quote = await this.context.viewFacetQuote.getQuote(id)
 			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
 			await runTx(
-				this.context.accountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA)
+				this.context.partyBAccountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA),
 			)
 		}
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).lockQuote(id, await getDummySingleUpnlSig(upnl)))
-
-		logger.info(`Hedger::LockQuote: ${id}`)
 	}
 
 	public async unlockQuote(id: BigNumberish) {
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).unlockQuote(id))
-		logger.info(`Hedger::UnLockQuote: ${id}`)
-	}
-
-	public async lockAndOpenQuote(id: BigNumberish, allocateCoefficient: bigint | null = decimal(12n, 17), openRequest: OpenRequest = limitOpenRequestBuilder().build()) {
-		if (allocateCoefficient != null) {
-			const quote = await this.context.viewFacet.getQuote(id)
-			const notional = unDecimal(BigInt(quote.quantity) * quote.requestedOpenPrice)
-			await runTx(
-				this.context.accountFacet.connect(this.signer).allocateForPartyB(unDecimal(notional * BigInt(allocateCoefficient)), quote.partyA)
-			)
-		}
-		await runTx(
-			this.context.partyBGroupActionsFacet.connect(this.signer)
-				.lockAndOpenQuote(
-					id,
-					openRequest.filledAmount,
-					openRequest.openPrice,
-					await getDummySingleUpnlSig(BigInt(openRequest.upnlPartyA)),
-					await getDummyPairUpnlAndPriceSig(BigInt(openRequest.price), BigInt(openRequest.upnlPartyA), BigInt(openRequest.upnlPartyB))
-				)
-		)
 	}
 
 	public async openPosition(id: BigNumberish, request: OpenRequest = limitOpenRequestBuilder().build()) {
-		const quote = await this.context.viewFacet.getQuote(id)
+		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
 				hedgerUpnl: await this.getUpnl(quote.partyA),
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
 		await runTx(
 			this.context.partyBPositionActionsFacet
@@ -110,10 +77,9 @@ export class Hedger {
 					id,
 					request.filledAmount,
 					request.openPrice,
-					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))
-				)
+					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+				),
 		)
-		logger.info(`Hedger::OpenPosition: ${id}`)
 	}
 
 	public async getBalance(): Promise<bigint> {
@@ -122,6 +88,27 @@ export class Hedger {
 
 	public async getBalanceInfo(partyA: string): Promise<BalanceInfo> {
 		const b = await this.context.viewFacet.balanceInfoOfPartyB(await this.getAddress(), partyA)
+
+		return {
+			allocatedBalances: b[0],
+			lockedCva: b[1],
+			lockedLf: b[2],
+			lockedMmPartyA: b[3],
+			lockedMmPartyB: b[4],
+			totalLockedPartyA: b[1] + b[2] + b[3],
+			totalLockedPartyB: b[1] + b[2] + b[4],
+			pendingLockedCva: b[5],
+			pendingLockedLf: b[6],
+			pendingLockedMmPartyA: b[7],
+			pendingLockedMmPartyB: b[8],
+			totalPendingLockedPartyA: b[5] + b[6] + b[7],
+			totalPendingLockedPartyB: b[5] + b[6] + b[8],
+		}
+	}
+
+	public async getBalanceInfoCrossPartyB(): Promise<BalanceInfo> {
+		const b = await this.context.viewFacet.balanceInfoOfCrossPartyB(await this.getAddress())
+
 		return {
 			allocatedBalances: b[0],
 			lockedCva: b[1],
@@ -141,20 +128,19 @@ export class Hedger {
 
 	public async acceptCancelRequest(id: BigNumberish) {
 		await runTx(this.context.partyBQuoteActionsFacet.connect(this.signer).acceptCancelRequest(id))
-		logger.info(`Hedger::AcceptCancelRequest: ${id}`)
 	}
 
 	public async fillCloseRequest(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()) {
-		const quote = await this.context.viewFacet.getQuote(id)
+		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
 				hedgerUpnl: await this.getUpnl(quote.partyA),
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
 		await runTx(
 			this.context.partyBPositionActionsFacet
@@ -163,69 +149,117 @@ export class Hedger {
 					id,
 					request.filledAmount,
 					request.closedPrice,
-					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))
-				)
+					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+				),
 		)
-		logger.info(`Hedger::FillCloseRequest: ${id}`)
 	}
 
 	public async chargeFundingRate(partyA: string, quoteIds: BigNumberish[], rates: BigNumberish[], signature: PairUpnlSigStructOutput) {
 		await this.context.fundingRateFacet.connect(this.signer).chargeFundingRate(partyA, quoteIds, rates, signature)
-		logger.info(`Hedger::ChargeFundingRate: ${partyA}, ${quoteIds}, ${rates}`)
 	}
 
 	public async acceptCancelCloseRequest(id: BigNumberish) {
 		await runTx(this.context.partyBPositionActionsFacet.connect(this.signer).acceptCancelCloseRequest(id))
-		logger.info(`Hedger::AcceptCancelCloseRequest: ${id}`)
 	}
 
-	public async liquidate(partyA: string, sig: SingleUpnlSigStructOutput | Promise<SingleUpnlSigStructOutput> = getDummySingleUpnlSig()) {
-		let signature = sig instanceof Promise ? await sig : sig
-		await runTx(this.context.liquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature))
-		logger.info(`Hedger::Liquidator: ${partyA}`)
-	}
-
-	public async emergencyClosePosition(id: BigNumberish, request: EmergencyCloseRequest = emergencyCloseRequestBuilder().build()) {
-		const quote = await this.context.viewFacet.getQuote(id)
+	public async fillCloseRequestToLiquidation(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()): Promise<bigint> {
+		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
 				hedgerUpnl: await this.getUpnl(quote.partyA),
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
-		await runTx(
+		// runTx already returns the receipt (calls .wait() internally)
+		const receipt = await runTx(
 			this.context.partyBPositionActionsFacet
 				.connect(this.signer)
-				.emergencyClosePosition(id, await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)))
+				.fillCloseRequestToLiquidation(
+					id,
+					request.closedPrice,
+					await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB)),
+				),
 		)
-		logger.info(`Hedger::EmergencyClosePosition: ${id}`)
+		// Parse the FillCloseRequest event to get the filled amount
+		const iface = this.context.partyBPositionActionsFacet.interface
+		for (const log of receipt?.logs || []) {
+			try {
+				const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data })
+				if (parsed?.name === "FillCloseRequest") {
+					return parsed.args.filledAmount
+				}
+			} catch {
+				// Not this event, continue
+			}
+		}
+		return 0n
 	}
 
-	public async settleUpnl(partyA: string, updatedPrices: bigint[], sig: Promise<SettlementSigStructOutput> | SettlementSigStructOutput = getDummySettlementSig()) {
+	public async liquidate(partyA: string, sig: SingleUpnlSigStructOutput | Promise<SingleUpnlSigStructOutput> = getDummySingleUpnlSig()) {
+		let signature = sig instanceof Promise ? await sig : sig
+		await runTx(
+			this.context.partyBLiquidationFacet.connect(this.context.signers.liquidator).liquidatePartyB(await this.signer.getAddress(), partyA, signature),
+		)
+	}
+
+	public async emergencyClosePosition(id: BigNumberish, request: EmergencyCloseRequest = emergencyCloseRequestBuilder().build()) {
+		const quote = await this.context.viewFacetQuote.getQuote(id)
+		const user = this.context.manager.getUser(quote.partyA)
+		await logDetailedDebug(async () =>
+			serializeToJson({
+				request: request,
+				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
+				hedgerUpnl: await this.getUpnl(quote.partyA),
+				userBalanceInfo: await user.getBalanceInfo(),
+				userUpnl: await user.getUpnl(),
+			}),
+		)
+		await runTx(
+			this.context.partyBEmergencyActionsFacet
+				.connect(this.signer)
+				.emergencyClosePosition(id, await getDummyPairUpnlAndPriceSig(BigInt(request.price), BigInt(request.upnlPartyA), BigInt(request.upnlPartyB))),
+		)
+	}
+
+	public async settleUpnl(
+		partyA: string,
+		updatedPrices: bigint[],
+		sig: Promise<SettlementSigStructOutput> | SettlementSigStructOutput = getDummySettlementSig(),
+	) {
 		let signature = sig instanceof Promise ? await sig : sig
 
 		const user = this.context.manager.getUser(partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				partyA: partyA,
 				updatedPrices: updatedPrices,
 				sig: sig,
 				userBalanceInfo: await user.getBalanceInfo(),
 				userUpnl: await user.getUpnl(),
-			})
+			}),
 		)
-		await runTx(
-			this.context.settlementFacet.connect(this.signer).settleUpnl(
-				signature,
-				updatedPrices,
-				partyA
-			)
+		await runTx(this.context.settlementFacet.connect(this.signer).settleUpnl(signature, updatedPrices, partyA))
+	}
+
+	public async settleUpnlUnified(
+		updatedPrices: bigint[],
+		sig: Promise<UnifiedSettlementSigStruct> | UnifiedSettlementSigStruct = getDummyUnifiedSettlementSig(),
+	) {
+		let signature = sig instanceof Promise ? await sig : sig
+
+		await logDetailedDebug(async () =>
+			serializeToJson({
+				partyB: signature.partyB,
+				partyAs: signature.partyAs,
+				updatedPrices: updatedPrices,
+				sig: sig,
+			}),
 		)
-		logger.info(`Hedger::settleUpnl`)
+		await runTx(this.context.settlementFacet.connect(this.signer).settleUpnlUnified(signature, updatedPrices))
 	}
 
 	public async getAddress() {
@@ -236,17 +270,19 @@ export class Hedger {
 		let openPositions: QuoteStructOutput[] = []
 		const pageSize = 30
 		let last = 0
+		const partyB = await this.getAddress()
 		while (true) {
-			const page = await this.context.viewFacet.getPartyBOpenPositions(await this.getAddress(), partyA, last, pageSize)
+			const page = await this.context.viewFacetQuote.getPartyBOpenPositions(partyB, partyA, last, pageSize)
 			openPositions.push(...page)
 			if (page.length < pageSize) break
+			last += page.length
 		}
 
 		let upnl = 0n
 		for (const pos of openPositions) {
-			const priceDiff = pos.openedPrice - await getPrice()
+			const priceDiff = pos.openedPrice - (await getPrice())
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
+			upnl += unDecimal(amount * priceDiff) * (pos.positionType === BigInt(PositionType.LONG) ? -1n : 1n)
 		}
 		return upnl
 	}

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="Role-based reading paths and a map of every Symmio Core v0.8.6 release chapter." />
+		<title>Symmio Core v0.8.6 Overview</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#how-to-use">How to use these notes</a>
+				<a class="toc-link level-2" href="#reader-paths">Reader paths</a>
+				<a class="toc-link level-2" href="#change-map">Change map</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Symmio Core v0.8.6 Overview</h1>
+							<p class="hero-copy">
+								Start here for a role-based route through every release chapter, from protocol safety and settlement to AccountLayer,
+								Express Withdrawal, Gasless Layer, integrations, and operations.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<p>
+						The v0.8.6 release notes are numbered chapters plus unnumbered companion pages. Each numbered chapter explains one behavior
+						change, its limits, and the integrations that must respond. This overview, the Express bot operations checklist, and the
+						<a href="session-keys.html">Session Keys</a> guide are companions.
+					</p>
+
+					<h2 id="how-to-use">How to use these notes</h2>
+					<ol>
+						<li>Use the <a href="../index.html">release index</a> to search all numbered chapters and follow their release order.</li>
+						<li>Choose a reader path below when you need the smallest useful subset for a review or integration.</li>
+						<li>Read linked pages together when one defines a safety or observability constraint used by another.</li>
+						<li>
+							For Express Withdrawal implementation, read the
+							<a href="express-withdrawal-system-design.html">system design</a> before the
+							<a href="express-bot-operations-checklist.html">bot operations checklist</a>.
+						</li>
+					</ol>
+
+					<h2 id="reader-paths">Reader paths</h2>
+					<h3 id="protocol-reviewers">Protocol reviewers</h3>
+					<p>
+						Start with <a href="strict-deallocation.html">Strict Deallocation</a>,
+						<a href="liquidation-funding-snapshot-fix.html">PartyA Liquidation Snapshot Flow</a>,
+						<a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a>, and
+						<a href="close-settlement-netting.html">Per-Quote Close Settlement Netting</a>. Then review
+						<a href="force-close-request-binding.html">Force-Close Request Binding</a>,
+						<a href="bound-mode-unified-settlement.html">Bound-Mode Unified Settlement</a>, and the
+						<a href="accountlayer-callback-liveness.html">AccountLayer callback fix</a> for lifecycle boundaries.
+					</p>
+
+					<h3 id="integrators-and-indexers">Integrators and indexers</h3>
+					<p>
+						Read <a href="balance-change-event-cleanup.html">Allocated Balance Event Ledger</a> before consuming the new settlement and
+						liquidation events. Continue with <a href="explicit-clearing-house-settlements.html">Explicit Clearing House Settlements</a>,
+						<a href="liquidation-funding-observability.html">Liquidation Funding Observability</a>,
+						<a href="solver-fees.html">Solver Fees</a>, <a href="operational-fees.html">Operational Fees</a>, and
+						<a href="symbol-adjustment.html">Symbol Corporate-Action Adjustment</a>. ABI consumers should also check
+						<a href="diamond-owner-getter.html">Diamond Owner Getter</a> and each page&rsquo;s integration notes.
+					</p>
+
+					<h3 id="operators-and-solvers">Operators and solvers</h3>
+					<p>
+						Follow the Express design and checklist pair, then review <a href="affiliate-shutdown-flow.html">Affiliate Shutdown Flow</a>,
+						<a href="gasless-layer.html#deployment">Gasless Layer deployment and wiring</a>,
+						<a href="muon-upnl-validity-overrides.html">Muon UPNL Validity Overrides</a>,
+						<a href="partyb-funding-nonces.html">PartyB Funding Update Nonces</a>, and
+						<a href="symbol-adjustment.html#runbook">the symbol-adjustment runbook</a>.
+					</p>
+
+					<h3 id="gasless-integrators">Gasless integrators</h3>
+					<p>
+						Start with <a href="gasless-layer.html">Gasless Layer</a> for the signed relay, deterministic-wallet, native top-up,
+						cross-chain deposit, fee, and deployment model. Continue with <a href="operational-fees.html">Operational Fees</a>,
+						<a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a>, and
+						<a href="account-layer-ownership-delegation.html">AccountLayer Delegated Creation &amp; Ownership Transfer</a> for the three
+						protocol interfaces the layer relies on.
+					</p>
+
+					<h3 id="accountlayer-builders">AccountLayer builders</h3>
+					<p>
+						Read <a href="accountlayer-timelock.html">AccountLayer Timelocks</a> for selector policies, per-call approvals, scheduling,
+						and policy changes, then <a href="account-layer-ownership-delegation.html">delegated creation and ownership transfer</a>,
+						<a href="delegation-account-scope.html">delegation scope</a>,
+						<a href="accountlayer-behavior-changes.html">observable behavior changes</a>,
+						<a href="position-isolation-partial-fill.html">partial-fill remainder handling</a>, and the
+						<a href="accountlayer-callback-liveness.html">callback-liveness fix</a>. The
+						<a href="express-deposit-removal.html">Express Deposit Removal</a> chapter identifies the removed v0.8.5 entry points.
+					</p>
+
+					<h2 id="change-map">Change map</h2>
+					<h3 id="express-withdrawal">Express Withdrawal</h3>
+					<p>
+						<a href="express-withdrawal-system-design.html">Express Withdrawal System Design</a> defines the provider, funding, risk, and
+						settlement model. <a href="express-deposit-removal.html">Express Deposit Removal</a> removes the unrelated v0.8.5 AccountLayer
+						deposit split. The <a href="express-bot-operations-checklist.html">bot operations checklist</a> is the companion
+						implementation reference.
+					</p>
+
+					<h3 id="gasless-operations">Gasless operations</h3>
+					<p>
+						<a href="gasless-layer.html">Gasless Layer</a> adds role-gated relaying for signed InstantLayer and deterministic-wallet
+						operations, sponsored or collateral-paid native gas top-ups, and settlement of bridged collateral into wallet-owned accounts.
+						It uses Core operational-fee allowances and AccountLayer ownership without moving signature authority to the relayer. The
+						<a href="session-keys.html">Session Keys</a> companion guide explains the owner-authorized keys that make one-click trading
+						possible.
+					</p>
+
+					<h3 id="accounts-and-authorization">Accounts and authorization</h3>
+					<p>
+						This group covers <a href="account-layer-ownership-delegation.html">AccountLayer ownership</a>,
+						<a href="delegation-account-scope.html">delegated account scope</a>,
+						<a href="instant-layer-authorization-scope.html">InstantLayer authorization scope</a>,
+						<a href="accountlayer-behavior-changes.html">AccountLayer behavior changes</a>,
+						<a href="position-isolation-partial-fill.html">POSITION partial fills</a>,
+						<a href="accountlayer-callback-liveness.html">callback liveness</a>,
+						<a href="diamond-owner-getter.html">the owner getter rename</a>, and
+						<a href="instant-open-gas-optimization.html">InstantOpen execution changes</a>.
+					</p>
+
+					<h3 id="liquidation-and-margin-safety">Liquidation and margin safety</h3>
+					<p>
+						The release adds <a href="liquidation-funding-snapshot-fix.html">snapshot-backed PartyA liquidation</a>, its
+						<a href="single-step-partya-liquidation.html">single-step wrapper</a>,
+						<a href="strict-deallocation.html">stricter deallocation floors</a>,
+						<a href="partya-liquidation-fee-recipient.html">one PartyA liquidation-fee recipient</a>,
+						<a href="partyb-allocation-suspension-gates.html">PartyB suspension gates</a>,
+						<a href="cross-partyb-liquidation-reserve.html">cross-PartyB reserve enforcement</a>,
+						<a href="force-close-request-binding.html">force-close request binding</a>,
+						<a href="notional-liquidation-fee-floor.html">a notional LF floor</a>,
+						<a href="affiliate-shutdown-flow.html">an Affiliate shutdown backstop</a>, and
+						<a href="close-to-liquidation.html">close-to-liquidation execution</a> with boundary fills and overshoot.
+					</p>
+
+					<h3 id="fees-and-settlement">Fees and settlement</h3>
+					<p>
+						This group covers <a href="solver-fees.html">solver rate fees</a>, <a href="operational-fees.html">operational fees</a>,
+						<a href="market-open-fee-execution-price.html">market-open fee pricing</a>,
+						<a href="explicit-clearing-house-settlements.html">typed Clearing House settlement</a>,
+						<a href="bound-mode-unified-settlement.html">bound-mode unified settlement</a>, and
+						<a href="close-settlement-netting.html">per-quote close netting</a>.
+					</p>
+
+					<h3 id="funding-observability-and-symbols">Funding, observability, and symbols</h3>
+					<p>
+						This group documents <a href="muon-upnl-validity-overrides.html">per-function UPNL validity windows</a>, the
+						<a href="balance-change-event-cleanup.html">allocated-balance event ledger</a>,
+						<a href="symbol-adjustment.html">corporate-action adjustment</a>,
+						<a href="liquidation-funding-observability.html">liquidation funding events</a>,
+						<a href="partyb-funding-nonces.html">PartyB funding-update nonces</a>,
+						<a href="lazy-accumulated-funding.html">lazy accumulated funding</a>, and
+						<a href="liquidation-rounding-and-funding-aggregate-repair.html">liquidation rounding and funding aggregate repair</a>.
+					</p>
+
+					<h3 id="access-control">Access control</h3>
+					<p>
+						<a href="diamond-role-management.html">Consistent Diamond Role Management</a> gives Core, AccountLayer, and ExpressProvider
+						one role-management interface, and <a href="narrower-admin-roles.html">Narrower Admin Roles</a> splits routine operations from
+						high-sensitivity powers and makes every pause role one-directional.
+						<a href="pledge-token-whitelist.html">Pledge Token Whitelist</a> adds explicit token approval for new pledge deposits under a
+						dedicated manager role.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

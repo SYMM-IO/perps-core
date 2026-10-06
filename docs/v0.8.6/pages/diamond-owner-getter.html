@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="The owner() getter on the core and AccountLayer ViewFacets is renamed to getOwner() on both diamonds." />
+		<title>Diamond Owner Getter - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#why">Why</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on callers</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Diamond Owner Getter</h1>
+							<p class="hero-copy">
+								The <code>owner()</code> getter on the core and AccountLayer ViewFacets is renamed to <code>getOwner()</code> on both
+								diamonds.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						Both the core and AccountLayer ViewFacets renamed <code>owner()</code> to <code>getOwner()</code>. No alias is kept, so the
+						old selector no longer resolves on either diamond.
+					</p>
+
+					<h2 id="why">Why</h2>
+					<p>
+						<code>owner()</code> shared its name with the <code>address owner</code> parameters on several AccountLayer view functions.
+						The parameters shadowed the getter and produced compiler warnings. Renaming it makes the name unambiguous on both diamonds.
+					</p>
+					<p>
+						ABI-derived facet cuts pick up the new selector from the compiled interface. Hand-written ABI fragments are not type checked,
+						however, so a stale <code>owner()</code> fragment fails only when the call reaches the upgraded diamond.
+					</p>
+
+					<h2 id="effect-on-callers">Effect on callers</h2>
+					<aside class="callout callout-risk">
+						<strong><code>owner()</code> is the ERC-173 signature explorers use to detect ownership.</strong> Neither diamond registers
+						ERC-173 through <code>supportsInterface</code>, so the rename does not break a declared interface. A call to the old selector,
+						however, no longer reaches a facet and reverts through the Diamond fallback. Block explorers, admin dashboards, and monitoring
+						must handle that revert and move to <code>getOwner()</code>.
+					</aside>
+					<p>
+						Current repository scripts call <code>getOwner()</code> for the core and AccountLayer diamonds; the separately deployed
+						ExpressProvider still exposes <code>owner()</code>. External tooling that must support both pre-rename and post-rename core or
+						AccountLayer deployments can try <code>getOwner()</code> first and explicitly fall back to <code>owner()</code> only for the
+						older ABI.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								The rename applies to both diamonds; the pending-owner getter is unchanged.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Diamond</th>
+									<th scope="col">Before</th>
+									<th scope="col">After</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Symmio core ViewFacet</td>
+									<td><code>owner()</code></td>
+									<td><code>getOwner()</code></td>
+								</tr>
+								<tr>
+									<td>AccountLayer ViewFacet</td>
+									<td><code>owner()</code></td>
+									<td><code>getOwner()</code></td>
+								</tr>
+								<tr>
+									<td>both</td>
+									<td><code>pendingOwner()</code></td>
+									<td><code>pendingOwner()</code> (unchanged)</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

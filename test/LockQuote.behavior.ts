@@ -1,20 +1,22 @@
-import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers"
-import {expect} from "chai"
+import { expect } from "chai"
+import { ethers, toUtf8Bytes } from "ethers"
 
-import {initializeFixture} from "./Initialize.fixture"
-import {PositionType, QuoteStatus} from "./models/Enums"
-import {Hedger} from "./models/Hedger"
-import {RunContext} from "./models/RunContext"
-import {User} from "./models/User"
-import {limitQuoteRequestBuilder} from "./models/requestModels/QuoteRequest"
-import {LockQuoteValidator} from "./models/validators/LockQuoteValidator"
-import {UnlockQuoteValidator} from "./models/validators/UnlockQuoteValidator"
-import {decimal, pausePartyB} from "./utils/Common"
-import {getDummySingleUpnlSig} from "./utils/SignatureUtils"
-import {QuoteStruct} from "../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStruct } from "../src/types/interfaces/ISymmio.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { LockQuoteValidator } from "./models/validators/LockQuoteValidator.js"
+import { UnlockQuoteValidator } from "./models/validators/UnlockQuoteValidator.js"
+import { decimal, pausePartyB } from "./utils/Common.js"
+import { migratePartyBToCross } from "./utils/CrossPartyB.js"
+import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeLockQuote(): void {
-	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
+	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger, user2: User
 
 	beforeEach(async function () {
 		context = await loadFixture(initializeFixture)
@@ -44,61 +46,161 @@ export function shouldBehaveLikeLockQuote(): void {
 		await user.sendQuote()
 	})
 
-	it("Should fail on invalid quoteId", async function () {
-		await expect(hedger.lockQuote(6, 0n, null)).to.be.reverted
-	})
-
-	it("Should fail on low balance", async function () {
-		await expect(hedger.lockQuote(1, 0n, null)).to.be.revertedWith("PartyBFacet: insufficient available balance")
-	})
-
-	it("Should fail on low balance (negative upnl)", async function () {
-		await expect(hedger.lockQuote(1, decimal(-125n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
-	})
-
-	it("Should fail on invalid partyB", async function () {
-		await expect(context.partyBQuoteActionsFacet.connect(context.signers.user2).lockQuote(1, await getDummySingleUpnlSig())).to.be.revertedWith(
-			"Accessibility: Should be partyB",
-		)
-	})
-
-	it("Should fail on invalid state", async function () {
-		await hedger.lockQuote(1)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Invalid state")
-	})
-
-	it("Should fail on liquidated partyA", async function () {
-		await hedger.lockQuote(2)
-		await hedger.openPosition(2)
-		await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)])
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
-	})
-
-	it("Should fail on paused partyB", async function () {
-		await pausePartyB(context)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("Pausable: PartyB actions paused")
-	})
-
-	it("Should fail on paused partyB", async function () {
-		await expect(hedger2.lockQuote(4)).to.be.revertedWith("PartyBFacet: Sender isn't whitelisted")
-	})
-
-	it("Should fail on expired quote", async function () {
-		await time.increase(1000)
-		await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Quote is expired")
-	})
-
-	it("Should run successfully", async function () {
-		const validator = new LockQuoteValidator()
-		const beforeOut = await validator.before(context, {
-			user: user,
+	describe("Unlock Quote", async function () {
+		it("Should fail on invalid quoteId", async function () {
+			// For a non-existent quoteId, the storage defaults to zero values.
+			// Quote deadline=0 causes "Quote is expired" before the quoteId range check.
+			await expect(hedger.lockQuote(6, 0n, null)).to.be.revertedWith("PartyBFacet: Quote is expired")
 		})
-		await hedger.lockQuote(1)
-		await validator.after(context, {
-			user: user,
-			hedger: hedger,
-			quoteId: BigInt(1),
-			beforeOutput: beforeOut,
+
+		it("Should fail on low balance", async function () {
+			await expect(hedger.lockQuote(1, 0n, null)).to.be.revertedWith("PartyBFacet: insufficient available balance")
+		})
+
+		it("Should fail on low balance (negative upnl)", async function () {
+			await expect(hedger.lockQuote(1, decimal(-125n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
+		})
+
+		it("Should fail on invalid partyB", async function () {
+			await expect(context.partyBQuoteActionsFacet.connect(context.signers.user2).lockQuote(1, await getDummySingleUpnlSig())).to.be.revertedWith(
+				"Accessibility: Should be partyB",
+			)
+		})
+
+		it("Should fail on invalid state", async function () {
+			await hedger.lockQuote(1)
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Invalid state")
+		})
+
+		it("Should fail on liquidated partyA", async function () {
+			await hedger.lockQuote(2)
+			await hedger.openPosition(2)
+			await user.liquidateAndSetSymbolPrices([1n], [decimal(200n)], [2n])
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("Accessibility: PartyA isn't solvent")
+		})
+
+		it("Should fail on paused partyB", async function () {
+			await pausePartyB(context)
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("Pausable: PartyB actions paused")
+		})
+
+		it("Should fail on paused partyB", async function () {
+			await expect(hedger2.lockQuote(4)).to.be.revertedWith("PartyBFacet: Sender isn't whitelisted")
+		})
+
+		it("Should fail on expired quote", async function () {
+			await time.increase(1000)
+			await expect(hedger.lockQuote(1)).to.be.revertedWith("PartyBFacet: Quote is expired")
+		})
+
+		it("Should fail when symbol type is not whitelisted", async function () {
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacetQuote.getQuote(1n)
+			expect(q1.quoteStatus).to.equal(QuoteStatus.LOCKED)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+			const q1After = await context.viewFacetQuote.getQuote(1n)
+			expect(q1After.quoteStatus).to.equal(QuoteStatus.OPENED)
+			await context.symbolControlFacet.removeSymbolTypeFromWhitelist(context.signers.hedger.address, 1)
+			await context.symbolControlFacet.removeSymbolsFromWhitelist(context.signers.hedger.address, [1])
+			await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+		})
+
+		it("Should run successfully", async function () {
+			const validator = new LockQuoteValidator()
+			const beforeOut = await validator.before(context, {
+				user: user,
+				hedger: hedger,
+				quoteId: BigInt(1),
+			})
+			await hedger.lockQuote(1)
+			await validator.after(context, {
+				user: user,
+				hedger: hedger,
+				quoteId: BigInt(1),
+				beforeOutput: beforeOut,
+			})
+		})
+
+		it("Should check bind partyB when bound", async function () {
+			// First expire all pending quotes so we can bind
+			await time.increase(1000)
+			await context.partyAFacet.connect(context.signers.user).expireQuote([1, 2, 3, 4, 5])
+
+			// BINDABLE_SETTER_ROLE was merged into PARTY_B_MANAGER_ROLE - no separate grant needed
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(context.signers.hedger.address, true)
+			await context.bindingFacet.connect(context.signers.user).bindToPartyB(context.signers.hedger.address)
+
+			// Send a new quote after binding - must target the bound partyB
+			await user.sendQuote(limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build())
+
+			// hedger2 should fail to lock the quote because partyA is bound to hedger
+			await expect(hedger2.lockQuote(6)).to.be.revertedWith("PartyBFacet: PartyB is not bounded to this partyA")
+		})
+
+		it("Should skip sig check when not bound", async function () {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.upnlSig(getDummySingleUpnlAndPriceSig(decimal(16n)))
+					.build(),
+			)
+			await expect(hedger2.lockQuote(1, decimal(-1000n))).to.be.revertedWith("PartyBFacet: Available balance is lower than zero")
+		})
+
+		it("Should lock with correct partyB pending balances", async function () {
+			const userAddress = await user.getAddress()
+			const hedgerAddress = await hedger.getAddress()
+			const partyBPendingBefore = await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)
+			await hedger.lockQuote(1)
+			const partyBPendingAfter = await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)
+			expect(partyBPendingAfter.length).to.equal(partyBPendingBefore.length + 1)
+			expect(partyBPendingAfter.map(q => q.toString())).to.include("1")
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.partyB).to.equal(hedgerAddress)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
+		})
+	})
+
+	describe("Cross partyB shared buckets", function () {
+		let quoteUser1: QuoteStruct, quoteUser2: QuoteStruct
+
+		beforeEach(async function () {
+			user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+			quoteUser1 = await context.viewFacetQuote.getQuote(await user.sendQuote(limitQuoteRequestBuilder().quantity(decimal(80n)).build()))
+			quoteUser2 = await context.viewFacetQuote.getQuote(await user2.sendQuote(limitQuoteRequestBuilder().quantity(decimal(120n)).build()))
+
+			await hedger.lockQuote(quoteUser1.id)
+			await hedger.lockQuote(quoteUser2.id)
+			await migratePartyBToCross(context, hedger, [quoteUser1.id, quoteUser2.id])
+
+			quoteUser1 = await context.viewFacetQuote.getQuote(quoteUser1.id)
+			quoteUser2 = await context.viewFacetQuote.getQuote(quoteUser2.id)
+		})
+
+		it("locks quotes into the shared cross bucket instead of partyA buckets", async function () {
+			const crossBucket = await hedger.getBalanceInfoCrossPartyB()
+			const partyABucket1 = await hedger.getBalanceInfo(await user.getAddress())
+			const partyABucket2 = await hedger.getBalanceInfo(await user2.getAddress())
+
+			let totalCVA = BigInt(quoteUser1.lockedValues.cva) + BigInt(quoteUser2.lockedValues.cva)
+			let totalLF = BigInt(quoteUser1.lockedValues.lf) + BigInt(quoteUser2.lockedValues.lf)
+			let totalMMPartyB = BigInt(quoteUser1.lockedValues.partyBmm) + BigInt(quoteUser2.lockedValues.partyBmm)
+			let totalLockedCross = crossBucket.pendingLockedCva + crossBucket.pendingLockedLf + crossBucket.pendingLockedMmPartyB
+
+			expect(partyABucket1.pendingLockedCva).to.eq(quoteUser1.lockedValues.cva)
+			expect(partyABucket1.pendingLockedLf).to.eq(quoteUser1.lockedValues.lf)
+			expect(partyABucket1.pendingLockedMmPartyB).to.eq(quoteUser1.lockedValues.partyBmm)
+			expect(partyABucket2.pendingLockedCva).to.eq(quoteUser2.lockedValues.cva)
+			expect(partyABucket2.pendingLockedLf).to.eq(quoteUser2.lockedValues.lf)
+			expect(partyABucket2.pendingLockedMmPartyB).to.eq(quoteUser2.lockedValues.partyBmm)
+
+			expect(crossBucket.pendingLockedCva).to.equal(totalCVA)
+			expect(crossBucket.pendingLockedLf).to.equal(totalLF)
+			expect(crossBucket.pendingLockedMmPartyB).to.equal(totalMMPartyB)
+			expect(crossBucket.totalPendingLockedPartyB).to.equal(totalLockedCross)
 		})
 	})
 
@@ -107,8 +209,13 @@ export function shouldBehaveLikeLockQuote(): void {
 			await hedger.lockQuote(1)
 		})
 
-		it("Should liquidate on partyB being not the one", async function () {
+		it("Should fail on wrong partyB", async function () {
 			await expect(hedger2.unlockQuote(1)).to.be.revertedWith("Accessibility: Should be partyB of quote")
+		})
+
+		it("Should fail on invalid state (already opened)", async function () {
+			await hedger.openPosition(1)
+			await expect(hedger.unlockQuote(1)).to.be.revertedWith("PartyBFacet: Invalid state")
 		})
 
 		it("Should fail on paused partyB", async function () {
@@ -117,19 +224,99 @@ export function shouldBehaveLikeLockQuote(): void {
 		})
 
 		it("Should expire quote during unlock", async function () {
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+			const userAddress = await user.getAddress()
+			const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
 			await time.increase(1000)
 			await hedger.unlockQuote(1)
-			let q: QuoteStruct = await context.viewFacet.getQuote(1)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
+				beforeOutput: beforeOut,
+			})
+			let q: QuoteStruct = await context.viewFacetQuote.getQuote(1)
 			expect(q.quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
+			// Verify quote removed from pending quotes after expiry
+			const pendingAfter = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
+			expect(pendingAfter.length).to.equal(pendingBefore.length - 1)
+			expect(pendingAfter.map(q => q.toString())).to.not.include("1")
+		})
+
+		it("Should remain pending when unlock mines exactly at the deadline", async function () {
+			const quote = await context.viewFacetQuote.getQuote(1n)
+			const deadline = BigInt(quote.deadline)
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+
+			await time.setNextBlockTimestamp(deadline)
+			await hedger.unlockQuote(1)
+			const transactionBlockTimestamp = BigInt(await time.latest())
+			expect(transactionBlockTimestamp).to.equal(deadline)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp,
+				beforeOutput: beforeOut,
+			})
+
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
+
+		it("Should keep PartyB disconnected when another locked quote remains", async function () {
+			await hedger.lockQuote(2)
+			const userAddress = await user.getAddress()
+			const hedgerAddress = await hedger.getAddress()
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(false)
+
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+			await hedger.unlockQuote(1)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
+				beforeOutput: beforeOut,
+			})
+
+			expect(await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)).to.deep.equal([2n])
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(false)
+		})
+
+		it("Should keep PartyB connected when another opened position remains", async function () {
+			await hedger.lockQuote(2)
+			await hedger.openPosition(2)
+			const userAddress = await user.getAddress()
+			const hedgerAddress = await hedger.getAddress()
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(true)
+
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+			await hedger.unlockQuote(1)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
+				beforeOutput: beforeOut,
+			})
+
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(true)
 		})
 
 		it("Should run successfully", async function () {
 			const validator = new UnlockQuoteValidator()
-			const beforeOut = await validator.before(context, {user: user})
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
 			await hedger.unlockQuote(1)
 			await validator.after(context, {
-				user: user,
-				quoteId: BigInt(1),
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
 				beforeOutput: beforeOut,
 			})
 		})

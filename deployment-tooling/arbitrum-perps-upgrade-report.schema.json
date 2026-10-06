@@ -1,0 +1,42 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://operations.symm.io/schemas/arbitrum-perps-upgrade-report-v1.json",
+	"title": "SYMMIO Arbitrum Perps upgrade report",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"apiVersion",
+		"kind",
+		"name",
+		"inputDigest",
+		"source",
+		"network",
+		"lifecycle",
+		"addresses",
+		"stages",
+		"safeBatches",
+		"externalActions",
+		"transactions",
+		"checks",
+		"createdAt",
+		"updatedAt"
+	],
+	"properties": {
+		"$schema": { "type": "string" },
+		"apiVersion": { "const": "operations.symm.io/arbitrum-perps-upgrade-report-v1" },
+		"kind": { "const": "ArbitrumPerpsUpgradeReport" },
+		"name": { "type": "string", "minLength": 1 },
+		"inputDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+		"source": { "type": "object" },
+		"network": { "type": "object" },
+		"lifecycle": { "enum": ["prepared", "in_progress", "waiting_external", "complete", "failed"] },
+		"addresses": { "type": "object" },
+		"stages": { "type": "object" },
+		"safeBatches": { "type": "object" },
+		"externalActions": { "type": "object" },
+		"transactions": { "type": "array", "items": { "type": "object" } },
+		"checks": { "type": "array", "items": { "type": "object" } },
+		"createdAt": { "type": "string", "format": "date-time" },
+		"updatedAt": { "type": "string", "format": "date-time" }
+	}
+}

@@ -1,0 +1,243 @@
+export const RECIPE_API_VERSION: "deployment.symm.io/v1"
+export const DEPLOYMENT_COMPONENTS: readonly ["core", "partyB", "symbolManager", "expressProvider", "gaslessLayer"]
+
+export type ComponentMode = "deploy" | "reuse" | "skip"
+export type SecretRef = `hardhat-keystore://${string}` | `env://${string}`
+export type SecretMetadata = { provider: "hardhat-keystore" | "env"; key: string }
+export type VanityGroup = "diamonds" | "facets" | "libraries" | "peripherals"
+export type VanityPattern = { prefix?: string; suffix?: string }
+export type MuonFunctionName =
+	| "Trading"
+	| "AccountManagement"
+	| "Settlement"
+	| "ForceClose"
+	| "Funding"
+	| "LiquidationPartyA"
+	| "LiquidationPartyB"
+	| "RemoveMargin"
+	| "ExpressCredit"
+export type MuonUpnlFunctionName = Exclude<MuonFunctionName, "ExpressCredit">
+
+export interface DeploymentRecipe {
+	$schema?: string
+	apiVersion: typeof RECIPE_API_VERSION
+	kind: "DeploymentRecipe"
+	name: string
+	network: { name: string; chainId: number; mode: "live" | "fork" | "local" }
+	secrets: { deployer?: SecretRef; rpc?: SecretRef; explorer?: SecretRef }
+	execution: {
+		logLevel: "silent" | "minimal" | "verbose"
+		verify: boolean
+		confirmations?: number
+		txTimeoutSeconds?: number
+		slowNoticeSeconds?: number
+		forkBlockNumber?: number
+	}
+	governance: {
+		admin: string
+		feeReceiver?: string
+		liquidationInsuranceVault?: string
+		maxLiquidationProfitPerPosition?: string
+		softLiquidationPenaltyCollector?: string
+	}
+	create2?: {
+		factory?: { mode: "deploy" } | { mode: "reuse"; address: string }
+		factoryAddress?: string
+		groups?: Partial<Record<VanityGroup, VanityPattern>>
+		overrides?: Record<string, VanityPattern>
+		miningBudget?: number
+	}
+	core: {
+		mode: ComponentMode
+		fromReport?: string
+		collateral?: { mode: "deploy" | "reuse"; address?: string }
+		muon?: {
+			mode: "mock" | "deploy" | "reuse"
+			address?: string
+			appId?: string
+			upnlValidTime: string
+			priceValidTime: string
+			/** Per-MuonFunction UPNL validity overrides in seconds; omit a function to use the global value. */
+			upnlValidTimeByFunction?: Partial<Record<MuonUpnlFunctionName, string>>
+			publicKey?: { x: string; parity: 0 | 1 }
+			gatewaySigners?: string[]
+			permissions?: MuonFunctionName[]
+		}
+		protocol?: {
+			description?: string
+			parameters: {
+				balanceLimitPerUser: string
+				maxWithdrawParts: number
+				deallocateCooldown: number
+				settlementCooldown: number
+				deallocateDebounceTime: number
+				liquidatorShare: string
+				liquidationTimeout: number
+				forceCloseCooldowns: [number, number]
+				forceCancelCooldown: number
+				forceCancelCloseCooldown: number
+				pendingQuotesValidLength: number
+				maxPartyAConnectionLimit: number
+			}
+			instantLayerTemplates: Array<{
+				name: string
+				instantOpenMode?: boolean
+				operations: Array<{ insertionPoints: number[]; sourceIndices: number[]; sourceOffsets: number[] }>
+			}>
+		}
+		setupInstantLayerTemplates?: boolean
+		registerDummyAffiliate?: boolean
+	}
+	partyB: {
+		mode: ComponentMode
+		address?: string
+		/** Optional ERC-1271 signer. Omission leaves signer() at address(0). */
+		signer?: string
+		/** Routine execution accounts. Deploy mode grants each account TRUSTED_ROLE. */
+		operators?: string[]
+		adlEnabled: boolean
+	}
+	symbolManager: { mode: ComponentMode; address?: string; operator?: string }
+	expressProvider: ExpressProviderRecipe
+	gaslessLayer: GaslessLayerRecipe
+	/** Optional; absent means the SymmioLiquidator proxy is not part of the run. */
+	liquidator?: LiquidatorRecipe
+}
+
+export interface LiquidatorRecipe {
+	mode: ComponentMode
+	/** Existing proxy address; required when mode is reuse, forbidden otherwise. */
+	address?: string
+	/** Defaults to governance.admin when omitted on a deploy. */
+	admin?: string
+	/** Accounts allowed to execute liquidation calls; required and non-empty on deploy. */
+	operators?: string[]
+}
+
+export interface GaslessLayerRecipe {
+	mode: ComponentMode
+	admin?: string
+	treasury?: string
+	/** Flat collateral fee for settling into an existing sub-account. */
+	depositFee?: string
+	/** Flat collateral fee, charged instead of depositFee, when settlement creates the sub-account; defaults to depositFee. */
+	newAccountDepositFee?: string
+	/** Flat collateral fee per wallet deployment; defaults to zero. */
+	walletCreationFee?: string
+	minimumDeposit?: string
+	defaultSelectorFee?: string
+	dailyFreeOpsLimit?: string
+	revertWhenFreeQuotaExhausted?: boolean
+	dailySponsoredNativeLimit?: string
+	revertWhenNativeSponsorLimitExhausted?: boolean
+	maxNativeGasTopUpAmount?: string
+	nativeGasTopUpFeeBps?: number
+	relayers?: string[]
+	selectorFees?: Array<{ selector: string; configured: boolean; amount: string }>
+}
+
+export type ExpressRoleName =
+	| "OPERATOR_ROLE"
+	| "LOCKER_ROLE"
+	| "SIGNER_ROLE"
+	| "SETTER_ROLE"
+	| "FEE_CLAIMER_ROLE"
+	| "UNLOCK_ROLE"
+	| "WITHDRAWER_ROLE"
+	| "PAUSER_ROLE"
+	| "UNPAUSER_ROLE"
+
+export interface ExpressAffiliateRecipe {
+	address: string
+	feeRate: string
+	operatorFee: string
+	/** 0 means no absolute cap. */
+	maxDebt: string
+	/** 0 means no percentage cap. */
+	maxDebtBps: number
+	minValidatorSignatures?: number
+	validatorApprovalTimeout?: number
+	validators?: string[]
+}
+
+export interface ExpressProviderRecipe {
+	mode: ComponentMode
+	address?: string
+	admin?: string
+	registerOnCore?: boolean
+	securityWindow?: number
+	tolerancePeriod?: number
+	creditLine?: {
+		/** "fromCore" resolves the core diamond's configured verifier at execution time. */
+		signatureVerifier: string
+		muonAppId: string
+		muonFreshnessWindow: number
+	}
+	roles?: Partial<Record<ExpressRoleName, string[]>>
+	affiliates?: ExpressAffiliateRecipe[]
+}
+
+export function parseSecretRef(ref: unknown, source?: string): SecretMetadata
+export function validateDeploymentRecipe(value: unknown, source?: string): DeploymentRecipe
+export function recipeDigest(recipe: unknown): string
+export function loadDeploymentRecipe(
+	recipePath: string,
+	options?: { projectRoot?: string },
+): {
+	recipe: DeploymentRecipe
+	path: string
+	identityPath: string
+	digest: string
+	recipeOnlyDigest: string
+	dependencies: { coreReport?: { path: string; identityPath: string; digest: string } }
+}
+
+export interface CoreDependencyReport {
+	deploymentId: string
+	network: string
+	chainId: number
+	lifecycle: "pending_handover" | "complete"
+	checks: {
+		health: "passed"
+		verification: "passed" | "skipped"
+		verificationPolicy: "required" | "not_applicable" | "explicitly_skipped"
+	}
+	deployerAddress: string
+	config: { admin: string }
+	addresses: {
+		diamond: string
+		instantLayer: string
+		collateral?: string
+		signatureVerifier?: string
+		accountLayerDiamond?: string
+	}
+	sourceDigest?: string
+}
+
+export function parseCoreDependencyReport(
+	value: unknown,
+	expected: { network: string; chainId: number; live: boolean; source?: string },
+): CoreDependencyReport
+export function loadCoreDependencyReport(
+	filePath: string,
+	expected: { network: string; chainId: number; live: boolean; digest?: string },
+): CoreDependencyReport
+
+export function createDeploymentPlan(
+	recipe: DeploymentRecipe,
+	options?: { only?: (typeof DEPLOYMENT_COMPONENTS)[number] },
+): {
+	network: DeploymentRecipe["network"]
+	only: (typeof DEPLOYMENT_COMPONENTS)[number] | null
+	// "liquidator" is an optional add-on outside DEPLOYMENT_COMPONENTS; full-run plans include it when declared.
+	components: Array<{
+		name: (typeof DEPLOYMENT_COMPONENTS)[number] | "liquidator"
+		mode: ComponentMode
+		dependsOn: Array<"core">
+		actions?: Array<{ id: string; target: string; operation: string; role?: string; account?: string }>
+	}>
+}
+export function recipeEnvironment(recipe: DeploymentRecipe): {
+	env: Record<string, string>
+	secrets: Partial<Record<"deployer" | "rpc" | "explorer", SecretMetadata>>
+}

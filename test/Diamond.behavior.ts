@@ -1,10 +1,11 @@
-import {loadFixture} from "@nomicfoundation/hardhat-network-helpers"
-import {assert, expect} from "chai"
-import {ethers} from "hardhat"
+import { assert, expect } from "chai"
+import { readFileSync } from "fs"
 
-import {FacetCutAction, getSelectors} from "../tasks/utils/diamondCut"
-import {initializeFixture} from "./Initialize.fixture"
-import {RunContext} from "./models/RunContext"
+import { FacetCutAction, getSelectors } from "../tasks/utils/diamondCut.js"
+import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture } from "./helpers/network-helpers.js"
+import { RunContext } from "./models/RunContext.js"
 
 function haveSameMembers(array1: any[], array2: any[]) {
 	if (array1.length !== array2.length) {
@@ -27,6 +28,11 @@ function haveSameMembers(array1: any[], array2: any[]) {
 	return true
 }
 
+function deployedBytecodeSize(artifactPath: string) {
+	const artifact = JSON.parse(readFileSync(artifactPath, "utf8"))
+	return (artifact.deployedBytecode.length - 2) / 2
+}
+
 export function shouldBehaveLikeDiamond(): void {
 	const addresses: string[] = []
 	let selectors: string[] = []
@@ -36,27 +42,153 @@ export function shouldBehaveLikeDiamond(): void {
 		this.context = await loadFixture(initializeFixture)
 	})
 
-	it("should have 14 facets", async function () {
+	it("should have 33 facets", async function () {
 		const context: RunContext = this.context
 		for (const address of await context.diamondLoupeFacet.facetAddresses()) {
 			addresses.push(address)
 		}
-		assert.equal(addresses.length, 14)
+		assert.equal(addresses.length, 33)
+	})
+
+	it("keeps new AccountStorage snapshot fields after existing layout fields", async function () {
+		const source = readFileSync("contracts/core/storages/AccountStorage.sol", "utf8")
+
+		const lastExistingLayoutField = source.indexOf("partyBLiquidationSettlementReserve")
+		const snapshotFlagField = source.indexOf("liquidationUsesPartyBSymbolSnapshots")
+		const snapshotStateField = source.indexOf("liquidationPartyBSymbolSnapshots")
+
+		expect(snapshotFlagField).to.be.greaterThan(lastExistingLayoutField)
+		expect(snapshotStateField).to.be.greaterThan(lastExistingLayoutField)
+	})
+
+	it("keeps liquidation funding attribution event-only", async function () {
+		const context: RunContext = this.context
+		const source = readFileSync("contracts/core/storages/AccountStorage.sol", "utf8")
+		const processorSelector = ethers.id("processPartyALiquidationFunding(address,address,bytes,uint256)").slice(0, 10)
+
+		expect(source).not.to.include("LiquidationFundingBySymbol")
+		expect(source).not.to.include("partyALiquidationSettlementFundingBySymbol")
+		expect(await context.diamondLoupeFacet.facetAddress(processorSelector)).to.equal(ethers.ZeroAddress)
+	})
+
+	it("keeps PartyA liquidation facets comfortably below the bytecode limit", async function () {
+		const partyALiquidationSize = deployedBytecodeSize(
+			"artifacts/contracts/core/facets/PartyALiquidation/PartyALiquidationFacet.sol/PartyALiquidationFacet.json",
+		)
+		const snapshotLiquidationSize = deployedBytecodeSize(
+			"artifacts/contracts/core/facets/PartyALiquidationSnapshot/PartyALiquidationSnapshotFacet.sol/PartyALiquidationSnapshotFacet.json",
+		)
+
+		expect(partyALiquidationSize).to.be.lessThan(20000)
+		expect(snapshotLiquidationSize).to.be.lessThan(20000)
+	})
+
+	it("does not expose the legacy no-affiliate sendQuote selector", async function () {
+		const context: RunContext = this.context
+		const legacySendQuoteSelector = ethers
+			.id(
+				"sendQuote(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,(bytes,uint256,int256,uint256,bytes,(uint256,address,address)))",
+			)
+			.slice(0, 10)
+
+		expect(await context.diamondLoupeFacet.facetAddress(legacySendQuoteSelector)).to.equal(ethers.ZeroAddress)
+	})
+
+	it("exposes only the liquidation-nonce-protected startRestatement selector", async function () {
+		const context: RunContext = this.context
+		const legacySelector = ethers.id("startRestatement(uint256,uint256,uint256)").slice(0, 10)
+		const unprotectedSelector = ethers.id("startRestatement(uint256)").slice(0, 10)
+		const currentSelector = ethers.id("startRestatement(uint256,uint256)").slice(0, 10)
+
+		expect(await context.diamondLoupeFacet.facetAddress(legacySelector)).to.equal(ethers.ZeroAddress)
+		expect(await context.diamondLoupeFacet.facetAddress(unprotectedSelector)).to.equal(ethers.ZeroAddress)
+		expect(await context.diamondLoupeFacet.facetAddress(currentSelector)).to.not.equal(ethers.ZeroAddress)
+	})
+
+	it("routes every Symbol Adjustment read through ViewFacetSymbol", async function () {
+		const context: RunContext = this.context
+		const symbolViewAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("getSymbol(uint256)").slice(0, 10))
+		const symbolAdjustmentAddress = await context.diamondLoupeFacet.facetAddress(ethers.id("startRestatement(uint256,uint256)").slice(0, 10))
+		const readSignatures = [
+			"getLiquidationStartNonce()",
+			"getSymbolAdjustment(uint256)",
+			"getCumulativeFactor(uint256)",
+			"getProspectiveCumulativeFactor(uint256)",
+			"previewQuoteAdjustment(uint256,uint256)",
+			"isSymbolFrozen(uint256)",
+			"getRestatementState(uint256)",
+			"getRestatementFundingProgress(uint256)",
+			"isRestatementFundingCheckpointed(uint256,address)",
+			"getQuoteRestatedEpoch(uint256)",
+			"getRestatementInventoryProgress(uint256,address)",
+		]
+
+		for (const signature of readSignatures) {
+			const owner = await context.diamondLoupeFacet.facetAddress(ethers.id(signature).slice(0, 10))
+			expect(owner, signature).to.equal(symbolViewAddress)
+			expect(owner, signature).to.not.equal(symbolAdjustmentAddress)
+		}
+
+		const symbolAdjustmentArtifact = JSON.parse(
+			readFileSync("artifacts/contracts/core/facets/SymbolAdjustment/SymbolAdjustmentFacet.sol/SymbolAdjustmentFacet.json", "utf8"),
+		)
+		const exposedReads = symbolAdjustmentArtifact.abi.filter(
+			(entry: { type?: string; stateMutability?: string }) =>
+				entry.type === "function" && (entry.stateMutability === "view" || entry.stateMutability === "pure"),
+		)
+		expect(exposedReads).to.deep.equal([])
+	})
+
+	it("appends restatement inventory checkpoints after the existing SymbolAdjustment layout", function () {
+		const source = readFileSync("contracts/core/storages/SymbolAdjustmentStorage.sol", "utf8")
+		const existingFinalField = source.indexOf("mapping(uint256 => mapping(address => FundingRateCheckpoint)) fundingRateCheckpoints")
+		const inventoryCheckpoints = source.indexOf(
+			"mapping(uint256 => mapping(address => RestatementInventoryCheckpoint)) restatementInventoryCheckpoints",
+		)
+		const inventoryTotals = source.indexOf("mapping(uint256 => RestatementInventoryTotals) restatementInventoryTotals")
+
+		expect(existingFinalField).to.be.greaterThan(-1)
+		expect(inventoryCheckpoints).to.be.greaterThan(existingFinalField)
+		expect(inventoryTotals).to.be.greaterThan(inventoryCheckpoints)
+	})
+
+	it("appends crystallize-and-restart rates after the existing funding checkpoint fields", function () {
+		const source = readFileSync("contracts/core/storages/SymbolAdjustmentStorage.sol", "utf8")
+		const checkpointStart = source.indexOf("struct FundingRateCheckpoint")
+		const existingFinalField = source.indexOf("uint256 restatementEpoch", checkpointStart)
+		const restatedLongRate = source.indexOf("int256 restatedLongRate", checkpointStart)
+		const restatedShortRate = source.indexOf("int256 restatedShortRate", checkpointStart)
+		const checkpointEnd = source.indexOf("struct RestatementInventoryCheckpoint", checkpointStart)
+
+		expect(checkpointStart).to.be.greaterThan(-1)
+		expect(restatedLongRate).to.be.greaterThan(existingFinalField)
+		expect(restatedShortRate).to.be.greaterThan(restatedLongRate)
+		expect(checkpointEnd).to.be.greaterThan(restatedShortRate)
+	})
+
+	it("appends the liquidation start nonce after the existing MA layout", function () {
+		const source = readFileSync("contracts/core/storages/MAStorage.sol", "utf8")
+		const existingFinalField = source.indexOf("mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag")
+		const liquidationStartNonce = source.indexOf("uint256 liquidationStartNonce")
+
+		expect(existingFinalField).to.be.greaterThan(-1)
+		expect(liquidationStartNonce).to.be.greaterThan(existingFinalField)
 	})
 
 	it("facets should have the right function selectors -- call to facetFunctionSelectors function", async function () {
 		const context: RunContext = this.context
 		// DiamondLoupeFacet
 		selectors = getSelectors(ethers, context.diamondLoupeFacet as any).selectors
-		result = await context.diamondLoupeFacet.facetFunctionSelectors(addresses[3])
+		const loupeAddress = await context.diamondLoupeFacet.facetAddress(selectors[0])
+		result = await context.diamondLoupeFacet.facetFunctionSelectors(loupeAddress)
 		expect(haveSameMembers(result, selectors)).to.be.true
 	})
 
 	it("should remove a function from ViewFacet -- getAccountBalance()", async function () {
 		const context: RunContext = this.context
-		const viewFacet = await ethers.getContractFactory("ViewFacet")
+		const viewFacet = await ethers.getContractFactory("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet")
 		const selectors = getSelectors(ethers, viewFacet as any).get(["balanceOf(address)"])
-		const viewFacetAddress = addresses[7]
+		const viewFacetAddress = await context.diamondLoupeFacet.facetAddress(selectors[0])
 
 		const tx = await context.diamondCutFacet.diamondCut(
 			[
@@ -68,7 +200,7 @@ export function shouldBehaveLikeDiamond(): void {
 			],
 			ethers.ZeroAddress,
 			"0x",
-			{gasLimit: 800000},
+			{ gasLimit: 800000 },
 		)
 		const receipt = await tx.wait()
 
@@ -82,8 +214,11 @@ export function shouldBehaveLikeDiamond(): void {
 
 	it("should add the getAccountBalance() function back", async function () {
 		const context: RunContext = this.context
-		const viewFacet = await ethers.getContractFactory("ViewFacet")
-		const viewFacetAddress = addresses[7]
+		const viewFacet = await ethers.getContractFactory("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet")
+		const selectors = getSelectors(ethers, viewFacet as any).get(["balanceOf(address)"])
+		const allSelectors = getSelectors(ethers, viewFacet as any).selectors
+		const fallbackSelector = allSelectors.find(selector => selector !== selectors[0])
+		const viewFacetAddress = await context.diamondLoupeFacet.facetAddress(fallbackSelector!)
 
 		const tx = await context.diamondCutFacet.diamondCut(
 			[
@@ -95,7 +230,7 @@ export function shouldBehaveLikeDiamond(): void {
 			],
 			ethers.ZeroAddress,
 			"0x",
-			{gasLimit: 800000},
+			{ gasLimit: 800000 },
 		)
 		const receipt = await tx.wait()
 

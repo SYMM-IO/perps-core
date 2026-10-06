@@ -1,9 +1,10 @@
-import {expect} from "chai"
-import {BridgeTransactionStructOutput} from "../../../src/types/contracts/interfaces/ISymmio"
-import {logger} from "../../utils/LoggerUtils"
-import {BridgeTransactionStatus} from "../Enums"
-import {RunContext} from "../RunContext"
-import {TransactionValidator} from "./TransactionValidator"
+import { expect } from "chai"
+
+import type { BridgeTransactionStructOutput } from "../../../src/types/interfaces/ISymmio.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { BridgeTransactionStatus } from "../Enums.js"
+import { RunContext } from "../RunContext.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type WithdrawLockedTransactionValidatorBeforeArg = {
 	bridge: string
@@ -13,6 +14,7 @@ export type WithdrawLockedTransactionValidatorBeforeArg = {
 export type WithdrawLockedTransactionValidatorBeforeOutput = {
 	bridge: string
 	depositBalanceBridge: bigint
+	collateralBalanceBridge: bigint
 	transaction: BridgeTransactionStructOutput
 }
 
@@ -27,6 +29,7 @@ export class WithdrawLockedTransactionValidator implements TransactionValidator 
 		return {
 			bridge: arg.bridge,
 			depositBalanceBridge: await context.viewFacet.balanceOf(arg.bridge),
+			collateralBalanceBridge: await context.collateral.balanceOf(arg.bridge),
 			transaction: await context.viewFacet.getBridgeTransaction(arg.transactionId),
 		}
 	}
@@ -37,5 +40,9 @@ export class WithdrawLockedTransactionValidator implements TransactionValidator 
 		// Check Transaction
 		const transaction = await context.viewFacet.getBridgeTransaction(arg.transactionId)
 		expect(transaction.status).to.be.equal(BridgeTransactionStatus.WITHDRAWN)
+
+		// Check collateral token was transferred to bridge
+		const collateralBalanceBridgeAfter = await context.collateral.balanceOf(arg.beforeOutput.bridge)
+		expect(collateralBalanceBridgeAfter - arg.beforeOutput.collateralBalanceBridge).to.be.equal(arg.beforeOutput.transaction.amount)
 	}
 }

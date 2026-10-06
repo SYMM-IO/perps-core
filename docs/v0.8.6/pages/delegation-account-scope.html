@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A delegation was enforced against the account owner, so it reached every SubAccount that owner held; it is now confined to the account family it was granted over."
+		/>
+		<title>Delegation Account Scope - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#what-a-delegation-covers">What a delegation covers</a>
+				<a class="toc-link level-2" href="#how-the-scope-is-set">How the scope is set</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Delegation Account Scope</h1>
+							<p class="hero-copy">
+								A delegation was enforced against the account owner rather than the delegated account, so v0.8.6 confines a delegated
+								operation to the account family it was granted over.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						A delegation names one account and one set of selectors. Before v0.8.6 it was enforced as one <em>owner</em> and one set of
+						selectors, which is a wider grant than the user agreed to.
+					</p>
+					<p>
+						A delegate approved for SubAccount <code>A</code> could run the delegated selectors against any other SubAccount held by the
+						same owner. Approving a bot to trade one account effectively approved it across every account that user held.
+					</p>
+					<p>
+						An account family is one named SubAccount together with its Virtual Accounts. v0.8.6 confines a delegated operation to the
+						family the delegation was granted over. Anything else is rejected with <code>AccountOutOfScope</code> and the whole operation
+						reverts, so no balance or ownership change lands.
+					</p>
+
+					<h2 id="what-changed">What changed</h2>
+					<p>
+						Before v0.8.6, InstantLayer executed a delegated operation as the account <em>owner</em>. The AccountLayer then checked
+						ownership of whichever account the call named, and an owner owns all of their SubAccounts, so that check passed for every one
+						of them. The delegation was checked against <code>A</code> while the call was allowed against <code>B</code>.
+					</p>
+					<p>
+						After v0.8.6, the session carries the delegated account family alongside the signer. Ownership is checked as before, and a
+						second check rejects any account outside that family.
+					</p>
+					<p>
+						Nothing about granting or revoking a delegation changed. Existing delegations keep working, and they now reach only the
+						account they already named.
+					</p>
+
+					<h2 id="what-a-delegation-covers">What a delegation covers</h2>
+					<p>The grant covers the named SubAccount together with its Virtual Accounts.</p>
+					<pre><code>scope = virtualAccount.isExists ? virtualAccount.parentAccount : account
+
+allowed(target) = owner(target) == signer AND canonical(target) == scope</code></pre>
+					<p>
+						Virtual Accounts are inside the grant because a SubAccount and its VAs are one trading unit. Margin moves between them in
+						normal use: <code>addMargin</code> is called on a Virtual Account but draws the collateral from its parent. A delegate that
+						could not reach Virtual Accounts could not trade the account it was approved for.
+					</p>
+					<p>
+						The grant stops there. A second SubAccount of the same owner, and any Virtual Account beneath it, is outside the delegation
+						even though one person owns both.
+					</p>
+					<p>
+						The scope resolves through the same rule the delegation itself is keyed by, so the enforced family and the granted family are
+						the same set. A delegation recorded against a Virtual Account and a delegation recorded against its parent are one grant, not
+						two.
+					</p>
+
+					<h2 id="how-the-scope-is-set">How the scope is set</h2>
+					<p>
+						InstantLayer is the only caller that opens a confined session. When it executes an operation whose signer is not the account
+						owner, it resolves the delegation key for the named account and installs it alongside the owner.
+					</p>
+					<p>
+						An owner-signed operation needs no confinement and uses a zero scope. A delegated operation resolves the named account to its
+						canonical SubAccount family. The administrator-controlled <code>transientContextEnabled</code> flag selects either the native
+						begin/end selector protocol and <code>setTransientSignerScoped</code>, or the historical setter-compatible protocol and
+						<code>setSignerScoped</code>. This is a configured protocol choice, not automatic capability detection. Both routes require
+						the upgraded AccountLayer scoped-signer methods and install the same owner and scope for this transaction.
+					</p>
+					<pre><code class="language-solidity">address scope = signedOp.signer == owner
+    ? address(0)
+    : _canonicalDelegator(signedOp.signerAccount.addr);
+
+if (usesNativeContextSelectors) {
+    IAccountLayerDiamond(accountLayer).setTransientSignerScoped(owner, scope);
+} else {
+    IAccountLayerDiamond(accountLayer).setSignerScoped(owner, scope);
+}</code></pre>
+					<p>
+						The scope applies to both routes InstantLayer uses: operations targeting Symmio, which are wrapped through
+						<code>_call</code>, and direct AccountLayer calls such as <code>addMargin</code> or <code>transferSubAccountOwnership</code>.
+					</p>
+					<p>
+						The session is cleared with the signer when the operation finishes. Both <code>setSigner</code> and
+						<code>setTransientSigner</code> install a zero scope, so either matching clear path removes the confinement before the next
+						operation. Callers that do not execute through an InstantLayer delegation never open a scoped session and are unaffected. This
+						includes AccountManager, direct users, and protocol operations.
+					</p>
+					<p>
+						<code>ViewFacet.getSignerScope</code> reports the active scope, or <code>address(0)</code> when the session is unconfined.
+						Because the scope is opened and cleared inside one transaction, it reads zero between transactions and is only meaningful to
+						an observer inside the call.
+					</p>
+					<p>
+						<code>AccountOutOfScope</code> is raised inside the AccountLayer, so a caller going through InstantLayer receives it wrapped
+						as <code>OperationFailed(index, reason)</code> with the scope rejection as the inner reason, rather than as a top-level
+						revert.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Scope does not replace ownership.</strong>
+						Ownership is checked first and remains required. A confined session can reach only a subset of the accounts available to the
+						owner.
+					</aside>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

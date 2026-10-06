@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+
+library LibAccessibility {
+	bytes32 public constant DEFAULT_ADMIN_ROLE = keccak256("DEFAULT_ADMIN_ROLE");
+	bytes32 public constant MUON_SETTER_ROLE = keccak256("MUON_SETTER_ROLE");
+	bytes32 public constant SIGNER_ADMIN_ROLE = keccak256("SIGNER_ADMIN_ROLE");
+	bytes32 public constant EMERGENCY_ADMIN_ROLE = keccak256("EMERGENCY_ADMIN_ROLE");
+	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
+	bytes32 public constant PARTY_B_MANAGER_ROLE = keccak256("PARTY_B_MANAGER_ROLE");
+	bytes32 public constant PLEDGE_TOKEN_MANAGER_ROLE = keccak256("PLEDGE_TOKEN_MANAGER_ROLE");
+	bytes32 public constant PARTY_B_REGISTRAR_ROLE = keccak256("PARTY_B_REGISTRAR_ROLE");
+	bytes32 public constant AFFILIATE_MANAGER_ROLE = keccak256("AFFILIATE_MANAGER_ROLE");
+	bytes32 public constant AFFILIATE_REGISTRAR_ROLE = keccak256("AFFILIATE_REGISTRAR_ROLE");
+	bytes32 public constant ENTITY_METADATA_MANAGER_ROLE = keccak256("ENTITY_METADATA_MANAGER_ROLE");
+	bytes32 public constant DISPUTE_ROLE = keccak256("DISPUTE_ROLE");
+	bytes32 public constant SUSPENDED_FUNDS_WITHDRAWER_ROLE = keccak256("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
+	bytes32 public constant PROTOCOL_CONFIG_ROLE = keccak256("PROTOCOL_CONFIG_ROLE");
+	bytes32 public constant PROTOCOL_LIMITS_ROLE = keccak256("PROTOCOL_LIMITS_ROLE");
+	bytes32 public constant BRIDGE_MANAGER_ROLE = keccak256("BRIDGE_MANAGER_ROLE");
+	bytes32 public constant FEE_ADMIN_ROLE = keccak256("FEE_ADMIN_ROLE");
+	bytes32 public constant COOLDOWN_ADMIN_ROLE = keccak256("COOLDOWN_ADMIN_ROLE");
+	bytes32 public constant FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE = keccak256("FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE");
+	bytes32 public constant PROVIDER_ADMIN_ROLE = keccak256("PROVIDER_ADMIN_ROLE");
+	bytes32 public constant INTEGRATION_ADMIN_ROLE = keccak256("INTEGRATION_ADMIN_ROLE");
+	bytes32 public constant UNSUSPENDER_ROLE = keccak256("UNSUSPENDER_ROLE");
+	bytes32 public constant SYMBOL_MANAGER_ROLE = keccak256("SYMBOL_MANAGER_ROLE");
+	bytes32 public constant SYMBOL_LISTING_ROLE = keccak256("SYMBOL_LISTING_ROLE");
+	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
+	// Each role authorizes only its corresponding pause scope; resuming requires UNPAUSER_ROLE.
+	bytes32 public constant GLOBAL_PAUSER_ROLE = keccak256("GLOBAL_PAUSER_ROLE");
+	bytes32 public constant PARTY_A_PAUSER_ROLE = keccak256("PARTY_A_PAUSER_ROLE");
+	bytes32 public constant PARTY_B_PAUSER_ROLE = keccak256("PARTY_B_PAUSER_ROLE");
+	bytes32 public constant ACCOUNTING_PAUSER_ROLE = keccak256("ACCOUNTING_PAUSER_ROLE");
+	bytes32 public constant INTERNAL_TRANSFER_PAUSER_ROLE = keccak256("INTERNAL_TRANSFER_PAUSER_ROLE");
+	bytes32 public constant EXTERNAL_TRANSFER_PAUSER_ROLE = keccak256("EXTERNAL_TRANSFER_PAUSER_ROLE");
+	bytes32 public constant LIQUIDATION_PAUSER_ROLE = keccak256("LIQUIDATION_PAUSER_ROLE");
+	bytes32 public constant INSTANT_LAYER_PAUSER_ROLE = keccak256("INSTANT_LAYER_PAUSER_ROLE");
+	bytes32 public constant WITHDRAW_ADVANCE_PAUSER_ROLE = keccak256("WITHDRAW_ADVANCE_PAUSER_ROLE");
+	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
+	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
+	bytes32 public constant SOFT_LIQUIDATOR_ROLE = keccak256("SOFT_LIQUIDATOR_ROLE");
+	bytes32 public constant PARTYB_LIQUIDATOR_ROLE = keccak256("PARTYB_LIQUIDATOR_ROLE");
+	bytes32 public constant CLEARING_HOUSE_ROLE = keccak256("CLEARING_HOUSE_ROLE");
+	bytes32 public constant VIRTUAL_DEPOSITOR_ROLE = keccak256("VIRTUAL_DEPOSITOR_ROLE");
+	bytes32 public constant INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
+	bytes32 public constant BALANCE_SETTLER_ROLE = keccak256("BALANCE_SETTLER_ROLE");
+
+	/// @notice Checks if a user has a specific role.
+	/// @param user The address of the user.
+	/// @param role The role to check.
+	/// @return Whether the user has the specified role.
+	function hasRole(address user, bytes32 role) internal view returns (bool) {
+		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
+		return layout.hasRole[user][role];
+	}
+
+	/// @notice Checks if a user is admin for a specific role.
+	/// @dev users with DEFAULT_ADMIN_ROLE are admin for all roles.
+	/// @param user The user to check.
+	/// @param role The role to check admin rights for.
+	/// @return Whether the user can administer the role.
+	function isRoleAdmin(address user, bytes32 role) internal view returns (bool) {
+		GlobalAppStorage.Layout storage layout = GlobalAppStorage.layout();
+		return layout.roleAdmins[role][user] || layout.hasRole[user][DEFAULT_ADMIN_ROLE];
+	}
+}

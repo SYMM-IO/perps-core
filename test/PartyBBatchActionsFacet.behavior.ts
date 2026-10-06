@@ -1,0 +1,1138 @@
+import { expect } from "chai"
+
+import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers } from "./helpers/hardhat-connection.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
+import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
+import { Hedger } from "./models/Hedger.js"
+import { RunContext } from "./models/RunContext.js"
+import { User } from "./models/User.js"
+import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
+import { decimal, getBlockTimestamp, getOpenTradingFeeForQuoteWithFilledAmount, getQuoteOpenTradingFeeAtPrice, pausePartyB } from "./utils/Common.js"
+import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+
+const WAD = 10n ** 18n
+const WAD_36 = 10n ** 36n
+const batchCloseEventsInterface = new ethers.Interface([
+	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
+	"event BalanceChangePartyA(address indexed partyA, uint256 amount, uint8 _type)",
+	"event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, uint8 _type)",
+	"event TradingFeeCharged(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 _type)",
+	"event TradeVolumeRecorded(uint256 quoteId, uint256 amount, address partyA, address partyB, uint256 symbolId, address affiliate, uint8 _type)",
+])
+
+export function shouldBehaveLikePartyBBatchActionsFacet(): void {
+	let context: RunContext, user: User, user2: User, hedger: Hedger, hedger2: Hedger
+
+	beforeEach(async function () {
+		context = await loadFixture(initializeFixture)
+		this.user_allocated = decimal(500n)
+		this.hedger_allocated = decimal(400000n)
+
+		user = new User(context, context.signers.user)
+		await user.setup()
+		await user.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+		user2 = new User(context, context.signers.user2)
+		await user2.setup()
+		await user2.setBalances(decimal(2000n), decimal(1000n), this.user_allocated)
+
+		hedger = new Hedger(context, context.signers.hedger)
+		await hedger.setup()
+		await hedger.setBalances(this.hedger_allocated, this.hedger_allocated)
+
+		hedger2 = new Hedger(context, context.signers.hedger2)
+		await hedger2.setup()
+		await hedger2.setBalances(this.hedger_allocated, this.hedger_allocated)
+	})
+
+	const openWith = async (partyB: Hedger): Promise<bigint> => {
+		await user.sendQuote(
+			limitQuoteRequestBuilder()
+				.partyBWhiteList([await partyB.getAddress()])
+				.build(),
+		)
+		const lastID = await context.viewFacetQuote.getNextQuoteId()
+		await partyB.lockQuote(lastID)
+		const q = await context.viewFacetQuote.getQuote(lastID)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q.requestedOpenPrice], [1n])
+		await context.partyBBatchActionsFacet.connect(partyB.signer).openPositions([lastID], [decimal(100n)], [q.requestedOpenPrice], upnlSig)
+		return lastID
+	}
+
+	const requestAndFillClose = async (id: bigint, partyB: Hedger, filled: bigint) => {
+		// Party A requests close (LIMIT close; price is irrelevant with dummy oracle)
+		await user.requestToClosePosition(id, limitCloseRequestBuilder().build())
+		const q = await context.viewFacetQuote.getQuote(id)
+		const upnlSig = await getDummyPairUpnlAndPricesSig([q.openedPrice], [id])
+		await context.partyBBatchActionsFacet.connect(partyB.signer).fillCloseRequests([id], [filled], [q.openedPrice], upnlSig)
+	}
+
+	const expectConnected = async (partyBAddr: string, expected: boolean) => {
+		const isConn = await context.viewFacetSymbol.isConnectedPartyB(context.signers.user.address, partyBAddr)
+		expect(isConn).to.equal(expected)
+
+		const conns = await context.viewFacetSymbol.getConnectedPartyBs(context.signers.user.address)
+		if (expected) {
+			expect(conns).to.include(partyBAddr)
+		} else {
+			expect(conns).to.not.include(partyBAddr)
+		}
+	}
+
+	describe("openPositions", async function () {
+		beforeEach(async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await user.sendQuote(marketQuoteRequestBuilder().positionType(PositionType.LONG).build())
+
+			await hedger.lockQuote(1)
+			await hedger.lockQuote(2)
+			await hedger.lockQuote(3)
+		})
+
+		it("Should fail when PartyB actions are paused", async function () {
+			await pausePartyB(context)
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("Pausable: PartyB actions paused")
+		})
+
+		it("Should fail with invalid array lengths", async function () {
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("Should fail with empty arrays", async function () {
+			const quoteIds: bigint[] = []
+			const filledAmounts: bigint[] = []
+			const openedPrices: bigint[] = []
+			const upnlSig = await getDummyPairUpnlAndPricesSig([], [])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("Should fail when affiliate shutdown is scheduled", async function () {
+			const affiliate = await context.accountManager.getAddress()
+			await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 2n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Affiliate shutdown scheduled")
+		})
+
+		it("Should fail when sender is not partyB of quote", async function () {
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Sender should be the partyB")
+		})
+
+		it("Should fail when partyA is suspended", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Sender is Suspended")
+		})
+
+		it("Should fail when partyB is suspended", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(context.signers.hedger.address)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Sender is Suspended")
+		})
+
+		it("Should fail when system is in emergency mode", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).activeEmergencyMode()
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: System is in emergency mode")
+		})
+
+		it("Should fail when partyB is in emergency mode", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).setPartyBEmergencyStatus([context.signers.hedger.address], true)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: PartyB is in emergency mode")
+		})
+
+		it("Should fail when quotes belong to different partyAs", async function () {
+			await user2.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(4)
+
+			const quoteIds = [1n, 4n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: All positions should belong to one partyA")
+		})
+
+		it("Should successfully open multiple positions", async function () {
+			const partyANonceBefore = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+			const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const openedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig)).to
+				.not.reverted
+
+			const quote1 = await context.viewFacetQuote.getQuote(1n)
+			const quote2 = await context.viewFacetQuote.getQuote(2n)
+			expect(quote1.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			expect(quote2.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			expect(quote1.openedPrice).to.equal(decimal(1n))
+			expect(quote2.openedPrice).to.equal(decimal(1n))
+
+			const partyANonceAfter = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+			const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+			expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
+			expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
+		})
+
+		it("Should true up executed market fees during batch open", async function () {
+			const requestedOpenPrice = decimal(1n)
+			const signedMarketPrice = decimal(9n, 17)
+			const openedPrice = decimal(1n)
+			const quoteId = await user.sendQuote(
+				marketQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.price(requestedOpenPrice)
+					.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
+					.build(),
+			)
+			await hedger.lockQuote(quoteId)
+
+			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
+			const reservedFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, quoteId, quoteBeforeOpen.quantity)
+			const executedFee = getQuoteOpenTradingFeeAtPrice(quoteBeforeOpen, quoteBeforeOpen.quantity, openedPrice)
+			const feeCollector = await context.viewFacet.getFeeCollector(quoteBeforeOpen.affiliate)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+			const upnlSig = await getDummyPairUpnlAndPricesSig([signedMarketPrice], [1n])
+
+			await context.partyBBatchActionsFacet
+				.connect(context.signers.hedger)
+				.openPositions([quoteId], [quoteBeforeOpen.quantity], [openedPrice], upnlSig)
+
+			const feeCollectorAfter = await context.viewFacet.balanceOf(feeCollector)
+			const allocatedAfter = (await user.getBalanceInfo()).allocatedBalances
+			expect(feeCollectorAfter - feeCollectorBefore).to.equal(executedFee)
+			expect(allocatedBefore - allocatedAfter).to.equal(executedFee - reservedFee)
+		})
+	})
+
+	describe("fillCloseRequests", async function () {
+		beforeEach(async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).price(decimal(4n)).build())
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+
+			await hedger.lockQuote(1)
+			await hedger.lockQuote(2)
+			await hedger.openPosition(1)
+			await hedger.openPosition(2)
+
+			await user.requestToClosePosition(1, limitCloseRequestBuilder().build())
+			await user.requestToClosePosition(2, limitCloseRequestBuilder().build())
+		})
+
+		it("Should fail when PartyB actions are paused", async function () {
+			await pausePartyB(context)
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("Pausable: PartyB actions paused")
+		})
+
+		it("Should fail with invalid array lengths", async function () {
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("Should fail with empty arrays", async function () {
+			const quoteIds: bigint[] = []
+			const filledAmounts: bigint[] = []
+			const closedPrices: bigint[] = []
+			const upnlSig = await getDummyPairUpnlAndPricesSig([], [])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("Should process repeated quote IDs sequentially without stranding locks", async function () {
+			const quoteId = 1n
+			const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
+			const partyABefore = await user.getBalanceInfo()
+			const partyBBefore = await hedger.getBalanceInfo(await user.getAddress())
+			const firstFill = (quoteBefore.quantity * 40n) / 100n
+			const secondFill = quoteBefore.quantity - firstFill
+			const closedPrice = quoteBefore.openedPrice
+			const upnlSig = await getDummyPairUpnlAndPricesSig([closedPrice, closedPrice], [1n, 1n])
+
+			await context.partyBBatchActionsFacet
+				.connect(context.signers.hedger)
+				.fillCloseRequests([quoteId, quoteId], [firstFill, secondFill], [closedPrice, closedPrice], upnlSig)
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			const partyAAfter = await user.getBalanceInfo()
+			const partyBAfter = await hedger.getBalanceInfo(await user.getAddress())
+
+			expect(quoteAfter.closedAmount).to.equal(quoteBefore.quantity)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(quoteAfter.lockedValues.cva).to.equal(0n)
+			expect(quoteAfter.lockedValues.lf).to.equal(0n)
+			expect(quoteAfter.lockedValues.partyAmm).to.equal(0n)
+			expect(quoteAfter.lockedValues.partyBmm).to.equal(0n)
+			expect(partyABefore.totalLockedPartyA - partyAAfter.totalLockedPartyA).to.equal(
+				quoteBefore.lockedValues.cva + quoteBefore.lockedValues.lf + quoteBefore.lockedValues.partyAmm,
+			)
+			expect(partyBBefore.totalLockedPartyB - partyBAfter.totalLockedPartyB).to.equal(
+				quoteBefore.lockedValues.cva + quoteBefore.lockedValues.lf + quoteBefore.lockedValues.partyBmm,
+			)
+		})
+
+		it("Should fail when quotes belong to different partyAs", async function () {
+			await user2.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(3)
+			await hedger.openPosition(3)
+			await user2.requestToClosePosition(3, limitCloseRequestBuilder().build())
+
+			const quoteIds = [1n, 3n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("PartyBBatchActionsFacet: All positions must have same partyA")
+		})
+
+		it("Should successfully fill multiple close requests", async function () {
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig))
+				.to.not.reverted
+
+			const quote1 = await context.viewFacetQuote.getQuote(1n)
+			const quote2 = await context.viewFacetQuote.getQuote(2n)
+			expect(quote1.closedAmount).to.equal(decimal(50n))
+			expect(quote2.closedAmount).to.equal(decimal(50n))
+			// Partial close leaves quotes in CLOSE_PENDING since original close request is still active
+			expect(quote1.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+			expect(quote2.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+		})
+
+		it("Should call each close hook immediately after finalizing its quote", async function () {
+			const quoteIds = [1n, 2n]
+			const quotes = await Promise.all(quoteIds.map(quoteId => context.viewFacetQuote.getQuote(quoteId)))
+			const filledAmounts = quotes.map(quote => quote.quantity)
+			const closedPrices = quotes.map(quote => quote.requestedClosePrice)
+			const upnlSig = await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n])
+			const observer = await (await ethers.getContractFactory("MockBatchCloseObserverHook")).deploy(await context.viewFacet.getAddress(), quoteIds)
+
+			await context.controlFacet.connect(context.signers.admin).registerHook(ethers.ZeroAddress, await observer.getAddress())
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig)
+
+			expect(await observer.firstCloseQuoteId()).to.equal(quoteIds[0])
+			expect(await observer.firstCloseSawOnlyCurrentQuoteFinalized()).to.equal(true)
+			expect(await observer.closeCallCount()).to.equal(quoteIds.length)
+			expect(await observer.closeFeeCallCount()).to.equal(quoteIds.length)
+		})
+
+		it("Should not fund an earlier quote with a later quote's realized PnL", async function () {
+			await user.requestToCancelCloseRequest(1n)
+			await hedger.acceptCancelCloseRequest(1n)
+			await user.requestToCancelCloseRequest(2n)
+			await hedger.acceptCancelCloseRequest(2n)
+
+			const closePrice = decimal(4n)
+			await user.requestToClosePosition(1n, limitCloseRequestBuilder().closePrice(closePrice).build())
+			await user.requestToClosePosition(2n, limitCloseRequestBuilder().closePrice(closePrice).build())
+
+			const partyA = await user.getAddress()
+			const partyBBeforeDeallocation = await hedger.getBalanceInfo(partyA)
+			const retainedPartyBAllocation = partyBBeforeDeallocation.totalLockedPartyB
+			await context.partyBAccountFacet
+				.connect(context.signers.hedger)
+				.deallocateForPartyB(partyBBeforeDeallocation.allocatedBalances - retainedPartyBAllocation, partyA, await getDummySingleUpnlSig(0n))
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(100n), decimal(100n)]
+			const closedPrices = [closePrice, closePrice]
+			const upnlSig = await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n])
+			const partyBBefore = await hedger.getBalanceInfo(partyA)
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig),
+			).to.be.revertedWith("LibQuote: PartyA should first exit its positions that are incurring losses")
+
+			expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(partyBBefore.allocatedBalances)
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+			expect((await context.viewFacetQuote.getQuote(2n)).quoteStatus).to.equal(BigInt(QuoteStatus.CLOSE_PENDING))
+		})
+
+		it("Should conserve balances, fees, locks, and events across sequential per-quote settlement", async function () {
+			await user.requestToCancelCloseRequest(1n)
+			await hedger.acceptCancelCloseRequest(1n)
+			await user.requestToCancelCloseRequest(2n)
+			await hedger.acceptCancelCloseRequest(2n)
+
+			await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+			const epochDuration = 3600
+			const latest = BigInt(await time.latest())
+			const aligned = (latest / BigInt(epochDuration) + 1n) * BigInt(epochDuration)
+			await time.setNextBlockTimestamp(Number(aligned))
+			await context.fundingRateFacet.connect(hedger.signer).setEpochDurations([1], [epochDuration])
+			await context.fundingRateFacet.connect(hedger.signer).setFundingFee([1], [decimal(8n, 15)], [-decimal(4n, 15)], [decimal(1n)])
+			await time.increase(epochDuration)
+
+			const quoteIds = [1n, 2n]
+			const closedPrices = [decimal(5n), decimal(2n)]
+			await user.requestToClosePosition(quoteIds[0], limitCloseRequestBuilder().closePrice(closedPrices[0]).build())
+			await user.requestToClosePosition(quoteIds[1], limitCloseRequestBuilder().closePrice(closedPrices[1]).build())
+
+			const quotes = await Promise.all(quoteIds.map(quoteId => context.viewFacetQuote.getQuote(quoteId)))
+			const filledAmounts = quotes.map(quote => quote.quantity - quote.closedAmount)
+			const funding = await context.viewFacetQuote.getQuoteFundingDebts(quoteIds)
+			const pnl = [
+				((closedPrices[0] - quotes[0].openedPrice) * filledAmounts[0]) / WAD,
+				((quotes[1].openedPrice - closedPrices[1]) * filledAmounts[1]) / WAD,
+			]
+			const fees = quotes.map((quote, i) => (filledAmounts[i] * closedPrices[i] * quote.closeFee) / WAD_36)
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const feeCollector = await context.viewFacet.getFeeCollector(quotes[0].affiliate)
+			const partyABefore = await user.getBalanceInfo()
+			const partyBBefore = await hedger.getBalanceInfo(partyA)
+			const feeCollectorBefore = await context.viewFacet.balanceOf(feeCollector)
+
+			expect(funding[0]).to.be.greaterThan(0n)
+			expect(funding[1]).to.be.lessThan(0n)
+			expect(pnl[0]).to.be.greaterThan(0n)
+			expect(pnl[1]).to.be.lessThan(0n)
+
+			const tx = await context.partyBBatchActionsFacet
+				.connect(context.signers.hedger)
+				.fillCloseRequests(quoteIds, filledAmounts, closedPrices, await getDummyPairUpnlAndPricesSig(closedPrices, [1n, 1n]))
+			const receipt = await tx.wait()
+			const events = (receipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = batchCloseEventsInterface.parseLog({ topics: [...log.topics], data: log.data })
+					return parsed ? [parsed] : []
+				} catch {
+					return []
+				}
+			})
+
+			const partyANet = pnl[0] + pnl[1] - funding[0] - funding[1]
+			const totalFees = fees[0] + fees[1]
+			const partyAAfter = await user.getBalanceInfo()
+			const partyBAfter = await hedger.getBalanceInfo(partyA)
+			expect(partyAAfter.allocatedBalances).to.equal(partyABefore.allocatedBalances + partyANet - totalFees)
+			expect(partyBAfter.allocatedBalances).to.equal(partyBBefore.allocatedBalances - partyANet)
+			expect(await context.viewFacet.balanceOf(feeCollector)).to.equal(feeCollectorBefore + totalFees)
+			expect(partyAAfter.totalLockedPartyA).to.equal(0n)
+			expect(partyBAfter.totalLockedPartyB).to.equal(0n)
+
+			for (const quoteId of quoteIds) {
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quote.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+				expect(quote.lockedValues.cva).to.equal(0n)
+				expect(quote.lockedValues.lf).to.equal(0n)
+				expect(quote.lockedValues.partyAmm).to.equal(0n)
+				expect(quote.lockedValues.partyBmm).to.equal(0n)
+			}
+
+			const fundingEvents = events.filter(event => event.name === "QuoteFundingSettled")
+			expect(fundingEvents.map(event => [event.args.quoteId, event.args.funding])).to.deep.equal([
+				[quoteIds[0], funding[0]],
+				[quoteIds[1], funding[1]],
+			])
+			expect(
+				fundingEvents.every(event => event.args.partyA === partyA && event.args.partyB === partyB && event.args.allocationKey === partyA),
+			).to.equal(true)
+
+			const partyAEvents = events.filter(event => event.name === "BalanceChangePartyA")
+			expect(partyAEvents.map(event => [event.args.amount, event.args._type])).to.deep.equal([
+				[pnl[0], 4n],
+				[funding[0], 11n],
+				[fees[0], 3n],
+				[-funding[1], 10n],
+				[-pnl[1], 5n],
+				[fees[1], 3n],
+			])
+			const partyBEvents = events.filter(event => event.name === "BalanceChangePartyB")
+			expect(partyBEvents.map(event => [event.args.amount, event.args._type])).to.deep.equal([
+				[funding[0], 10n],
+				[pnl[0], 5n],
+				[-pnl[1], 4n],
+				[-funding[1], 11n],
+			])
+
+			const feeEvents = events.filter(event => event.name === "TradingFeeCharged")
+			expect(feeEvents.map(event => [event.args.quoteId, event.args.amount, event.args._type])).to.deep.equal([
+				[quoteIds[0], fees[0], 1n],
+				[quoteIds[1], fees[1], 1n],
+			])
+			const volumeEvents = events.filter(event => event.name === "TradeVolumeRecorded")
+			expect(volumeEvents.map(event => [event.args.quoteId, event.args.amount, event.args._type])).to.deep.equal([
+				[quoteIds[0], (filledAmounts[0] * closedPrices[0]) / WAD, 1n],
+				[quoteIds[1], (filledAmounts[1] * closedPrices[1]) / WAD, 1n],
+			])
+		})
+
+		it("Should update nonces correctly", async function () {
+			const partyANonceBefore = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+			const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+			const quoteIds = [1n, 2n]
+			const filledAmounts = [decimal(50n), decimal(50n)]
+			const closedPrices = [decimal(1n), decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).fillCloseRequests(quoteIds, filledAmounts, closedPrices, upnlSig)
+
+			const partyANonceAfter = await context.viewFacet.nonceOfPartyA(context.signers.user.address)
+			const partyBNonceAfter = await context.viewFacet.nonceOfPartyB(context.signers.hedger.address, context.signers.user.address)
+
+			expect(partyANonceAfter).to.equal(partyANonceBefore + 1n)
+			expect(partyBNonceAfter).to.equal(partyBNonceBefore + 1n)
+		})
+	})
+
+	describe("Bind mode bypass consistency", function () {
+		async function createLockedQuoteForHedger(): Promise<bigint> {
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			const quoteId = await context.viewFacetQuote.getNextQuoteId()
+			await hedger.lockQuote(quoteId)
+			return quoteId
+		}
+
+		async function createOpenedPositionForHedger(): Promise<bigint> {
+			const quoteId = await createLockedQuoteForHedger()
+			await hedger.openPosition(quoteId)
+			return quoteId
+		}
+
+		async function bindUserToHedger(): Promise<void> {
+			const bindableSetterRole = ethers.keccak256(ethers.toUtf8Bytes("BINDABLE_SETTER_ROLE"))
+
+			await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, bindableSetterRole)
+			await context.controlFacet.connect(context.signers.admin).setPartyBBindable(await hedger.getAddress(), true)
+			await context.bindingFacet.connect(user.signer).bindToPartyB(await hedger.getAddress())
+		}
+
+		async function bindUserToHedgerWithOpenedPosition(): Promise<bigint> {
+			const quoteId = await createOpenedPositionForHedger()
+			await bindUserToHedger()
+			return quoteId
+		}
+
+		async function createClosePendingPositionForHedger(): Promise<bigint> {
+			const quoteId = await createOpenedPositionForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).build())
+			return quoteId
+		}
+
+		it("openPositions enforces Muon verification when not bound", async function () {
+			const quoteId = await createLockedQuoteForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.requestedOpenPrice], [quote.symbolId])
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [quote.quantity], [quote.requestedOpenPrice], upnlSig),
+			).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		it("openPositions skips Muon and solvency checks in bind mode", async function () {
+			await bindUserToHedgerWithOpenedPosition()
+
+			const quoteId = await createLockedQuoteForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.requestedOpenPrice], [quote.symbolId], -decimal(10000n), -decimal(10000n))
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(hedger.signer).openPositions([quoteId], [quote.quantity], [quote.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.OPENED))
+			expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(beforeNonceA + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(beforeNonceB + 1n)
+		})
+
+		it("fillCloseRequests enforces Muon verification when not bound", async function () {
+			const quoteId = await createClosePendingPositionForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId])
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.be.revertedWith("LibMuon: Expired signature")
+		})
+
+		it("fillCloseRequests enforces solvency checks when not bound", async function () {
+			const quoteId = await createClosePendingPositionForHedger()
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId], -decimal(10000n), -decimal(10000n))
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+		})
+
+		it("fillCloseRequests skips Muon verification in bind mode", async function () {
+			const quoteId = await bindUserToHedgerWithOpenedPosition()
+			let quote = await context.viewFacetQuote.getQuote(quoteId)
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).build())
+			quote = await context.viewFacetQuote.getQuote(quoteId)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId])
+			upnlSig.timestamp = 0n
+			await context.controlFacet.connect(context.signers.admin).setMuonConfig(0, 0)
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+		})
+
+		it("fillCloseRequests skips Muon and solvency checks in bind mode", async function () {
+			const quoteId = await bindUserToHedgerWithOpenedPosition()
+			let quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(quote.quantity).closePrice(decimal(1n)).build())
+			quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			const partyA = await user.getAddress()
+			const partyB = await hedger.getAddress()
+			const beforeNonceA = await context.viewFacet.nonceOfPartyA(partyA)
+			const beforeNonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([quote.openedPrice], [quote.symbolId], -decimal(10000n), -decimal(10000n))
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(hedger.signer)
+					.fillCloseRequests([quoteId], [quote.quantityToClose], [quote.requestedClosePrice], upnlSig),
+			).to.not.be.reverted
+
+			const quoteAfter = await context.viewFacetQuote.getQuote(quoteId)
+			expect(quoteAfter.quoteStatus).to.equal(BigInt(QuoteStatus.CLOSED))
+			expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(beforeNonceA + 1n)
+			expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(beforeNonceB + 1n)
+		})
+	})
+
+	describe("Access Control and Security", async function () {
+		beforeEach(async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+		})
+
+		it("Should fail when called by non-partyB address", async function () {
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.user).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Sender should be the partyB")
+		})
+
+		it("Should fail when global pause is active", async function () {
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("Pausable: Global paused")
+		})
+
+		it("Should handle invalid quote states", async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			// Dont lock quote 2
+
+			const quoteIds = [2n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Sender should be the partyB")
+		})
+
+		it("Should validate quote expiration", async function () {
+			await time.increase(86400) // 1 day
+
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Quote is expired")
+		})
+	})
+
+	describe("Edge Cases and Error Handling", async function () {
+		beforeEach(async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
+			await hedger.lockQuote(1)
+		})
+
+		it("Should fail when opened price is invalid for LONG position", async function () {
+			const quote = await context.viewFacetQuote.getQuote(1n)
+			const invalidPrice = quote.requestedOpenPrice + decimal(1n)
+
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [invalidPrice]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([invalidPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Opened price isn't valid")
+		})
+
+		it("Should fail when opened price is invalid for SHORT position", async function () {
+			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.SHORT).build())
+			await hedger.lockQuote(2)
+
+			const quote = await context.viewFacetQuote.getQuote(2n)
+			const invalidPrice = quote.requestedOpenPrice - decimal(1n)
+
+			const quoteIds = [2n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [invalidPrice]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([invalidPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("PartyBFacet: Opened price isn't valid")
+		})
+
+		it("Should fail when parties become insolvent after opening", async function () {
+			const quoteIds = [1n]
+			const filledAmounts = [decimal(100n)]
+			const openedPrices = [decimal(1n)]
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [1n], -decimal(10000n), -decimal(10000n))
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
+			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+		})
+	})
+
+	describe("Connections: Is Symbol Allowed For PartyA)", function () {
+		beforeEach(async function () {})
+
+		it("Baseline: with no connections, A can open with any B regardless of Bs whitelist", async function () {
+			// A sends a quote targeted to B2; no connections exist yet.
+			await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("BTCUSDT_wrapped", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [2])
+			await context.symbolControlFacet.whitelistSymbolType(context.signers.hedger.address, 2)
+
+			await hedger2.lockQuote(1)
+
+			const q1 = await context.viewFacetQuote.getQuote(1n)
+			const upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [2n])
+
+			// Should succeed even if B2 hasn't whitelisted the symbol yet
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+		})
+
+		it("After connecting A↔B1 on Symbol1, opening Symbol2 with B2 reverts if B1 has NOT whitelisted Symbol2", async function () {
+			// 1) A opens a first position with B1 → connects A↔B1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacetQuote.getQuote(1n)
+			const symbol1 = q1.symbolId as bigint
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+
+			// Sanity: A is now "connected" to B1 by the open above.
+
+			// 2) Try to open the SAME symbol with B2, but only B2 whitelists it (B1 does NOT)
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("BTCUSDT_wrapped", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [2])
+			await context.symbolControlFacet.whitelistSymbolType(context.signers.hedger2.address, 2)
+			const symbol2 = 2
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [symbol2]) // B2 ✅
+			// Important: do NOT whitelist for B1 here.
+
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(symbol2) // ensure same symbol
+					.build(),
+			)
+			await expect(hedger2.lockQuote(2)).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+		})
+
+		it("After connecting A↔B1 on Symbol1, opening Symbol1 with B2 SUCCEEDS when BOTH B1 and B2 whitelist Symbol1", async function () {
+			// Connect A↔B1 by opening first position on Symbol1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacetQuote.getQuote(1n)
+			const sym = q1.symbolId as bigint
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+
+			// Whitelist Symbol1 for BOTH B1 and B2
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbols(await hedger.getAddress(), [sym]) // B1 ✅
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [sym]) // B2 ✅
+
+			// Now try to open with B2 on the same symbol
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(sym)
+					.build(),
+			)
+			await hedger2.lockQuote(2)
+			const q2 = await context.viewFacetQuote.getQuote(2n)
+			upnlSig = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [q2.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+		})
+
+		it("Consensus via symbol TYPE: succeeds if B1 lacks Symbol1 but HAS Symbol1's type whitelisted", async function () {
+			// Connect A↔B1 by opening first position on Symbol1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger.getAddress()])
+					.build(),
+			)
+			await hedger.lockQuote(1)
+			const q1 = await context.viewFacetQuote.getQuote(1n)
+			const sym = q1.symbolId as bigint
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([q1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [q1.requestedOpenPrice], upnlSig)
+
+			// Get the symbol type
+			const symbolInfo = await context.viewFacetSymbol.getSymbolWithType(sym)
+			const symType = symbolInfo.symbolType
+
+			// B2 explicitly whitelists Symbol1; B1 whitelists only the type (not the symbol)
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [sym]) // B2 ✅ symbol
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbolType(await hedger.getAddress(), symType) // B1 ✅ type
+
+			// Try to open with B2 on Symbol1 → should pass because check allows symbol OR type per B
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(sym)
+					.build(),
+			)
+			await hedger2.lockQuote(2)
+			const q2 = await context.viewFacetQuote.getQuote(2n)
+			upnlSig = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [q2.requestedOpenPrice], upnlSig),
+			).to.not.be.reverted
+		})
+
+		it("If any connected B blacklists Symbol1, opening with ANY B must revert", async function () {
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("BTCUSDT_wrapped", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			await context.symbolControlFacet.connect(context.signers.admin).setSymbolTypes([2], [2])
+			// Connect A↔B1 on Symbol1
+			await user.sendQuote(limitQuoteRequestBuilder().symbolId(2).build())
+
+			const quote1 = await context.viewFacetQuote.getQuote(1n)
+			const sym = quote1.symbolId as bigint
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbols(await hedger.getAddress(), [sym])
+			await hedger.lockQuote(1)
+
+			let upnlSig = await getDummyPairUpnlAndPricesSig([quote1.requestedOpenPrice], [1n])
+			await context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [quote1.requestedOpenPrice], upnlSig)
+
+			// Whitelist Symbol1 for B2
+			await context.symbolControlFacet.connect(context.signers.admin).whitelistSymbols(await hedger2.getAddress(), [sym])
+
+			// Try to open with B2 on the same Symbol1
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.symbolId(sym)
+					.build(),
+			)
+			await hedger2.lockQuote(2)
+			const quote2 = await context.viewFacetQuote.getQuote(2n)
+			upnlSig = await getDummyPairUpnlAndPricesSig([quote2.requestedOpenPrice], [1n])
+
+			// Now blacklist Symbol1 on B1 → should trump the whitelist and block
+			await context.symbolControlFacet.connect(context.signers.admin).removeSymbolsFromWhitelist(await hedger.getAddress(), [sym])
+			await context.symbolControlFacet.connect(context.signers.admin).blacklistSymbols(await hedger.getAddress(), [sym])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [quote2.requestedOpenPrice], upnlSig),
+			).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+		})
+	})
+
+	describe("Connections: addConnection()", function () {
+		beforeEach(async function () {})
+
+		it("adds a connection on first successful open", async function () {
+			// Allow a roomy cap to avoid incidental reverts
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
+
+			await openWith(hedger)
+
+			// Assert via view (use whatever getters your ViewFacet exposes)
+			const connections = await context.viewFacetSymbol.getConnectedPartyBs(user.address) // e.g., address[]
+			expect(connections).to.include(await hedger.getAddress())
+			expect(connections.length).to.equal(1)
+
+			const isConn = await context.viewFacetSymbol.isConnectedPartyB(context.signers.user.address, await hedger.getAddress())
+			expect(isConn).to.equal(true)
+		})
+
+		it("is idempotent: opening again with the same B does not duplicate the connection", async function () {
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
+			await openWith(hedger)
+			// Open another position with the SAME B — should not revert and should NOT add a second entry
+			await openWith(hedger)
+
+			const connects = await context.viewFacetSymbol.getConnectedPartyBs(context.signers.user.address)
+			expect(connects.length).to.equal(1) // still one unique B
+			expect(connects[0]).to.equal(await hedger.getAddress())
+		})
+
+		it("enforces the max connection limit: reverts when trying to connect to a new B beyond the cap", async function () {
+			// Cap connections at 1
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
+
+			// First connection (A↔B1) succeeds
+			await openWith(hedger)
+
+			// Second connection (A↔B2) should FAIL on the first time addConnection() is attempted
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+			const id2 = await context.viewFacetQuote.getNextQuoteId()
+			await hedger2.lockQuote(id2)
+
+			const q2 = await context.viewFacetQuote.getQuote(id2)
+			const upnlSig2 = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([id2], [decimal(100n)], [q2.requestedOpenPrice], upnlSig2),
+			).to.be.revertedWith("AccountFacet: PartyA max connection limit exceeded")
+		})
+
+		it("does not consume limit when re-opening with an already-connected B", async function () {
+			// Cap = 1: A can keep trading with B1 freely
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(1)
+
+			await openWith(hedger)
+			await openWith(hedger) // should still be fine
+
+			// And still blocked for a *new* B
+			await user.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([await hedger2.getAddress()])
+					.build(),
+			)
+			const id2 = await context.viewFacetQuote.getNextQuoteId()
+			await hedger2.lockQuote(id2)
+			const q2 = await context.viewFacetQuote.getQuote(id2)
+			const upnlSig2 = await getDummyPairUpnlAndPricesSig([q2.requestedOpenPrice], [1n])
+
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([id2], [decimal(100n)], [q2.requestedOpenPrice], upnlSig2),
+			).to.be.revertedWith("AccountFacet: PartyA max connection limit exceeded")
+		})
+	})
+
+	describe("Connections: removeConnectionIfNoPositions()", function () {
+		beforeEach(async function () {
+			// Allow generous connection cap so we don't trip the limit mid-tests
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
+		})
+
+		it("removes connection after the last (A,B) position is fully closed", async function () {
+			const id = await openWith(hedger)
+			await expectConnected(await hedger.getAddress(), true) // connection created
+
+			// Fully close (filled == 100%)
+			await requestAndFillClose(id, hedger, decimal(100n))
+
+			// Connection should be removed (positions count for (B,A) is now zero)
+			await expectConnected(await hedger.getAddress(), false)
+		})
+
+		it("does NOT remove connection after a partial close", async function () {
+			const id = await openWith(hedger)
+			await expectConnected(await hedger.getAddress(), true)
+
+			// Partial close (50%)
+			await requestAndFillClose(id, hedger, decimal(50n))
+
+			// Still an open remainder → connection must persist
+			await expectConnected(await hedger.getAddress(), true)
+		})
+
+		it("does NOT remove connection if another (A,B) position remains open", async function () {
+			// Open two positions with the same B
+			const id1 = await openWith(hedger)
+			const id2 = await openWith(hedger)
+			await expectConnected(await hedger.getAddress(), true)
+
+			// Fully close only the first
+			await requestAndFillClose(id1, hedger, decimal(100n))
+
+			// One position still open → connection must persist
+			await expectConnected(await hedger.getAddress(), true)
+
+			// Now close the second fully → connection should drop
+			await requestAndFillClose(id2, hedger, decimal(100n))
+			await expectConnected(await hedger.getAddress(), false)
+		})
+
+		it("removing B1’s connection does not affect other Bs (B2 stays connected)", async function () {
+			const idB1 = await openWith(hedger)
+			const idB2 = await openWith(hedger2)
+
+			await expectConnected(await hedger.getAddress(), true)
+			await expectConnected(await hedger2.getAddress(), true)
+
+			// Fully close B1 position(s)
+			await requestAndFillClose(idB1, hedger, decimal(100n))
+
+			// B1 should be removed; B2 must still be connected
+			await expectConnected(await hedger.getAddress(), false)
+			await expectConnected(await hedger2.getAddress(), true)
+
+			// Clean up: close B2 to avoid leakage across tests
+			await requestAndFillClose(idB2, hedger2, decimal(100n))
+			await expectConnected(await hedger2.getAddress(), false)
+		})
+	})
+}

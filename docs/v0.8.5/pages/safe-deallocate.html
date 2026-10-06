@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="When a user requests a solver to open a position:" />
+		<title>SafeDeallocate - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden></div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>SafeDeallocate</h1>
+							<p class="hero-copy">
+								The safeDeallocate function allows Party A to deallocate funds while accounting for off-chain pending operations
+								(e.g., solver orders that haven't been written on-chain yet). This protects solvers from users front-running
+								deallocations before the solver's batched transactions land on-chain.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>When a user requests a solver to open a position:</p>
+					<ol>
+						<li>User makes off-chain request to solver</li>
+						<li>Solver prepares to batch sendQuote + lockQuote + openPosition in one transaction</li>
+						<li>User calls deallocate before solver's transaction lands</li>
+						<li>Solver's transaction fails due to insufficient user funds</li>
+					</ol>
+					<p>
+						Muon now provides a pendingBalance value representing funds committed to off-chain operations. The new safeDeallocate function
+						ensures:
+					</p>
+					<pre><code class="language-solidity">availableBalance &gt;= pendingBalance + deallocateAmount
+</code></pre>
+					<p><strong>New Signature Struct</strong></p>
+					<pre><code class="language-solidity">struct SingleUpnlWithPendingBalanceSig {
+    bytes reqId;
+    uint256 timestamp;
+    int256 upnl;
+    uint256 pendingBalance;  // Funds reserved for pending off-chain operations
+    bytes gatewaySignature;
+    IMuonSignatureVerifier.SchnorrSign sigs;
+}
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

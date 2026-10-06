@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { FundingRateFacetImpl } from "./FundingRateFacetImpl.sol";
+import { Pausable } from "../../utils/Pausable.sol";
+import { Accessibility } from "../../utils/Accessibility.sol";
+import { IFundingRateFacet } from "./IFundingRateFacet.sol";
+import { PairUpnlSig } from "../../storages/MuonStorage.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
+
+contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
+	/// @notice Charges funding rates for a given Party A position.
+	/// @param partyA The address of Party A.
+	/// @param quoteIds An array of quote IDs that we are about to get funding for.
+	/// @param rates An array of funding rates.
+	/// @param upnlSig The Muon signature for upnl of both parties.
+	function chargeFundingRate(
+		address partyA,
+		uint256[] memory quoteIds,
+		int256[] memory rates,
+		PairUpnlSig memory upnlSig
+	) external whenNotPartyBActionsPaused notLiquidatedPartyA(partyA) {
+		FundingRateFacetImpl.chargeFundingRate(partyA, quoteIds, rates, upnlSig);
+		emit ChargeFundingRate(LibSigner.getSigner(), partyA, quoteIds, rates);
+	}
+
+	/// @notice Sets funding rates for given symbols.
+	/// @param symbolIds An array of symbol ids.
+	/// @param longFees An array of funding fees for long positions in 18 decimals.
+	/// @param shortFees An array of funding fees for short positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
+	function setFundingFee(
+		uint256[] memory symbolIds,
+		int256[] memory longFees,
+		int256[] memory shortFees,
+		int256[] memory marketPrices
+	) external whenNotPartyBActionsPaused onlyPartyB {
+		address signer = LibSigner.getSigner();
+		FundingRateFacetImpl.setFundingFee(symbolIds, longFees, shortFees, marketPrices);
+		emit SetLongFundingFee(symbolIds, longFees, marketPrices, signer);
+		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, signer);
+	}
+
+	/// @notice Sets funding rates for given symbols.
+	/// @param symbolIds An array of symbol ids.
+	/// @param longFees An array of funding fees for long positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
+	function setLongFundingFee(
+		uint256[] memory symbolIds,
+		int256[] memory longFees,
+		int256[] memory marketPrices
+	) external whenNotPartyBActionsPaused onlyPartyB {
+		FundingRateFacetImpl.setLongFundingFee(symbolIds, longFees, marketPrices);
+		emit SetLongFundingFee(symbolIds, longFees, marketPrices, LibSigner.getSigner());
+	}
+
+	/// @notice Sets funding rates for given symbols.
+	/// @param symbolIds An array of symbol ids.
+	/// @param shortFees An array of funding fees for short positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
+	function setShortFundingFee(
+		uint256[] memory symbolIds,
+		int256[] memory shortFees,
+		int256[] memory marketPrices
+	) external whenNotPartyBActionsPaused onlyPartyB {
+		FundingRateFacetImpl.setShortFundingFee(symbolIds, shortFees, marketPrices);
+		emit SetShortFundingFee(symbolIds, shortFees, marketPrices, LibSigner.getSigner());
+	}
+
+	/// @notice Sets epoch durations for funding rates for given symbols.
+	/// @param symbolIds An array of symbol ids.
+	/// @param durations An array of durations for funding fees.
+	function setEpochDurations(uint256[] memory symbolIds, uint256[] memory durations) external whenNotPartyBActionsPaused onlyPartyB {
+		address signer = LibSigner.getSigner();
+		FundingRateFacetImpl.setEpochDuration(symbolIds, durations, signer);
+		emit SetEpochDuration(symbolIds, durations, signer);
+	}
+
+	/// @notice Updates accumulated funding fees for symbols with new long and short rates.
+	/// @param symbolIds An array of symbol ids.
+	/// @param longRates An array of new funding rates for long positions in 18 decimals.
+	/// @param shortRates An array of new funding rates for short positions in 18 decimals.
+	/// @param marketPrices An array of current market prices to convert rates to price-adjusted values.
+	function updateAccumulatedFundingFee(
+		uint256[] memory symbolIds,
+		int256[] memory longRates,
+		int256[] memory shortRates,
+		int256[] memory marketPrices
+	) external whenNotPartyBActionsPaused onlyPartyB {
+		FundingRateFacetImpl.updateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices);
+		emit UpdateAccumulatedFundingFee(symbolIds, longRates, shortRates, marketPrices, LibSigner.getSigner());
+	}
+
+	/// @notice Charges accumulated funding fees for a given Party A's positions with Party B.
+	/// @dev If the effective caller is partyB, Party A is bound to it, and it remains bindable,
+	///      upnlSig is ignored. All other callers require a valid Muon signature and solvency checks.
+	/// @param partyA The address of Party A.
+	/// @param partyB The address of Party B.
+	/// @param quoteIds An array of quote IDs to charge accumulated funding for.
+	/// @param upnlSig The Muon signature for upnl of both parties.
+	function chargeAccumulatedFundingFee(
+		address partyA,
+		address partyB,
+		uint256[] memory quoteIds,
+		PairUpnlSig memory upnlSig
+	) external whenNotPartyBActionsPaused notLiquidatedPartyA(partyA) notLiquidatedPartyB(partyB, partyA) onlyPartyB {
+		FundingRateFacetImpl.chargeAccumulatedFundingFee(partyA, partyB, quoteIds, upnlSig);
+		emit ChargeAccumulatedFundingFee(partyA, partyB, quoteIds, LibSigner.getSigner());
+	}
+}

@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
+import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
+import { LibPartyBQuoteActions } from "../../libraries/LibPartyBQuoteActions.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibHook } from "../../libraries/LibHook.sol";
+import { LibConnections } from "../../libraries/LibConnections.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+
+library PartyBQuoteActionsFacetImpl {
+	using LockedValuesOps for LockedValues;
+
+	/// @notice Verifies Party B's solvency and locks a pending quote for position opening
+	function lockQuote(uint256 quoteId, SingleUpnlSig memory upnlSig) internal {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		Quote storage quote = quoteLayout.quotes[quoteId];
+		address signer = LibSigner.getSigner();
+
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		if (tradingLayout.bindState[quote.partyA].partyB != address(0)) {
+			require(tradingLayout.bindState[quote.partyA].partyB == signer, "PartyBFacet: PartyB is not bounded to this partyA");
+			require(tradingLayout.isPartyBBindable[signer], "PartyBFacet: PartyB is not bindable");
+		} else {
+			LibMuonPartyB.verifyPartyBUpnl(upnlSig, signer, quote.partyA, MuonFunction.Trading);
+			int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, quote.partyA);
+			require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
+			require(uint256(availableBalance) >= quote.lockedValues.totalForPartyB(), "PartyBFacet: insufficient available balance");
+		}
+
+		LibPartyBQuoteActions.lockQuote(quoteId);
+	}
+
+	/// @notice Unlocks a locked quote, returning it to PENDING status or expiring it if past deadline
+	function unlockQuote(uint256 quoteId) internal returns (QuoteStatus) {
+		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+
+		Quote storage quote = quoteLayout.quotes[quoteId];
+		require(quote.quoteStatus == QuoteStatus.LOCKED, "PartyBFacet: Invalid state");
+		if (block.timestamp > quote.deadline) {
+			QuoteStatus result = LibQuoteClose.expireQuote(quoteId);
+			return result;
+		} else {
+			quote.statusModifyTimestamp = block.timestamp;
+			quote.quoteStatus = QuoteStatus.PENDING;
+			LibAccount.subFromPartyBPendingLockedBalances(quote);
+			LibQuote.removeFromPartyBPendingQuotes(quote);
+			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
+			quote.partyB = address(0);
+			return QuoteStatus.PENDING;
+		}
+	}
+
+	/// @notice Accepts a cancel request, refunding trading fees and releasing locked balances
+	function acceptCancelRequest(uint256 quoteId) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		require(quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
+		quote.statusModifyTimestamp = block.timestamp;
+		quote.quoteStatus = QuoteStatus.CANCELED;
+		accountLayout.pendingLockedBalances[quote.partyA].subQuote(quote);
+		LibAccount.subFromPartyBPendingLockedBalances(quote);
+
+		// send trading Fee back to partyA
+		LibAccount.refundOpenTradingFee(quoteId, quote.partyA);
+
+		LibQuote.removeFromPendingQuotes(quote);
+		LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
+
+		LibHook.callCancelQuoteHooks(quoteId, quote.partyA, quote.partyB, quote.affiliate);
+	}
+}

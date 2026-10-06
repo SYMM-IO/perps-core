@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Quote, QuoteStatus } from "../storages/QuoteStorage.sol";
+
+struct QuoteAdjustmentData {
+	uint256 factor;
+	uint256 quantity;
+	uint256 openedPrice;
+	uint256 initialOpenedPrice;
+	uint256 requestedOpenPrice;
+	uint256 marketPrice;
+	uint256 closedAmount;
+	uint256 avgClosedPrice;
+	uint256 quantityToClose;
+	uint256 requestedClosePrice;
+}
+
+/// @title LibQuoteAdjustment
+/// @notice Shared quote-unit conversion used by physical restatement and normalized views
+library LibQuoteAdjustment {
+	struct ScaledAmounts {
+		uint256 openAmount;
+		uint256 quantity;
+		uint256 closedAmount;
+		uint256 quantityToClose;
+	}
+
+	/// @notice Scales the economically distinct open and closed position amounts, then reconstructs total quantity.
+	/// @dev Deriving quantity from the two rounded components prevents a carry between their fractional remainders from
+	///      creating one unit of open position when callers later subtract closedAmount from quantity.
+	function scalePositionAmounts(
+		uint256 quantity,
+		uint256 closedAmount,
+		uint256 factor
+	) internal pure returns (uint256 openAmount, uint256 adjustedClosedAmount, uint256 adjustedQuantity) {
+		openAmount = Math.mulDiv(quantity - closedAmount, factor, 1e18);
+		adjustedClosedAmount = Math.mulDiv(closedAmount, factor, 1e18);
+		adjustedQuantity = openAmount + adjustedClosedAmount;
+	}
+
+	/// @notice Returns true when physical restatement would erase a nonzero amount or leave no open amount.
+	/// @dev Uses the same scaled amounts and validity conditions as `preview` without attempting any price division.
+	function hasAmountUnderflow(Quote memory quote, uint256 factor) internal pure returns (bool) {
+		ScaledAmounts memory amounts = _scaleAmounts(quote, factor);
+		return
+			amounts.quantity == 0 ||
+			(quote.closedAmount > 0 && amounts.closedAmount == 0) ||
+			amounts.openAmount == 0 ||
+			(quote.quantityToClose > 0 && amounts.quantityToClose == 0);
+	}
+
+	function preview(Quote memory quote, uint256 factor) internal pure returns (QuoteAdjustmentData memory result) {
+		uint256 oldQuantity = quote.quantity;
+		ScaledAmounts memory amounts = _scaleAmounts(quote, factor);
+		result.factor = factor;
+		result.quantity = amounts.quantity;
+		require(result.quantity > 0, "SymbolAdjustmentFacet: Quantity underflow");
+		result.openedPrice = _scalePrice(oldQuantity, quote.openedPrice, result.quantity);
+		result.initialOpenedPrice = _scalePrice(oldQuantity, quote.initialOpenedPrice, result.quantity);
+		result.requestedOpenPrice = _scalePrice(oldQuantity, quote.requestedOpenPrice, result.quantity);
+		result.marketPrice = _scalePrice(oldQuantity, quote.marketPrice, result.quantity);
+
+		result.closedAmount = amounts.closedAmount;
+		result.avgClosedPrice = quote.avgClosedPrice;
+		if (quote.closedAmount > 0) {
+			require(result.closedAmount > 0, "SymbolAdjustmentFacet: Closed amount underflow");
+			result.avgClosedPrice = _scalePrice(quote.closedAmount, quote.avgClosedPrice, result.closedAmount);
+		}
+		require(amounts.openAmount > 0, "SymbolAdjustmentFacet: Open amount underflow");
+
+		result.quantityToClose = amounts.quantityToClose;
+		result.requestedClosePrice = quote.requestedClosePrice;
+		if (quote.quantityToClose > 0) {
+			require(result.quantityToClose > 0, "SymbolAdjustmentFacet: Close amount underflow");
+			// An unrepresentable user close intent must not prevent conversion of the underlying position.
+			(uint256 high, ) = Math.mul512(quote.quantityToClose, quote.requestedClosePrice);
+			if (high >= result.quantityToClose) {
+				result.quantityToClose = 0;
+				result.requestedClosePrice = 0;
+			} else {
+				result.requestedClosePrice = _scalePrice(quote.quantityToClose, quote.requestedClosePrice, result.quantityToClose);
+			}
+		}
+	}
+
+	function toVenueUnits(Quote memory quote, uint256 factor) internal pure returns (Quote memory) {
+		if (factor == 1e18) return quote;
+		QuoteAdjustmentData memory result = preview(quote, factor);
+		if (quote.quantityToClose > 0 && result.quantityToClose == 0) quote.quoteStatus = QuoteStatus.OPENED;
+		quote.quantity = result.quantity;
+		quote.openedPrice = result.openedPrice;
+		quote.initialOpenedPrice = result.initialOpenedPrice;
+		quote.requestedOpenPrice = result.requestedOpenPrice;
+		quote.marketPrice = result.marketPrice;
+		quote.closedAmount = result.closedAmount;
+		quote.avgClosedPrice = result.avgClosedPrice;
+		quote.quantityToClose = result.quantityToClose;
+		quote.requestedClosePrice = result.requestedClosePrice;
+		return quote;
+	}
+
+	function _scalePrice(uint256 oldQuantity, uint256 oldPrice, uint256 newQuantity) private pure returns (uint256) {
+		if (oldPrice == 0) return 0;
+		return Math.mulDiv(oldQuantity, oldPrice, newQuantity);
+	}
+
+	function _scaleAmounts(Quote memory quote, uint256 factor) private pure returns (ScaledAmounts memory amounts) {
+		(amounts.openAmount, amounts.closedAmount, amounts.quantity) = scalePositionAmounts(quote.quantity, quote.closedAmount, factor);
+		amounts.quantityToClose = Math.mulDiv(quote.quantityToClose, factor, 1e18);
+	}
+}

@@ -1,17 +1,49 @@
 export const FacetNames = [
 	"AccountFacet",
-	"ControlFacet",
+	"PartyBAccountFacet",
+	"ExternalTransferFacet",
+	"BindingFacet",
+	"PledgeFacet",
+	"MigrationFacet",
+	"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
+	"ExecutionContextFacet",
+	"SymbolControlFacet",
+	"SymbolAdjustmentFacet",
+	"PauseControlFacet",
 	"DiamondLoupeFacet",
-	"LiquidationFacet",
+	"PartyALiquidationFacet",
+	"PartyALiquidationSnapshotFacet",
+	"PartyBLiquidationFacet",
 	"PartyAFacet",
 	"BridgeFacet",
-	"ViewFacet",
+	"contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet",
+	"ViewFacetSymbol",
+	"ViewFacetQuote",
+	"ViewFacetAggregate",
 	"FundingRateFacet",
 	"ForceActionsFacet",
+	"ForceCloseStepsFacet",
 	"SettlementFacet",
 	"PartyBPositionActionsFacet",
+	"PartyBExecutionFacet",
 	"PartyBQuoteActionsFacet",
-	"PartyBGroupActionsFacet",
+	"ClearingHouseFacet",
+	"PartyBBatchActionsFacet",
+	"PartyBEmergencyActionsFacet",
+	"WithdrawFacet",
 ]
 
-export const DEPLOYMENT_LOG_FILE = "deployed.json"
+// Deployment log files for verification
+export const DEPLOYMENT_LOG_FILE = "deployed.json" // Core Diamond contracts
+export const ACCOUNTLAYER_DEPLOYMENT_FILE = "accountlayer.json"
+export const INSTANTLAYER_DEPLOYMENT_FILE = "instantlayer.json"
+export const PARTYB_DEPLOYMENT_FILE = "partyb.json"
+export const LIQUIDATOR_DEPLOYMENT_FILE = "liquidator.json"
+export const STABLECOIN_DEPLOYMENT_FILE = "stablecoin.json"
+export const SYMBOLMANAGER_DEPLOYMENT_FILE = "symbolmanager.json"
+export const EXPRESSPROVIDER_DEPLOYMENT_FILE = "expressprovider.json"
+export const GASLESSLAYER_DEPLOYMENT_FILE = "gaslesslayer.json"
+export const CREATE2FACTORY_DEPLOYMENT_FILE = "create2factory.json"
+
+// Failed verifications — written by verify:all, consumed by verify:all --retry-failed
+export const VERIFY_FAILED_FILE = "verify-failed.json"
