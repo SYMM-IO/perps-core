@@ -65,48 +65,50 @@
 			"allowedRemovals": ["0x9dcdbdda", "0xff363ccc"]
 		}
 	},
-	"roleGrants": [
-		{
-			"holder": "0x3FB153ee0a18B2726a54E132C173AC73D8c05e20",
-			"role": "SYMBOL_LISTING_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "GLOBAL_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "PARTY_A_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "PARTY_B_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "ACCOUNTING_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "INTERNAL_TRANSFER_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "EXTERNAL_TRANSFER_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "LIQUIDATION_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "INSTANT_LAYER_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x77A955776Ee1dd3E9C800c3214ed489441d74b94",
-			"role": "WITHDRAW_ADVANCE_PAUSER_ROLE"
-		}
-	],
+	"roleGrants": {
+		"core": [
+			{
+				"holderRef": "target.symbolManager",
+				"role": "SYMBOL_LISTING_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "GLOBAL_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "PARTY_A_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "PARTY_B_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "ACCOUNTING_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "INTERNAL_TRANSFER_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "EXTERNAL_TRANSFER_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "LIQUIDATION_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "INSTANT_LAYER_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "WITHDRAW_ADVANCE_PAUSER_ROLE"
+			}
+		]
+	},
 	"inventory": {
 		"expressProvider": {
 			"kind": "contract",

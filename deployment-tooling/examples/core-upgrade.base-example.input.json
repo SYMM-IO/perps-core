@@ -65,46 +65,48 @@
 			"allowedRemovals": ["0x9dcdbdda", "0xff363ccc"]
 		}
 	},
-	"roleGrants": [
-		{
-			"holder": "0x0000000000000000000000000000000000000019",
-			"role": "SYMBOL_LISTING_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "GLOBAL_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "PARTY_A_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "PARTY_B_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "ACCOUNTING_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "INTERNAL_TRANSFER_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "EXTERNAL_TRANSFER_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "LIQUIDATION_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "INSTANT_LAYER_PAUSER_ROLE"
-		},
-		{
-			"holder": "0x1111111111111111111111111111111111111111",
-			"role": "WITHDRAW_ADVANCE_PAUSER_ROLE"
-		}
-	]
+	"roleGrants": {
+		"core": [
+			{
+				"holderRef": "target.symbolManager",
+				"role": "SYMBOL_LISTING_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "GLOBAL_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "PARTY_A_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "PARTY_B_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "ACCOUNTING_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "INTERNAL_TRANSFER_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "EXTERNAL_TRANSFER_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "LIQUIDATION_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "INSTANT_LAYER_PAUSER_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "WITHDRAW_ADVANCE_PAUSER_ROLE"
+			}
+		]
+	}
 }
