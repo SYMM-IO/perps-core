@@ -38,6 +38,103 @@ async function complete(f, intent) {
 	return validateGitRelease(f.root, intent, f.report);
 }
 
+function releaseBranch(f) {
+	const commit = f.git("rev-parse", "HEAD");
+	f.git("branch", "version_0.8.6", commit);
+	fs.writeFileSync(path.join(f.root, "tooling.txt"), "new operator tooling\n");
+	f.git("add", "tooling.txt");
+	f.git("commit", "-qm", "feat(tooling): add operator workflow");
+	const ui = {
+		...f.ui(),
+		select: async ({ message }) => (message === "Upgrade Git tag" ? "new" : message === "Git tag target" ? "release" : "release-mirror"),
+	};
+	return { commit, sourceCommit: f.git("rev-parse", "HEAD"), ui };
+}
+
+test("release-branch tag publishes that commit while keeping the tooling checkout pinned", async t => {
+	const f = fixture(t),
+		release = releaseBranch(f),
+		branch = f.git("symbolic-ref", "HEAD");
+	const intent = await prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "version_0.8.6" });
+	assert.deepEqual(intent.target, {
+		ref: "refs/heads/version_0.8.6",
+		commit: release.commit,
+		tree: f.git("rev-parse", `${release.commit}^{tree}`),
+	});
+	const report = await complete(f, intent);
+	assert.equal(report.commit, release.commit);
+	assert.equal(report.sourceCommit, release.sourceCommit);
+	assert.equal(f.git("rev-parse", "refs/tags/release/new^{commit}"), release.commit);
+	assert.equal(f.git("rev-parse", "HEAD"), release.sourceCommit);
+	assert.equal(f.git("symbolic-ref", "HEAD"), branch);
+	assert.equal(f.git("rev-parse", "refs/heads/version_0.8.6"), release.commit);
+	assert.deepEqual(
+		f
+			.git("ls-remote", "release-mirror")
+			.split("\n")
+			.map(line => line.split(/\s+/)[1]),
+		["refs/tags/release/new", "refs/tags/release/new^{}"],
+	);
+	await runGitReleasePhase(f.root, intent, f.report, "verify-publication");
+});
+
+test("tagging another release requires clean tooling and refuses a mismatched contracts tree", async t => {
+	const f = fixture(t),
+		release = releaseBranch(f);
+	fs.writeFileSync(path.join(f.root, "tooling.txt"), "staged change\n");
+	f.git("add", "tooling.txt");
+	await assert.rejects(prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "version_0.8.6" }), /clean, committed tooling checkout/);
+	f.git("commit", "-qm", "feat(tooling): review change");
+	fs.mkdirSync(path.join(f.root, "contracts"));
+	fs.writeFileSync(path.join(f.root, "contracts/Release.sol"), "// other release\n");
+	f.git("add", "contracts/Release.sol");
+	f.git("commit", "-qm", "feat(core): change release");
+	await assert.rejects(
+		prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "HEAD", contractsTree: f.git("rev-parse", "HEAD:contracts") }),
+		/immutable branch, tag or commit/,
+	);
+	await assert.rejects(
+		prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "version_0.8.6", contractsTree: f.git("rev-parse", "HEAD:contracts") }),
+		/Tag target Solidity differs/,
+	);
+});
+
+test("an existing tag on the selected release can be reused but a tag on tooling HEAD cannot", async t => {
+	const f = fixture(t),
+		release = releaseBranch(f);
+	f.git("tag", "-a", "-m", "Existing Core release", "chosen", release.commit);
+	const object = f.git("rev-parse", "refs/tags/chosen"),
+		ui = { ...release.ui, select: async options => (options.message === "Upgrade Git tag" ? "tag:chosen" : release.ui.select(options)) };
+	const intent = await prepareGitRelease({ root: f.root, ui, targetRef: "version_0.8.6" }),
+		report = await complete(f, intent);
+	assert.equal(report.tagObject, object);
+	assert.equal(report.commit, release.commit);
+	f.git("tag", "wrong", "HEAD");
+	await assert.rejects(
+		prepareGitRelease({
+			root: f.root,
+			ui: { ...ui, select: async options => (options.message === "Upgrade Git tag" ? "tag:wrong" : ui.select(options)) },
+			targetRef: "version_0.8.6",
+		}),
+		/Existing upgrade tag must point to the selected release/,
+	);
+});
+
+test("release ref, tooling commit and tag target remain bound after review and publication", async t => {
+	const f = fixture(t),
+		release = releaseBranch(f),
+		intent = await prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "version_0.8.6" });
+	f.git("branch", "-f", "version_0.8.6", "HEAD");
+	assert.throws(() => validateGitRelease(f.root, intent, f.report), /Git tag target reference changed/);
+	f.git("branch", "-f", "version_0.8.6", release.commit);
+	const report = await complete(f, intent);
+	fs.writeFileSync(f.report, JSON.stringify({ ...report, sourceCommit: release.commit }));
+	assert.throws(() => validateGitRelease(f.root, intent, f.report), /Git release commit changed/);
+	fs.writeFileSync(f.report, JSON.stringify(report));
+	f.git("tag", "-f", intent.tag, "HEAD");
+	assert.throws(() => validateGitRelease(f.root, intent, f.report), /tag changed/);
+});
+
 test("new tag publishes the reviewed clean commit without pushing branches or unrelated tags", async t => {
 	const f = fixture(t);
 	f.git("tag", "-a", "-m", "Unrelated tag", "unrelated");
