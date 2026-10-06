@@ -26,6 +26,7 @@ export const CORE_UPGRADE_PLAN = Object.freeze([
 	{ id: "plan-cut", phase: "prepare", title: "Bind the paused state and atomic Core upgrade batch" },
 	{ id: "cut", phase: "execution", title: "Export the atomic Core upgrade and verify its Safe receipt" },
 	{ id: "service-ready", phase: "verification", title: "Confirm application and indexer checks before restoring service" },
+	{ id: "muon-ready", phase: "verification", title: "Verify Muon registration, permissions and fresh routed canaries" },
 	{ id: "unpause", phase: "execution", title: "Restore the original pause state after verification" },
 	{ id: "publish", phase: "publication", title: "Publish verified implementations, facets and libraries on the explorer" },
 ]);
@@ -40,6 +41,7 @@ const BINDINGS = {
 	"plan-cut": ["batch"],
 	"rehearse-cut": ["cutRehearsal"],
 	"verify-cut": ["verifiedCut"],
+	"verify-muon": ["muonReadiness"],
 	"plan-unpause": ["unpauseBatch"],
 	"verify-unpause": ["restoredService"],
 };
@@ -133,7 +135,8 @@ export async function runCoreUpgradePhase(ctx, input, phase, { fork = false, env
 	for (const field of BINDINGS[phase] || []) {
 		if (!report[field]) throw new Error(`Missing ${field} evidence after ${phase}`);
 		const hash = digest(report[field]);
-		if (ctx.state.coreEvidence[field] && ctx.state.coreEvidence[field] !== hash) throw new Error(`Bound ${field} changed`);
+		if (ctx.state.coreEvidence[field] && ctx.state.coreEvidence[field] !== hash && phase !== "verify-muon")
+			throw new Error(`Bound ${field} changed`);
 		ctx.state.coreEvidence[field] = hash;
 	}
 	ctx.emit("upgrade.core-evidence", { phase, bindings: ctx.state.coreEvidence });
@@ -161,6 +164,13 @@ export async function deliverCoreBatch(ctx, input, key) {
 	const field = key === "cut" ? "batch" : `${key}Batch`,
 		standard = validateCoreTaskInput(ctx, input);
 	let report = read(input.output);
+	if (
+		key === "unpause" &&
+		!ctx.state.safeDispatches?.unpause &&
+		!report.governanceExecutions?.unpause?.transactions?.length &&
+		!report.unpauseReceipt
+	)
+		report = await runPhase(ctx, input, "verify-muon", { env: { SYMMIO_MUON_READY_INPUT: ctx.state.coreMuonReadinessFile || "" } });
 	if (key !== "cut" && !report[field]) report = await runPhase(ctx, input, `plan-${key}`);
 	const batch = report[field];
 	if (!batch) throw new Error("Missing reviewed governance batch");
@@ -311,7 +321,7 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 	const { upgradePlan: _plan, ...taskOverrides } = overrides;
 	return common({
 		id: "maintenance.arbitrum-core-upgrade",
-		version: 3,
+		version: 4,
 		category: "maintenance",
 		risk: "transaction",
 		title: "Arbitrum Vibe Core upgrade — current contracts, preserve existing layers",
@@ -331,6 +341,7 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 			"core-abi.json",
 			"optional separate fork rehearsal",
 			"atomic Safe batches and verified execution receipts",
+			"muon-readiness-request.json and pinned routed simulations",
 		],
 		signerPolicy: {
 			role: "Core deployment signer",
@@ -392,6 +403,16 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 				)
 					ctx.wait("Core stays paused until application and indexer checks pass.");
 				ctx.state.coreServiceReadiness = { verifiedCutDigest: ctx.state.coreEvidence.verifiedCut, confirmedAt: new Date().toISOString() };
+			});
+			await step("muon-ready", async () => {
+				ctx.ui.note(
+					`Fill ${path.join(path.dirname(input.output), "muon-readiness-request.json")} with service registration evidence and fresh positive/negative probes for InstantLayer, GaslessLayer, AccountLayer and PartyB.`,
+					"Muon readiness",
+				);
+				const file = await ctx.ui.text({ message: "Muon readiness JSON path", initialValue: ctx.state.coreMuonReadinessFile || "" });
+				if (!file) ctx.wait("Core stays paused until Muon readiness evidence is supplied.");
+				ctx.state.coreMuonReadinessFile = path.resolve(ctx.root, file);
+				await runPhase(ctx, input, "verify-muon", { env: { SYMMIO_MUON_READY_INPUT: ctx.state.coreMuonReadinessFile } });
 			});
 			await step("unpause", () => deliverCoreBatch(ctx, input, "unpause"));
 			await step("publish", () => runPhase(ctx, input, "publish"));

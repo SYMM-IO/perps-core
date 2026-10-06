@@ -17,6 +17,8 @@ test("live upgrades omit fork steps and publish only after restoration", () => {
 	assert.equal(ids.at(-1), "publish");
 	assert.ok(ids.indexOf("deploy") < ids.indexOf("cut"));
 	assert.ok(ids.indexOf("cut") < ids.indexOf("unpause"));
+	assert.ok(ids.indexOf("cut") < ids.indexOf("muon-ready"));
+	assert.ok(ids.indexOf("muon-ready") < ids.indexOf("unpause"));
 });
 
 test("optional rehearsal evidence becomes outdated when its bindings change", () => {
@@ -53,11 +55,12 @@ test("publication retry skips completed items and rejects changed item intent", 
 	);
 });
 
-test("real runner retries final publication without deploying, cutting or restoring twice", async t => {
+test("real runner blocks restoration on failed Muon readiness and retries final publication without repeating execution", async t => {
 	const f = await coreUpgradeFixture(t),
 		definition = TASK_DEFINITIONS.find(task => task.id === "maintenance.core-upgrade");
 	const phases = [];
 	let failPublication = true;
+	let failMuonReadiness = true;
 	const run = (ctx, input) =>
 		definition.run(
 			{
@@ -84,6 +87,12 @@ test("real runner retries final publication without deploying, cutting or restor
 					}
 					if (phase === "verify-pause") report.paused = { blockNumber: 200 };
 					if (phase === "verify-cut") report.verifiedCut = { success: true };
+					if (phase === "verify-muon") {
+						assert.ok(ctx.state.completedSteps.includes("cut"));
+						assert.equal(ctx.state.completedSteps.includes("unpause"), false);
+						if (failMuonReadiness) throw new Error("Muon readiness RPC unavailable");
+						report.muonReadiness = { canaries: "verified" };
+					}
 					if (phase === "verify-unpause") {
 						report.restoredService = { cutDigest: ctx.state.coreEvidence.verifiedCut };
 						report.status = "publication-pending";
@@ -103,6 +112,12 @@ test("real runner retries final publication without deploying, cutting or restor
 		runner = createTaskRunner({ root: f.root, definitions: [task] });
 	const ui = { note() {}, confirm: async () => true, text: async () => String(f.config.network.chainId) };
 	let state = await runner.start(task.id, { input: f.input, ui });
+	assert.equal(state.status, "paused", state.lastError);
+	assert.match(state.lastError, /Muon readiness RPC unavailable/);
+	assert.equal(phases.includes("plan-unpause"), false);
+	assert.equal(phases.includes("publish"), false);
+	failMuonReadiness = false;
+	state = await runner.resumeActive({ ui });
 	assert.equal(state.status, "paused", state.lastError);
 	assert.match(state.lastError, /Explorer unavailable/);
 	assert.equal(read(f.input.output).status, "publication-pending");
