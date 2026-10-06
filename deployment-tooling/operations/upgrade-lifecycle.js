@@ -1,7 +1,17 @@
 import { operationDigest } from "./inputs.js";
 
 /** Shared lifecycle for reviewed component adapters. Rehearsal has its own run. */
-export const LIVE_UPGRADE_STAGES = Object.freeze(["inspect", "deploy", "prepare-services", "checkpoint", "apply", "verify", "restore", "publish"]);
+export const LIVE_UPGRADE_STAGES = Object.freeze([
+	"inspect",
+	"deploy",
+	"prepare-services",
+	"checkpoint",
+	"apply",
+	"verify",
+	"muon-ready",
+	"restore",
+	"publish",
+]);
 
 export function rehearsalStatus(evidence, currentBindings) {
 	if (!evidence) return "not-run";

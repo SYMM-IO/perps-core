@@ -15,6 +15,8 @@ import {
 } from "../../deployment-tooling/arbitrum-core-upgrade.js"
 import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js"
 import { isStandardCoreInput, coreUpgradeNetwork, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
+import { operationDigest } from "../../deployment-tooling/operations/inputs.js"
+import { verifyMuonReadiness } from "../../deployment-tooling/operations/muon-readiness.js"
 import { publishUpgradeItems, upgradeCompletionStatus } from "../../deployment-tooling/operations/upgrade-lifecycle.js"
 import { FacetSpecs, LibrarySpecs, linkedLibrariesFor } from "../../utils/deploymentManifest.js"
 import { atomicWriteFile } from "../utils/fs.js"
@@ -59,6 +61,7 @@ const PHASES = [
 	"rehearse-cut",
 	"check-export",
 	"verify-cut",
+	"verify-muon",
 	"plan-unpause",
 	"verify-unpause",
 	"reconcile",
@@ -238,6 +241,53 @@ export async function verifyCoreUpgradePostState(hre: any, ethers: any, input: a
 	return state
 }
 
+/** Models restoration only in a read-only simulation. Safe authorization still requires its real execution receipt. */
+function coreMuonBindings(input: any, report: any) {
+	return {
+		chainId: coreUpgradeNetwork(input.config).chainId,
+		core: input.config.target.core,
+		upgradeInputDigest: digest(input),
+		cutDigest: digest(report.verifiedCut),
+		releaseCommit: input.releaseCommit || input.sourceCommit,
+		configurationDigest: operationDigest(report.paused.muon.configuration),
+	}
+}
+
+async function checkCoreMuonReadiness(ethers: any, input: any, report: any, document: any) {
+	const state = await captureCoreUpgradeSnapshot(ethers, input.config, true, undefined, true)
+	for (const key of ["preserved", "wiring", "code"]) same(report.paused[key], state[key], `Muon readiness ${key} changed`)
+	same(report.batch.desired, state.selectors, "Muon readiness selector map changed")
+	const t = input.config.target,
+		core = new ethers.Interface(coreUpgradeABI)
+	return verifyMuonReadiness(
+		ethers.provider,
+		{
+			profile: {
+				schemaVersion: 1,
+				kind: "symmio.muon-upgrade-profile",
+				chainId: Number((await ethers.provider.getNetwork()).chainId),
+				core: { address: t.core, codeHash: state.code.core },
+				verifier: { address: t.signatureVerifier, codeHash: state.code.signatureVerifier },
+				policy: input.config.muon || {},
+			},
+			snapshot: report.paused.muon,
+			checkpoint: { blockNumber: state.blockNumber, blockHash: state.blockHash },
+			bindings: coreMuonBindings(input, report),
+			entrypoints: ["instantLayer", "gaslessLayer", "accountLayer", "partyB"].map(id => ({ id, address: t[id], codeHash: state.code[id] })),
+			restoreCall: state.pause[0]
+				? { from: coreUpgradeAuthority(input.config), to: t.core, value: "0x0", data: core.encodeFunctionData("unpauseGlobal") }
+				: null,
+		},
+		document,
+	)
+}
+
+async function assertMuonRestoreReady(ethers: any, input: any, report: any, bindings: any) {
+	if (!bindings.muonReadiness || !report.muonReadiness?.document) throw new Error("Verify Muon service and routed canaries before restoration")
+	assertCoreEvidence(report, "muonReadiness", bindings.muonReadiness)
+	await checkCoreMuonReadiness(ethers, input, report, report.muonReadiness.document)
+}
+
 export async function rehearseInitialCoreUpgrade(hre: any, ethers: any, input: any, report: any, directory: string) {
 	const initial = report.initial,
 		metadata = await ethers.provider.send("hardhat_metadata", [])
@@ -414,6 +464,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				throw new Error("Governance payload must match the bound deployments and paused snapshot")
 			report.governanceExecutions ||= {}
 			const journal = (report.governanceExecutions[key!] ||= {})
+			if (key === "unpause" && !journal.transactions?.length) await assertMuonRestoreReady(ethers, input, report, bindings)
 			if (key === "cut" && !(await core.pauseState())[0]) throw new Error("Core must stay paused throughout direct governance")
 			journal.receipts = await executeCoreGovernancePayload(ethers, input.config, report[field].envelope, journal, persist, async confirmed => {
 				if (key === "pause") {
@@ -434,6 +485,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			else {
 				if (!bindings.verifiedCut) throw new Error("Verify the cut before unpausing")
 				await verifyCoreUpgradePostState(hre, ethers, input, report)
+				await assertMuonRestoreReady(ethers, input, report, bindings)
 			}
 			const batch = report[`${exportKey}Batch`]
 			same(batch.envelope, await prepareCoreGovernancePayload(ethers, input.config, batch.actions), "Safe nonce or payload changed before export")
@@ -514,11 +566,51 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			await verifyCoreUpgradePostState(hre, ethers, input, report, report.cutReceipt.blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report)
 			report.verifiedCut = { receipt: report.cutReceipt, batchDigest: bindings.batch }
+			const muonBindings = coreMuonBindings(input, report)
+			write(path.join(directory, "muon-readiness-request.json"), {
+				schemaVersion: 1,
+				kind: "symmio.muon-readiness",
+				bindings: muonBindings,
+				service: {
+					chainId: muonBindings.chainId,
+					core: t.core,
+					appId: report.paused.muon.configuration.appId,
+					releaseCommit: muonBindings.releaseCommit,
+					configurationDigest: "<hash of reviewed service configuration>",
+					methods: [],
+					observedAt: 0,
+					registered: false,
+				},
+				canaries: ["instantLayer", "gaslessLayer", "accountLayer", "partyB"].map(route => ({
+					route,
+					function: "Trading",
+					method: "<supported Muon method>",
+					signedTimestamp: 0,
+					valid: { from: "<authorized caller>", to: t[route], value: "0x0", data: "<fresh signed operation>" },
+					invalid: {
+						from: "<same caller>",
+						to: t[route],
+						value: "0x0",
+						data: "<same operation with invalid Muon data and valid outer authorization>",
+					},
+					expectedReturnData: "<expected successful return data>",
+				})),
+			})
 			return
 		}
 		if (!bindings.verifiedCut) throw new Error("Verify the executed Core cut before restoring service")
+		if (phase === "verify-muon") {
+			const file = process.env.SYMMIO_MUON_READY_INPUT
+			if (!file) throw new Error("Provide a Muon readiness JSON with fresh positive and negative routed probes")
+			const document = JSON.parse(fs.readFileSync(file, "utf8"))
+			const evidence = await checkCoreMuonReadiness(ethers, input, report, document)
+			if (report.muonReadiness) (report.muonReadinessHistory ||= []).push(report.muonReadiness)
+			report.muonReadiness = { document, evidence }
+			return
+		}
 		if (phase === "plan-unpause") {
 			await verifyCoreUpgradePostState(hre, ethers, input, report)
+			await assertMuonRestoreReady(ethers, input, report, bindings)
 			if (!report.unpauseBatch) report.unpauseBatch = report.initial.pause[0] ? { alreadyPaused: true } : await makeBatch("unpauseGlobal")
 			return
 		}

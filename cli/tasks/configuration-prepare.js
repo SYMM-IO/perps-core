@@ -37,12 +37,12 @@ const outputFor = (ctx, input) =>
 export function createConfigurationPrepareTask(common) {
 	return common({
 		id: "operations.prepare-configuration",
-		version: 2,
+		version: 3,
 		category: "maintenance",
 		risk: "local-write",
 		title: "Prepare configuration preservation from JSON",
 		description:
-			"Read pinned configuration and optionally plan its setters, administrative roles and consumer wiring for a deployed replacement.",
+			"Read pinned configuration and optionally plan its setters, administrative roles and consumer wiring, including preserved Muon configuration.",
 		inputs: [{ id: "requestPath", label: "Configuration request JSON", type: "string", required: true }],
 		artifacts: ["prepared-configuration.json with source snapshot and optional governance calls"],
 		prepare: async ({ root, ui }) => {
@@ -102,7 +102,7 @@ export function createConfigurationPrepareTask(common) {
 			const result = readOperationJson(output).value;
 			if (operationDigest(result) !== ctx.state.configurationEvidenceDigest) throw new Error("Configuration evidence changed");
 			ctx.ui.note(
-				`Evidence: ${output}\nSettings: ${result.snapshot.fields.length}\nConfiguration calls: ${result.plan?.actions.length || 0}\nRole grants: ${result.roles?.plan.actions.length || 0}\nWiring activations: ${result.wiring?.plan.activate.length || 0}\nRetirements: ${result.wiring?.plan.retire.length || 0}\nNo transactions were submitted.`,
+				`Evidence: ${output}\nSettings: ${result.snapshot.fields.length}\nConfiguration calls: ${result.plan?.actions.length || 0}\nRole grants: ${result.roles?.plan.actions.length || 0}\nWiring activations: ${result.wiring?.plan.activate.length || 0}\nRetirements: ${result.wiring?.plan.retire.length || 0}\nMuon configuration: ${result.muon ? "captured and bound" : "not declared"}\nNo transactions were submitted.`,
 				"Configuration prepared",
 			);
 			return result;

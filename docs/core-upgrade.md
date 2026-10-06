@@ -2,6 +2,8 @@
 
 For replacement-layer configuration, administrative roles and consumer wiring, see [configuration preservation](configuration-preserving-upgrades.md).
 
+Core snapshots now preserve Muon configuration and verifier administrative membership. After the executed cut is verified, fill the generated `muon-readiness-request.json`; the task checks service registration evidence and simulates fresh positive/negative Muon calls through all declared routes before restoration. See the [Muon restoration gate](configuration-preserving-upgrades.md#muon-restoration-gate) for its input and evidence requirements. Full fork rehearsal remains optional and scanner publication remains last.
+
 Run `./symmio` and select **Other maintenance scripts → Upgrade Core from a standard input file** (`maintenance.core-upgrade`). Select `tasks/config/core-upgrade.arbitrum-vibe-production.input.json` for the supplied Arbitrum production Core. Base uses the same task with a separate input file.
 
 ```bash

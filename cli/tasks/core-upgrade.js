@@ -106,6 +106,7 @@ export function createCoreUpgradeTask(common) {
 			"core-abi.json",
 			"optional separate fork rehearsal",
 			"reviewed governance payloads and canonical execution receipts",
+			"muon-readiness-request.json and pinned routed simulations",
 		],
 	});
 }
