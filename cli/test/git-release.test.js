@@ -46,7 +46,7 @@ function releaseBranch(f) {
 	f.git("commit", "-qm", "feat(tooling): add operator workflow");
 	const ui = {
 		...f.ui(),
-		select: async ({ message }) => (message === "Upgrade Git tag" ? "new" : message === "Git tag target" ? "release" : "release-mirror"),
+		select: async ({ message }) => (message === "Upgrade Git tag" ? "new" : "release-mirror"),
 	};
 	return { commit, sourceCommit: f.git("rev-parse", "HEAD"), ui };
 }
@@ -91,7 +91,7 @@ test("tagging another release requires clean tooling and refuses a mismatched co
 	f.git("commit", "-qm", "feat(core): change release");
 	await assert.rejects(
 		prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "HEAD", contractsTree: f.git("rev-parse", "HEAD:contracts") }),
-		/immutable branch, tag or commit/,
+		/deployment source branch, tag or commit/,
 	);
 	await assert.rejects(
 		prepareGitRelease({ root: f.root, ui: release.ui, targetRef: "version_0.8.6", contractsTree: f.git("rev-parse", "HEAD:contracts") }),
@@ -99,25 +99,28 @@ test("tagging another release requires clean tooling and refuses a mismatched co
 	);
 });
 
-test("an existing tag on the selected release can be reused but a tag on tooling HEAD cannot", async t => {
+test("deployment-source tag names must be new and existing tags appear only in the informational note", async t => {
 	const f = fixture(t),
 		release = releaseBranch(f);
 	f.git("tag", "-a", "-m", "Existing Core release", "chosen", release.commit);
-	const object = f.git("rev-parse", "refs/tags/chosen"),
-		ui = { ...release.ui, select: async options => (options.message === "Upgrade Git tag" ? "tag:chosen" : release.ui.select(options)) };
-	const intent = await prepareGitRelease({ root: f.root, ui, targetRef: "version_0.8.6" }),
-		report = await complete(f, intent);
-	assert.equal(report.tagObject, object);
-	assert.equal(report.commit, release.commit);
-	f.git("tag", "wrong", "HEAD");
-	await assert.rejects(
-		prepareGitRelease({
-			root: f.root,
-			ui: { ...ui, select: async options => (options.message === "Upgrade Git tag" ? "tag:wrong" : ui.select(options)) },
-			targetRef: "version_0.8.6",
-		}),
-		/Existing upgrade tag must point to the selected release/,
-	);
+	const object = f.git("rev-parse", "refs/tags/chosen");
+	const notes = [],
+		ui = {
+			...release.ui,
+			note: (message, title) => notes.push({ message, title }),
+			select: async options => {
+				if (options.message === "Upgrade Git tag")
+					assert.deepEqual(
+						options.options.map(option => option.value),
+						["skip", "new"],
+					);
+				return release.ui.select(options);
+			},
+			text: async () => "chosen",
+		};
+	await assert.rejects(prepareGitRelease({ root: f.root, ui, targetRef: "version_0.8.6" }), /Upgrade tag already exists/);
+	assert.equal(f.git("rev-parse", "refs/tags/chosen"), object);
+	assert.deepEqual(notes, [{ message: "chosen", title: "Existing Git tags (information only)" }]);
 });
 
 test("release ref, tooling commit and tag target remain bound after review and publication", async t => {

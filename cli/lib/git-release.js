@@ -38,7 +38,8 @@ function snapshot(root) {
 }
 
 function resolveTagTarget(root, ref) {
-	if (/^HEAD(?:$|[~^:]|@\{)/.test(ref) || ref.startsWith("-")) throw new Error("Use an immutable branch, tag or commit as the Git tag target");
+	if (/^HEAD(?:$|[~^:]|@\{)/.test(ref) || ref.startsWith("-"))
+		throw new Error("Use the deployment source branch, tag or commit; HEAD cannot be the Git tag target");
 	const commit = git(root, ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`]);
 	return {
 		ref: git(root, ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", ref]) || commit,
@@ -49,16 +50,18 @@ function resolveTagTarget(root, ref) {
 
 export async function prepareGitRelease({ root, ui, contractsTree, targetRef }) {
 	const tags = git(root, ["for-each-ref", "--sort=-creatordate", "--format=%(refname:strip=2)", "refs/tags"]).split("\n").filter(Boolean);
+	if (targetRef) ui.note(tags.length ? tags.join("\n") : "No existing Git tags.", "Existing Git tags (information only)");
 	const choice = await ui.select({
 		message: "Upgrade Git tag",
 		options: [
 			{ value: "skip", label: "Skip Git release" },
 			{ value: "new", label: "Create a new tag" },
-			...tags.map(name => ({ value: `tag:${name}`, label: name })),
+			...(!targetRef ? tags.map(name => ({ value: `tag:${name}`, label: name })) : []),
 		],
 	});
 	if (choice === null) return null;
 	if (choice === "skip") return false;
+	if (targetRef && choice !== "new") throw new Error("Existing tags are information only; create a new upgrade tag or skip tagging");
 	const before = snapshot(root);
 	const target = targetRef ? resolveTagTarget(root, targetRef) : null;
 	if (target && git(root, ["status", "--porcelain", "--untracked-files=no"]))
@@ -75,6 +78,7 @@ export async function prepareGitRelease({ root, ui, contractsTree, targetRef }) 
 	if (!tag) return null;
 	git(root, ["check-ref-format", `refs/tags/${tag}`]);
 	const tagObject = git(root, ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], { optional: true });
+	if (target && tagObject) throw new Error("Upgrade tag already exists; choose a new tag name");
 	const changed = before.tree !== git(root, ["rev-parse", "HEAD^{tree}"]);
 	if (tagObject && (changed || git(root, ["rev-parse", `refs/tags/${tag}^{commit}`]) !== (target?.commit || before.previousHead)))
 		throw new Error(
