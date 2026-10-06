@@ -1,5 +1,5 @@
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js";
-import { validateCoreUpgradeInput, coreUpgradeRecipe } from "../../deployment-tooling/core-upgrade-input.js";
+import { validateCoreUpgradeInput, coreUpgradeInputReview, coreUpgradeRecipe } from "../../deployment-tooling/core-upgrade-input.js";
 import { prepareGitRelease, runGitReleasePhase, validateGitRelease } from "../lib/git-release.js";
 import { loadRecipeContext } from "../lib/recipe-context.js";
 import {
@@ -67,7 +67,7 @@ export async function prepareStandardCoreUpgrade({ root, ui, askGitRelease = fal
 	atomicWrite(input, standard);
 	atomicWrite(output, { inputDigest, transactions: [] });
 	ui.note(
-		`Network: ${config.network.name} (${config.network.chainId})\nCore: ${config.target.core}\nOwner: ${config.governance.owner} (${config.governance.kind})\nBaseline: ${config.release.baselineRef} (${baselineCommit})\nRelease: ${config.release.ref} (${releaseCommit})\nGit release: ${releaseGit ? `${releaseGit.tag} → ${releaseGit.remote}` : "skipped"}\nInput: ${inputSource}\nReport: ${output}\nFork rehearsal is a separate optional action. Explorer publication runs after service restoration.`,
+		`${coreUpgradeInputReview(config)}\nCore baseline commit: ${baselineCommit}\nCore target release commit: ${releaseCommit}\nGit release: ${releaseGit ? `${releaseGit.tag} → ${releaseGit.remote}` : "skipped"}\nInput: ${inputSource}\nReport: ${output}\nFork rehearsal is a separate optional action. Explorer publication runs after service restoration.`,
 		"Core upgrade input",
 	);
 	const key = config.credentials.deployer.split("://")[1];

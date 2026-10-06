@@ -21,6 +21,8 @@ import {
 	coreGovernanceKind,
 	coreUpgradePolicies,
 	coreUpgradeRoleGrants,
+	coreUpgradeLimits,
+	coreUpgradeMuonPolicy,
 } from "../../deployment-tooling/core-upgrade-input.js"
 import { operationDigest } from "../../deployment-tooling/operations/inputs.js"
 import { verifyMuonReadiness } from "../../deployment-tooling/operations/muon-readiness.js"
@@ -279,7 +281,7 @@ async function checkCoreMuonReadiness(ethers: any, input: any, report: any, docu
 				chainId: Number((await ethers.provider.getNetwork()).chainId),
 				core: { address: t.core, codeHash: state.code.core },
 				verifier: { address: t.signatureVerifier, codeHash: state.code.signatureVerifier },
-				policy: input.config.muon || {},
+				policy: coreUpgradeMuonPolicy(input.config),
 			},
 			snapshot: report.paused.muon,
 			checkpoint: { blockNumber: state.blockNumber, blockHash: state.blockHash },
@@ -393,6 +395,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				abiDigest: digest(coreUpgradeABI),
 				removedSelectors: coreUpgradePolicies(input.config).selectors.core.allowedRemovals,
 				policies: coreUpgradePolicies(input.config),
+				limits: coreUpgradeLimits(input.config),
 				roleGrants: { core: { address: input.config.target.core, grants: coreUpgradeRoleGrants(input.config) } },
 				changes: [
 					"getSymbolAdjustment(uint256) now returns 17 fields instead of 15",

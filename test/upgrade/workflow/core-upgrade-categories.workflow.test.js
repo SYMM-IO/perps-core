@@ -14,7 +14,13 @@ for (const version of [1, 2]) {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "core-category-binding-"));
 		t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 		const config = coreInputFixture(version);
-		if (version === 2) config.roleGrants = { core: [{ holderRef: "target.symbolManager", role: "SYMBOL_LISTING_ROLE" }] };
+		if (version === 2) {
+			config.roleGrants = { core: [{ holderRef: "target.symbolManager", role: "SYMBOL_LISTING_ROLE" }] };
+			config.limits = {
+				coreSnapshot: { maxHistoricalQuotes: 10000, maxRegisteredSymbols: 1000 },
+				signatureVerifierSnapshot: { maxRoleMembers: 7, maxSigners: 9 },
+			};
+		}
 		fs.mkdirSync(path.join(root, "tasks/config"), { recursive: true });
 		fs.mkdirSync(path.join(root, "contracts"));
 		fs.writeFileSync(path.join(root, "contracts/Test.sol"), "// reviewed source\n");
@@ -40,6 +46,12 @@ for (const version of [1, 2]) {
 		write(config);
 		assert.deepEqual(validateCoreTaskInput({ root, state: {} }, input), bound);
 		if (version === 2) {
+			const changedLimit = structuredClone(config);
+			changedLimit.limits.coreSnapshot.maxHistoricalQuotes++;
+			write(changedLimit);
+			assert.throws(() => validateCoreTaskInput({ root, state: {} }, input), /Original upgrade input changed/);
+			write(config);
+			assert.deepEqual(validateCoreTaskInput({ root, state: {} }, input), bound);
 			const changedGrant = structuredClone(config);
 			changedGrant.roleGrants.core[0].holderRef = "governance.owner";
 			write(changedGrant);

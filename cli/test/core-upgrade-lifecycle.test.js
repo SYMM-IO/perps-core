@@ -120,7 +120,17 @@ test("real runner blocks restoration on failed Muon readiness and retries final 
 	assert.equal(state.status, "paused", state.lastError);
 	assert.match(state.lastError, /Muon readiness RPC unavailable/);
 	const review = notes.find(note => note.title === "Deployment authorization").message;
-	for (const category of ["storage.symbolAdjustment", "funding.aggregate", "selectors.core", "roleGrants.core"])
+	for (const category of [
+		"storage.symbolAdjustment",
+		"funding.aggregate",
+		"selectors.core",
+		"roleGrants.core",
+		"limits.coreSnapshot",
+		"limits.signatureVerifierSnapshot",
+		"governance.accountLayerOwner",
+		"target.symbolManager",
+		"credentials.deployer",
+	])
 		assert.ok(review.includes(category));
 	assert.ok(review.includes(`Core (${f.config.target.core})`));
 	assert.ok(review.includes(f.config.target.symbolManager));

@@ -117,7 +117,8 @@ export async function captureMuonConfiguration(provider, profile, checkpoint) {
 	}
 	const keys = await read(provider, verifier, "getAllPublicKeys", [], tag),
 		gateways = await read(provider, verifier, "getAllGatewaySigners", [], tag);
-	if (keys.length > policy.maxSigners || gateways.length > policy.maxSigners) throw new Error("Muon signer inventory exceeds reviewed limit");
+	if (keys.length > policy.maxSigners || gateways.length > policy.maxSigners)
+		throw new Error(`Signature Verifier (${verifier}) maxSigners: Muon signer inventory exceeds reviewed limit`);
 	const publicKeys = [],
 		gatewaySigners = [];
 	for (const key of keys) {
@@ -135,7 +136,8 @@ export async function captureMuonConfiguration(provider, profile, checkpoint) {
 	const roles = [];
 	for (const role of [...standardRoles, ...policy.additionalVerifierRoles].sort()) {
 		const count = BigInt(await read(provider, verifier, "getRoleMemberCount", [role], tag));
-		if (count > BigInt(policy.maxRoleMembers)) throw new Error("Muon role inventory exceeds reviewed limit");
+		if (count > BigInt(policy.maxRoleMembers))
+			throw new Error(`Signature Verifier (${verifier}) maxRoleMembers: Muon role inventory exceeds reviewed limit`);
 		const members = [];
 		for (let i = 0; i < Number(count); i++) {
 			const member = address(await read(provider, verifier, "getRoleMember", [role, i], tag));
