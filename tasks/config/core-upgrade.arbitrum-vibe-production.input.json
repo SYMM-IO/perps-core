@@ -1,6 +1,6 @@
 {
 	"$schema": "../../deployment-tooling/core-upgrade-input.schema.json",
-	"apiVersion": "operations.symm.io/core-upgrade-input-v1",
+	"apiVersion": "operations.symm.io/core-upgrade-input-v2",
 	"kind": "CoreUpgradeInput",
 	"name": "arbitrum-vibe-production",
 	"network": {
@@ -49,12 +49,22 @@
 		"maxSymbols": 1000
 	},
 	"storage": {
-		"legacyAdjustmentWords": 15,
-		"upgradedAdjustmentWords": 17,
-		"requireEmptyAdjustments": true
+		"symbolAdjustment": {
+			"legacyAdjustmentWords": 15,
+			"upgradedAdjustmentWords": 17,
+			"requireEmptyAdjustments": true
+		}
 	},
-	"repairAggregateFunding": true,
-	"allowedRemovedSelectors": ["0x9dcdbdda", "0xff363ccc"],
+	"funding": {
+		"aggregate": {
+			"repair": true
+		}
+	},
+	"selectors": {
+		"core": {
+			"allowedRemovals": ["0x9dcdbdda", "0xff363ccc"]
+		}
+	},
 	"roleGrants": [
 		{
 			"holder": "0x3FB153ee0a18B2726a54E132C173AC73D8c05e20",
