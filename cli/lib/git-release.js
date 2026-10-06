@@ -37,7 +37,17 @@ function snapshot(root) {
 	};
 }
 
-export async function prepareGitRelease({ root, ui, contractsTree }) {
+function resolveTagTarget(root, ref) {
+	if (/^HEAD(?:$|[~^:]|@\{)/.test(ref) || ref.startsWith("-")) throw new Error("Use an immutable branch, tag or commit as the Git tag target");
+	const commit = git(root, ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`]);
+	return {
+		ref: git(root, ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", ref]) || commit,
+		commit,
+		tree: git(root, ["rev-parse", `${commit}^{tree}`]),
+	};
+}
+
+export async function prepareGitRelease({ root, ui, contractsTree, targetRef }) {
 	const tags = git(root, ["for-each-ref", "--sort=-creatordate", "--format=%(refname:strip=2)", "refs/tags"]).split("\n").filter(Boolean);
 	const choice = await ui.select({
 		message: "Upgrade Git tag",
@@ -50,15 +60,28 @@ export async function prepareGitRelease({ root, ui, contractsTree }) {
 	if (choice === null) return null;
 	if (choice === "skip") return false;
 	const before = snapshot(root);
+	const target = targetRef ? resolveTagTarget(root, targetRef) : null;
+	if (target && git(root, ["status", "--porcelain", "--untracked-files=no"]))
+		throw new Error("Tagging the deployment release requires a clean, committed tooling checkout");
 	if (contractsTree && git(root, ["rev-parse", `${before.tree}:contracts`]) !== contractsTree)
 		throw new Error("Staged Solidity differs from the input's target release");
+	if (
+		target &&
+		contractsTree &&
+		git(root, ["rev-parse", "--verify", "--quiet", `${target.commit}:contracts`], { optional: true }) !== contractsTree
+	)
+		throw new Error("Tag target Solidity differs from the input's target release");
 	const tag = choice === "new" ? await ui.text({ message: "New upgrade Git tag name" }) : choice.slice(4);
 	if (!tag) return null;
 	git(root, ["check-ref-format", `refs/tags/${tag}`]);
 	const tagObject = git(root, ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], { optional: true });
 	const changed = before.tree !== git(root, ["rev-parse", "HEAD^{tree}"]);
-	if (tagObject && (changed || git(root, ["rev-parse", `refs/tags/${tag}^{commit}`]) !== before.previousHead))
-		throw new Error("Existing upgrade tag must point to HEAD with no staged edits; check out that tag first, or create a new tag");
+	if (tagObject && (changed || git(root, ["rev-parse", `refs/tags/${tag}^{commit}`]) !== (target?.commit || before.previousHead)))
+		throw new Error(
+			target
+				? "Existing upgrade tag must point to the selected release; choose another tag"
+				: "Existing upgrade tag must point to HEAD with no staged edits; check out that tag first, or create a new tag",
+		);
 	const remotes = git(root, ["remote"])
 		.split("\n")
 		.filter(name => name && !name.startsWith("-"));
@@ -72,8 +95,9 @@ export async function prepareGitRelease({ root, ui, contractsTree }) {
 	if (changed && !/^[a-z]+(?:\([^\r\n()]+\))?!?: [^\r\n]+$/.test(message))
 		throw new Error("Use a conventional, single-line release commit message");
 	const intent = {
-		apiVersion: "operations.symm.io/git-release-v1",
+		apiVersion: target ? "operations.symm.io/git-release-v2" : "operations.symm.io/git-release-v1",
 		...before,
+		...(target ? { target } : {}),
 		tag,
 		remote,
 		remoteDigest: remoteDigest(root, remote),
@@ -82,7 +106,7 @@ export async function prepareGitRelease({ root, ui, contractsTree }) {
 		annotation: `Upgrade release ${tag}`,
 	};
 	ui.note(
-		`Tag: ${tag}\nRemote: ${remote}\nHEAD: ${before.previousHead}\n${changed ? git(root, ["diff", "--cached", "--stat"]) : "Use the existing clean commit."}\nOnly this tag and its reachable commits will be pushed.`,
+		`Tag: ${tag}\nRemote: ${remote}\n${target ? `Deployment source: ${target.ref}\nTag target commit: ${target.commit}\nTooling checkout commit: ${before.previousHead}` : `HEAD: ${before.previousHead}`}\n${changed ? git(root, ["diff", "--cached", "--stat"]) : "Use the existing clean commits."}\nOnly this tag and its reachable commits will be pushed.`,
 		"Git release plan",
 	);
 	return intent;
@@ -96,11 +120,18 @@ function readReport(file, intent) {
 
 export function assertGitReleaseBinding(root, intent, report) {
 	const current = snapshot(root);
+	if (intent.apiVersion === "operations.symm.io/git-release-v2" && !intent.target) throw new Error("Git release tag target is missing");
+	if (intent.target) {
+		const target = resolveTagTarget(root, intent.target.ref);
+		if (["ref", "commit", "tree"].some(key => target[key] !== intent.target[key])) throw new Error("Git tag target reference changed");
+	}
 	if (remoteDigest(root, intent.remote) !== intent.remoteDigest) throw new Error("Git release remote configuration changed");
 	if (current.tree !== intent.tree || current.headRef !== intent.headRef) throw new Error("Git release tree or checked-out branch changed");
 	if (report?.commit) {
-		if (current.previousHead !== report.commit || git(root, ["status", "--porcelain", "--untracked-files=no"]))
+		if (current.previousHead !== (report.sourceCommit || report.commit) || git(root, ["status", "--porcelain", "--untracked-files=no"]))
 			throw new Error("Git release commit changed or has tracked edits");
+		if (intent.target && (report.commit !== intent.target.commit || report.sourceCommit !== intent.previousHead))
+			throw new Error("Git release commit changed from its deployment source or tooling checkout");
 	} else if (current.previousHead !== intent.previousHead) {
 		// Reconcile a commit that succeeded before its journal checkpoint was written.
 		if (
@@ -111,12 +142,14 @@ export function assertGitReleaseBinding(root, intent, report) {
 		)
 			throw new Error("Git release HEAD changed outside the reviewed commit");
 	}
+	if (intent.target && (current.previousHead !== intent.previousHead || git(root, ["status", "--porcelain", "--untracked-files=no"])))
+		throw new Error("Git release tooling checkout changed");
+	const commit = intent.target?.commit || current.previousHead;
 	const tagObject = git(root, ["rev-parse", "--verify", "--quiet", `refs/tags/${intent.tag}`], { optional: true });
 	const expected = report?.tagObject || intent.existingTagObject;
 	if (expected && tagObject !== expected) throw new Error("Upgrade Git tag changed");
 	if (tagObject) {
-		if (git(root, ["rev-parse", `refs/tags/${intent.tag}^{commit}`]) !== current.previousHead)
-			throw new Error("Upgrade Git tag targets another commit");
+		if (git(root, ["rev-parse", `refs/tags/${intent.tag}^{commit}`]) !== commit) throw new Error("Upgrade Git tag targets another commit");
 		if (
 			!expected &&
 			(git(root, ["cat-file", "-t", tagObject]) !== "tag" ||
@@ -129,7 +162,7 @@ export function assertGitReleaseBinding(root, intent, report) {
 		)
 			throw new Error("An unexpected local upgrade tag already exists");
 	}
-	return { commit: current.previousHead, tagObject };
+	return { commit, sourceCommit: current.previousHead, tagObject };
 }
 
 async function networkGit(root, args) {
@@ -174,12 +207,13 @@ export async function runGitReleasePhase(root, intent, file, phase) {
 		report.inspected = true;
 	} else if (phase === "commit") {
 		if (!report.inspected) throw new Error("Review the Git release before committing");
-		if (local.commit === intent.previousHead && intent.commitMessage) {
+		if (!intent.target && local.commit === intent.previousHead && intent.commitMessage) {
 			writeReport(file, report);
 			// Only the operator's exact staged tree is committed; no files are added here.
 			git(root, ["commit", "-m", intent.commitMessage]);
 		}
-		report.commit = git(root, ["rev-parse", "HEAD"]);
+		report.commit = intent.target?.commit || git(root, ["rev-parse", "HEAD"]);
+		if (intent.target) report.sourceCommit = local.sourceCommit;
 		assertGitReleaseBinding(root, intent, report);
 	} else if (phase === "tag") {
 		if (!report.commit) throw new Error("Bind the release commit before tagging");
