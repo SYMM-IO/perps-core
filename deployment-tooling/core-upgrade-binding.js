@@ -11,6 +11,17 @@ export function assertCoreUpgradeSourceBinding(root, input) {
 	const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 	if (git(["rev-parse", "HEAD"]) !== input.sourceCommit || git(["status", "--porcelain", "--untracked-files=no"]))
 		throw new Error("Core upgrade source changed or has tracked edits");
+	if (input.upgradeGitTag) {
+		const release = input.upgradeGitTag;
+		if (
+			release.commit !== input.sourceCommit ||
+			release.publication?.commit !== release.commit ||
+			release.publication?.tagObject !== release.tagObject ||
+			git(["rev-parse", "--verify", "--end-of-options", `refs/tags/${release.tag}`]) !== release.tagObject ||
+			git(["rev-parse", "--verify", "--end-of-options", `refs/tags/${release.tag}^{commit}`]) !== release.commit
+		)
+			throw new Error("Published upgrade Git tag binding changed");
+	}
 	for (const [ref, commit] of [
 		[input.config.release.ref, input.releaseCommit],
 		[input.config.release.baselineRef, input.baselineCommit],
