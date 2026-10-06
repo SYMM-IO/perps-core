@@ -14,7 +14,8 @@ export function assertCoreUpgradeSourceBinding(root, input) {
 	if (input.upgradeGitTag) {
 		const release = input.upgradeGitTag;
 		if (
-			release.commit !== input.sourceCommit ||
+			release.commit !== (release.targetRef ? input.releaseCommit : input.sourceCommit) ||
+			(release.targetRef && git(["rev-parse", "--verify", "--end-of-options", `${release.targetRef}^{commit}`]) !== input.releaseCommit) ||
 			release.publication?.commit !== release.commit ||
 			release.publication?.tagObject !== release.tagObject ||
 			git(["rev-parse", "--verify", "--end-of-options", `refs/tags/${release.tag}`]) !== release.tagObject ||

@@ -1,4 +1,5 @@
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js";
+import { assertCoreUpgradeSourceBinding } from "../../deployment-tooling/core-upgrade-binding.js";
 import { validateCoreUpgradeInput, coreUpgradeInputReview, coreUpgradeRecipe } from "../../deployment-tooling/core-upgrade-input.js";
 import { prepareGitRelease, runGitReleasePhase, validateGitRelease } from "../lib/git-release.js";
 import { loadRecipeContext } from "../lib/recipe-context.js";
@@ -37,7 +38,7 @@ export async function prepareStandardCoreUpgrade({ root, ui, askGitRelease = fal
 	const releaseCommit = git(["rev-parse", "--verify", "--end-of-options", `${config.release.ref}^{commit}`]);
 	const baselineCommit = git(["rev-parse", "--verify", "--end-of-options", `${config.release.baselineRef}^{commit}`]);
 	const contractsTree = git(["rev-parse", `${releaseCommit}:contracts`]);
-	const releaseGit = askGitRelease ? await prepareGitRelease({ root, ui, contractsTree }) : false;
+	const releaseGit = askGitRelease ? await prepareGitRelease({ root, ui, contractsTree, targetRef: config.release.ref }) : false;
 	if (releaseGit === null) return null;
 	if (!releaseGit && git(["status", "--porcelain", "--untracked-files=no"])) throw new Error("Commit tracked edits before binding this upgrade");
 	if (git(["rev-parse", `${releaseGit ? releaseGit.tree : "HEAD"}:contracts`]) !== contractsTree)
@@ -88,21 +89,24 @@ export async function prepareStandardCoreUpgrade({ root, ui, askGitRelease = fal
 
 export const CORE_GIT_RELEASE_PLAN = Object.freeze([
 	{ id: "git-review", phase: "prepare", title: "Review and authorize the optional Git release" },
-	{ id: "git-commit", phase: "publication", title: "Commit the reviewed staged tree or reuse the clean commit" },
-	{ id: "git-tag", phase: "publication", title: "Create or reuse the selected upgrade Git tag" },
-	{ id: "git-publish", phase: "publication", title: "Publish the selected Git tag and verify its remote commit" },
-	{ id: "git-bind", phase: "prepare", title: "Bind the upgrade to the published release commit" },
+	{ id: "git-commit", phase: "publication", title: "Bind the deployment source commit when tagging is approved" },
+	{ id: "git-tag", phase: "publication", title: "Create or reuse the upgrade Git tag when approved" },
+	{ id: "git-publish", phase: "publication", title: "Publish and verify the Git tag when approved" },
+	{ id: "git-bind", phase: "prepare", title: "Record the optional Git release outcome and Core source bindings" },
 ]);
+
+const releaseSourceCommit = report => report.sourceCommit || report.commit;
 
 function gitBoundRun(input, report) {
 	return {
 		...input.preparedRun,
-		sourceCommit: report.commit,
+		sourceCommit: releaseSourceCommit(report),
 		upgradeGitTag: {
 			tag: input.releaseGit.tag,
 			remote: input.releaseGit.remote,
 			remoteDigest: input.releaseGit.remoteDigest,
 			commit: report.commit,
+			...(input.releaseGit.target ? { targetRef: input.releaseGit.target.ref } : {}),
 			tagObject: report.tagObject,
 			publication: report.publication,
 		},
@@ -126,17 +130,36 @@ function validateGitInput(ctx, input) {
 		)
 			throw new Error("Core upgrade release or baseline reference changed");
 	}
+	const savedDigest = digest(JSON.parse(fs.readFileSync(input.input, "utf8")));
+	const gitReport = fs.existsSync(input.gitReport) ? JSON.parse(fs.readFileSync(input.gitReport, "utf8")) : null;
+	if (ctx.state.coreGitReleaseSkipDigest || gitReport?.status === "skipped") {
+		const skipped = gitReport;
+		if (
+			!skipped ||
+			(ctx.state.coreGitReleaseSkipDigest && digest(skipped) !== ctx.state.coreGitReleaseSkipDigest) ||
+			Object.keys(skipped).some(key => !["intentDigest", "status", "sourceCommit"].includes(key)) ||
+			skipped.intentDigest !== digest(input.releaseGit) ||
+			skipped.status !== "skipped" ||
+			skipped.sourceCommit !== input.sourceCommit ||
+			savedDigest !== input.inputDigest ||
+			ctx.state.coreReleaseBinding ||
+			Object.keys(ctx.state.gitReleaseEvidence || {}).length
+		)
+			throw new Error("Skipped Git release evidence changed");
+		assertCoreUpgradeSourceBinding(ctx.root, standard);
+		ctx.state.coreGitReleaseSkipDigest ||= digest(skipped);
+		return skipped;
+	}
 	const report = validateGitRelease(ctx.root, input.releaseGit, input.gitReport);
 	for (const [key, hash] of Object.entries(ctx.state.gitReleaseEvidence || {}))
 		if (digest(report[key]) !== hash) throw new Error(`Git release ${key} evidence changed`);
-	const savedDigest = digest(JSON.parse(fs.readFileSync(input.input, "utf8")));
 	const boundDigest = report.publication ? digest(gitBoundRun(input, report)) : null;
 	if (savedDigest !== input.inputDigest && savedDigest !== boundDigest) throw new Error("Git-bound upgrade input changed");
 	if (
 		ctx.state.coreReleaseBinding &&
 		(savedDigest !== boundDigest ||
 			ctx.state.coreReleaseBinding.inputDigest !== boundDigest ||
-			ctx.state.coreReleaseBinding.sourceCommit !== report.commit)
+			ctx.state.coreReleaseBinding.sourceCommit !== releaseSourceCommit(report))
 	)
 		throw new Error("Core release binding changed");
 	return report;
@@ -145,8 +168,9 @@ function validateGitInput(ctx, input) {
 function resolvedCoreInput(ctx, input) {
 	if (!input.releaseGit) return input;
 	const report = validateGitInput(ctx, input);
+	if (ctx.state.coreGitReleaseSkipDigest) return input;
 	if (!ctx.state.coreReleaseBinding || !report.publication) throw new Error("Bind the published Git release before Core execution");
-	return { ...input, sourceCommit: report.commit, inputDigest: ctx.state.coreReleaseBinding.inputDigest };
+	return { ...input, sourceCommit: releaseSourceCommit(report), inputDigest: ctx.state.coreReleaseBinding.inputDigest };
 }
 
 async function bindGitRelease(ctx, input) {
@@ -157,23 +181,42 @@ async function bindGitRelease(ctx, input) {
 	const phase = async name => {
 		const report = await ctx.runCallable(`Git release ${name}`, () => runGitReleasePhase(ctx.root, input.releaseGit, input.gitReport, name));
 		ctx.state.gitReleaseEvidence ||= {};
-		for (const key of ["commit", "tagObject", "publication"]) if (report[key]) ctx.state.gitReleaseEvidence[key] = digest(report[key]);
+		for (const key of ["sourceCommit", "commit", "tagObject", "publication"])
+			if (report[key]) ctx.state.gitReleaseEvidence[key] = digest(report[key]);
 		ctx.emit("git.release.checkpoint", { phase: name, tag: input.releaseGit.tag });
 	};
 	await step("git-review", async () => {
+		if (ctx.state.coreGitReleaseSkipDigest) return;
 		ctx.ui.note(
-			`Tag: ${input.releaseGit.tag}\nRemote: ${input.releaseGit.remote}\nReviewed tree: ${input.releaseGit.tree}\nCommit: ${input.releaseGit.commitMessage || input.releaseGit.previousHead}`,
+			`Tag: ${input.releaseGit.tag}\nRemote: ${input.releaseGit.remote}\nDeployment source: ${input.releaseGit.target?.ref || "legacy checkout HEAD"}\nTag target commit: ${input.releaseGit.target?.commit || input.releaseGit.previousHead}\nTooling checkout commit: ${input.releaseGit.previousHead}`,
 			"Git release",
 		);
-		if (
-			!(await ctx.ui.confirm({
-				message: "Commit the reviewed staged changes, tag this release and push this exact Git tag?",
-				initialValue: false,
-			}))
-		)
-			ctx.wait("Git release awaits authorization. Cancel this task and start again to choose Skip Git release.");
+		const action = await ctx.ui.select({
+			message: "Git release action",
+			options: [
+				{ value: "skip", label: "Skip tagging and continue the upgrade" },
+				{ value: "publish", label: "Tag the deployment source and publish this tag" },
+			],
+			initialValue: "skip",
+		});
+		if (action === null) ctx.wait("Git release choice cancelled. Continue to choose an action, or select Cancel active task from the menu.");
+		if (action === "skip") {
+			if (fs.existsSync(input.gitReport)) throw new Error("Git release effects already have a journal; review them before skipping");
+			assertCoreUpgradeSourceBinding(ctx.root, input.preparedRun);
+			const report = { intentDigest: digest(input.releaseGit), status: "skipped", sourceCommit: input.sourceCommit };
+			atomicWrite(input.gitReport, report);
+			ctx.state.coreGitReleaseSkipDigest = digest(report);
+			ctx.emit("git.release.skipped", { tag: input.releaseGit.tag, targetRef: input.releaseGit.target?.ref });
+			return;
+		}
+		if (action !== "publish") throw new Error("Choose Publish tag or Skip tagging");
 		await phase("inspect");
 	});
+	if (ctx.state.coreGitReleaseSkipDigest) {
+		validateGitInput(ctx, input);
+		for (const item of CORE_GIT_RELEASE_PLAN.slice(1)) await step(item.id, () => ctx.emit("git.release.step-skipped", { phase: item.id }));
+		return resolvedCoreInput(ctx, input);
+	}
 	await step("git-commit", () => phase("commit"));
 	await step("git-tag", () => phase("tag"));
 	await step("git-publish", () => phase("publish"));
@@ -194,7 +237,7 @@ async function bindGitRelease(ctx, input) {
 			throw new Error("Core execution evidence already exists before Git release binding");
 		atomicWrite(input.input, standard);
 		atomicWrite(input.output, { inputDigest: nextDigest, transactions: [] });
-		ctx.state.coreReleaseBinding = { sourceCommit: report.commit, inputDigest: nextDigest };
+		ctx.state.coreReleaseBinding = { sourceCommit: releaseSourceCommit(report), inputDigest: nextDigest };
 		ctx.emit("git.release.bound", { ...ctx.state.coreReleaseBinding, tag: input.releaseGit.tag });
 	});
 	return resolvedCoreInput(ctx, input);
@@ -231,15 +274,16 @@ export function createCoreUpgradeTask(common) {
 	});
 	return common({
 		...task,
-		version: 5,
+		version: 6,
 		inputs: [...task.inputs, { id: "releaseGit", label: "Optional Git release", type: "selection", required: false }],
 		plan: (ctx, input) => [...(input?.releaseGit ? CORE_GIT_RELEASE_PLAN : []), ...task.plan(ctx, input)].map(step => ({ ...step })),
 		validateResume: (ctx, input) => {
 			validateGitInput(ctx, input);
-			if (!input.releaseGit || ctx.state.coreReleaseBinding) validateCoreTaskInput(ctx, resolvedCoreInput(ctx, input));
+			if (!input.releaseGit || ctx.state.coreReleaseBinding || ctx.state.coreGitReleaseSkipDigest)
+				validateCoreTaskInput(ctx, resolvedCoreInput(ctx, input));
 		},
 		reconcile: (ctx, input) => {
-			if (input.releaseGit && !ctx.state.coreReleaseBinding) {
+			if (input.releaseGit && !ctx.state.coreReleaseBinding && !ctx.state.coreGitReleaseSkipDigest) {
 				if (ctx.state.transactions.length) throw new Error("Unexpected chain transactions before Git release binding");
 				return { unresolved: [] };
 			}
