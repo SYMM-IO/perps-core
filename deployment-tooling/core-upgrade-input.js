@@ -6,6 +6,7 @@ import { getAddress, ZeroAddress, id } from "ethers";
 import fs from "node:fs";
 
 export const CORE_INPUT_API = "operations.symm.io/core-upgrade-input-v1";
+export const CORE_INPUT_API_V2 = "operations.symm.io/core-upgrade-input-v2";
 const validateSchema = new Ajv({ allErrors: true, strict: true }).compile(
 	JSON.parse(fs.readFileSync(new URL("./core-upgrade-input.schema.json", import.meta.url))),
 );
@@ -48,11 +49,34 @@ export function validateCoreUpgradeInput(input) {
 		if (grants.has(key)) throw new Error("Duplicate role grant");
 		grants.add(key);
 	}
-	if (new Set(input.allowedRemovedSelectors).size !== input.allowedRemovedSelectors.length) throw new Error("Duplicate removed selector");
+	const removals = coreUpgradePolicies(input).selectors.core.allowedRemovals;
+	if (new Set(removals).size !== removals.length) throw new Error("Duplicate removed selector");
 	coreUpgradeRecipe(input);
 	return input;
 }
-export const isStandardCoreInput = config => config?.apiVersion === CORE_INPUT_API;
+export const isStandardCoreInput = config => [CORE_INPUT_API, CORE_INPUT_API_V2].includes(config?.apiVersion);
+
+/** Read categorized policies without rewriting the original, digest-bound input. */
+export function coreUpgradePolicies(config) {
+	if (config.apiVersion === CORE_INPUT_API_V2) return { storage: config.storage, funding: config.funding, selectors: config.selectors };
+	return {
+		storage: {
+			symbolAdjustment: config.storage || { legacyAdjustmentWords: 15, upgradedAdjustmentWords: 17, requireEmptyAdjustments: true },
+		},
+		funding: { aggregate: { repair: config.repairAggregateFunding } },
+		selectors: { core: { allowedRemovals: config.allowedRemovedSelectors } },
+	};
+}
+
+export function coreUpgradePolicyReview(config) {
+	const policies = coreUpgradePolicies(config),
+		adjustment = policies.storage.symbolAdjustment;
+	return [
+		`storage.symbolAdjustment: ${adjustment.legacyAdjustmentWords} zero ABI words before upgrade; ${adjustment.upgradedAdjustmentWords} afterward; empty adjustments required`,
+		`funding.aggregate: reconciliation and repair ${policies.funding.aggregate.repair ? "required" : "disabled"}`,
+		`selectors.core: allowed removals ${policies.selectors.core.allowedRemovals.join(", ") || "none"}; unreviewed removals rejected`,
+	].join("\n");
+}
 export const coreUpgradeAuthority = config => (isStandardCoreInput(config) ? config.governance.owner : config.target.safe);
 export function coreUpgradeNetwork(config) {
 	if (isStandardCoreInput(config)) return config.network;

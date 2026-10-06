@@ -1,6 +1,6 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "Core upgrade input",
+	"title": "Core upgrade input (v1 and categorized v2)",
 	"type": "object",
 	"additionalProperties": false,
 	"properties": {
@@ -8,7 +8,7 @@
 			"type": "string"
 		},
 		"apiVersion": {
-			"const": "operations.symm.io/core-upgrade-input-v1"
+			"enum": ["operations.symm.io/core-upgrade-input-v1", "operations.symm.io/core-upgrade-input-v2"]
 		},
 		"kind": {
 			"const": "CoreUpgradeInput"
@@ -190,10 +190,30 @@
 			"type": "object",
 			"additionalProperties": false,
 			"properties": {
-				"requiredFunctions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
-				"additionalVerifierRoles": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" } },
-				"maxRoleMembers": { "type": "integer", "minimum": 1 },
-				"maxSigners": { "type": "integer", "minimum": 1 }
+				"requiredFunctions": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": {
+						"type": "string"
+					}
+				},
+				"additionalVerifierRoles": {
+					"type": "array",
+					"uniqueItems": true,
+					"items": {
+						"type": "string",
+						"pattern": "^0x[0-9a-fA-F]{64}$"
+					}
+				},
+				"maxRoleMembers": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"maxSigners": {
+					"type": "integer",
+					"minimum": 1
+				}
 			}
 		},
 		"limits": {
@@ -212,31 +232,13 @@
 			"required": ["maxQuotes", "maxSymbols"]
 		},
 		"storage": {
-			"type": "object",
-			"additionalProperties": false,
-			"properties": {
-				"legacyAdjustmentWords": {
-					"const": 15
-				},
-				"upgradedAdjustmentWords": {
-					"const": 17
-				},
-				"requireEmptyAdjustments": {
-					"const": true
-				}
-			},
-			"required": ["legacyAdjustmentWords", "upgradedAdjustmentWords", "requireEmptyAdjustments"]
+			"type": "object"
 		},
 		"repairAggregateFunding": {
 			"const": true
 		},
 		"allowedRemovedSelectors": {
-			"type": "array",
-			"items": {
-				"type": "string",
-				"pattern": "^0x[0-9a-f]{8}$"
-			},
-			"uniqueItems": true
+			"$ref": "#/definitions/allowedRemovals"
 		},
 		"roleGrants": {
 			"type": "array",
@@ -290,6 +292,12 @@
 					}
 				]
 			}
+		},
+		"funding": {
+			"$ref": "#/definitions/fundingPolicies"
+		},
+		"selectors": {
+			"$ref": "#/definitions/selectorPolicies"
 		}
 	},
 	"required": [
@@ -304,8 +312,115 @@
 		"target",
 		"limits",
 		"storage",
-		"repairAggregateFunding",
-		"allowedRemovedSelectors",
 		"roleGrants"
-	]
+	],
+	"definitions": {
+		"symbolAdjustment": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"legacyAdjustmentWords": {
+					"const": 15
+				},
+				"upgradedAdjustmentWords": {
+					"const": 17
+				},
+				"requireEmptyAdjustments": {
+					"const": true
+				}
+			},
+			"required": ["legacyAdjustmentWords", "upgradedAdjustmentWords", "requireEmptyAdjustments"]
+		},
+		"allowedRemovals": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"pattern": "^0x[0-9a-f]{8}$"
+			},
+			"uniqueItems": true
+		},
+		"categorizedStorage": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"symbolAdjustment": {
+					"$ref": "#/definitions/symbolAdjustment"
+				}
+			},
+			"required": ["symbolAdjustment"]
+		},
+		"fundingPolicies": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"aggregate": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"repair": {
+							"const": true
+						}
+					},
+					"required": ["repair"]
+				}
+			},
+			"required": ["aggregate"]
+		},
+		"selectorPolicies": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"core": {
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"allowedRemovals": {
+							"$ref": "#/definitions/allowedRemovals"
+						}
+					},
+					"required": ["allowedRemovals"]
+				}
+			},
+			"required": ["core"]
+		}
+	},
+	"if": {
+		"properties": {
+			"apiVersion": {
+				"const": "operations.symm.io/core-upgrade-input-v1"
+			}
+		}
+	},
+	"then": {
+		"properties": {
+			"storage": {
+				"$ref": "#/definitions/symbolAdjustment"
+			},
+			"funding": false,
+			"selectors": false,
+			"repairAggregateFunding": {
+				"const": true
+			},
+			"allowedRemovedSelectors": {
+				"$ref": "#/definitions/allowedRemovals"
+			}
+		},
+		"required": ["repairAggregateFunding", "allowedRemovedSelectors"]
+	},
+	"else": {
+		"properties": {
+			"storage": {
+				"$ref": "#/definitions/categorizedStorage"
+			},
+			"repairAggregateFunding": false,
+			"allowedRemovedSelectors": false,
+			"funding": {
+				"$ref": "#/definitions/fundingPolicies"
+			},
+			"selectors": {
+				"$ref": "#/definitions/selectorPolicies"
+			}
+		},
+		"required": ["funding", "selectors"]
+	}
 }
