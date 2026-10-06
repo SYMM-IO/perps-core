@@ -1,11 +1,26 @@
 import { expect } from "chai"
 
-import { coreUpgradePolicies } from "../../../deployment-tooling/core-upgrade-input.js"
-import { assertEmptySymbolAdjustment, captureCoreRoleGrants, coreQuoteScanIds } from "../../../tasks/deploy/coreUpgradeSnapshot.js"
+import { coreUpgradeLimits, coreUpgradePolicies } from "../../../deployment-tooling/core-upgrade-input.js"
+import {
+	assertCoreSymbolScanLimit,
+	assertEmptySymbolAdjustment,
+	captureCoreRoleGrants,
+	coreQuoteScanIds,
+} from "../../../tasks/deploy/coreUpgradeSnapshot.js"
 import { ethers } from "../../helpers/hardhat-connection.js"
 import { coreInputFixture } from "../helpers/core-upgrade-input.fixture.js"
 
 describe("Current Core upgrade safety gates (preflight)", function () {
+	it("enforces named Core snapshot bounds at the complete-history and symbol-registry boundary", () => {
+		const config = coreInputFixture(2)
+		config.limits = { coreSnapshot: { maxHistoricalQuotes: 3, maxRegisteredSymbols: 2 } }
+		const limits = coreUpgradeLimits(config).coreSnapshot
+		expect(coreQuoteScanIds(3n, limits.maxHistoricalQuotes)).to.deep.equal([1, 2, 3])
+		expect(() => coreQuoteScanIds(4n, limits.maxHistoricalQuotes)).to.throw(/limits\.coreSnapshot\.maxHistoricalQuotes.*no partial snapshot/)
+		expect(() => assertCoreSymbolScanLimit(2, limits.maxRegisteredSymbols)).not.to.throw()
+		expect(() => assertCoreSymbolScanLimit(3, limits.maxRegisteredSymbols)).to.throw(/limits\.coreSnapshot\.maxRegisteredSymbols/)
+	})
+
 	it("reads Core role membership for named recipients and retains flat snapshot compatibility", async () => {
 		for (const version of [1, 2]) {
 			const config = coreInputFixture(version),

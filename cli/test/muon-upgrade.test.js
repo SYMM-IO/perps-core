@@ -1,3 +1,4 @@
+import { coreUpgradeMuonPolicy } from "../../deployment-tooling/core-upgrade-input.js";
 import {
 	loadConfigurationRequest,
 	prepareConfiguration,
@@ -12,6 +13,23 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+test("Core's named verifier bounds stop incomplete signer and role-member inventories", async () => {
+	for (const [mutate, field] of [
+		[f => f.state.keys.push({ x: 456n, parity: 1 }), "maxSigners"],
+		[f => f.state.gateways.push(toBeHex(99, 20)), "maxSigners"],
+		[f => f.roles.get(ZeroHash).push(toBeHex(99, 20)), "maxRoleMembers"],
+	]) {
+		const f = muonUpgradeFixture();
+		f.profile.policy = coreUpgradeMuonPolicy({
+			muon: { requiredFunctions: ["Trading"] },
+			limits: { signatureVerifierSnapshot: { maxSigners: 1, maxRoleMembers: 1 } },
+		});
+		await captureMuonConfiguration(f.provider, f.profile, f.checkpoint);
+		mutate(f);
+		await assert.rejects(captureMuonConfiguration(f.provider, f.profile, f.checkpoint), new RegExp(`Signature Verifier.*${field}`));
+	}
+});
 
 test("Muon snapshots retain denied categories, override sentinels and separate verifier authorities using pinned views", async () => {
 	const f = muonUpgradeFixture(),

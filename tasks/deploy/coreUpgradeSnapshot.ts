@@ -9,6 +9,8 @@ import {
 	coreGovernanceKind,
 	coreUpgradePolicies,
 	coreUpgradeRoleGrants,
+	coreUpgradeLimits,
+	coreUpgradeMuonPolicy,
 } from "../../deployment-tooling/core-upgrade-input.js"
 import { captureMuonConfiguration } from "../../deployment-tooling/operations/muon-upgrade.js"
 import { addFunding, calculateGroupFunding } from "../../scripts/utils/aggregateFundingResync.js"
@@ -19,11 +21,18 @@ export const coreUpgradeABI = JSON.parse(fs.readFileSync(new URL("../../abis/sym
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
 /** getNextQuoteId() returns the last assigned ID; include it, and allow an empty Core. */
-export function coreQuoteScanIds(lastId: bigint | number, maxQuotes: number) {
+export function coreQuoteScanIds(lastId: bigint | number, maxHistoricalQuotes: number) {
 	const count = Number(lastId)
-	if (!Number.isSafeInteger(count) || count < 0 || count > maxQuotes)
-		throw new Error("Quote scan exceeds reviewed limit or has an invalid counter; no partial snapshot accepted")
+	if (!Number.isSafeInteger(count) || count < 0 || count > maxHistoricalQuotes)
+		throw new Error(
+			"limits.coreSnapshot.maxHistoricalQuotes: quote scan exceeds reviewed limit or has an invalid counter; no partial snapshot accepted",
+		)
 	return Array.from({ length: count }, (_, i) => i + 1)
+}
+
+export function assertCoreSymbolScanLimit(symbolCount: number, maxRegisteredSymbols: number) {
+	if (!Number.isSafeInteger(symbolCount) || symbolCount < 0 || symbolCount > maxRegisteredSymbols)
+		throw new Error("limits.coreSnapshot.maxRegisteredSymbols: Core symbol registry exceeds reviewed limit; no partial snapshot accepted")
 }
 
 export function assertEmptySymbolAdjustment(returnData: string, upgraded: boolean, policy?: any) {
@@ -199,7 +208,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 			chainId: Number((await provider.getNetwork()).chainId),
 			core: { address: t.core, codeHash: code.core },
 			verifier: { address: t.signatureVerifier, codeHash: code.signatureVerifier },
-			policy: config.muon || {},
+			policy: coreUpgradeMuonPolicy(config),
 		},
 		{ blockNumber: block.number, blockHash: block.hash },
 	)
@@ -211,7 +220,8 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	}
 
 	const next = Number(await call("getNextQuoteId"))
-	const ids = coreQuoteScanIds(next, config.limits.maxQuotes)
+	const limits = coreUpgradeLimits(config).coreSnapshot
+	const ids = coreQuoteScanIds(next, limits.maxHistoricalQuotes)
 	logger.info(`Reading all ${ids.length} historical quotes for storage and funding preservation`)
 	const quotes = await batch(
 		ids.map(() => "getQuote"),
@@ -224,7 +234,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	for (let start = 0; ; start += 100) {
 		const page = await call("getSymbols", [start, 100])
 		symbols.push(...page)
-		if (symbols.length > config.limits.maxSymbols) throw new Error("Symbol scan exceeds reviewed limit")
+		assertCoreSymbolScanLimit(symbols.length, limits.maxRegisteredSymbols)
 		if (page.length < 100) break
 	}
 	// The old tuple is 15 static words; current is 17. Requiring every raw word
