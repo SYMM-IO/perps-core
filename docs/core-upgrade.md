@@ -17,26 +17,61 @@ The existing Arbitrum-specific Core task targets `0x573310dB6d160B26026B8706EBe9
 
 Use the filename **`core-upgrade.<deployment>.input.json`**. Keep it under `tasks/config/` for menu discovery, or choose another path in the menu. The schema is [core-upgrade-input.schema.json](../deployment-tooling/core-upgrade-input.schema.json); unknown fields and inline secrets are rejected.
 
-| Field                     | Meaning                                                                                                                                                                                                     |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network`                 | Configured live network, chain ID and matching fork network. Arbitrum uses `arbitrum` / `42161` / `fork-arbitrum`; Base uses `base` / `8453` / `fork-base`.                                                 |
-| `release.ref`             | Intended target Solidity release. The checked-out `contracts` tree must match it.                                                                                                                           |
-| `release.baselineRef`     | Reviewed Git reference for the deployed baseline. Arbitrum uses `version_0.8.6.2`, the local tag corresponding to the supplied 0.8.6.2 version.                                                             |
-| `credentials`             | Keystore references for deployment wallet, archive-capable RPC and explorer key.                                                                                                                            |
-| `execution`               | Confirmation depth, transaction timeout, slow-transaction notice and logging. Explorer publication is required.                                                                                             |
-| `governance`              | Actual Core owner and owner type; independently specified AccountLayer owner; Safe-file, Ledger or keystore delivery. Ledger derivation family or governance keystore key must be supplied when applicable. |
-| `target`                  | Core, existing layers, collateral, verifier, Symbol Manager, liquidator, receiver, solver and Multicall addresses.                                                                                          |
-| `inventory`               | Additional supplied contract/account addresses and subgraph URLs. Runtime hashes are recorded for addresses; URLs are context for integration checks.                                                       |
-| `limits`                  | Maximum complete historical quote and symbol scans. Exceeding a limit stops the task.                                                                                                                       |
-| `storage`                 | Supported legacy 15-word and upgraded 17-word empty SymbolAdjustment layouts.                                                                                                                               |
-| `roleGrants`              | Explicit reviewed role holders and role names. Only missing grants are included.                                                                                                                            |
-| `allowedRemovedSelectors` | Explicit selector-removal policy. Unreviewed removals stop planning.                                                                                                                                        |
+| Field                            | Meaning                                                                                                                                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `network`                        | Configured live network, chain ID and matching fork network. Arbitrum uses `arbitrum` / `42161` / `fork-arbitrum`; Base uses `base` / `8453` / `fork-base`.                                                 |
+| `release.ref`                    | Intended target Solidity release. The checked-out `contracts` tree must match it.                                                                                                                           |
+| `release.baselineRef`            | Reviewed Git reference for the deployed baseline. Arbitrum uses `version_0.8.6.2`, the local tag corresponding to the supplied 0.8.6.2 version.                                                             |
+| `credentials`                    | Keystore references for deployment wallet, archive-capable RPC and explorer key.                                                                                                                            |
+| `execution`                      | Confirmation depth, transaction timeout, slow-transaction notice and logging. Explorer publication is required.                                                                                             |
+| `governance`                     | Actual Core owner and owner type; independently specified AccountLayer owner; Safe-file, Ledger or keystore delivery. Ledger derivation family or governance keystore key must be supplied when applicable. |
+| `target`                         | Core, existing layers, collateral, verifier, Symbol Manager, liquidator, receiver, solver and Multicall addresses.                                                                                          |
+| `inventory`                      | Additional supplied contract/account addresses and subgraph URLs. Runtime hashes are recorded for addresses; URLs are context for integration checks.                                                       |
+| `limits`                         | Maximum complete historical quote and symbol scans. Exceeding a limit stops the task.                                                                                                                       |
+| `storage.symbolAdjustment`       | Expected legacy 15-word and upgraded 17-word empty SymbolAdjustment getter results.                                                                                                                         |
+| `funding.aggregate.repair`       | Require aggregate-funding reconciliation and repair any mismatches against the checked paused snapshot.                                                                                                     |
+| `roleGrants`                     | Explicit reviewed role holders and role names. Only missing grants are included.                                                                                                                            |
+| `selectors.core.allowedRemovals` | Explicit Core selector-removal policy. Unreviewed removals stop planning.                                                                                                                                   |
 
 The task generates internal live/fork credential recipes and a source-bound run input. Operators maintain only the standard input; generated recipes, reports and checkpoints are evidence for that run.
 
 Preparation pins HEAD, target and baseline commits, the target contracts tree, the original input digest and both generated recipes. Continuation refuses changes to these bindings. Keep source and inputs fixed until completion. If you skip Git publication or run a fork rehearsal, commit reviewed tracked edits before starting. If you select Git publication, stage the exact reviewed changes first; the task can commit that staged tree before binding the final upgrade source.
 
 Git baseline provenance is separate from deployed bytecode parity: naming the baseline tag does not prove that every deployed facet was compiled from that commit. Snapshot ABI/storage and deployed runtime checks remain required. Fork rehearsal is a separate optional action.
+
+## Categorized upgrade rules
+
+The supplied production input and Base example use `operations.symm.io/core-upgrade-input-v2`. Each rule names the subject it applies to:
+
+```json
+{
+	"storage": {
+		"symbolAdjustment": {
+			"legacyAdjustmentWords": 15,
+			"upgradedAdjustmentWords": 17,
+			"requireEmptyAdjustments": true
+		}
+	},
+	"funding": {
+		"aggregate": {
+			"repair": true
+		}
+	},
+	"selectors": {
+		"core": {
+			"allowedRemovals": ["0x9dcdbdda", "0xff363ccc"]
+		}
+	}
+}
+```
+
+`storage.symbolAdjustment` applies specifically to `getSymbolAdjustment(symbolId)`: all scanned symbols must return 15 zero ABI words before the cut and 17 zero ABI words afterward. An ABI word is 32 bytes; these counts describe the getter result, not physical storage slots. A completed adjustment with nonzero retained fields also blocks this workflow. The supported transition and empty-state requirement are fixed safety rules, not operator bypass switches.
+
+`funding.aggregate.repair` must be `true` for this release. Funding mismatches are repaired using checked old values and the owner's migration authority; its original role membership is restored. `selectors.core.allowedRemovals` lists the reviewed selectors that the cut may remove. Categorization does not change upgrade scope: this task still upgrades Core and preserves its declared dependencies.
+
+The deployment authorization review displays all three categories, and new inspection reports record them under `client.policies`. Layout, funding-policy and selector-removal errors identify their category. Unknown subjects, missing categories, mixed v1/v2 fields and unsupported input versions are rejected.
+
+Existing `operations.symm.io/core-upgrade-input-v1` files remain accepted with flat `storage`, `repairAggregateFunding` and `allowedRemovedSelectors`. The compatibility reader resolves them to the same policies without rewriting the original input or its digest. The historical Arbitrum-specific profile retains its existing format. Existing run evidence and source bindings are not migrated automatically: keep the original files and source for continuation, and start a new run when changing an input to v2.
 
 ## Optional Git release
 
@@ -129,6 +164,8 @@ npm run test:upgrade -- preflight --match Core
 npm run test:upgrade -- governance --match Core
 npm run test:upgrade -- verification --match Core
 npm run test:upgrade -- recovery --match Core
+npm run test:upgrade -- input --match categories
+npm run test:upgrade -- workflow --match categories
 npm run test:upgrade -- input --chain-bound --match core
 npm run test:upgrade -- workflow --chain-bound --match core
 ```
