@@ -1,25 +1,19 @@
-import {run} from "hardhat"
-import {Addresses, loadAddresses} from "./utils/file"
+import { tasks } from "hardhat"
 
-async function main() {
-	let deployedAddresses: Addresses = loadAddresses()
-	const symmioAddress = deployedAddresses.symmioAddress
-	const admin = process.env.ADMIN_PUBLIC_KEY
-	const symmioShare = ""
-	const symmioShareReceiver = ""
+// Import to initialize the hardhat connection
+import "../test/helpers/hardhat-connection.js"
+import { Addresses, loadAddresses } from "./utils/file.js"
 
-	// Run the deploy:feeDistributor task
-	const contract = await run("deploy:feeDistributor", {
-		symmioAddress,
-		admin,
-		symmioShare,
-		symmioShareReceiver
-	})
-}
+const deployedAddresses: Addresses = loadAddresses()
+const symmioAddress = deployedAddresses.symmioAddress
+const admin = process.env.ADMIN_PUBLIC_KEY
+const symmioShare = ""
+const symmioShareReceiver = ""
 
-main()
-	.then(() => process.exit(0))
-	.catch(error => {
-		console.error(error)
-		process.exit(1)
-	})
+// Run the deploy:feeDistributor task
+const contract = await tasks.getTask("deploy:feeDistributor").run({
+	symmioAddress,
+	admin,
+	symmioShare,
+	symmioShareReceiver,
+})

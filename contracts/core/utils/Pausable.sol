@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { ExternalTransferStorage } from "../storages/ExternalTransferStorage.sol";
+
+abstract contract Pausable {
+	modifier whenNotGlobalPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		_;
+	}
+
+	modifier whenNotLiquidationPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().liquidationPaused, "Pausable: Liquidation paused");
+		_;
+	}
+
+	modifier whenNotAccountingPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().accountingPaused, "Pausable: Accounting paused");
+		_;
+	}
+
+	modifier whenNotPartyAActionsPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().partyAActionsPaused, "Pausable: PartyA actions paused");
+		_;
+	}
+
+	modifier whenNotPartyBActionsPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().partyBActionsPaused, "Pausable: PartyB actions paused");
+		_;
+	}
+
+	modifier whenNotPartyBOpenPositionsPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().partyBActionsPaused, "Pausable: PartyB actions paused");
+		require(!GlobalAppStorage.layout().partyBOpenPositionsPaused, "Pausable: PartyB open positions paused");
+		_;
+	}
+
+	modifier whenNotInternalTransferPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().internalTransferPaused, "Pausable: Internal transfer paused");
+		require(!GlobalAppStorage.layout().accountingPaused, "Pausable: Accounting paused");
+		_;
+	}
+
+	modifier whenNotExternalTransferPaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!ExternalTransferStorage.layout().externalTransferPaused, "Pausable: External transfer paused");
+		require(!GlobalAppStorage.layout().accountingPaused, "Pausable: Accounting paused");
+		_;
+	}
+}

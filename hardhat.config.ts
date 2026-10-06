@@ -1,252 +1,233 @@
-import "@nomicfoundation/hardhat-chai-matchers"
-import "@nomicfoundation/hardhat-toolbox"
-import "@openzeppelin/hardhat-upgrades"
+import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers"
+import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers"
+import hardhatVerify from "@nomicfoundation/hardhat-verify"
 import { config as dotenvConfig } from "dotenv"
-import type { HardhatUserConfig } from "hardhat/config"
-import { resolve } from "path"
-import "solidity-docgen"
+import { configVariable, defineConfig } from "hardhat/config"
+import { resolve } from "node:path"
 
-import "./tasks/deploy"
+import { deployTasks } from "./tasks/deploy/index.js"
 
-const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env"
-dotenvConfig({ path: resolve(__dirname, dotenvConfigPath) })
+const dotenvConfigPath = process.env.DOTENV_CONFIG_PATH || "./.env"
+dotenvConfig({ path: resolve(process.cwd(), dotenvConfigPath) })
 
-// Ensure that we have all the environment variables we need.
-const privateKey: string | undefined = process.env.PRIVATE_KEY
-if (!privateKey) throw new Error("Please set your PRIVATE_KEY in a .env file")
+const DUMMY_PRIVATE_KEY = "0xec81e00837948239d5927bcb2b785675552bc92f1d2607ee91c540ddb56d6796"
 
-const privateKeysStr: string | undefined = process.env.PRIVATE_KEYS_STR
-const privateKeyList: string[] = privateKeysStr?.split(",") || []
+// Use process.env directly to avoid hardhat-keystore password prompts.
+// Fall back to configVariable() only when USE_KEYSTORE=true is explicitly set.
+const useKeystore = process.env.USE_KEYSTORE === "true"
+const protocolAdminKey = process.env.TEAM_DEPLOYER || (useKeystore ? configVariable("TEAM_DEPLOYER") : DUMMY_PRIVATE_KEY)
+const migratorKey = process.env.TEAM_MIGRATOR || (useKeystore ? configVariable("TEAM_MIGRATOR") : undefined)
+const etherscanApiKey = process.env.ETHERSCAN_APIKEY || (useKeystore ? configVariable("ETHERSCAN_APIKEY") : "")
 
-const arbitrumApiKey: string = process.env.ARBITRUM_API_KEY || ""
-const bnbApiKey: string = process.env.BNB_API_KEY || ""
-const baseApiKey: string = process.env.BASE_API_KEY || ""
-const polygonApiKey: string = process.env.POLYGON_API_KEY || ""
-const zkEvmApiKey: string = process.env.ZKEVM_API_KEY || ""
-const opBnbApiKey: string = process.env.OPBNB_API_KEY || ""
-const sonicApiKey: string = process.env.SONIC_API_KEY || ""
-const iotaApiKey: string = process.env.IOTA_API_KEY || ""
-const modeApiKey: string = process.env.MODE_API_KEY || ""
-const blastApiKey: string = process.env.BLAST_API_KEY || ""
-const mantleAPIKey: string = process.env.MANTLE_API_KEY || ""
-const mantle2APIKey: string = process.env.MANTLE2_API_KEY || ""
-const beraAPIKey: string = process.env.BERA_API_KEY || ""
+const createNetworkConfig = (network: string, defaultUrl: string) =>
+	({
+		type: "http",
+		url: process.env[`RPC_${network.toUpperCase()}`] || (useKeystore ? configVariable(`RPC_${network.toUpperCase()}`) : defaultUrl) || defaultUrl,
+		accounts: [protocolAdminKey, migratorKey].filter(Boolean),
+	}) as {
+		type: "http"
+		url: string
+		accounts: string[]
+	}
 
-const hardhatDockerUrl: string | undefined = process.env.HARDHAT_DOCKER_URL || ""
+const customChains = [
+	{
+		network: "base",
+		chainId: 8453,
+		urls: {
+			apiURL: "https://api.basescan.org/api",
+			browserURL: "https://basescan.org",
+		},
+	},
+	{
+		network: "zkEvm",
+		chainId: 1101,
+		urls: {
+			apiURL: "https://api-zkevm.polygonscan.com/api",
+			browserURL: "https://zkevm.polygonscan.com",
+		},
+	},
+	{
+		network: "opbnb",
+		chainId: 204,
+		urls: {
+			apiURL: "https://api-opbnb.bscscan.com/api",
+			browserURL: "https://opbnb.bscscan.com",
+		},
+	},
+	{
+		network: "iota",
+		chainId: 8822,
+		urls: {
+			apiURL: "https://explorer.evm.iota.org/api",
+			browserURL: "https://explorer.evm.iota.org",
+		},
+	},
+	{
+		network: "mode",
+		chainId: 34443,
+		urls: {
+			apiURL: "https://api.routescan.io/v2/network/mainnet/evm/34443/etherscan",
+			browserURL: "https://modescan.io",
+		},
+	},
+	{
+		network: "blast",
+		chainId: 81457,
+		urls: {
+			apiURL: "https://api.blastscan.io/api",
+			browserURL: "https://blastscan.io",
+		},
+	},
+	{
+		network: "mantle",
+		chainId: 5000,
+		urls: {
+			apiURL: "https://api.mantlescan.xyz/api",
+			browserURL: "https://mantlescan.xyz",
+		},
+	},
+	{
+		network: "hyperevm",
+		chainId: 999,
+		urls: {
+			apiURL: "https://api.hyperevmscan.io/api",
+			browserURL: "https://hyperevmscan.io",
+		},
+	},
+]
 
-const config: HardhatUserConfig = {
-	defaultNetwork: "hardhat",
-	gasReporter: {
-		currency: "USD",
-		enabled: true,
-		excludeContracts: [],
-		src: "./contracts",
+export default defineConfig({
+	plugins: [hardhatToolboxMochaEthers, hardhatEthersPlugin, hardhatVerify],
+	tasks: deployTasks,
+	chainDescriptors: {
+		42161: {
+			name: "Arbitrum One",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+		5000: {
+			name: "Mantle",
+			hardforkHistory: {
+				merge: { blockNumber: 0 },
+				shanghai: { blockNumber: 0 },
+				cancun: { blockNumber: 0 },
+			},
+		},
+	},
+	solidity: {
+		profiles: {
+			default: {
+				version: "0.8.18",
+				settings: {
+					metadata: {
+						bytecodeHash: "none",
+					},
+					optimizer: {
+						enabled: true,
+						runs: 200,
+					},
+					viaIR: true,
+				},
+			},
+			production: {
+				version: "0.8.18",
+				settings: {
+					metadata: {
+						bytecodeHash: "none",
+					},
+					optimizer: {
+						enabled: true,
+						runs: 200,
+					},
+					viaIR: true,
+				},
+			},
+		},
 	},
 	networks: {
-		hardhat: {
-			forking: {
-				url: "https://base-mainnet.infura.io/v3/{API_KEY}",
-				blockNumber: 23478537,
-			},
-			loggingEnabled: false,
-			allowUnlimitedContractSize: false,
+		default: {
+			type: "edr-simulated",
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "shanghai",
 		},
 		docker: {
-			url: hardhatDockerUrl,
-			allowUnlimitedContractSize: false,
-			accounts: privateKeyList,
+			type: "http",
+			url: process.env.HARDHAT_DOCKER_URL || "http://localhost:8545",
 		},
-		bsc: {
-			url: "https://bscrpc.com",
-			accounts: [privateKey],
+		bsc: createNetworkConfig("bsc", "https://binance.llamarpc.com"),
+		base: createNetworkConfig("base", "https://mainnet.base.org"),
+		polygon: createNetworkConfig("polygon", "https://polygon-rpc.com"),
+		iota: createNetworkConfig("iota", "https://json-rpc.evm.iotaledger.net"),
+		blast: createNetworkConfig("blast", "https://rpc.blast.io"),
+		mode: createNetworkConfig("mode", "https://mainnet.mode.network"),
+		mantle: createNetworkConfig("mantle", "https://mantle.drpc.org"),
+		mantle2: createNetworkConfig("mantle2", "https://mantle.drpc.org"),
+		hyperevm: createNetworkConfig("hyperevm", "https://rpc.hyperliquid.xyz/evm"),
+		arbitrum: createNetworkConfig("arbitrum", "https://arbitrum.llamarpc.com"),
+		"fork-arbitrum": {
+			type: "edr-simulated",
+			chainId: 42161,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: process.env.RPC_ARBITRUM || (useKeystore ? configVariable("RPC_ARBITRUM") : "https://arbitrum.drpc.org") || "https://arbitrum.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
 		},
-		opbnb: {
-			url: "https://opbnb.publicnode.com",
-			accounts: [privateKey],
+		"fork-base": {
+			type: "edr-simulated",
+			chainId: 8453,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: process.env.RPC_BASE || (useKeystore ? configVariable("RPC_BASE") : "https://base.drpc.org") || "https://base.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
 		},
-		base: {
-			url: "https://virtual.base.rpc.tenderly.co/b0a4916f-040f-46c4-970d-a3c95d04ee02",
-			accounts: [privateKey],
-		},
-		polygon: {
-			url: "https://polygon-rpc.com",
-			accounts: [privateKey],
-		},
-		zkEvm: {
-			url: "https://zkevm-rpc.com",
-			accounts: [privateKey],
-		},
-		iota: {
-			url: "https://json-rpc.evm.iotaledger.net",
-			accounts: [privateKey],
-		},
-		blast: {
-			url: "https://rpc.blast.io",
-			accounts: [privateKey],
-		},
-		mode: {
-			url: "https://mainnet.mode.network",
-			accounts: [privateKey],
-		},
-		mantle: {
-			url: "https://mantle.drpc.org",
-			accounts: [privateKey],
-		},
-		mantle2: {
-			url: "https://mantle.drpc.org",
-			accounts: [privateKey],
-		},
-		arbitrum: {
-			url: "https://arbitrum.llamarpc.com",
-			accounts: [privateKey],
-		},
-		sonic: {
-			url: "https://rpc.soniclabs.com",
-			accounts: [privateKey],
-		},
-		bera: {
-			url: "https://rpc.berachain.com",
-			accounts: [privateKey],
+		"fork-mantle": {
+			type: "edr-simulated",
+			chainId: 5000,
+			blockGasLimit: 30_000_000,
+			allowUnlimitedContractSize: true,
+			hardfork: "cancun",
+			forking: {
+				url: process.env.RPC_MANTLE || (useKeystore ? configVariable("RPC_MANTLE") : "https://mantle.drpc.org") || "https://mantle.drpc.org",
+				blockNumber: Number(process.env.FORK_BLOCK_NUMBER || 0) || undefined,
+			},
 		},
 	},
-	etherscan: {
-		apiKey: {
-			arbitrumOne: arbitrumApiKey,
-			iota: iotaApiKey,
-			mode: modeApiKey,
-			// mode2: modeApiKey,
-			blast: blastApiKey,
-			bsc: bnbApiKey,
-			base: baseApiKey,
-			polygon: polygonApiKey,
-			// mantle: mantleAPIKey,
-			mantle: mantle2APIKey,
-			zkEvm: zkEvmApiKey,
-			opbnb: opBnbApiKey,
-			sonic: sonicApiKey,
-			bera: beraAPIKey,
+	verify: {
+		etherscan: {
+			apiKey: etherscanApiKey,
+			// customChains: [...customChains],
 		},
-		customChains: [
-			// {
-			// 	network: "bera",
-			// 	chainId: 80094,
-			// 	urls: {
-			// 		apiURL: `https://api.berascan.com/api?apiKey=${beraAPIKey}`,
-			// 		browserURL: "https://berascan.com",
-			// 	},
-			// },
-			{
-				network: "bera",
-				chainId: 80094,
-				urls: {
-					apiURL: "https://api.routescan.io/v2/network/mainnet/evm/80094/etherscan",
-					browserURL: "https://beratrail.io",
-				},
-			},
-			{
-				network: "zkEvm",
-				chainId: 1101,
-				urls: {
-					apiURL: `https://api-zkevm.polygonscan.com/api?apikey=${zkEvmApiKey}`,
-					browserURL: "https://zkevm.polygonscan.com",
-				},
-			},
-			{
-				network: "opbnb",
-				chainId: 204,
-				urls: {
-					apiURL: `https://api-opbnb.bscscan.com/api?apikey=${opBnbApiKey}`,
-					browserURL: "https://opbnb.bscscan.com",
-				},
-			},
-			{
-				network: "iota",
-				chainId: 8822,
-				urls: {
-					apiURL: "https://explorer.evm.iota.org/api",
-					browserURL: "https://explorer.evm.iota.org",
-				},
-			},
-			// {
-			// 	network: "mode",
-			// 	chainId: 34443,
-			// 	urls: {
-			// 		apiURL: "https://explorer.mode.network/api",
-			// 		browserURL: "https://explorer.mode.network"
-			// 	}
-			// },
-			{
-				network: "mode",
-				chainId: 34443,
-				urls: {
-					apiURL: "https://api.routescan.io/v2/network/mainnet/evm/34443/etherscan",
-					browserURL: "https://modescan.io",
-				},
-			},
-			{
-				network: "blast",
-				chainId: 81457,
-				urls: {
-					apiURL: `https://api.blastscan.io/api?apiKey=${blastApiKey}`,
-					browserURL: "https://blastscan.io",
-				},
-			},
-			// {
-			// 	network: "mantle",
-			// 	chainId: 5000,
-			// 	urls: {
-			// 		apiURL: "https://explorer.mantle.xyz/api",
-			// 		browserURL: "https://explorer.mantle.xyz"
-			// 	}
-			// },
-			{
-				network: "mantle",
-				chainId: 5000,
-				urls: {
-					apiURL: "https://api.mantlescan.xyz/api",
-					browserURL: "https://mantlescan.xyz",
-				},
-			},
-			{
-				network: "sonic",
-				chainId: 146,
-				urls: {
-					apiURL: "https://api.sonicscan.org/api",
-					browserURL: "https://sonicscan.org"
-				}
-			},
-		],
 	},
 	paths: {
 		artifacts: "./artifacts",
 		cache: "./cache",
 		sources: "./contracts",
-		tests: "./test",
-	},
-	solidity: {
-		version: "0.8.18",
-		settings: {
-			metadata: {
-				// Not including the metadata hash
-				// https://github.com/paulrberg/hardhat-template/issues/31
-				bytecodeHash: "none",
-			},
-			// Disable the optimizer when debugging
-			// https://hardhat.org/hardhat-network/#solidity-optimizer-support
-			optimizer: {
-				enabled: true,
-				runs: 200,
-			},
-			viaIR: true,
-		},
+		tests: "./test/sequential",
 	},
 	typechain: {
-		outDir: "src/types",
-		target: "ethers-v6",
+		outDir: resolve(process.cwd(), "src/types"),
 	},
-	mocha: {
-		timeout: 100000000,
-	},
-}
-
-export default config
+	// gasReporter: {
+	// 	currency: "USD",
+	// 	enabled: false,
+	// 	excludeContracts: [],
+	// 	src: "./contracts",
+	// },
+	// contractSizer: {
+	// 	alphaSort: false,
+	// 	disambiguatePaths: false,
+	// 	runOnCompile: false,
+	// 	strict: true,
+	// },
+})

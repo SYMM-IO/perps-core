@@ -1,9 +1,6 @@
-import {Subject} from "rxjs"
+import { Subject } from "rxjs"
 
-import {logger} from "../utils/LoggerUtils"
-import {Event, QuoteStatus} from "./Enums"
-import {RunContext} from "./RunContext"
-import {
+import type {
 	AcceptCancelCloseRequestEvent,
 	AcceptCancelRequestEvent,
 	AllocatePartyAEvent,
@@ -24,8 +21,11 @@ import {
 	RequestToClosePositionEvent,
 	SendQuoteEvent,
 	UnlockQuoteEvent,
-	WithdrawEvent
-} from "../../src/types/contracts/interfaces/ISymmio"
+	WithdrawEvent,
+} from "../../src/types/interfaces/ISymmio.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { Event, QuoteStatus } from "./Enums.js"
+import { RunContext } from "./RunContext.js"
 
 export class EventListener {
 	queues: Map<QuoteStatus, Subject<bigint>> = new Map([
@@ -169,7 +169,6 @@ export class EventListener {
 			// context.partyBFacet.on("LogInt", async (...args) => {
 			//     logger.contractLogs("Contract:: " + args[0])
 			// })
-		} catch (ex) {
-		}
+		} catch (ex) {}
 	}
 }

@@ -20,6 +20,8 @@ coverage
 coverage.json
 typechain
 typechain-types
+/scripts/output
+/scripts/upgrade/output
 
 yarn.lock
 .idea
@@ -33,6 +35,8 @@ detailedDebug.log
 pnpm-lock.yaml
 .openzeppelin
 
-docs
 .yarn/
 .venv
+
+CLAUDE.md
+.DS_Store

@@ -1,12 +1,12 @@
-import {expect} from "chai"
+import { expect } from "chai"
 
-import {QuoteStructOutput} from "../../../src/types/contracts/interfaces/ISymmio"
-import {logger} from "../../utils/LoggerUtils"
-import {QuoteStatus} from "../Enums"
-import {Hedger} from "../Hedger"
-import {RunContext} from "../RunContext"
-import {BalanceInfo, User} from "../User"
-import {TransactionValidator} from "./TransactionValidator"
+import type { QuoteStructOutput } from "../../../src/types/interfaces/ISymmio.js"
+import { logger } from "../../utils/LoggerUtils.js"
+import { QuoteStatus } from "../Enums.js"
+import { Hedger } from "../Hedger.js"
+import { RunContext } from "../RunContext.js"
+import { BalanceInfo, User } from "../User.js"
+import { TransactionValidator } from "./TransactionValidator.js"
 
 export type CancelCloseRequestValidatorBeforeArg = {
 	user: User
@@ -33,14 +33,14 @@ export class CancelCloseRequestValidator implements TransactionValidator {
 		return {
 			balanceInfoPartyA: await arg.user.getBalanceInfo(),
 			balanceInfoPartyB: await arg.hedger.getBalanceInfo(await arg.user.getAddress()),
-			quote: await context.viewFacet.getQuote(arg.quoteId),
+			quote: await context.viewFacetQuote.getQuote(arg.quoteId),
 		}
 	}
 
 	async after(context: RunContext, arg: CancelCloseRequestValidatorAfterArg) {
 		logger.debug("After CancelCloseRequestValidator...")
 		// Check Quote
-		const newQuote = await context.viewFacet.getQuote(arg.quoteId)
+		const newQuote = await context.viewFacetQuote.getQuote(arg.quoteId)
 		const oldQuote = arg.beforeOutput.quote
 
 		expect(newQuote.quoteStatus).to.be.equal(QuoteStatus.CANCEL_CLOSE_PENDING)

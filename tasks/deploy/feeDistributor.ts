@@ -1,28 +1,58 @@
-import {task} from "hardhat/config"
+import { task } from "hardhat/config"
+import { ArgumentType } from "hardhat/types/arguments"
 
-task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
-	.addParam("symmioAddress", "The address of the Symmio contract")
-	.addParam("admin", "The admin address")
-	.addParam("symmioShare", "The symmio share")
-	.addParam("symmioShareReceiver", "The symmio share receiver")
-	.setAction(async ({symmioAddress, admin, symmioShareReceiver, symmioShare}, {ethers, upgrades, run}) => {
-		console.log("Running deploy:feeDistributor")
+import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { logger } from "./logger.js"
 
-		const [deployer] = await ethers.getSigners()
-
-		console.log("Deploying contracts with the account:", deployer.address)
-
-		// Deploy SymmioFeeDistributor as upgradeable
-		const factory = await ethers.getContractFactory("SymmioFeeDistributor")
-		const contract = await upgrades.deployProxy(factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {initializer: "initialize"})
-		await contract.waitForDeployment()
-
-		const addresses = {
-			proxy: await contract.getAddress(),
-			admin: await upgrades.erc1967.getAdminAddress(await contract.getAddress()),
-			implementation: await upgrades.erc1967.getImplementationAddress(await contract.getAddress()),
-		}
-		console.log("SymmioFeeDistributor deployed to", addresses)
-
-		return contract
+export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
+	.addOption({
+		name: "symmioAddress",
+		description: "The address of the Symmio contract",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
 	})
+	.addOption({ name: "admin", description: "The admin address", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({ name: "symmioShare", description: "The symmio share", type: ArgumentType.STRING_WITHOUT_DEFAULT, defaultValue: undefined })
+	.addOption({
+		name: "symmioShareReceiver",
+		description: "The symmio share receiver",
+		type: ArgumentType.STRING_WITHOUT_DEFAULT,
+		defaultValue: undefined,
+	})
+	.setAction(async () => ({
+		default: async ({ symmioAddress: rawSymmio, admin: rawAdmin, symmioShareReceiver: rawReceiver, symmioShare }, hre) => {
+			const { ethers, upgrades } = await getConnection(hre)
+			logger.section("SymmioFeeDistributor Deployment")
+
+			const admin = checksumAddress(rawAdmin)
+			const symmioAddress = checksumAddress(rawSymmio)
+			const symmioShareReceiver = checksumAddress(rawReceiver)
+
+			const [deployer] = await ethers.getSigners()
+
+			logger.debug("Deploying contracts with the account:", deployer.address)
+
+			// Deploy SymmioFeeDistributor as upgradeable
+			const factory = await ethers.getContractFactory("SymmioFeeDistributor")
+			const contract = await deployProxyWithFallback(hre, factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {
+				initializer: "initialize",
+				kind: "transparent",
+			})
+			await contract.waitForDeployment()
+
+			const addresses = {
+				proxy: await contract.getAddress(),
+				...(await getUpgradeAddresses(upgrades, contract)),
+			}
+			logger.deployed("SymmioFeeDistributor (Proxy)", addresses.proxy)
+			if (addresses.implementation) {
+				logger.deployed("SymmioFeeDistributor (Implementation)", addresses.implementation)
+			}
+			if (addresses.admin) {
+				logger.deployed("SymmioFeeDistributor (Admin)", addresses.admin)
+			}
+
+			return contract
+		},
+	}))
+	.build()

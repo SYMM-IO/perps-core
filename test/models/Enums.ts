@@ -58,6 +58,8 @@ export enum BridgeTransactionStatus {
 	RECEIVED,
 	SUSPENDED,
 	WITHDRAWN,
+	CANCEL_REQUESTED,
+	CANCELED,
 }
 
 export enum BridgeStatus {
@@ -65,4 +67,27 @@ export enum BridgeStatus {
 	WHITELIST,
 	SUSPEND,
 	REMOVE,
+}
+
+export enum WithdrawStatus {
+	PENDING,
+	PROVIDER_ACCEPTED,
+	PROVIDER_REJECTED,
+	COMPLETED,
+	CANCEL_REQUESTED,
+	CANCELLED,
+	SUSPENDED,
+}
+
+export enum ExternalTransferStatus {
+	PENDING,
+	COMPLETED,
+	CANCELED,
+}
+
+export enum PartyBForceCloseState {
+	NONE,
+	CLOSED_INSOLVENT,
+	CLOSED_SOLVENT,
+	CLOSED_LIQUIDATED,
 }

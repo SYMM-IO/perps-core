@@ -1,0 +1,28 @@
+{
+	"templates": [
+		{
+			"name": "InstantOpen",
+			"operations": [
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+				{ "insertionPoints": [0], "sourceIndices": [1], "sourceOffsets": [0] },
+				{ "insertionPoints": [0], "sourceIndices": [1], "sourceOffsets": [0] }
+			]
+		},
+		{
+			"name": "InstantClose",
+			"operations": [
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] }
+			]
+		},
+		{
+			"name": "InstantCloseWithAllocation",
+			"operations": [
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] },
+				{ "insertionPoints": [], "sourceIndices": [], "sourceOffsets": [] }
+			]
+		}
+	]
+}

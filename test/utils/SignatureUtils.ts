@@ -1,24 +1,37 @@
-import {SingleUpnlAndPriceSigStruct} from "../../src/types/contracts/facets/PartyA/PartyAFacet"
-import {QuotePriceSigStruct} from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
-import {getBlockTimestamp} from "./Common"
-import {PairUpnlSigStructOutput} from "../../src/types/contracts/facets/FundingRate/FundingRateFacet"
-import {HighLowPriceSigStruct} from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import {
-	DeferredLiquidationSigStruct,
-	PairUpnlAndPriceSigStruct,
-	SingleUpnlSigStruct
-} from "../../src/types/contracts/interfaces/ISymmio"
-import {ethers} from "hardhat"
-import {
+import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
+import type { PairUpnlSigStructOutput } from "../../src/types/facets/FundingRate/FundingRateFacet.js"
+import type { SingleUpnlAndPriceSigStruct } from "../../src/types/facets/PartyA/PartyAFacet.js"
+import type { QuotePriceSigStruct } from "../../src/types/facets/PartyBLiquidation/PartyBLiquidationFacet.js"
+import type {
 	QuoteSettlementDataStructOutput,
-	SettlementSigStructOutput
-} from "../../src/types/contracts/facets/Settlement/ISettlementFacet"
+	SettlementSigStructOutput,
+	UnifiedQuoteSettlementDataStruct,
+	UnifiedSettlementSigStruct,
+} from "../../src/types/facets/Settlement/ISettlementFacet.js"
+import type { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/interfaces/ISymmio.js"
+import { ethers } from "../helpers/hardhat-connection.js"
+import { getBlockTimestamp } from "./Common.js"
 
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(),
+		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
+		gatewaySignature: ethers.ZeroAddress,
+		sigs: {
+			signature: "0",
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		},
+	}
+}
+
+export async function getDummySingleUpnlWithPendingBalanceSig(upnl: bigint = 0n, pendingBalance: bigint = 0n): Promise<any> {
+	return {
+		reqId: "0x",
+		timestamp: await getBlockTimestamp(700n),
+		upnl: upnl,
+		pendingBalance: pendingBalance,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
 			signature: "0",
@@ -59,7 +72,7 @@ export async function getDummyLiquidationSig(
 export async function getDummySingleUpnlAndPriceSig(price: bigint = 1n, upnl: bigint = 0n): Promise<SingleUpnlAndPriceSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(),
+		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
@@ -91,10 +104,7 @@ export async function getDummyPairUpnlAndPriceSig(
 	}
 }
 
-export async function getDummyPairUpnlSig(
-	upnlPartyA: bigint = 0n,
-	upnlPartyB: bigint = 0n,
-): Promise<PairUpnlSigStructOutput> {
+export async function getDummyPairUpnlSig(upnlPartyA: bigint = 0n, upnlPartyB: bigint = 0n): Promise<PairUpnlSigStructOutput> {
 	return {
 		reqId: "0x",
 		timestamp: BigInt(await getBlockTimestamp()),
@@ -174,4 +184,52 @@ export async function getDummyPriceSig(quoteIds: bigint[] = [], prices: bigint[]
 			nonce: ethers.ZeroAddress,
 		},
 	}
+}
+
+export async function getDummyPairUpnlAndPricesSig(
+	prices: bigint[] = [1n],
+	symbolIds: bigint[] = [1n],
+	upnlPartyA: bigint = 0n,
+	upnlPartyB: bigint = 0n,
+): Promise<any> {
+	return {
+		reqId: "0x",
+		timestamp: await getBlockTimestamp(),
+		upnlPartyA: upnlPartyA,
+		upnlPartyB: upnlPartyB,
+		symbolIds: symbolIds,
+		prices: prices,
+		gatewaySignature: ethers.ZeroAddress,
+		sigs: {
+			signature: "0",
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		},
+	}
+}
+
+export async function getDummyUnifiedSettlementSig(
+	partyB: string = ethers.ZeroAddress,
+	upnlPartyB: bigint = 0n,
+	upnlPartyBPerPartyA: bigint[] = [],
+	partyAs: string[] = [],
+	upnlPartyAs: bigint[] = [],
+	quotesSettlementsData: UnifiedQuoteSettlementDataStruct[] = [],
+): Promise<UnifiedSettlementSigStruct> {
+	return {
+		reqId: "0x",
+		timestamp: BigInt(await getBlockTimestamp()),
+		quotesSettlementsData: quotesSettlementsData,
+		partyB: partyB,
+		upnlPartyB: upnlPartyB,
+		upnlPartyBPerPartyA: upnlPartyBPerPartyA,
+		partyAs: partyAs,
+		upnlPartyAs: upnlPartyAs,
+		gatewaySignature: "0x",
+		sigs: {
+			signature: 0n,
+			owner: ethers.ZeroAddress,
+			nonce: ethers.ZeroAddress,
+		} as any,
+	} as UnifiedSettlementSigStruct
 }

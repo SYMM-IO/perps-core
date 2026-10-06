@@ -1,25 +1,19 @@
-import {run} from "hardhat"
-import {Addresses, loadAddresses, saveAddresses} from "./utils/file"
+import { tasks } from "hardhat"
 
-async function main() {
-	let deployedAddresses: Addresses = loadAddresses()
-	const symmioAddress = deployedAddresses.symmioAddress
-	const admin = process.env.ADMIN_PUBLIC_KEY
+// Import to initialize the hardhat connection
+import "../test/helpers/hardhat-connection.js"
+import { Addresses, loadAddresses, saveAddresses } from "./utils/file.js"
 
-	// Run the deploy:symmioPartyB task
-	const contract = await run("deploy:symmioPartyB", {
-		symmioAddress: symmioAddress,
-		admin: admin,
-		logData: true,
-	})
+const deployedAddresses: Addresses = loadAddresses()
+const symmioAddress = deployedAddresses.symmioAddress
+const admin = process.env.ADMIN_PUBLIC_KEY
 
-	deployedAddresses.hedgerProxyAddress = await contract.getAddress()
-	saveAddresses(deployedAddresses)
-}
+// Run the deploy:symmioPartyB task
+const contract = await tasks.getTask("deploy:symmioPartyB").run({
+	symmioAddress,
+	admin,
+	logData: true,
+})
 
-main()
-	.then(() => process.exit(0))
-	.catch(error => {
-		console.error(error)
-		process.exit(1)
-	})
+deployedAddresses.hedgerProxyAddress = contract.address
+saveAddresses(deployedAddresses)

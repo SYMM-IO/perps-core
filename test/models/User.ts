@@ -1,22 +1,24 @@
-import {setBalance} from "@nomicfoundation/hardhat-network-helpers"
-import {BigNumberish, ethers, EventLog} from "ethers"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { BigNumberish, ethers, EventLog } from "ethers"
 
-import {getPriceFetcher, serializeToJson, unDecimal} from "../utils/Common"
-import {logger} from "../utils/LoggerUtils"
-import {getPrice} from "../utils/PriceUtils"
-import {PositionType} from "./Enums"
-import {RunContext} from "./RunContext"
-import {CloseRequest, limitCloseRequestBuilder} from "./requestModels/CloseRequest"
-import {limitQuoteRequestBuilder, QuoteRequest} from "./requestModels/QuoteRequest"
-import {runTx} from "../utils/TxUtils"
-import {getDummyLiquidationSig} from "../utils/SignatureUtils"
-import {LiquidationSigStruct} from "../../src/types/contracts/facets/liquidation/LiquidationFacet"
-import {QuoteStructOutput, SettlementSigStruct} from "../../src/types/contracts/interfaces/ISymmio"
-import {HighLowPriceSigStruct} from "../../src/types/contracts/facets/ForceActions/ForceActionsFacet"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
+import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
+import type { LiquidationSigStruct } from "../../src/types/facets/PartyALiquidation/PartyALiquidationFacet.js"
+import type { QuoteStructOutput, SettlementSigStruct } from "../../src/types/interfaces/ISymmio.js"
+import { setBalance } from "../helpers/network-helpers.js"
+import { getPriceFetcher, serializeToJson, unDecimal } from "../utils/Common.js"
+import { logger } from "../utils/LoggerUtils.js"
+import { getPrice } from "../utils/PriceUtils.js"
+import { getDummyLiquidationSig } from "../utils/SignatureUtils.js"
+import { runTx } from "../utils/TxUtils.js"
+import { PositionType } from "./Enums.js"
+import { RunContext } from "./RunContext.js"
+import { PartyEntity } from "./partyEntitiy.js"
+import { CloseRequest, limitCloseRequestBuilder } from "./requestModels/CloseRequest.js"
+import { limitQuoteRequestBuilder, limitQuoteRequestWithDataBuilder, QuoteRequest, QuoteRequestWithData } from "./requestModels/QuoteRequest.js"
 
-export class User {
-	constructor(private context: RunContext, private signer: SignerWithAddress) {
+export class User extends PartyEntity {
+	constructor(context: RunContext, signer: HardhatEthersSigner) {
+		super(context, signer)
 	}
 
 	public async setup() {
@@ -45,6 +47,9 @@ export class User {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
+		// Use request.affiliate if explicitly set (non-zero), otherwise fall back to accountManager
+		const affiliate =
+			request.affiliate && request.affiliate !== "0x0000000000000000000000000000000000000000" ? request.affiliate : this.context.accountManager
 		let tx = await this.context.partyAFacet
 			.connect(this.signer)
 			.sendQuoteWithAffiliate(
@@ -60,7 +65,7 @@ export class User {
 				request.partyBmm,
 				request.maxFundingRate,
 				await request.deadline,
-				this.context.multiAccount,
+				affiliate,
 				await request.upnlSig,
 			)
 		const receipt = await tx.wait()
@@ -72,7 +77,47 @@ export class User {
 
 			if (sendQuoteEvent && sendQuoteEvent.args) {
 				const id = sendQuoteEvent.args.quoteId
-				logger.info("User::::SendQuote: " + id)
+				return id.toString()
+			}
+		}
+		throw new Error("SendQuote event not found in transaction receipt")
+	}
+
+	public async sendQuoteWithData(request: QuoteRequestWithData = limitQuoteRequestWithDataBuilder().build()): Promise<bigint> {
+		logger.detailedDebug(
+			serializeToJson({
+				request: request,
+				userBalanceInfo: await this.getBalanceInfo(),
+				userUpnl: await this.getUpnl(),
+			}),
+		)
+		let tx = await this.context.partyAFacet
+			.connect(this.signer)
+			.sendQuoteWithAffiliateAndData(
+				request.partyBWhiteList,
+				request.symbolId,
+				request.positionType,
+				request.orderType,
+				request.price,
+				request.quantity,
+				request.cva,
+				request.lf,
+				request.partyAmm,
+				request.partyBmm,
+				await request.deadline,
+				this.context.accountManager,
+				await request.upnlSig,
+				request.data,
+			)
+		const receipt = await tx.wait()
+
+		if (receipt && receipt.logs) {
+			const sendQuoteEvent = receipt.logs.find((log): log is EventLog => {
+				return (log as EventLog).eventName === "SendQuote"
+			})
+
+			if (sendQuoteEvent && sendQuoteEvent.args) {
+				const id = sendQuoteEvent.args.quoteId
 				return id.toString()
 			}
 		}
@@ -88,7 +133,6 @@ export class User {
 			}),
 		)
 		await runTx(this.context.partyAFacet.connect(this.signer).requestToCancelQuote(id))
-		logger.info(`User::::RequestToCancelQuote: ${id}`)
 	}
 
 	public async forceCancelQuote(id: BigNumberish) {
@@ -100,7 +144,6 @@ export class User {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).forceCancelQuote(id))
-		logger.info(`User::::ForceCancelQuote: ${id}`)
 	}
 
 	public async forceCancelCloseRequest(id: BigNumberish) {
@@ -112,7 +155,6 @@ export class User {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).forceCancelCloseRequest(id))
-		logger.info(`User::::ForceCancelCloseRequest: ${id}`)
 	}
 
 	public async getBalanceInfo(): Promise<BalanceInfo> {
@@ -134,7 +176,6 @@ export class User {
 		}
 	}
 
-
 	public async requestToClosePosition(id: BigNumberish, request: CloseRequest = limitCloseRequestBuilder().build()) {
 		logger.detailedDebug(
 			serializeToJson({
@@ -148,7 +189,6 @@ export class User {
 				.connect(this.signer)
 				.requestToClosePosition(id, request.closePrice, request.quantityToClose, request.orderType, await request.deadline),
 		)
-		logger.info(`User::::RequestToClosePosition: ${id}`)
 	}
 
 	public async forceClosePosition(id: BigNumberish, signature: HighLowPriceSigStruct) {
@@ -160,10 +200,14 @@ export class User {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).forceClosePosition(id, signature))
-		logger.info(`User::::ForceClosePosition: ${id}`)
 	}
 
-	public async settleAndForceClosePosition(id: BigNumberish, highLowPriceSigStruct: HighLowPriceSigStruct, settleSig: SettlementSigStruct, updatedPrices: bigint[]) {
+	public async settleAndForceClosePosition(
+		id: BigNumberish,
+		highLowPriceSigStruct: HighLowPriceSigStruct,
+		settleSig: SettlementSigStruct,
+		updatedPrices: bigint[],
+	) {
 		logger.detailedDebug(
 			serializeToJson({
 				highLowPriceSigStruct: highLowPriceSigStruct,
@@ -174,7 +218,6 @@ export class User {
 			}),
 		)
 		await runTx(this.context.forceActionsFacet.connect(this.signer).settleAndForceClosePosition(id, highLowPriceSigStruct, settleSig, updatedPrices))
-		logger.info(`User::::SettleAndForceClosePosition: ${id}`)
 	}
 
 	public async requestToCancelCloseRequest(id: BigNumberish) {
@@ -186,7 +229,6 @@ export class User {
 			}),
 		)
 		await runTx(this.context.partyAFacet.connect(this.signer).requestToCancelCloseRequest(id))
-		logger.info(`User::::RequestToCancelCloseRequest: ${id}`)
 	}
 
 	public getAddress() {
@@ -200,13 +242,13 @@ export class User {
 		let openPositions = await this.getOpenPositions()
 		let upnl = 0n
 		for (const pos of openPositions) {
-			const priceDiff = pos.openedPrice - (
-				symbolIdPriceFetcher != null
+			const priceDiff =
+				pos.openedPrice -
+				(symbolIdPriceFetcher != null
 					? await symbolIdPriceFetcher(pos.symbolId)
-					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name)
-			)
+					: await symbolNamePriceFetcher((await this.context.viewFacetSymbol.getSymbol(pos.symbolId)).name))
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? -1n : 1n)
+			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? -1n : 1n)
 		}
 		return upnl
 	}
@@ -218,13 +260,13 @@ export class User {
 		let openPositions = await this.getOpenPositions()
 		let upnl = 0n
 		for (const pos of openPositions) {
-			const priceDiff = pos.openedPrice - (
-				symbolIdPriceFetcher != null
+			const priceDiff =
+				pos.openedPrice -
+				(symbolIdPriceFetcher != null
 					? await symbolIdPriceFetcher(pos.symbolId)
-					: await symbolNamePriceFetcher((await this.context.viewFacet.getSymbol(pos.symbolId)).name)
-			)
+					: await symbolNamePriceFetcher((await this.context.viewFacetSymbol.getSymbol(pos.symbolId)).name))
 			const amount = pos.quantity - pos.closedAmount
-			upnl += unDecimal(amount * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? 0n : 1n)
+			upnl += unDecimal(BigInt(amount) * priceDiff) * (pos.positionType == BigInt(PositionType.LONG) ? 0n : 1n)
 		}
 		return upnl
 	}
@@ -238,9 +280,8 @@ export class User {
 			let mm = balanceInfo.lockedMmPartyA
 			let mUpnl = -upnl
 			let considering_mm = mUpnl > mm ? mUpnl : mm
-			available = balanceInfo.allocatedBalances
-				- (balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.totalPendingLockedPartyA)
-				- considering_mm
+			available =
+				balanceInfo.allocatedBalances - (balanceInfo.lockedCva + balanceInfo.lockedLf + balanceInfo.totalPendingLockedPartyA) - considering_mm
 		}
 		return available
 	}
@@ -248,24 +289,42 @@ export class User {
 	public async liquidateAndSetSymbolPrices(
 		symbolIds: bigint[],
 		prices: bigint[],
-		liquidator: SignerWithAddress = this.context.signers.liquidator,
+		quoteIds: bigint[],
+		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
 	): Promise<LiquidationSigStruct> {
-		const upnl = await this.getUpnl(getPriceFetcher(symbolIds, prices))
-		const totalUnrealizedLoss = await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))
+		const upnl = (await this.getUpnl(getPriceFetcher(symbolIds, prices))) - (await this.context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
+		const totalUnrealizedLoss =
+			(await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))) - (await this.context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
 		const allocatedBalance = (await this.getBalanceInfo()).allocatedBalances
 		const sign = await getDummyLiquidationSig("0x10", upnl, symbolIds, prices, totalUnrealizedLoss, allocatedBalance)
-		await this.context.liquidationFacet.connect(liquidator).liquidatePartyA(this.getAddress(), sign)
-		await this.context.liquidationFacet.connect(liquidator).setSymbolsPrice(this.getAddress(), sign)
+		await this.context.partyALiquidationFacet.connect(liquidator).liquidatePartyA(this.getAddress(), sign)
+		await this.context.partyALiquidationFacet.connect(liquidator).setSymbolsPrice(this.getAddress(), sign)
 		return sign
 	}
 
-	public async liquidatePendingPositions(liquidator: SignerWithAddress = this.context.signers.liquidator) {
-		await this.context.liquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(this.getAddress())
+	public async deferredLiquidateAndSetSymbolPrices(
+		symbolIds: bigint[],
+		prices: bigint[],
+		quoteIds: bigint[],
+		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
+	): Promise<LiquidationSigStruct> {
+		const upnl = (await this.getUpnl(getPriceFetcher(symbolIds, prices))) - (await this.context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
+		const totalUnrealizedLoss =
+			(await this.getTotalUnrealisedLoss(getPriceFetcher(symbolIds, prices))) - (await this.context.viewFacetQuote.getSumQuoteFundingDebts(quoteIds))
+		const allocatedBalance = (await this.getBalanceInfo()).allocatedBalances
+		const sign = await getDummyLiquidationSig("0x10", upnl, symbolIds, prices, totalUnrealizedLoss, allocatedBalance)
+		await this.context.partyALiquidationFacet.connect(liquidator).deferredLiquidatePartyA(this.getAddress(), sign)
+		await this.context.partyALiquidationFacet.connect(liquidator).deferredSetSymbolsPrice(this.getAddress(), sign)
+		return sign
 	}
 
-	public async liquidatePositions(positions: BigNumberish[] = [], liquidator: SignerWithAddress = this.context.signers.liquidator) {
+	public async liquidatePendingPositions(liquidator: HardhatEthersSigner = this.context.signers.liquidator) {
+		await this.context.partyALiquidationFacet.connect(liquidator).liquidatePendingPositionsPartyA(this.getAddress())
+	}
+
+	public async liquidatePositions(positions: BigNumberish[] = [], liquidator: HardhatEthersSigner = this.context.signers.liquidator) {
 		if (positions.length == 0) positions = (await this.getOpenPositions()).map(value => value.id)
-		await this.context.liquidationFacet.connect(liquidator).liquidatePositionsPartyA(this.getAddress(), positions)
+		await this.context.partyALiquidationFacet.connect(liquidator).liquidatePositionsPartyA(this.getAddress(), positions)
 	}
 
 	public async getOpenPositions(): Promise<QuoteStructOutput[]> {
@@ -273,7 +332,7 @@ export class User {
 		const pageSize = 30
 		let last = 0
 		while (true) {
-			let page = await this.context.viewFacet.getPartyAOpenPositions(this.getAddress(), last, pageSize)
+			let page = await this.context.viewFacetQuote.getPartyAOpenPositions(this.getAddress(), last, pageSize)
 			openPositions.push(...page)
 			if (page.length < pageSize) break
 		}
@@ -281,10 +340,10 @@ export class User {
 	}
 
 	public async settleLiquidation(
-		partyB: SignerWithAddress = this.context.signers.hedger,
-		liquidator: SignerWithAddress = this.context.signers.liquidator,
+		partyB: HardhatEthersSigner = this.context.signers.hedger,
+		liquidator: HardhatEthersSigner = this.context.signers.liquidator,
 	): Promise<void> {
-		await this.context.liquidationFacet.connect(liquidator).settlePartyALiquidation(await this.getAddress(), [await partyB.getAddress()])
+		await this.context.partyALiquidationFacet.connect(liquidator).settlePartyALiquidation(await this.getAddress(), [await partyB.getAddress()])
 	}
 
 	public async getLiquidatedStateOfPartyA() {
