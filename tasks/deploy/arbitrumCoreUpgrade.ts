@@ -20,6 +20,7 @@ import {
 	coreUpgradeAuthority,
 	coreGovernanceKind,
 	coreUpgradePolicies,
+	coreUpgradeRoleGrants,
 } from "../../deployment-tooling/core-upgrade-input.js"
 import { operationDigest } from "../../deployment-tooling/operations/inputs.js"
 import { verifyMuonReadiness } from "../../deployment-tooling/operations/muon-readiness.js"
@@ -108,8 +109,10 @@ export function buildCoreUpgradeActions(ethers: any, input: any, snapshot: any, 
 		add = (data: string, description: string) => actions.push({ to: t.core, value: "0", data, description })
 	add(plan.calldata, `Atomically upgrade all Core facets (${plan.removed.length} removed selectors)`)
 	if (isStandardCoreInput(input.config)) {
-		for (const grant of snapshot.plannedRoles.filter((g: any) => !g.held))
-			add(iface.encodeFunctionData("grantRole", [grant.holder, ethers.id(grant.role)]), `Grant ${grant.role} to ${grant.holder}`)
+		for (const grant of snapshot.plannedRoles.filter((g: any) => !g.held)) {
+			const holder = grant.holderRef ? `${grant.holderRef} (${grant.holder})` : grant.holder
+			add(iface.encodeFunctionData("grantRole", [grant.holder, ethers.id(grant.role)]), `Grant ${grant.role} on Core (${t.core}) to ${holder}`)
+		}
 	} else if (!snapshot.roles.listing)
 		add(
 			iface.encodeFunctionData("grantRole", [t.symbolManager, ethers.id("SYMBOL_LISTING_ROLE")]),
@@ -390,6 +393,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				abiDigest: digest(coreUpgradeABI),
 				removedSelectors: coreUpgradePolicies(input.config).selectors.core.allowedRemovals,
 				policies: coreUpgradePolicies(input.config),
+				roleGrants: { core: { address: input.config.target.core, grants: coreUpgradeRoleGrants(input.config) } },
 				changes: [
 					"getSymbolAdjustment(uint256) now returns 17 fields instead of 15",
 					"startRestatement(uint256,uint256) requires the liquidation nonce",

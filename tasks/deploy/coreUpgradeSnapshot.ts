@@ -1,8 +1,15 @@
+import { id } from "ethers"
 import fs from "node:fs"
 
 import { IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js"
-import { isStandardCoreInput, coreUpgradeAuthority, coreGovernanceKind, coreUpgradePolicies } from "../../deployment-tooling/core-upgrade-input.js"
+import {
+	isStandardCoreInput,
+	coreUpgradeAuthority,
+	coreGovernanceKind,
+	coreUpgradePolicies,
+	coreUpgradeRoleGrants,
+} from "../../deployment-tooling/core-upgrade-input.js"
 import { captureMuonConfiguration } from "../../deployment-tooling/operations/muon-upgrade.js"
 import { addFunding, calculateGroupFunding } from "../../scripts/utils/aggregateFundingResync.js"
 import { json, lower, selectorsAt } from "./accountInstantSnapshot.js"
@@ -25,6 +32,13 @@ export function assertEmptySymbolAdjustment(returnData: string, upgraded: boolea
 		throw new Error(
 			`storage.symbolAdjustment: expected ${words} zero ABI words ${upgraded ? "after" : "before"} upgrade; nonzero or unexpected layout requires a separate storage migration`,
 		)
+}
+
+/** The caller is bound to the configured Core and the snapshot's block. */
+export async function captureCoreRoleGrants(config: any, call: (name: string, args: any[]) => Promise<any>) {
+	const plannedRoles = []
+	for (const grant of coreUpgradeRoleGrants(config)) plannedRoles.push({ ...grant, held: await call("hasRole", [grant.holder, id(grant.role)]) })
+	return plannedRoles
 }
 
 /** Pin every read to one block and refuse incomplete scans. No signer is loaded. */
@@ -146,8 +160,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		wiring.safeThreshold = await safe.getThreshold(overrides)
 	} else if ((await provider.getCode(owner, block.number)) !== "0x") throw new Error("Configured EOA owner has contract code")
 	wiring.accountSelectors = await selectorsAt(ethers, t.accountLayer, block.number)
-	const plannedRoles: any[] = []
-	for (const grant of config.roleGrants || []) plannedRoles.push({ ...grant, held: await call("hasRole", [grant.holder, ethers.id(grant.role)]) })
+	const plannedRoles = await captureCoreRoleGrants(config, call)
 	if (isStandardCoreInput(config)) {
 		for (const [holder, role] of [
 			[owner, "GLOBAL_PAUSER_ROLE"],
