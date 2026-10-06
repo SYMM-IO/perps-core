@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { MuonStorage, HighLowPriceSig } from "../../storages/MuonStorage.sol";
+import { AccountStorage } from "../../storages/AccountStorage.sol";
+import { LibMuon } from "./LibMuon.sol";
+import { LibAccount } from "../LibAccount.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+
+library LibMuonForceActions {
+	/// @notice Verifies a high/low price signature for force close actions.
+	function verifyHighLowPrice(HighLowPriceSig memory sig, address partyB, address partyA, uint256 symbolId, MuonFunction func) internal view {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+
+		// == SignatureCheck( ==
+		LibMuon.verifyUpnlTimestamp(sig.timestamp, func);
+		// == ) ==
+		bytes32 hash = keccak256(
+			abi.encodePacked(
+				muonLayout.muonAppId,
+				sig.reqId,
+				address(this),
+				partyB,
+				partyA,
+				LibAccount.getPartyBSignatureUpnlCounter(partyB, partyA, false),
+				AccountStorage.layout().partyAUpnlCounters[partyA],
+				sig.upnlPartyB,
+				sig.upnlPartyA,
+				symbolId,
+				sig.currentPrice,
+				sig.startTime,
+				sig.endTime,
+				sig.lowest,
+				sig.highest,
+				sig.averagePrice,
+				sig.timestamp,
+				LibMuon.getChainId()
+			)
+		);
+		LibMuon.verifyTSSAndGateway(hash, sig.sigs, sig.gatewaySignature, func);
+	}
+}

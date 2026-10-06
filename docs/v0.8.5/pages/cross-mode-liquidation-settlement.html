@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="In cross mode, partyBAvailableForQuote includes unrealized PnL:" />
+		<title>Cross-Mode Settlement During Liquidation - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-cross-mode-liquidation-settlement-why-this-is-needed">Why This Is Needed</a>
+				<a class="toc-link level-2" href="#doc-cross-mode-liquidation-settlement-settlepartybupnlforliquidation"
+					>settlePartyBUpnlForLiquidation</a
+				>
+				<a class="toc-link level-2" href="#doc-cross-mode-liquidation-settlement-settlement-guard-in-settlepartyaliquidation"
+					>Settlement Guard in settlePartyALiquidation</a
+				>
+				<a class="toc-link level-2" href="#doc-cross-mode-liquidation-settlement-liquidation-flow">Liquidation Flow</a>
+				<a class="toc-link level-2" href="#doc-cross-mode-liquidation-settlement-isolated-vs-cross-mode-behavior"
+					>Isolated vs Cross-Mode Behavior</a
+				>
+				<a class="toc-link level-2" href="#doc-cross-mode-liquidation-settlement-event">Event</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Cross-Mode Settlement During Liquidation</h1>
+							<p class="hero-copy">
+								Cross-mode PartyBs hold their collateral in a single pooled bucket. Because solvency is evaluated against aggregate
+								uPNL across all counterparties, a PartyB's raw allocated balance can be much lower than the total value it actually
+								controls — most of the value may sit as unrealized profit in open positions. When one of those counterparties gets
+								liquidated and the settlement requires the PartyB to pay, the system needs a way to convert that unrealized profit
+								into allocated balance first. This is what <code>settlePartyBUpnlForLiquidation</code> does.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-cross-mode-liquidation-settlement-why-this-is-needed">Why This Is Needed</h2>
+					<p>In cross mode, <code>partyBAvailableForQuote</code> includes unrealized PnL:</p>
+					<pre><code>available = allocatedBalances[partyB][address(0)]
+          - totalLockedBalances(partyB)
+          + aggregateUPNL
+</code></pre>
+					<p>
+						A PartyB with 200 allocated, 130 locked, and +500 uPNL has an available balance of 570. It could legally deallocate all 200
+						and still be solvent. But <code>settlePartyALiquidation</code> draws from the raw <code>partyBAllocatedBalances</code> — it
+						does not factor in uPNL. If the PartyB owes 50 from a liquidation settlement and its allocated balance is 0 (plus 22 from CVA
+						return = 22), that is not enough.
+					</p>
+					<p>
+						Isolated PartyBs do not have this gap. Their balance is per-PartyA and cannot be boosted by profits from other counterparties,
+						so the protocol simply caps the payment at whatever is available. Cross-mode PartyBs, on the other hand, have a shared pool
+						that <em>can</em> be funded from other positions — so the protocol requires the liquidator to do that before settling.
+					</p>
+					<p>
+						In practice, this scenario is rare. Symmio's off-chain monitoring enforces stricter balance requirements on solvers than the
+						on-chain solvency threshold — solvers are required to maintain a buffer well above the contract minimum. If a solver's balance
+						drops below the off-chain threshold, <a href="soft-liquidation.html">soft liquidation</a> penalties are applied before hard
+						insolvency is ever reached. This reduces the likelihood of a cross-mode PartyB having insufficient allocated balance during a
+						PartyA liquidation, but the on-chain guard exists as a safety net for the cases that slip through.
+					</p>
+					<h2 id="doc-cross-mode-liquidation-settlement-settlepartybupnlforliquidation"><code>settlePartyBUpnlForLiquidation</code></h2>
+					<p>
+						Located on <code>SettlementFacet</code>, this function lets a liquidator realize a cross-mode PartyB's uPNL from positions
+						with other (non-liquidated) PartyAs before the liquidation settlement.
+					</p>
+					<pre><code class="language-solidity">function settlePartyBUpnlForLiquidation(
+    address liquidatedPartyA,
+    UnifiedSettlementSig memory sig,
+    uint256[] memory updatedPrices
+) external whenNotLiquidationPaused onlyRole(LIQUIDATOR_ROLE)
+</code></pre>
+					<p><strong>Access control:</strong> Requires <code>LIQUIDATOR_ROLE</code>. Respects the liquidation pause flag.</p>
+					<p>
+						<strong>Validations:</strong> - <code>liquidatedPartyA</code> must be in an active liquidation - The PartyB in the signature
+						must be cross-mode - A pending settlement must exist for this PartyB with the liquidated PartyA - None of the PartyAs in the
+						settlement signature can be the liquidated PartyA (cannot settle with a party being liquidated)
+					</p>
+					<p>
+						<strong>Mechanics:</strong> Delegates to <code>LibSettlement.settleUpnlUnified</code> with <code>privilegedMode = true</code>,
+						which bypasses the "caller must have a position" check and settlement cooldowns. This adjusts <code>openedPrice</code> on the
+						settled quotes, transferring funds from the solvent PartyAs' allocated balances into the PartyB's cross bucket. After this
+						call, the PartyB has enough allocated balance to cover the liquidation settlement.
+					</p>
+					<p>
+						<strong>Concurrent liquidations:</strong> Because <code>settleUpnlUnified</code> requires that none of the target PartyAs are
+						in liquidation themselves (<code>!liquidationStatus[partyA]</code>), the liquidator cannot settle the PartyB's uPNL using
+						positions with a PartyA that is also being liquidated. If the PartyB's profitable positions are concentrated with a
+						concurrently liquidated PartyA, the liquidator must wait for that liquidation to complete first, then settle with positions
+						from other solvent PartyAs. If no solvent PartyAs remain, the ClearingHouse takes over.
+					</p>
+					<h2 id="doc-cross-mode-liquidation-settlement-settlement-guard-in-settlepartyaliquidation">
+						Settlement Guard in <code>settlePartyALiquidation</code>
+					</h2>
+					<p>When a PartyB's allocated balance (after CVA return) is less than the settle amount, behavior depends on mode:</p>
+					<ul>
+						<li>
+							<p>
+								<strong>Isolated PartyB:</strong> Payment is capped at the available balance. The shortfall is absorbed since isolated
+								PartyBs cannot source funds from other PartyAs.
+							</p>
+						</li>
+						<li>
+							<p>
+								<strong>Cross-mode PartyB:</strong> The transaction reverts with
+								<code>"LiquidationFacet: Settle cross partyB uPNL first"</code>. The liquidator has two options: call
+								<code>settlePartyBUpnlForLiquidation</code> to realize the PartyB's uPNL and fund the cross bucket, then retry the
+								settlement; or, if settlement alone cannot cover the shortfall, the ClearingHouse takes over the liquidation entirely
+								and handles the unwinding through <a href="clearing-house.html">its own flow</a>.
+							</p>
+						</li>
+					</ul>
+					<pre><code class="language-solidity">} else {
+    require(
+        !maLayout.crossModeEnabledForPartyB[partyB],
+        "LiquidationFacet: Settle cross partyB uPNL first"
+    );
+    // Isolated: cap at available balance
+    settleAmounts[i] = int256(accountLayout.partyBAllocatedBalances[partyB][allocKey]);
+    accountLayout.partyBAllocatedBalances[partyB][allocKey] = 0;
+}
+</code></pre>
+					<h2 id="doc-cross-mode-liquidation-settlement-liquidation-flow">Liquidation Flow</h2>
+					<p>When a PartyA liquidation involves a cross-mode PartyB whose allocated balance is insufficient:</p>
+					<pre><code>1. liquidatePartyA(partyA, sig)
+   └─ Sets liquidationStatus[partyA] = true
+
+2. setSymbolsPrice(partyA, sig)
+   └─ Sets liquidation prices for each symbol
+
+3. liquidatePositionsPartyA(partyA, quoteIds[])
+   └─ Closes positions, computes settleAmounts
+   └─ May trigger dispute if cross PartyB can't cover
+
+4. resolveLiquidationDispute(partyA, partyBs[], amounts[], false)
+   └─ Admin resolves dispute, clears disputed flag
+   └─ (only needed if dispute was triggered in step 3)
+
+5. settlePartyALiquidation(partyA, [isolatedPartyBs])
+   └─ Settle isolated PartyBs first (capped payment if needed)
+
+6. settlePartyBUpnlForLiquidation(partyA, sig, prices[])
+   └─ Realize cross PartyB's uPNL from other solvent PartyAs
+   └─ Increases PartyB's allocated balance
+
+7. settlePartyALiquidation(partyA, [crossPartyB])
+   └─ Now succeeds with sufficient balance
+</code></pre>
+					<p>
+						Steps 5--7 can be combined if the liquidator settles uPNL before attempting any settlement. Step 4 is only needed when the
+						dispute flag is set.
+					</p>
+					<h2 id="doc-cross-mode-liquidation-settlement-isolated-vs-cross-mode-behavior">Isolated vs Cross-Mode Behavior</h2>
+					<table>
+						<tr>
+							<td><strong>Scenario</strong></td>
+							<td><strong>Isolated PartyB</strong></td>
+							<td><strong>Cross-Mode PartyB</strong></td>
+						</tr>
+						<tr>
+							<td>Balance &gt;= settleAmount</td>
+							<td>Full payment</td>
+							<td>Full payment</td>
+						</tr>
+						<tr>
+							<td>Balance &lt; settleAmount</td>
+							<td>Capped at available balance (shortfall absorbed)</td>
+							<td>Reverts — liquidator must call <code>settlePartyBUpnlForLiquidation</code> first</td>
+						</tr>
+						<tr>
+							<td>Rationale</td>
+							<td>Isolated PartyB cannot source funds from other PartyAs</td>
+							<td>Cross PartyB can realize uPNL from positions with other solvent PartyAs</td>
+						</tr>
+					</table>
+
+					<h2 id="doc-cross-mode-liquidation-settlement-event">Event</h2>
+					<pre><code class="language-solidity">event SettlePartyBUpnlForLiquidation(
+    address indexed liquidatedPartyA,
+    address indexed partyB,
+    bytes settlementId,
+    UnifiedQuoteSettlementData[] settlementData,
+    uint256[] updatedPrices,
+    address[] partyAs,
+    uint256[] newPartyAsAllocatedBalances,
+    uint256 newPartyBAllocatedBalance
+);
+</code></pre>
+					<p>Emitted by <code>SettlementFacet</code> when a liquidator realizes a cross-mode PartyB's uPNL during a PartyA liquidation.</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

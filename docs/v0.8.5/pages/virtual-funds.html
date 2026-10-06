@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Symmio operates across many chains, and users&#x27; funds are often fragmented between them. Bridging funds manually is slow and creates friction for users working with Symmio frontends. The Virtual Fund System solves this by introducing virtual deposits and virtual withdrawals — mechanisms that let…"
+		/>
+		<title>Virtual Fund System - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-virtual-funds-overview">Overview</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-virtual-provider-registration">Virtual Provider Registration</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-virtual-deposit">Virtual Deposit</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-virtualdepositfor">virtualDepositFor</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-virtualdepositandallocatefor">virtualDepositAndAllocateFor</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-depositvirtualfunds">depositVirtualFunds</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-the-ivirtualprovider-interface">The IVirtualProvider Interface</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-callback-security">Callback Security</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-integration-with-the-withdraw-system">Integration with the Withdraw System</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-pure-virtual-withdrawal">Pure Virtual Withdrawal</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-cancel-blackout">Cancel Blackout</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-virtual-external-transfers">Virtual External Transfers</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-express-deposit-account-layer">Express Deposit (Account Layer)</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-configuration">Configuration</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-deposit-flow">Deposit Flow</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-trust-model">Trust Model</a>
+				<a class="toc-link level-2" href="#doc-virtual-funds-technical-reference">Technical Reference</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-core-functions">Core Functions</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-admin-functions">Admin Functions</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-account-layer-functions">Account Layer Functions</a>
+				<a class="toc-link level-3" href="#doc-virtual-funds-events">Events</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Virtual Fund System</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-virtual-funds-overview">Overview</h2>
+					<p>
+						Symmio operates across many chains, and users' funds are often fragmented between them. Bridging funds manually is slow and
+						creates friction for users working with Symmio frontends. The Virtual Fund System solves this by introducing
+						<strong>virtual deposits</strong> and <strong>virtual withdrawals</strong> — mechanisms that let trusted providers credit or
+						debit a user's balance in a Symmio contract without requiring an immediate on-chain token transfer on that specific chain.
+					</p>
+					<p>
+						In concrete terms: a user deposits funds to a provider on Chain A, and that provider calls <code>virtualDepositFor</code> on
+						the Symmio contract on Chain B to credit the user's balance there. When withdrawing, the provider pays the user on their
+						preferred chain and absorbs the balance reduction on the source chain. The actual collateral reconciliation between the
+						provider and the Symmio contract happens asynchronously.
+					</p>
+					<p>The system touches three layers of the protocol:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Layer</th>
+								<th>Responsibility</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><strong>Core (AccountFacet)</strong></td>
+								<td><code>virtualDepositFor</code>, <code>virtualDepositAndAllocateFor</code>, <code>depositVirtualFunds</code></td>
+							</tr>
+							<tr>
+								<td><strong>Core (WithdrawFacet)</strong></td>
+								<td>Virtual withdrawal flow with provider callbacks</td>
+							</tr>
+							<tr>
+								<td><strong>Core (ExternalTransferFacet)</strong></td>
+								<td>Cross-diamond virtual transfers between Symmio deployments</td>
+							</tr>
+							<tr>
+								<td><strong>Account Layer (CoreFacet)</strong></td>
+								<td>Express deposit splitting with virtual providers</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-virtual-funds-virtual-provider-registration">Virtual Provider Registration</h2>
+					<p>
+						Virtual providers are trusted contracts registered by an admin with <code>PROVIDER_ADMIN_ROLE</code>. Registration is stored
+						in <code>WithdrawStorage</code> and a provider cannot be both a virtual provider and an express provider simultaneously.
+					</p>
+					<pre><code class="language-solidity">// ControlFacet.sol
+function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE);
+function unregisterVirtualProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE);
+</code></pre>
+					<p>Registration is checked via the <code>virtualProviders</code> mapping:</p>
+					<pre><code class="language-solidity">// WithdrawStorage.sol
+mapping(address =&gt; bool) virtualProviders;
+</code></pre>
+					<p>A view function is available to query registration status:</p>
+					<pre><code class="language-solidity">function isVirtualProviderRegistered(address provider) external view returns (bool);
+</code></pre>
+					<h2 id="doc-virtual-funds-virtual-deposit">Virtual Deposit</h2>
+					<h3 id="doc-virtual-funds-virtualdepositfor"><code>virtualDepositFor</code></h3>
+					<p>
+						The core primitive. A registered virtual provider calls this to credit a user's balance
+						<strong>without transferring any ERC-20 tokens</strong> in the same transaction. The provider is trusted to hold (or have
+						already received) the corresponding collateral off-chain or on another chain.
+					</p>
+					<pre><code class="language-solidity">function virtualDepositFor(address user, uint256 amount) external whenNotAccountingPaused;
+</code></pre>
+					<p>
+						Internally, the implementation checks that <code>msg.sender</code> is a registered virtual provider, then directly increments
+						the user's balance:
+					</p>
+					<pre><code class="language-solidity">// AccountFacetImpl.sol
+function virtualDepositFor(address user, uint256 amount) internal {
+    require(
+        WithdrawStorage.layout().virtualProviders[msg.sender],
+        "AccountFacet : msg.sender not registered as virtual provider"
+    );
+    AccountStorage.layout().balances[user] += amount;
+}
+</code></pre>
+					<p>
+						The <code>amount</code> parameter is in <strong>18-decimal precision</strong> (not collateral decimals). The emitted
+						<code>Deposit</code> event converts back to collateral decimals for backward compatibility and includes an
+						<code>isVirtual = true</code> flag:
+					</p>
+					<pre><code class="language-solidity">event Deposit(address sender, address user, uint256 amount, bool isVirtual);
+</code></pre>
+					<h3 id="doc-virtual-funds-virtualdepositandallocatefor"><code>virtualDepositAndAllocateFor</code></h3>
+					<p>
+						A convenience function that performs a virtual deposit and immediately allocates the funds, making them available for trading
+						in a single transaction:
+					</p>
+					<pre><code class="language-solidity">function virtualDepositAndAllocateFor(address user, uint256 amount) external whenNotAccountingPaused;
+</code></pre>
+					<p>
+						This calls <code>_virtualDepositFor</code> followed by <code>AccountFacetImpl.allocate</code>, emitting both
+						<code>Deposit</code> and <code>AllocatePartyA</code> events.
+					</p>
+					<h3 id="doc-virtual-funds-depositvirtualfunds"><code>depositVirtualFunds</code></h3>
+					<p>
+						When a virtual provider wants to reconcile — transferring actual collateral tokens to the Symmio contract to back previously
+						virtual-deposited balances — it calls this function:
+					</p>
+					<pre><code class="language-solidity">function depositVirtualFunds(uint256 amount) external whenNotAccountingPaused;
+</code></pre>
+					<p>
+						This transfers ERC-20 tokens from the virtual provider to the Symmio contract via <code>safeTransferFrom</code>. It does
+						<strong>not</strong> credit any user's balance; it simply moves real collateral into the contract to ensure solvency. Only
+						registered virtual providers can call it.
+					</p>
+					<h2 id="doc-virtual-funds-the-ivirtualprovider-interface">The IVirtualProvider Interface</h2>
+					<p>
+						Virtual providers must implement <code>IVirtualProvider</code>. Symmio calls these callbacks during withdraw, external
+						transfer, and express deposit flows:
+					</p>
+					<pre><code class="language-solidity">interface IVirtualProvider {
+    // Withdrawal lifecycle
+    function onWithdrawRequest(WithdrawRequest memory withdrawRequest) external;
+    function onWithdrawComplete(WithdrawRequest memory withdrawRequest) external;
+    function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
+    function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
+    function onSpeedUpWithdrawRequest(WithdrawRequest memory withdrawRequest, uint256 newCooldown) external;
+    function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external;
+
+    // Cross-diamond external transfers
+    function onExternalTransfer(VirtualExternalTransferRequest memory externalTransfer) external;
+    function onCancelExternalTransfer(uint256 id) external;
+
+    // Express deposit (called from Account Layer)
+    function onExpressDeposit(address user, uint256 amount, address symmioCore) external;
+}
+</code></pre>
+					<h3 id="doc-virtual-funds-callback-security">Callback Security</h3>
+					<p>
+						All callbacks from the core layer are made through <code>LibSafeCall.safeExternalCall</code>, which clears the global
+						<code>signer</code> before the external call and restores it afterward. This prevents a malicious provider from calling back
+						into the Symmio contract and impersonating the user via <code>getSigner()</code>. The Account Layer uses an analogous
+						<code>LibAccountLayerSafeCall</code> that clears <code>globalSigner</code> with the same pattern.
+					</p>
+					<h2 id="doc-virtual-funds-integration-with-the-withdraw-system">Integration with the Withdraw System</h2>
+					<p>
+						Virtual providers participate in the multi-part withdrawal system. Each <code>WithdrawReceiverPart</code> can specify a
+						<code>virtualProvider</code> address for cross-chain delivery:
+					</p>
+					<pre><code class="language-solidity">struct WithdrawReceiverPart {
+    uint256 id;
+    uint256 amount;
+    int256 chainId;          // Destination chain (can differ from current chain)
+    bytes receiver;          // Destination address
+    address virtualProvider; // Non-zero for virtual parts
+    address expressProvider; // Non-zero for express parts
+}
+</code></pre>
+					<h3 id="doc-virtual-funds-pure-virtual-withdrawal">Pure Virtual Withdrawal</h3>
+					<p>
+						When all parts use a virtual provider (and no express provider), the withdrawal is classified as "pure virtual" (<code
+							>isPureVirtual = true</code
+						>). In this flow:
+					</p>
+					<ol>
+						<li>User calls <code>initiateWithdraw</code> with virtual provider parts</li>
+						<li>Symmio notifies the provider via <code>onWithdrawRequest</code></li>
+						<li>Provider calls <code>acceptWithdrawRequest</code> to confirm</li>
+						<li>After cooldown, anyone calls <code>finalizeWithdrawRequest</code></li>
+						<li>Symmio notifies the provider via <code>onWithdrawComplete</code></li>
+						<li>Provider delivers funds to the user on the destination chain</li>
+					</ol>
+					<p>
+						Key detail: virtual parts do <strong>not</strong> lock real collateral in <code>withdrawLockedBalance</code>. The locked
+						amount is <code>totalAmount - totalVirtualAmount</code>, since the virtual portion has no corresponding tokens in the
+						contract.
+					</p>
+					<h3 id="doc-virtual-funds-cancel-blackout">Cancel Blackout</h3>
+					<p>
+						Pure virtual withdrawals have a configurable <code>pureVirtualCancelBlackout</code> period. During this window before cooldown
+						expiry, the user cannot cancel, giving the provider certainty that accepted requests will complete.
+					</p>
+					<h2 id="doc-virtual-funds-virtual-external-transfers">Virtual External Transfers</h2>
+					<p>
+						Virtual providers also mediate cross-diamond fund transfers. When a user wants to move funds from one Symmio deployment to
+						another without a real token transfer:
+					</p>
+					<pre><code class="language-solidity">function virtualExternalTransfer(
+    address receiver,
+    uint256 amount,
+    address target,
+    address virtualProvider
+) external;
+</code></pre>
+					<p>This flow:</p>
+					<ol>
+						<li>Deducts the amount from the sender's balance on the source diamond</li>
+						<li>Creates a <code>VirtualExternalTransferRequest</code> with status <code>PENDING</code></li>
+						<li>Notifies the virtual provider via <code>onExternalTransfer</code></li>
+						<li>
+							The provider calls <code>acceptVirtualExternalTransfer</code> on the source diamond (marking it <code>COMPLETED</code>)
+						</li>
+						<li>The provider then calls <code>virtualDepositFor</code> on the target diamond to credit the receiver</li>
+					</ol>
+					<p>
+						If the provider fails to accept, the user can cancel via <code>cancelVirtualExternalTransfer</code>, which refunds the balance
+						and notifies the provider via <code>onCancelExternalTransfer</code>.
+					</p>
+					<pre><code class="language-solidity">struct VirtualExternalTransferRequest {
+    uint256 id;
+    address sender;    // User on source diamond
+    address receiver;  // User on target diamond
+    address source;    // Source Symmio contract
+    address target;    // Target Symmio contract
+    uint256 amount;
+    uint256 timestamp;
+    address provider;
+    VirtualExternalTransferStatus status;  // PENDING, COMPLETED, CANCELED
+}
+</code></pre>
+					<h2 id="doc-virtual-funds-express-deposit-account-layer">Express Deposit (Account Layer)</h2>
+					<p>
+						At the Account Layer, affiliates can configure an <code>expressRate</code> and a <code>virtualProvider</code> to split
+						deposits between real and virtual portions. This is designed for instant cross-chain deposits where part of the funds are sent
+						to a virtual provider for immediate crediting.
+					</p>
+					<h3 id="doc-virtual-funds-configuration">Configuration</h3>
+					<p>Affiliate admins configure the split via the <code>AffiliateFacet</code>:</p>
+					<pre><code class="language-solidity">function setExpressRate(address affiliate, uint256 expressRate) external;
+function setVirtualProvider(address affiliate, address virtualProvider) external;
+</code></pre>
+					<p>
+						The <code>expressRate</code> is a fraction in 1e18 precision (e.g., <code>0.5e18</code> = 50% virtual). The
+						<code>virtualProvider</code> must be set if <code>expressRate &gt; 0</code>.
+					</p>
+					<h3 id="doc-virtual-funds-deposit-flow">Deposit Flow</h3>
+					<p>
+						When a user calls <code>depositForAccountWithExpressRate</code> or <code>depositAndAllocateForAccountWithExpressRate</code>:
+					</p>
+					<ol>
+						<li>The Account Layer pulls the full <code>amount</code> from the user</li>
+						<li>Calculates <code>virtualAmount = amount * expressRate / 1e18</code></li>
+						<li>Deposits <code>realAmount = amount - virtualAmount</code> directly to Symmio via the normal deposit path</li>
+						<li>Transfers <code>virtualAmount</code> to the virtual provider's address</li>
+						<li>Calls <code>onExpressDeposit(user, virtualAmount, symmioCore)</code> on the provider</li>
+						<li>The provider converts to 18-decimal precision and calls <code>virtualDepositFor</code> on the Symmio core</li>
+						<li>
+							The Account Layer verifies the <strong>balance invariant</strong>: the user's total balance increase (balance + allocated)
+							must exactly equal the expected 18-decimal amount
+						</li>
+					</ol>
+					<p>This invariant check prevents malicious providers from depositing incorrect amounts:</p>
+					<pre><code class="language-solidity">uint256 balanceIncrease = balanceAfter - balanceBefore;
+uint256 allocatedIncrease = usesAllocation ? allocatedAfter - allocatedBefore : 0;
+uint256 expectedIncrease = (amount * 1e18) / (10 ** collateralDecimals);
+if (balanceIncrease + allocatedIncrease != expectedIncrease) revert BalanceInvariantViolation();
+</code></pre>
+					<h2 id="doc-virtual-funds-trust-model">Trust Model</h2>
+					<p>Virtual providers are highly trusted entities. The system relies on several safeguards:</p>
+					<ol>
+						<li><strong>Registration gating</strong>: Only <code>PROVIDER_ADMIN_ROLE</code> can register/unregister providers</li>
+						<li>
+							<strong>Signer isolation</strong>: <code>LibSafeCall</code> clears the signer context during all provider callbacks,
+							preventing reentrancy-based impersonation
+						</li>
+						<li>
+							<strong>Balance invariant</strong>: The Account Layer verifies that express deposits produce exactly the expected balance
+							change
+						</li>
+						<li><strong>Mutual exclusion</strong>: A contract cannot be both a virtual and express provider simultaneously</li>
+						<li>
+							<strong>Cooldown blackout</strong>: Pure virtual withdrawals have a cancellation blackout period to prevent last-moment
+							cancellations that could disadvantage providers
+						</li>
+					</ol>
+					<p>
+						The provider is trusted to eventually deliver funds to users (on other chains) and to reconcile collateral via
+						<code>depositVirtualFunds</code>. Misbehavior by a provider would be detected off-chain and the provider can be unregistered
+						by the admin.
+					</p>
+					<h2 id="doc-virtual-funds-technical-reference">Technical Reference</h2>
+					<h3 id="doc-virtual-funds-core-functions">Core Functions</h3>
+					<pre><code class="language-solidity">// Virtual deposit (provider -&gt; user balance)
+function virtualDepositFor(address user, uint256 amount) external;
+function virtualDepositAndAllocateFor(address user, uint256 amount) external;
+
+// Provider collateral reconciliation
+function depositVirtualFunds(uint256 amount) external;
+
+// Virtual external transfer (cross-diamond)
+function virtualExternalTransfer(address receiver, uint256 amount, address target, address virtualProvider) external;
+function acceptVirtualExternalTransfer(uint256 id) external;
+function cancelVirtualExternalTransfer(uint256 id) external;
+</code></pre>
+					<h3 id="doc-virtual-funds-admin-functions">Admin Functions</h3>
+					<pre><code class="language-solidity">// Provider management (requires PROVIDER_ADMIN_ROLE)
+function registerVirtualProvider(address provider) external;
+function unregisterVirtualProvider(address provider) external;
+</code></pre>
+					<h3 id="doc-virtual-funds-account-layer-functions">Account Layer Functions</h3>
+					<pre><code class="language-solidity">// Express deposit with virtual split
+function depositForAccountWithExpressRate(address account, uint256 amount) external;
+function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external;
+
+// Affiliate configuration
+function setExpressRate(address affiliate, uint256 expressRate) external;
+function setVirtualProvider(address affiliate, address virtualProvider) external;
+</code></pre>
+					<h3 id="doc-virtual-funds-events">Events</h3>
+					<pre><code class="language-solidity">// Core
+event Deposit(address sender, address user, uint256 amount, bool isVirtual);
+event DepositVirtualFunds(address indexed provider, uint256 amount);
+
+// Control
+event RegisterVirtualProvider(address provider);
+event UnregisterVirtualProvider(address provider);
+
+// External Transfer
+event InitiateVirtualExternalTransfer(uint256 id, address sender, address receiver, uint256 amount, address target, address virtualProvider);
+event AcceptVirtualExternalTransfer(uint256 id);
+event CancelVirtualExternalTransfer(uint256 id);
+
+// Account Layer
+event ExpressRateSet(address indexed affiliate, uint256 expressRate);
+event VirtualProviderSet(address indexed affiliate, address virtualProvider);
+</code></pre>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

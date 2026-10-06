@@ -1,15 +1,15 @@
-import {time} from "@nomicfoundation/hardhat-network-helpers"
-import {JsonSerializer} from "typescript-json-serializer"
+import { JsonSerializer } from "typescript-json-serializer"
 
-import {OrderType, QuoteStatus} from "../models/Enums"
-import {RunContext} from "../models/RunContext"
-import {safeDiv} from "./SafeMath"
-import {network} from "hardhat"
-import {QuoteStructOutput, SymbolStructOutput} from "../../src/types/contracts/interfaces/ISymmio"
+import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/interfaces/ISymmio.js"
+import { network } from "../helpers/hardhat-connection.js"
+import { time } from "../helpers/network-helpers.js"
+import { OrderType, QuoteStatus } from "../models/Enums.js"
+import type { RunContext } from "../models/RunContext.js"
+import { safeDiv } from "./SafeMath.js"
 
 const defaultSerializer = new JsonSerializer()
 
-export type PromiseOrValue<T> = T | Promise<T>;
+export type PromiseOrValue<T> = T | Promise<T>
 
 export function decimal(value: bigint, decimal: number = 18): bigint {
 	return value * 10n ** BigInt(decimal)
@@ -20,22 +20,21 @@ export function unDecimal(value: bigint, decimal: number = 18): bigint {
 }
 
 export async function getBlockTimestamp(additional: bigint = 0n): Promise<bigint> {
-	if (network.name === "hardhat") {
-		return BigInt(await time.latest()) + 1n + additional
-	}
-	return 1722859307n
+	const latest = await time.latest()
+	const latestBigInt = typeof latest === "bigint" ? latest : BigInt(latest)
+	return latestBigInt + 1n + additional
 }
 
 export async function getQuoteQuantity(context: RunContext, quoteId: bigint): Promise<bigint> {
-	return (await context.viewFacet.getQuote(quoteId)).quantity
+	return (await context.viewFacetQuote.getQuote(quoteId)).quantity
 }
 
 export async function getQuoteMinLeftQuantityForClose(context: RunContext, quoteId: bigint): Promise<bigint> {
 	const openAmount = await getQuoteOpenAmount(context, quoteId)
 	const totalLocked = await getTotalLockedValuesForQuoteIds(context, [quoteId])
 
-	const q = await context.viewFacet.getQuote(quoteId)
-	const symbol: SymbolStructOutput = await context.viewFacet.getSymbol(q.symbolId)
+	const q = await context.viewFacetQuote.getQuote(quoteId)
+	const symbol: SymbolStructOutput = await context.viewFacetSymbol.getSymbol(q.symbolId)
 
 	return safeDiv(symbol.minAcceptableQuoteValue * openAmount, totalLocked)
 }
@@ -44,19 +43,19 @@ export async function getQuoteMinLeftQuantityForFill(context: RunContext, quoteI
 	const openAmount = await getQuoteOpenAmount(context, quoteId)
 	const totalLocked = await getTotalLockedValuesForQuoteIds(context, [quoteId])
 
-	const q = await context.viewFacet.getQuote(quoteId)
-	const symbol: SymbolStructOutput = await context.viewFacet.getSymbol(q.symbolId)
+	const q = await context.viewFacetQuote.getQuote(quoteId)
+	const symbol: SymbolStructOutput = await context.viewFacetSymbol.getSymbol(q.symbolId)
 
 	return safeDiv(symbol.minAcceptableQuoteValue * openAmount, totalLocked)
 }
 
 export async function getQuoteOpenAmount(context: RunContext, quoteId: bigint): Promise<bigint> {
-	const q = await context.viewFacet.getQuote(quoteId)
+	const q = await context.viewFacetQuote.getQuote(quoteId)
 	return q.quantity - q.closedAmount
 }
 
 export async function getQuoteNotFilledAmount(context: RunContext, quoteId: bigint): Promise<bigint> {
-	const q = await context.viewFacet.getQuote(quoteId)
+	const q = await context.viewFacetQuote.getQuote(quoteId)
 	return q.quantityToClose - q.closedAmount
 }
 
@@ -101,36 +100,117 @@ export async function getTotalLockedValuesForQuoteIds(
 	returnAfterOpened: boolean = true,
 ): Promise<bigint> {
 	let quotes: QuoteStructOutput[] = []
-	for (const quoteId of quoteIds) quotes.push(await context.viewFacet.getQuote(quoteId))
+	for (const quoteId of quoteIds) quotes.push(await context.viewFacetQuote.getQuote(quoteId))
 	return getTotalPartyALockedValuesForQuotes(quotes, includeMM, returnAfterOpened)
 }
 
 export async function getTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
 	let out = 0n
 	for (const quoteId of quoteIds) {
-		let q = await context.viewFacet.getQuote(quoteId)
-		let tf = (await context.viewFacet.getSymbol(q.symbolId)).tradingFee
+		const q = await context.viewFacetQuote.getQuote(quoteId)
+		out += getQuoteTradingFeeWithAmount(q, q.quantity, q.quoteStatus === BigInt(QuoteStatus.OPENED))
+	}
+	return out
+}
+
+export async function getTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
+	const q = await context.viewFacetQuote.getQuote(quoteId)
+	return getQuoteTradingFeeWithAmount(q, filledAmounts, q.quoteStatus === BigInt(QuoteStatus.OPENED))
+}
+
+export async function getOpenTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
+	const q = await context.viewFacetQuote.getQuote(quoteId)
+	return getQuoteTradingFeeWithAmount(q, filledAmounts, false)
+}
+
+export async function getCloseTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
+	let out = 0n
+	let q = await context.viewFacetQuote.getQuote(quoteId)
+	let tf = q.closeFee
+	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
+	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
+	return out
+}
+
+export async function getCloseTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
+	let out = 0n
+	for (const quoteId of quoteIds) {
+		let q = await context.viewFacetQuote.getQuote(quoteId)
+		let tf = q.closeFee
 		if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(q.quantity * q.requestedOpenPrice * tf, 36)
 		else out += unDecimal(q.quantity * q.marketPrice * tf, 36)
 	}
 	return out
 }
 
-export async function getTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
+export async function getOpenTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
 	let out = 0n
-	let q = await context.viewFacet.getQuote(quoteId)
-	let tf = (await context.viewFacet.getSymbol(q.symbolId)).tradingFee
-	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
-	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
+	for (const quoteId of quoteIds) {
+		const q = await context.viewFacetQuote.getQuote(quoteId)
+		out += getQuoteTradingFeeWithAmount(q, q.quantity, false)
+	}
 	return out
 }
 
+export function getTradingFeeAtPrice(amount: bigint, tradingPrice: bigint, tradingFee: bigint): bigint {
+	return unDecimal(amount * tradingPrice * tradingFee, 36)
+}
+
+export function getQuoteOpenTradingFeeAtPrice(quote: QuoteStructOutput, amount: bigint, tradingPrice: bigint): bigint {
+	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
+}
+
+/**
+ * Picks an unrealized PnL that leaves PartyA exactly one wei short of covering the open-fee shortfall:
+ * solvent right up until the delta is applied, insolvent immediately after. Used to prove the debit
+ * lands early enough for the caller's solvency check to reject the whole open.
+ */
+export function getOpenFeeDeltaInsolvencyUpnl(
+	allocatedBefore: bigint,
+	lockedCva: bigint,
+	lockedLf: bigint,
+	reservedFee: bigint,
+	executedFee: bigint,
+): { feeShortfall: bigint; freeBalanceBeforeDelta: bigint; upnlPartyA: bigint } {
+	const feeShortfall = executedFee - reservedFee
+	const freeBalanceBeforeDelta = allocatedBefore - (lockedCva + lockedLf)
+	const upnlPartyA = -freeBalanceBeforeDelta + feeShortfall - 1n
+	return { feeShortfall, freeBalanceBeforeDelta, upnlPartyA }
+}
+
+/** Mirrors LibQuote: limit quotes price off requestedOpenPrice, market quotes off marketPrice (reserved) or openedPrice (executed). */
+function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedBasis: boolean): bigint {
+	const tradingPrice =
+		quote.orderType === BigInt(OrderType.LIMIT)
+			? quote.requestedOpenPrice
+			: useExecutedBasis && quote.openedPrice !== 0n
+				? quote.openedPrice
+				: quote.marketPrice
+	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
+}
+
 export async function pausePartyB(context: RunContext): Promise<void> {
-	await context.controlFacet.connect(context.signers.admin).pausePartyBActions()
+	await context.pauseControlFacet.connect(context.signers.admin).pausePartyBActions()
+}
+
+export async function pausePartyBOpenPositions(context: RunContext): Promise<void> {
+	await context.pauseControlFacet.connect(context.signers.admin).pausePartyBOpenPositions()
 }
 
 export async function pausePartyA(context: RunContext): Promise<void> {
-	await context.controlFacet.connect(context.signers.admin).pausePartyAActions()
+	await context.pauseControlFacet.connect(context.signers.admin).pausePartyAActions()
+}
+
+export async function pauseAccounting(context: RunContext): Promise<void> {
+	await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+}
+
+export async function pauseGlobal(context: RunContext): Promise<void> {
+	await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+}
+
+export async function suspendAddress(context: RunContext, address: string): Promise<void> {
+	await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(address)
 }
 
 export async function getValue<T>(pov: T | Promise<T>): Promise<T> {
@@ -144,7 +224,7 @@ export async function getBigNumberValue(pov: bigint | Promise<bigint>): Promise<
 }
 
 export async function getSymbols(context: RunContext): Promise<SymbolStructOutput[]> {
-	return await context.viewFacet.getSymbols(0, 100)
+	return await context.viewFacetSymbol.getSymbols(0, 100)
 }
 
 export function max(a: bigint, b: bigint): bigint {
@@ -160,7 +240,7 @@ export function serializeToJson(object: any): any {
 }
 
 export async function checkStatus(context: RunContext, quoteId: bigint, quoteStatus: QuoteStatus): Promise<boolean> {
-	return (await context.viewFacet.getQuote(quoteId)).quoteStatus === BigInt(quoteStatus)
+	return (await context.viewFacetQuote.getQuote(quoteId)).quoteStatus === BigInt(quoteStatus)
 }
 
 export function getPriceFetcher(symbolIds: bigint[], prices: bigint[]): (symbolId: bigint) => Promise<bigint> {

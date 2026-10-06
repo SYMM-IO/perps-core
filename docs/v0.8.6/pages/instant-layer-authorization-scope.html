@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="The helper contracts accepted a global &quot;inside an InstantLayer batch&quot; flag in place of authorization. v0.8.6 removes MultiAccount's bypass and makes SymmioPartyB check the direct caller's role."
+		/>
+		<title>InstantLayer Authorization Scope - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#what-changed">What changed</a>
+				<a class="toc-link level-2" href="#effect-on-callers">Effect on callers</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>InstantLayer Authorization Scope</h1>
+							<p class="hero-copy">
+								MultiAccount routes legacy user sub-account calls, while SymmioPartyB routes solver calls. Both accepted a global
+								&quot;inside an InstantLayer batch&quot; flag in place of authorization. v0.8.6 removes that shortcut.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						<code>MultiAccount</code> manages legacy PartyA sub-accounts and routes calls for their owners.
+						<code>SymmioPartyB</code> routes PartyB and solver calls. Both helper contracts accepted an ambient signal in place of a real
+						authorization check: a global flag on the core diamond saying the protocol was currently inside an InstantLayer batch. v0.8.6
+						deletes that alternative from MultiAccount and replaces it with a direct-caller role check in SymmioPartyB.
+					</p>
+
+					<h2 id="what-changed">What changed</h2>
+					<p>
+						<code>MultiAccount._call</code> gates non-owner callers on a per-account, per-selector delegation map, and it accepted an
+						alternative:
+					</p>
+					<pre><code class="language-solidity">require(
+    delegatedAccesses[account][msg.sender][functionSelector] || ISymmio(symmioAddress).isCallFromInstantLayer(),
+    "MultiAccount: Unauthorized access"
+);</code></pre>
+					<p>
+						<code>isCallFromInstantLayer()</code> reads a single global boolean on the core diamond,
+						<code>GlobalAppStorage.callFromInstantLayer</code>. The InstantLayer sets it true before executing a batch and false
+						afterwards.
+					</p>
+					<p>
+						That flag answers <em>&quot;is the protocol currently inside an InstantLayer batch?&quot;</em> It says nothing about who is
+						calling <code>MultiAccount</code>. While it is true, <code>_call</code> accepts any <code>msg.sender</code>, for any account,
+						for any selector, and the delegation map is skipped entirely. InstantLayer&rsquo;s <code>whitelistedTargets</code> map
+						identifies the external contracts a batch is allowed to call. A v0.8.5 batch could call one of those targets; any code reached
+						while that call was executing observed the same core-wide flag. During that window the delegation check was therefore off for
+						every MultiAccount sub-account at once. The v0.8.5 flag was persistent state, not automatically reset, and its lifecycle was
+						the caller&rsquo;s responsibility.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<caption>
+								MultiAccount deletes the bypass outright; SymmioPartyB replaces the global flag with a check on the direct caller.
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Contract</th>
+									<th scope="col">Before</th>
+									<th scope="col">After</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td><code>MultiAccount._call</code></td>
+									<td>delegation entry <strong>or</strong> <code>isCallFromInstantLayer()</code></td>
+									<td>delegation entry only</td>
+								</tr>
+								<tr>
+									<td>
+										<code>SymmioPartyB._call</code>, <code>_multicastCall</code>, <code>adlClose</code>, and
+										<code>setFundingFee</code>
+									</td>
+									<td><code>isCallFromInstantLayer()</code></td>
+									<td>
+										<code>adlClose</code> and <code>setFundingFee</code> accept <code>MANAGER_ROLE</code>,
+										<code>TRUSTED_ROLE</code>, or core <code>INSTANT_LAYER_ROLE</code>. Routed calls apply per-leg gates:
+										restricted core selectors require <code>MANAGER_ROLE</code>; other core selectors accept manager, trusted, or
+										core InstantLayer role; non-core destinations must be whitelisted and require <code>TRUSTED_ROLE</code>.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						Where core <code>INSTANT_LAYER_ROLE</code> is accepted, <code>SymmioPartyB</code> checks that role on the
+						<em>direct caller</em>. This binds authorization to <code>msg.sender</code> instead of a core-wide execution flag. The role
+						does not bypass the stricter manager-only selector gate or the trusted-plus-whitelist gate for non-core destinations.
+					</p>
+					<aside class="callout callout-important">
+						<strong>The legacy storage flag itself is not removed.</strong> <code>callFromInstantLayer</code> remains in core storage and
+						the <code>isCallFromInstantLayer()</code> view still exists. New InstantLayer calls store their routing state in EIP-1153
+						transient storage, which lasts only for the current transaction. When no transient state is active, the view falls back to the
+						legacy field for older callers. PartyAs using instant-actions mode still require this effective routing state before they may
+						call guarded actions, but the helper contracts no longer treat the state as permission by itself.
+					</aside>
+
+					<h2 id="effect-on-callers">Effect on callers</h2>
+					<p>
+						Anything that reached a MultiAccount sub-account during an InstantLayer batch without holding a delegation entry now reverts
+						with <code>MultiAccount: Unauthorized access</code>. The resolution is an explicit <code>delegateAccess</code> grant for the
+						account and selector. The account owner creates that entry by calling <code>delegateAccess(account, target, selector)</code>,
+						or <code>delegateAccesses</code> for several selectors.
+					</p>
+					<p>
+						Here, <code>target</code> is the contract that will call MultiAccount directly, normally the deployed InstantLayer, not the
+						inner Symmio or AccountLayer destination. For SymmioPartyB, granting that deployed InstantLayer core
+						<code>INSTANT_LAYER_ROLE</code> authorizes only the direct entrypoints and non-restricted core calls that accept the role. It
+						does not authorize restricted core selectors or non-core multicast destinations.
+					</p>
+					<p>
+						MultiAccount is a legacy contract. AccountLayer registers deployed instances under <code>legacyMultiAccounts</code>, resolves
+						ownership through them, and exposes legacy-account discovery views. Existing MultiAccount integrations must therefore use
+						explicit <code>delegateAccess</code> entries rather than relying on an InstantLayer batch window.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

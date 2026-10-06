@@ -1,62 +1,129 @@
-import {ethers} from "hardhat"
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 
-import {
+// Import the core diamond's compatibility control ABI. Its implementation spans
+// ControlFacet and the transient selectors routed through ExecutionContextFacet.
+import type { IControlFacet } from "../../src/types/core/facets/Control/IControlFacet.sol/IControlFacet.js"
+import type { ViewFacet } from "../../src/types/facets/ViewFacet/ViewFacet.js"
+import type {
 	AccountFacet,
+	PartyBAccountFacet,
+	ExternalTransferFacet,
+	BindingFacet,
+	PledgeFacet,
 	BridgeFacet,
-	ControlFacet,
+	ClearingHouseFacet,
+	PartyBEmergencyActionsFacet,
+	SymbolControlFacet,
+	SymbolAdjustmentFacet,
+	PauseControlFacet,
 	DiamondCutFacet,
 	DiamondLoupeFacet,
 	ForceActionsFacet,
+	ForceCloseStepsFacet,
 	FundingRateFacet,
-	LiquidationFacet,
-	PartyAFacet, PartyBGroupActionsFacet,
+	PartyALiquidationFacet,
+	PartyALiquidationSnapshotFacet,
+	PartyBLiquidationFacet,
+	PartyAFacet,
+	PartyBBatchActionsFacet,
 	PartyBPositionActionsFacet,
+	PartyBExecutionFacet,
 	PartyBQuoteActionsFacet,
 	SettlementFacet,
-	ViewFacet,
-} from "../../src/types"
-import {TestManager} from "./TestManager"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
+	ViewFacetSymbol,
+	ViewFacetQuote,
+	ViewFacetAggregate,
+	InstantLayer,
+	SymmioPartyB,
+	AccountManager,
+	FakeStablecoin,
+	SymmioPartyA,
+	WithdrawFacet,
+	MigrationFacet,
+	// AccountLayer facets
+	CoreFacet as ALCoreFacet,
+	MarginFacet as ALMarginFacet,
+	TimelockFacet as ALTimelockFacet,
+	SymmioHookFacet as ALSymmioHookFacet,
+	ControlFacet as ALControlFacet,
+	ViewFacet as ALViewFacet,
+	AffiliateFacet as ALAffiliateFacet,
+} from "../../src/types/index.js"
+import { ethers } from "../helpers/hardhat-connection.js"
+import { TestManager } from "./TestManager.js"
 
 export class RunContext {
+	// Core Diamond facets
 	accountFacet!: AccountFacet
+	partyBAccountFacet!: PartyBAccountFacet
+	externalTransferFacet!: ExternalTransferFacet
+	bindingFacet!: BindingFacet
+	pledgeFacet!: PledgeFacet
 	diamondCutFacet!: DiamondCutFacet
 	diamondLoupeFacet!: DiamondLoupeFacet
+	partyBEmergencyActionsFacet!: PartyBEmergencyActionsFacet
 	partyAFacet!: PartyAFacet
+	partyBBatchActionsFacet!: PartyBBatchActionsFacet
 	partyBQuoteActionsFacet!: PartyBQuoteActionsFacet
-	partyBGroupActionsFacet!: PartyBGroupActionsFacet
 	partyBPositionActionsFacet!: PartyBPositionActionsFacet
+	partyBExecutionFacet!: PartyBExecutionFacet
 	bridgeFacet!: BridgeFacet
 	viewFacet!: ViewFacet
-	liquidationFacet!: LiquidationFacet
-	controlFacet!: ControlFacet
+	viewFacetSymbol!: ViewFacetSymbol
+	viewFacetQuote!: ViewFacetQuote
+	viewFacetAggregate!: ViewFacetAggregate
+	partyALiquidationFacet!: PartyALiquidationFacet
+	partyALiquidationSnapshotFacet!: PartyALiquidationSnapshotFacet
+	partyBLiquidationFacet!: PartyBLiquidationFacet
+	controlFacet!: IControlFacet
+	symbolControlFacet!: SymbolControlFacet
+	symbolAdjustmentFacet!: SymbolAdjustmentFacet
+	pauseControlFacet!: PauseControlFacet
 	fundingRateFacet!: FundingRateFacet
 	settlementFacet!: SettlementFacet
 	forceActionsFacet!: ForceActionsFacet
+	forceCloseStepsFacet!: ForceCloseStepsFacet
+	clearingHouseFacet!: ClearingHouseFacet
+	withdrawFacet!: WithdrawFacet
+	migrationFacet!: MigrationFacet
+
+	// AccountLayer Diamond facets
+	alCoreFacet!: ALCoreFacet
+	alMarginFacet!: ALMarginFacet
+	alTimelockFacet!: ALTimelockFacet
+	alSymmioHookFacet!: ALSymmioHookFacet
+	alControlFacet!: ALControlFacet
+	alViewFacet!: ALViewFacet
+	alAffiliateFacet!: ALAffiliateFacet
+	accountLayerDiamond!: string
+
 	signers!: {
-		admin: SignerWithAddress
-		user: SignerWithAddress
-		user2: SignerWithAddress
-		liquidator: SignerWithAddress
-		hedger: SignerWithAddress
-		hedger2: SignerWithAddress
-		bridge: SignerWithAddress
-		bridge2: SignerWithAddress
-		feeCollector: SignerWithAddress
-		feeCollector2: SignerWithAddress
-		others: SignerWithAddress[]
+		admin: HardhatEthersSigner
+		user: HardhatEthersSigner
+		user2: HardhatEthersSigner
+		liquidator: HardhatEthersSigner
+		hedger: HardhatEthersSigner
+		hedger2: HardhatEthersSigner
+		bridge: HardhatEthersSigner
+		bridge2: HardhatEthersSigner
+		feeCollector: HardhatEthersSigner
+		feeCollector2: HardhatEthersSigner
+		symmioFeeReceiver: HardhatEthersSigner
+		others: HardhatEthersSigner[]
 	}
 	diamond!: string
-	multiAccount!: string
-	multiAccount2?: string
-	collateral: any
+	accountManager!: AccountManager
+	accountManager2!: AccountManager
+	instantLayer!: InstantLayer
+	symmioPartyB!: SymmioPartyB
+	collateral!: FakeStablecoin
 	manager!: TestManager
 }
 
-export async function createRunContext(diamond: string, collateral: string, multiAccount: string, multiAccount2: string | undefined = undefined, onlyInitialize: boolean = false): Promise<RunContext> {
+export async function createRunContext(diamond: string, collateral: string, onlyInitialize: boolean = false): Promise<RunContext> {
 	let context = new RunContext()
 
-	const signers: SignerWithAddress[] = await ethers.getSigners()
+	const signers: HardhatEthersSigner[] = await ethers.getSigners()
 	context.signers = {
 		admin: signers[0],
 		user: signers[1],
@@ -68,27 +135,45 @@ export async function createRunContext(diamond: string, collateral: string, mult
 		bridge2: signers[7],
 		feeCollector: signers[8],
 		feeCollector2: signers[9],
-		others: [signers[10], signers[11]],
+		symmioFeeReceiver: signers[10],
+		others: [signers[11], signers[12]],
 	}
 
 	context.diamond = diamond
-	context.multiAccount = multiAccount
-	context.multiAccount2 = multiAccount2
+
 	context.collateral = await ethers.getContractAt("FakeStablecoin", collateral)
 	context.accountFacet = await ethers.getContractAt("AccountFacet", diamond)
+	context.partyBAccountFacet = await ethers.getContractAt("PartyBAccountFacet", diamond)
+	context.externalTransferFacet = await ethers.getContractAt("ExternalTransferFacet", diamond)
+	context.bindingFacet = await ethers.getContractAt("BindingFacet", diamond)
+	context.pledgeFacet = await ethers.getContractAt("PledgeFacet", diamond)
 	context.diamondCutFacet = await ethers.getContractAt("DiamondCutFacet", diamond)
 	context.diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamond)
+	context.partyBEmergencyActionsFacet = await ethers.getContractAt("PartyBEmergencyActionsFacet", diamond)
 	context.partyAFacet = await ethers.getContractAt("PartyAFacet", diamond)
+	context.partyBBatchActionsFacet = await ethers.getContractAt("PartyBBatchActionsFacet", diamond)
 	context.partyBQuoteActionsFacet = await ethers.getContractAt("PartyBQuoteActionsFacet", diamond)
 	context.partyBPositionActionsFacet = await ethers.getContractAt("PartyBPositionActionsFacet", diamond)
-	context.partyBGroupActionsFacet = await ethers.getContractAt("PartyBGroupActionsFacet", diamond)
+	context.partyBExecutionFacet = await ethers.getContractAt("PartyBExecutionFacet", diamond)
 	context.bridgeFacet = await ethers.getContractAt("BridgeFacet", diamond)
-	context.viewFacet = await ethers.getContractAt("ViewFacet", diamond)
-	context.liquidationFacet = await ethers.getContractAt("LiquidationFacet", diamond)
-	context.controlFacet = await ethers.getContractAt("ControlFacet", diamond)
+	context.viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", diamond)
+	context.viewFacetSymbol = await ethers.getContractAt("ViewFacetSymbol", diamond)
+	context.viewFacetQuote = await ethers.getContractAt("ViewFacetQuote", diamond)
+	context.viewFacetAggregate = await ethers.getContractAt("ViewFacetAggregate", diamond)
+	context.partyALiquidationFacet = await ethers.getContractAt("PartyALiquidationFacet", diamond)
+	context.partyALiquidationSnapshotFacet = await ethers.getContractAt("PartyALiquidationSnapshotFacet", diamond)
+	context.partyBLiquidationFacet = await ethers.getContractAt("PartyBLiquidationFacet", diamond)
+	context.controlFacet = await ethers.getContractAt("contracts/core/facets/Control/IControlFacet.sol:IControlFacet", diamond)
+	context.symbolControlFacet = await ethers.getContractAt("SymbolControlFacet", diamond)
+	context.symbolAdjustmentFacet = await ethers.getContractAt("SymbolAdjustmentFacet", diamond)
+	context.pauseControlFacet = await ethers.getContractAt("PauseControlFacet", diamond)
 	context.fundingRateFacet = await ethers.getContractAt("FundingRateFacet", diamond)
 	context.settlementFacet = await ethers.getContractAt("SettlementFacet", diamond)
 	context.forceActionsFacet = await ethers.getContractAt("ForceActionsFacet", diamond)
+	context.forceCloseStepsFacet = await ethers.getContractAt("ForceCloseStepsFacet", diamond)
+	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
+	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
+	context.migrationFacet = await ethers.getContractAt("MigrationFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()

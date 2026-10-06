@@ -1,6 +1,13 @@
 /node_modules
-/package-lock.json
+# Environment files
 .env
+.env.*
+*.env
+*.env.*
+!.env.example
+!.env.*.example
+!*.env.example
+!*.env.*.example
 coverage
 coverage.json
 typechain
@@ -15,24 +22,50 @@ typechain-types
 .npm
 
 node_modules
-.env
 coverage
 coverage.json
 typechain
 typechain-types
+/scripts/output
 
-yarn.lock
+# Dependency resolution is deployment-critical; the lockfile is tracked.
+!package-lock.json
 .idea
 addresses.json
 /abi.json
 .vscode
-tasks/data
+# Deployment reports, checkpoints, Safe exports, and transaction evidence are local operator data.
+/tasks/data/
 output.log
+hardhatNode.log
 serverLog.log
 detailedDebug.log
 pnpm-lock.yaml
 .openzeppelin
 
-docs
-.yarn/
 .venv
+
+CLAUDE.md
+AGENTS.md
+.codex/
+/docs/superpowers/
+.DS_Store
+.diffstory
+.symmio/
+.fuzz-dashboard/
+.ledger-handover-cache.json
+.gasless-layer-ledger-upgrade-cache.json
+
+# Guided-deployment recipe backups written next to the recipe on every re-review.
+deployment-recipes/*.backup-*
+
+# Cross-process deployment locks (pid-scoped, reclaimed when stale).
+tasks/data/checkpoints/*.lock
+
+# Local deployment, upgrade, and operator artifacts.
+/scripts/upgrade/output/
+/scripts/liquidator/output/
+/scripts/upgrade/config/
+/tasks/data/
+/deployments/
+/deployment-recipes/

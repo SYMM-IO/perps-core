@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { PositionType } from "../../storages/QuoteStorage.sol";
+import { RestatementPhase } from "../../storages/SymbolAdjustmentStorage.sol";
+
+interface ISymbolAdjustmentFacet {
+	error PendingQuoteIsStale();
+	error LiquidationStartNonceMismatch(uint256 expected, uint256 actual);
+
+	struct QuoteAdjustmentPreview {
+		uint256 factor;
+		uint256 quantity;
+		uint256 openedPrice;
+		uint256 initialOpenedPrice;
+		uint256 requestedOpenPrice;
+		uint256 marketPrice;
+		uint256 closedAmount;
+		uint256 avgClosedPrice;
+		uint256 quantityToClose;
+		uint256 requestedClosePrice;
+	}
+
+	event AdjustmentScheduled(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp);
+	event AdjustmentCancelled(uint256 indexed symbolId, uint256 adjustmentIndex);
+	event PriceAdjustmentConfirmed(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor);
+	event RestatementStarted(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor);
+	event RestatementPreparationProgress(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		uint256 submittedPartyBCount,
+		uint256 newlyPreparedPartyBCount,
+		uint256 fundingCheckpointedPartyBCount,
+		uint256 totalRemainingLongAmount,
+		uint256 totalRemainingShortAmount,
+		uint256 pendingFundingPartyBCount
+	);
+	event RestatementPreparationCompleted(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		uint256 totalRemainingLongAmount,
+		uint256 totalRemainingShortAmount,
+		uint256 pendingFundingPartyBCount,
+		RestatementPhase phase
+	);
+	event RestatementFundingSettlementCompleted(uint256 indexed symbolId, uint256 indexed epoch);
+	event RestatementInventoryPrepared(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		address indexed partyB,
+		uint256 partyBRemainingLongAmount,
+		uint256 partyBRemainingShortAmount,
+		uint256 totalRemainingLongAmount,
+		uint256 totalRemainingShortAmount
+	);
+	event RestatementInventoryConsumed(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		uint256 indexed quoteId,
+		address partyB,
+		PositionType positionType,
+		uint256 consumedAmount
+	);
+	event RestatementFundingRestorationStarted(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 pendingPartyBs);
+	event RestatementFundingRestorationProgress(
+		uint256 indexed symbolId,
+		uint256 indexed epoch,
+		bool finalizing,
+		uint256 processedPartyBs,
+		uint256 remainingPartyBs
+	);
+	event RestatementAborted(uint256 indexed symbolId, uint256 epoch);
+	event QuoteAdjusted(
+		uint256 indexed quoteId,
+		uint256 indexed symbolId,
+		uint256 epoch,
+		uint256 factor,
+		uint256 oldQuantity,
+		uint256 newQuantity,
+		uint256 oldOpenedPrice,
+		uint256 newOpenedPrice
+	);
+	event PendingQuoteCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId);
+	/// @notice The position was restated, but its pending close price could not be represented in the new units.
+	event CloseRequestCancelledByAdjustment(uint256 indexed quoteId, uint256 indexed symbolId, uint256 closeId);
+	event PendingQuoteIdCutoffUpdated(uint256 indexed symbolId, uint256 indexed epoch, uint256 cutoffQuoteId);
+	event StalePendingQuoteCancelled(uint256 indexed quoteId, uint256 indexed symbolId, uint256 cutoffQuoteId);
+	event RestatementFinalized(uint256 indexed symbolId, uint256 epoch);
+	/// @notice Also emitted by every liquidation-start route on the shared Diamond address.
+	event LiquidationStartNonceIncremented(uint256 indexed nonce);
+
+	function scheduleAdjustment(uint256 symbolId, uint256 factor, uint256 effectiveTimestamp) external;
+
+	function cancelAdjustment(uint256 symbolId) external;
+
+	function confirmPriceAdjusted(uint256 symbolId) external;
+
+	/// @notice Starts a frozen restatement if no liquidation has started since Operations took its off-chain snapshot.
+	function startRestatement(uint256 symbolId, uint256 expectedLiquidationStartNonce) external;
+
+	/// @notice Processes only the operator-supplied PartyBs for funding preparation or restoration.
+	function processRestatementFunding(uint256 symbolId, address[] calldata partyBs) external;
+
+	/// @notice Attests that Operations supplied every PartyB and starts the funding-only pass when accumulated funding is active.
+	function completeRestatementFundingPreparation(uint256 symbolId) external;
+
+	/// @notice Starts original-rate restoration after Operations has sealed a complete PartyB manifest and before a basis mutation.
+	function abortRestatement(uint256 symbolId) external;
+
+	function applyAdjustment(uint256 symbolId, uint256[] calldata quoteIds) external;
+
+	function cancelPendingQuotes(uint256[] calldata quoteIds) external;
+
+	/// @notice Permissionlessly cancels pending quotes invalidated by a completed physical restatement.
+	function cancelStalePendingQuotes(uint256[] calldata quoteIds) external;
+
+	function finalizeRestatement(uint256 symbolId) external;
+}

@@ -1,0 +1,3799 @@
+import { expect } from "chai"
+import { network } from "hardhat"
+import { rejects } from "node:assert/strict"
+import { readFileSync } from "node:fs"
+
+import {
+	cappedNativeGasTopUpTypes,
+	gaslessFeeLimitSalt,
+	quoteGaslessFee,
+	signCappedNativeGasTopUp,
+	UNCAPPED_NATIVE_GAS_TOP_UP_CHARGE,
+} from "../scripts/gaslessLayer/fee-quote.js"
+import { GOLDEN_WALLET_INITCODE_HASH, walletSalt, predictWalletAddress } from "../scripts/gaslessLayer/gasless-wallet.js"
+import { deployGaslessLayerLibraries, gaslessLayerFactoryOptions } from "../scripts/gaslessLayer/layer-libraries.js"
+
+const FEE_SELECTOR = "0x11111111"
+const OTHER_SELECTOR = "0x22222222"
+const WALLET_EXECUTION_SENTINEL_SELECTOR = "0x1dccecab" // bytes4(keccak256("GASLESSQ_WALLET_EXECUTION"))
+const ZERO_HASH = "0x0000000000000000000000000000000000000000000000000000000000000000"
+const EIP_170_DEPLOYED_BYTECODE_LIMIT = 24576
+const UNCAPPED = UNCAPPED_NATIVE_GAS_TOP_UP_CHARGE
+
+describe("GaslessLayer bytecode budget", () => {
+	it("keeps the implementation deployable under the EIP-170 size limit", () => {
+		const artifact = JSON.parse(readFileSync("artifacts/contracts/gaslessLayer/GaslessLayer.sol/GaslessLayer.json", "utf8"))
+		const deployedBytes = (artifact.deployedBytecode.length - 2) / 2
+
+		expect(deployedBytes).to.be.lessThanOrEqual(EIP_170_DEPLOYED_BYTECODE_LIMIT)
+	})
+})
+
+describe("GaslessLayer", () => {
+	let ethers: any
+	let admin: any, relayer: any, user: any, treasury: any, stranger: any, affiliate: any
+	let collateral: any, core: any, instant: any, accountLayer: any, gateway: any
+	let gatewayAddr: string
+	const dec = 6
+	const u = (n: string) => ethers.parseUnits(n, dec)
+
+	beforeEach(async () => {
+		const conn = await network.connect()
+		ethers = conn.ethers
+		;[admin, relayer, user, treasury, stranger, affiliate] = await ethers.getSigners()
+
+		const ERC20 = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
+		collateral = await ERC20.deploy("USD Coin", "USDC", dec)
+
+		const Core = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockGaslessSymmioCore.sol:MockGaslessSymmioCore")
+		core = await Core.deploy(await collateral.getAddress())
+
+		const Instant = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockInstantLayer.sol:MockInstantLayer")
+		instant = await Instant.deploy()
+
+		const Acct = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockAccountLayer.sol:MockAccountLayer")
+		accountLayer = await Acct.deploy()
+
+		const libraries = await deployGaslessLayerLibraries(ethers)
+		const Gateway = await ethers.getContractFactory("GaslessLayer", gaslessLayerFactoryOptions(libraries))
+		const impl = await Gateway.deploy()
+		const initData = Gateway.interface.encodeFunctionData("initialize", [
+			admin.address,
+			await core.getAddress(),
+			await accountLayer.getAddress(),
+			await instant.getAddress(),
+			treasury.address,
+			u("2"),
+			u("2"),
+			0,
+			u("5"),
+		])
+		const Proxy = await ethers.getContractFactory("contracts/gaslessLayer/mocks/LayerProxy.sol:LayerProxy")
+		const proxy = await Proxy.deploy(await impl.getAddress(), initData)
+		gatewayAddr = await proxy.getAddress()
+		gateway = await ethers.getContractAt("GaslessLayer", gatewayAddr)
+
+		await gateway.connect(admin).grantRole(await gateway.RELAYER_ROLE(), relayer.address)
+		await instant.setExecutor(gatewayAddr) // gateway registered as executor on the instant layer
+		await gateway.connect(admin).setMaxNativeGasTopUpAmount(ethers.parseEther("1"))
+	})
+
+	// callData carries the operation's 4-byte function selector, which the gateway reads to
+	// resolve the fee. Defaults to FEE_SELECTOR so unconfigured-selector tests fall back to the default.
+	const makeSignedOp = (signerAccount: string, selector: string = FEE_SELECTOR) => ({
+		signer: signerAccount,
+		target: gatewayAddr,
+		callData: selector,
+		signerAccount: { addr: signerAccount, isPartyB: false },
+		flexFields: [],
+		maxUses: 1,
+		replayAttackHeader: { nonce: 0, deadline: 0, salt: ZERO_HASH },
+	})
+
+	const previewBatch = (ops: any[], walletIds: bigint[]) =>
+		gateway.previewFeeQuote(gateway.interface.encodeFunctionData("relayInstantBatch", [ops, [], [], [], walletIds]), 0)
+
+	// A delegation grant expressed the way the real InstantLayer consumes it: an owner-signed
+	// operation targeting the InstantLayer itself with grantDelegation calldata. The gateway treats
+	// it as a normal instant op (billed by its grantDelegation selector).
+	const makeGrantOp = async (delegator: string, delegate: string, selectors: string[] = [FEE_SELECTOR]) => ({
+		signer: delegator,
+		target: await instant.getAddress(),
+		callData: instant.interface.encodeFunctionData("grantDelegation", [
+			{
+				account: { addr: delegator, isPartyB: false },
+				delegatedSigner: delegate,
+				selectors,
+				expiryTimestamp: 9999999999n,
+			},
+		]),
+		signerAccount: { addr: delegator, isPartyB: false },
+		flexFields: [],
+		maxUses: 1,
+		replayAttackHeader: { nonce: 0, deadline: 0, salt: ZERO_HASH },
+	})
+
+	// Full SubAccountCreationData for settleDepositToNewAccount; the gateway overrides symmioCore to its own core.
+	const subAccountData = (name: string) => ({
+		name,
+		metadata: "0x",
+		symmioCore: ethers.ZeroAddress,
+		isolationType: 3, // CUSTOM
+		singleVAMode: false,
+	})
+
+	async function findEvent(tx: any, name: string) {
+		const rc = await tx.wait()
+		for (const log of rc.logs) {
+			try {
+				const parsed = gateway.interface.parseLog(log)
+				if (parsed && parsed.name === name) return parsed
+			} catch {
+				// not a gateway log
+			}
+		}
+		return null
+	}
+
+	const batchArgs = (ops: any[]) =>
+		[
+			ops,
+			Array(ops.length).fill("0x"),
+			Array.from({ length: ops.length }, () => []),
+			Array.from({ length: ops.length }, () => []),
+			ops.map(() => 0n),
+		] as const
+
+	const walletOperationTypes = {
+		Account: [
+			{ name: "addr", type: "address" },
+			{ name: "isPartyB", type: "bool" },
+		],
+		ReplayAttackHeader: [
+			{ name: "nonce", type: "uint256" },
+			{ name: "deadline", type: "uint256" },
+			{ name: "salt", type: "bytes32" },
+		],
+		SignedOperation: [
+			{ name: "signer", type: "address" },
+			{ name: "target", type: "address" },
+			{ name: "callData", type: "bytes" },
+			{ name: "signerAccount", type: "Account" },
+			{ name: "replayAttackHeader", type: "ReplayAttackHeader" },
+		],
+	}
+
+	const nativeTopUpTypes = {
+		NativeGasTopUpRequest: [
+			{ name: "payerAccount", type: "address" },
+			{ name: "recipientWallet", type: "address" },
+			{ name: "collateralAmount", type: "uint256" },
+			{ name: "minNativeAmountOut", type: "uint256" },
+			{ name: "nonce", type: "uint256" },
+			{ name: "deadline", type: "uint256" },
+		],
+	}
+
+	const makeNativeTopUpRequest = (overrides: Record<string, any> = {}) => ({
+		payerAccount: user.address,
+		recipientWallet: user.address,
+		collateralAmount: u("100"),
+		minNativeAmountOut: ethers.parseEther("0.01"),
+		nonce: 0n,
+		deadline: 9999999999n,
+		...overrides,
+	})
+
+	const nativeTopUpFee = (collateralAmount: bigint, feeBps: bigint) => (collateralAmount * feeBps) / 10000n
+
+	async function deployWalletTarget() {
+		const WalletTarget = await ethers.getContractFactory("MockWalletTarget")
+		return WalletTarget.deploy()
+	}
+
+	async function gatewayDomain() {
+		return {
+			name: "GaslessGateway",
+			version: "1",
+			chainId: (await ethers.provider.getNetwork()).chainId,
+			verifyingContract: gatewayAddr,
+		}
+	}
+
+	async function signWalletOperation(signer: any, op: any) {
+		return signer.signTypedData(await gatewayDomain(), walletOperationTypes, op)
+	}
+
+	async function signNativeTopUp(signer: any, request: any) {
+		return signer.signTypedData(await gatewayDomain(), nativeTopUpTypes, request)
+	}
+
+	function walletExecuteData(walletIface: any, calls: Array<{ target: string; value: bigint; data: string }>) {
+		return walletIface.encodeFunctionData("execute", [calls])
+	}
+
+	async function makeWalletQuoteOp(owner: string = user.address) {
+		const walletAddr = await gateway.getGaslessWalletAddress(owner, 0n)
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		return {
+			signer: owner,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, [{ target: gatewayAddr, value: 0n, data: FEE_SELECTOR }]),
+			signerAccount: { addr: owner, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+		}
+	}
+
+	it("preserves existing storage slots and both wallet nonce mappings", async () => {
+		// Frozen from the pre-indexed solc storage layout. Test the deployed getters against
+		// persisted slots, rather than comparing two layouts derived from the same new source.
+		async function writeSlot(slot: bigint, value: bigint) {
+			await ethers.provider.send("hardhat_setStorageAt", [gatewayAddr, ethers.toQuantity(slot), ethers.toBeHex(value, 32)])
+		}
+		const scalarSlots = [
+			["core", 0, user.address],
+			["accountLayer", 1, stranger.address],
+			["instantLayer", 2, relayer.address],
+			["collateralToken", 3, affiliate.address],
+			["treasury", 4, treasury.address],
+			["depositFee", 5, 123n],
+			["minimumDeposit", 6, 456n],
+			["defaultSelectorFee", 7, 789n],
+			["dailyFreeOpsLimit", 9, 12n],
+			["revertWhenFreeQuotaExhausted", 10, true],
+			["dailySponsoredNativeLimit", 14, 345n],
+			["revertWhenNativeSponsorLimitExhausted", 15, true],
+			["maxNativeGasTopUpAmount", 16, 678n],
+			["nativeGasTopUpFeeBps", 17, 901n],
+			["walletCreationFee", 20, 234n],
+			["newAccountDepositFee", 21, 567n],
+		] as const
+		for (const [getter, slot, value] of scalarSlots) {
+			await writeSlot(BigInt(slot), typeof value === "boolean" ? 1n : BigInt(value))
+			expect(await gateway[getter]()).to.equal(value)
+		}
+		const mappingSlot = (key: string, slot: bigint, type = "address") =>
+			BigInt(ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode([type, "uint256"], [key, slot])))
+		const selectorSlot = mappingSlot(FEE_SELECTOR, 8n, "bytes4")
+		await writeSlot(selectorSlot, 1n)
+		await writeSlot(selectorSlot + 1n, 777n)
+		expect(await gateway.selectorFeeConfigs(FEE_SELECTOR)).to.deep.equal([true, 777n])
+		await writeSlot(mappingSlot(user.address, 11n), (7n << 64n) | 123n)
+		expect(await gateway.dailyFreeOpsUsage(user.address)).to.deep.equal([123n, 7n])
+		await writeSlot(mappingSlot(user.address, 12n), 11n)
+		expect(await gateway.topUpNonces(user.address)).to.equal(11n)
+		await writeSlot(mappingSlot(user.address, 13n), (456n << 64n) | 123n)
+		expect(await gateway.dailyNativeSponsorUsage(user.address)).to.deep.equal([123n, 456n])
+		await writeSlot(mappingSlot(user.address, 18n), 42n)
+		expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(42n)
+		const indexedWallet = await gateway.getGaslessWalletAddress(user.address, 1n)
+		await writeSlot(mappingSlot(user.address, mappingSlot(indexedWallet, 19n)), 2n)
+		expect(await gateway.walletOperationNonces(user.address, 1n, user.address)).to.equal(2n)
+		expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(42n)
+	})
+
+	describe("owner wallet withdrawals", () => {
+		const encodeWithdrawal = (walletId: bigint, token: string, recipient: string, amount: bigint) =>
+			gateway.interface.encodeFunctionData("withdrawWalletFunds", [walletId, token, recipient, amount])
+
+		for (const walletId of [0n, 23n]) {
+			it(`withdraws from funded undeployed wallet ${walletId} with all relayers disabled and no billing account`, async () => {
+				await gateway.setWalletCreationFee(u("3"))
+				await gateway.setDefaultSelectorFee(ethers.parseEther("100"))
+				await gateway.setRevertWhenFreeQuotaExhausted(true)
+				await instant.setForceExecutionFailure(true)
+				await gateway.revokeRole(await gateway.RELAYER_ROLE(), relayer.address)
+				await gateway.revokeRole(await gateway.RELAYER_ROLE(), admin.address)
+				const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
+				const otherWallet = await gateway.getGaslessWalletAddress(user.address, walletId + 1n)
+				await collateral.mint(wallet, u("20"))
+				await collateral.mint(otherWallet, u("40"))
+				const tx = gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, user.address, ethers.MaxUint256)
+				await expect(tx).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, walletId, wallet)
+				await expect(tx).to.emit(gateway, "WalletCreationFeeCollected").withArgs(wallet, wallet, u("3"))
+				await expect(tx).to.emit(gateway, "WalletFundsWithdrawn").withArgs(user.address, walletId, collateral.target, user.address, u("17"))
+				expect(await collateral.balanceOf(user.address)).to.equal(u("17"))
+				expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+				expect(await collateral.balanceOf(wallet)).to.equal(0n)
+				expect(await collateral.balanceOf(otherWallet)).to.equal(u("40"))
+				expect(await ethers.provider.getCode(otherWallet)).to.equal("0x")
+				expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+				expect(await gateway.walletOperationNonces(user.address, walletId, user.address)).to.equal(0n)
+				// Subsequent owner withdrawals can be partial and never charge creation again.
+				await gateway.setWalletCreationFee(u("9"))
+				await collateral.mint(wallet, u("4"))
+				await expect(gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, stranger.address, u("1"))).not.to.emit(
+					gateway,
+					"WalletCreationFeeCollected",
+				)
+				expect(await collateral.balanceOf(stranger.address)).to.equal(u("1"))
+				expect(await collateral.balanceOf(wallet)).to.equal(u("3"))
+			})
+		}
+
+		it("withdraws another ERC20 while paying first deployment from wallet collateral", async () => {
+			const other = await (await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")).deploy("Other", "OTHER", 18)
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 2n)
+			await collateral.mint(wallet, u("3"))
+			await other.mint(wallet, ethers.parseEther("7"))
+			await gateway.connect(user).withdrawWalletFunds(2n, other.target, user.address, ethers.MaxUint256)
+			expect(await other.balanceOf(user.address)).to.equal(ethers.parseEther("7"))
+			expect(await other.balanceOf(wallet)).to.equal(0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+		})
+
+		it("withdraws native funds partially and in full with no collateral when creation fees are zero", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 5n)
+			const value = ethers.parseEther("0.2")
+			await user.sendTransaction({ to: wallet, value })
+			const before = await ethers.provider.getBalance(stranger.address)
+			await gateway.connect(user).withdrawWalletFunds(5n, ethers.ZeroAddress, stranger.address, value / 4n)
+			await gateway.setWalletCreationFee(u("3"))
+			await gateway.connect(user).withdrawWalletFunds(5n, ethers.ZeroAddress, stranger.address, ethers.MaxUint256)
+			expect(await ethers.provider.getBalance(stranger.address)).to.equal(before + value)
+			expect(await ethers.provider.getBalance(wallet)).to.equal(0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+		})
+
+		it("keeps each caller confined to its own wallet, including through the fee-limit wrapper", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 2n)
+			await collateral.mint(wallet, u("10"))
+			const data = encodeWithdrawal(2n, collateral.target, stranger.address, u("1"))
+			for (const caller of [stranger, admin, relayer]) {
+				await expect(gateway.connect(caller).withdrawWalletFunds(2n, collateral.target, caller.address, u("1"))).to.be.revert(ethers)
+				await expect(gateway.connect(caller).executeWithFeeLimit(data, 0n)).to.be.revert(ethers)
+			}
+			expect(await collateral.balanceOf(wallet)).to.equal(u("10"))
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+		})
+
+		it("rejects a zero recipient, zero amount and empty full-balance withdrawal without deploying", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 0n)
+			await expect(gateway.connect(user).withdrawWalletFunds(0n, collateral.target, ethers.ZeroAddress, 1n)).to.be.revertedWithCustomError(
+				gateway,
+				"ZeroAddress",
+			)
+			for (const amount of [0n, ethers.MaxUint256]) {
+				await expect(gateway.connect(user).withdrawWalletFunds(0n, collateral.target, user.address, amount)).to.be.revertedWithCustomError(
+					gateway,
+					"WalletWithdrawalAmountZero",
+				)
+			}
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+		})
+
+		it("rolls back deployment and fees when the wallet cannot cover creation or the requested amount", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			for (const [walletId, funded, amount] of [
+				[1n, "2", ethers.MaxUint256],
+				[2n, "5", u("5")],
+				[3n, "3", ethers.MaxUint256],
+			] as const) {
+				const wallet = await gateway.getGaslessWalletAddress(user.address, walletId)
+				await collateral.mint(wallet, u(funded))
+				await expect(gateway.connect(user).withdrawWalletFunds(walletId, collateral.target, user.address, amount)).to.be.revert(ethers)
+				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+				expect(await collateral.balanceOf(wallet)).to.equal(u(funded))
+			}
+			expect(await collateral.balanceOf(user.address)).to.equal(0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+		})
+
+		it("rolls back a failed native withdrawal and requires collateral for nonzero creation fees", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 1n)
+			const value = ethers.parseEther("0.1")
+			await user.sendTransaction({ to: wallet, value })
+			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, user.address, ethers.MaxUint256)).to.be.revert(ethers)
+			await collateral.mint(wallet, u("3"))
+			const reject = await (await ethers.getContractFactory("RejectNativeReceiver")).deploy()
+			const walletContract = await ethers.getContractAt("GaslessWallet", wallet)
+			await expect(gateway.connect(user).withdrawWalletFunds(1n, ethers.ZeroAddress, reject.target, ethers.MaxUint256)).to.be.revertedWithCustomError(
+				walletContract,
+				"NativeTransferFailed",
+			)
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await ethers.provider.getBalance(wallet)).to.equal(value)
+			expect(await collateral.balanceOf(wallet)).to.equal(u("3"))
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+		})
+
+		it("quotes owner withdrawal fees exactly and rolls back all transfers if the caller's fee cap is exceeded", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 8n)
+			await collateral.mint(wallet, u("10"))
+			const data = encodeWithdrawal(8n, collateral.target, stranger.address, ethers.MaxUint256)
+			const fee = ethers.parseEther("3")
+			for (const mode of ["preview", "exact"] as const) {
+				const result = await quoteGaslessFee({ gateway, callData: data, mode, from: user.address })
+				expect(result.status).to.equal("quoted")
+				if (result.status !== "quoted") throw new Error(result.data)
+				expect(result.quote.totalFee18).to.equal(fee)
+				expect(result.quote.totalDebit18).to.equal(fee)
+				expect(result.quote.payments).to.deep.equal([
+					{
+						account: wallet,
+						payer: wallet,
+						source: 1,
+						operationalFee18: 0n,
+						depositFee18: 0n,
+						walletCreationFee18: fee,
+						nativeTopUpFee18: 0n,
+						nativeGasCollateral18: 0n,
+					},
+				])
+				expect(result.quote.exact).to.equal(mode === "exact")
+			}
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await collateral.balanceOf(wallet)).to.equal(u("10"))
+			await gateway.setWalletCreationFee(u("4"))
+			await expect(gateway.connect(user).executeWithFeeLimit(data, fee)).to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(0n)
+			await gateway.setWalletCreationFee(u("3"))
+			const returned = await gateway.connect(user).executeWithFeeLimit.staticCall(data, fee)
+			expect(gateway.interface.decodeFunctionResult("withdrawWalletFunds", returned)[0]).to.equal(u("7"))
+			await gateway.connect(user).executeWithFeeLimit(data, fee)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("7"))
+			await collateral.mint(wallet, u("2"))
+			const next = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
+			expect(next.status === "quoted" && next.quote.totalFee18).to.equal(0n)
+			await gateway.connect(user).executeWithFeeLimit(data, 0n)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("9"))
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("3"))
+		})
+
+		it("requires the owner as from for preview and preserves actual withdrawal failures in exact quotes", async () => {
+			const data = encodeWithdrawal(3n, collateral.target, user.address, ethers.MaxUint256)
+			await rejects(quoteGaslessFee({ gateway, callData: data, mode: "preview" }), /owner's address as from/)
+			const result = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: user.address })
+			expect(result.status).to.equal("reverted")
+			if (result.status === "reverted") expect(result.errorName).to.equal("WalletWithdrawalAmountZero")
+		})
+
+		for (const wrapper of [false, true]) {
+			it(`allows contract owners and rejects a nested withdrawal${wrapper ? " through the fee wrapper" : ""}`, async () => {
+				const owner = await (await ethers.getContractFactory("MockWalletOwner")).deploy(gatewayAddr)
+				const wallet = await gateway.getGaslessWalletAddress(owner.target, 4n)
+				const value = ethers.parseEther("0.1")
+				await user.sendTransaction({ to: wallet, value })
+				const data = encodeWithdrawal(4n, ethers.ZeroAddress, owner.target, ethers.MaxUint256)
+				await owner.setCallback(wrapper ? gateway.interface.encodeFunctionData("executeWithFeeLimit", [data, 0n]) : data)
+				await owner.callGateway(data)
+				expect(await owner.callbackSucceeded()).to.equal(false)
+				expect(gateway.interface.parseError(await owner.callbackResult())?.name).to.equal(
+					wrapper ? "FeeQuoteContextActive" : "ReentrancyGuardReentrantCall",
+				)
+				expect(await ethers.provider.getBalance(owner.target)).to.equal(value)
+				expect(await ethers.provider.getBalance(wallet)).to.equal(0n)
+			})
+		}
+	})
+
+	// Wallets share their owner's authority and billing, but never their balances.
+	describe("multiple wallets", () => {
+		const addressFor = (id: bigint, owner: string = user.address) => gateway.getGaslessWalletAddress(owner, id)
+
+		async function transferOp(walletId: bigint, amount: string = "10", overrides: any = {}) {
+			const walletAddr = await addressFor(walletId)
+			const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+			return {
+				signer: user.address,
+				target: walletAddr,
+				callData: walletExecuteData(wallet.interface, [
+					{
+						target: await collateral.getAddress(),
+						value: 0n,
+						data: collateral.interface.encodeFunctionData("transfer", [stranger.address, u(amount)]),
+					},
+				]),
+				signerAccount: { addr: user.address, isPartyB: false },
+				flexFields: [],
+				maxUses: 1,
+				replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+				...overrides,
+			}
+		}
+
+		async function relay(op: any, walletId: bigint, signer: any = user) {
+			return gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(signer, op)], [], [], [walletId])
+		}
+
+		describe("wallet creation fees", () => {
+			const coreUnits = (amount: string) => ethers.parseUnits(amount, 18)
+			it("defaults to zero and only permits configuration admins to change the fee", async () => {
+				expect(await gateway.walletCreationFee()).to.equal(0)
+				expect(await gateway.getWalletCreationFee(user.address, 2n)).to.equal(0)
+				await expect(gateway.connect(relayer).setWalletCreationFee(u("3"))).to.be.revertedWithCustomError(gateway, "AccessControlUnauthorizedAccount")
+				await expect(gateway.connect(admin).setWalletCreationFee(u("3")))
+					.to.emit(gateway, "WalletCreationFeeUpdated")
+					.withArgs(u("3"))
+				expect(await gateway.getWalletCreationFee(user.address, 2n)).to.equal(u("3"))
+				await gateway.connect(admin).setWalletCreationFee(0)
+				expect(await gateway.getWalletCreationFee(user.address, 2n)).to.equal(0)
+			})
+
+			for (const walletId of [0n, 2n]) {
+				it(`charges Core once when wallet ${walletId} first executes, preserving all withdrawal funds`, async () => {
+					await gateway.connect(admin).setWalletCreationFee(u("3"))
+					const op = await transferOp(walletId)
+					await collateral.mint(op.target, u("10"))
+					expect(await ethers.provider.getCode(op.target)).to.equal("0x")
+					expect((await previewBatch([op], [walletId])).totalFee18).to.equal(coreUnits("3"))
+					await expect(relay(op, walletId)).to.emit(gateway, "WalletCreationFeeCollected").withArgs(op.target, user.address, u("3"))
+					expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
+					expect(await collateral.balanceOf(treasury.address)).to.equal(0)
+					expect(await core.operationalFeesCharged(user.address)).to.equal(coreUnits("3"))
+					expect(await gateway.getWalletCreationFee(user.address, walletId)).to.equal(0)
+					await collateral.mint(op.target, u("10"))
+					const next = { ...op, replayAttackHeader: { ...op.replayAttackHeader, nonce: 2n } }
+					expect((await previewBatch([next], [walletId])).totalFee18).to.equal(0)
+					await expect(relay(next, walletId)).not.to.emit(gateway, "WalletCreationFeeCollected")
+					expect(await core.operationalFeesCharged(user.address)).to.equal(coreUnits("3"))
+				})
+
+				it(`deducts creation and deposit fees for wallet ${walletId}, then charges only deposit fees on reuse`, async () => {
+					await gateway.connect(admin).setWalletCreationFee(u("3"))
+					const wallet = await addressFor(walletId)
+					await collateral.mint(wallet, u("20"))
+					let subAccount = affiliate.address
+					let tx
+					if (walletId === 0n) {
+						tx = await gateway.connect(relayer).settleDepositToNewAccount(user.address, walletId, affiliate.address, subAccountData("creation fee"))
+						subAccount = (await findEvent(tx, "WalletDepositSettled")).args.subAccount
+					} else {
+						await accountLayer.setAccountOwner(subAccount, user.address)
+						tx = await gateway.connect(relayer).settleDepositToExistingAccount(user.address, walletId, subAccount)
+					}
+					await expect(tx).to.emit(gateway, "WalletCreationFeeCollected").withArgs(wallet, wallet, u("3"))
+					await expect(tx)
+						.to.emit(gateway, "WalletDepositSettled")
+						.withArgs(user.address, walletId, subAccount, u("15"), u("2"), walletId === 0n ? 0 : 1)
+					expect(await core.accountBalance(subAccount)).to.equal(u("15"))
+					expect(await collateral.balanceOf(treasury.address)).to.equal(u("5"))
+					await collateral.mint(wallet, u("5"))
+					await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, walletId, subAccount)).not.to.emit(
+						gateway,
+						"WalletCreationFeeCollected",
+					)
+					expect(await core.accountBalance(subAccount)).to.equal(u("18"))
+					expect(await collateral.balanceOf(treasury.address)).to.equal(u("7"))
+					await collateral.mint(wallet, u("10"))
+					await expect(relay(await transferOp(walletId), walletId)).not.to.emit(gateway, "WalletCreationFeeCollected")
+					expect(await core.totalOperationalFeesCharged()).to.equal(0)
+				})
+			}
+
+			it("quotes and bills each distinct wallet once in a batch even when all operations use free quota", async () => {
+				await gateway.connect(admin).setWalletCreationFee(u("3"))
+				await gateway.connect(admin).setDefaultSelectorFee(u("7"))
+				await gateway.connect(admin).setDailyFreeOpsLimit(3)
+				const first = await transferOp(0n)
+				const second = await transferOp(2n)
+				const third = { ...first, replayAttackHeader: { ...first.replayAttackHeader, nonce: 2n } }
+				const ops = [first, second, third]
+				await collateral.mint(first.target, u("20"))
+				await collateral.mint(second.target, u("10"))
+				const quote = await previewBatch(ops, [0n, 2n, 0n])
+				expect(quote.totalFee18).to.equal(coreUnits("6"))
+				expect(quote.freeOpsApplied).to.equal(3)
+				await gateway.connect(relayer).relayInstantBatch(ops, await Promise.all(ops.map(op => signWalletOperation(user, op))), [], [], [0n, 2n, 0n])
+				expect(await core.operationalFeesCharged(user.address)).to.equal(quote.totalFee18)
+				expect(await core.operationalFeeChargeCount(user.address)).to.equal(1)
+				expect(await collateral.balanceOf(stranger.address)).to.equal(u("30"))
+			})
+
+			it("assigns the creation fee to the first account using a shared owner wallet in the batch", async () => {
+				await gateway.connect(admin).setWalletCreationFee(u("3"))
+				await accountLayer.setAccountOwner(affiliate.address, user.address)
+				const first = await transferOp(2n, "10", { signerAccount: { addr: affiliate.address, isPartyB: false } })
+				const second = await transferOp(2n)
+				await collateral.mint(first.target, u("20"))
+				const ops = [first, second]
+				const quote = await previewBatch(ops, [2n, 2n])
+				expect(quote.totalFee18).to.equal(coreUnits("3"))
+				expect(quote.payments.map((p: any) => [p.account, p.payer, p.walletCreationFee18])).to.deep.equal([
+					[affiliate.address, affiliate.address, coreUnits("3")],
+					[user.address, user.address, 0n],
+				])
+				await gateway.connect(relayer).relayInstantBatch(ops, await Promise.all(ops.map(op => signWalletOperation(user, op))), [], [], [2n, 2n])
+				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(coreUnits("3"))
+				expect(await core.operationalFeesCharged(user.address)).to.equal(0)
+			})
+
+			it("includes the flat fee in VA fallback capacity without multiplying it", async () => {
+				await gateway.connect(admin).setWalletCreationFee(u("3"))
+				await gateway.connect(admin).setDefaultSelectorFee(coreUnits("1"))
+				await accountLayer.setAccountOwner(affiliate.address, user.address)
+				await accountLayer.setVirtualAccount(relayer.address, affiliate.address)
+				await core.setEnforceBalances(true)
+				await core.setEnforceOperationalFeeAllowance(true)
+				await core.setCoreBalances(affiliate.address, coreUnits("10"), 0)
+				await core.setCoreBalances(relayer.address, coreUnits("10"), 0)
+				await core.setOperationalFeeAllowanceDirect(affiliate.address, gatewayAddr, coreUnits("4"))
+				await core.setOperationalFeeAllowanceDirect(relayer.address, gatewayAddr, coreUnits("4.5"))
+				await core.setOperationalFeeMultiplier(affiliate.address, gatewayAddr, 20000)
+				await core.setOperationalFeeMultiplier(relayer.address, gatewayAddr, 15000)
+				const op = await transferOp(2n, "10", { signerAccount: { addr: relayer.address, isPartyB: false } })
+				await collateral.mint(op.target, u("10"))
+				expect((await previewBatch([op], [2n])).totalFee18).to.equal(coreUnits("4.5"))
+				await expect(relay(op, 2n)).to.emit(gateway, "WalletCreationFeeCollected").withArgs(op.target, relayer.address, u("3"))
+				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(0)
+				expect(await core.operationalFeesCharged(relayer.address)).to.equal(coreUnits("4.5"))
+			})
+
+			it("rolls back deployment and transfers on insufficient allowance, then permits an approval later in the same batch", async () => {
+				await gateway.connect(admin).setWalletCreationFee(u("3"))
+				await core.setEnforceOperationalFeeAllowance(true)
+				const op = await transferOp(2n)
+				await collateral.mint(op.target, u("10"))
+				await expect(relay(op, 2n)).to.be.revertedWith("MockCore: insufficient allowance")
+				expect(await ethers.provider.getCode(op.target)).to.equal("0x")
+				expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
+				expect(await collateral.balanceOf(stranger.address)).to.equal(0)
+				expect(await gateway.walletOperationNonces(user.address, 2n, user.address)).to.equal(0)
+				await core.setInstantLayer(await instant.getAddress())
+				await instant.setTargetExecution(true, await core.getAddress())
+				const approval = {
+					...makeSignedOp(user.address),
+					target: await core.getAddress(),
+					callData: core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [coreUnits("3")]]),
+				}
+				await gateway.connect(relayer).relayInstantBatch([op, approval], [await signWalletOperation(user, op), "0x"], [], [], [2n, 0n])
+				expect(await core.operationalFeesCharged(user.address)).to.equal(coreUnits("3"))
+				expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
+			})
+
+			it("rejects deposits that cannot leave a positive balance after both fees and reverts the whole deployment", async () => {
+				await gateway.connect(admin).setWalletCreationFee(u("3"))
+				await accountLayer.setAccountOwner(affiliate.address, user.address)
+				const wallet = await addressFor(2n)
+				await collateral.mint(wallet, u("5"))
+				await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 2n, affiliate.address))
+					.to.be.revertedWithCustomError(gateway, "DepositAmountNotAboveFees")
+					.withArgs(u("5"), u("5"))
+				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+				expect(await collateral.balanceOf(wallet)).to.equal(u("5"))
+				expect(await collateral.balanceOf(treasury.address)).to.equal(0)
+				await collateral.mint(wallet, 1n)
+				await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 2n, affiliate.address)
+				expect(await core.accountBalance(affiliate.address)).to.equal(1n)
+			})
+
+			it("deploys during admin recovery without charging a fee or moving prefunded collateral", async () => {
+				const configRole = await gateway.CONFIG_ADMIN_ROLE()
+				await gateway.connect(admin).grantRole(configRole, stranger.address)
+				expect(await gateway.hasRole(await gateway.DEFAULT_ADMIN_ROLE(), stranger.address)).to.equal(false)
+				await gateway.connect(stranger).setTreasury(stranger.address)
+				await gateway.connect(stranger).setWalletCreationFee(u("5"))
+				const ERC20 = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
+				const token = await ERC20.deploy("Other", "OTHER", 6)
+				const wallet = await addressFor(2n)
+				await collateral.mint(wallet, u("5"))
+
+				const recovery = gateway.connect(stranger).recoverNonCollateralToken(user.address, 2n, token.target, treasury.address)
+				await expect(recovery).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, 2n, wallet)
+				await expect(recovery).to.emit(gateway, "WalletNonCollateralTokenRecovered").withArgs(wallet, token.target, treasury.address, 0)
+				await expect(recovery).not.to.emit(gateway, "WalletCreationFeeCollected")
+				expect(await collateral.balanceOf(wallet)).to.equal(u("5"))
+				expect(await collateral.balanceOf(stranger.address)).to.equal(0)
+
+				await token.mint(wallet, u("10"))
+				await gateway.connect(stranger).recoverNonCollateralToken(user.address, 2n, token.target, treasury.address)
+				expect(await token.balanceOf(treasury.address)).to.equal(u("10"))
+				expect(await collateral.balanceOf(wallet)).to.equal(u("5"))
+				expect(await core.totalOperationalFeesCharged()).to.equal(0)
+			})
+
+			it("never retroactively charges a wallet deployed while the creation fee was zero", async () => {
+				const op = await transferOp(2n)
+				await collateral.mint(op.target, u("20"))
+				await relay(op, 2n)
+				await gateway.connect(admin).setWalletCreationFee(u("3"))
+				expect(await gateway.getWalletCreationFee(user.address, 2n)).to.equal(0)
+				await expect(relay({ ...op, replayAttackHeader: { ...op.replayAttackHeader, nonce: 2n } }, 2n)).not.to.emit(
+					gateway,
+					"WalletCreationFeeCollected",
+				)
+				expect(await core.totalOperationalFeesCharged()).to.equal(0)
+			})
+		})
+
+		it("preserves the index-zero nonce stream and rejects replay through the wallet API", async () => {
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 0n)
+			expect(await addressFor(0n)).to.equal(wallet)
+			expect(predictWalletAddress(gatewayAddr, user.address, 0n)).to.equal(wallet)
+			await collateral.mint(wallet, u("40"))
+			const first = await transferOp(0n)
+			const signature = await signWalletOperation(user, first)
+			await gateway.connect(relayer).relayInstantBatch([first], [signature], [], [], [0n])
+			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(1)
+			await expect(gateway.connect(relayer).relayInstantBatch([first], [signature], [], [], [0n])).to.be.revertedWithCustomError(
+				gateway,
+				"WalletOperationInvalidNonce",
+			)
+			const second = { ...first, replayAttackHeader: { ...first.replayAttackHeader, nonce: 2n } }
+			await relay(second, 0n)
+			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(2)
+			await expect(
+				gateway.connect(relayer).relayInstantBatch([second], [await signWalletOperation(user, second)], [], [], [0n]),
+			).to.be.revertedWithCustomError(gateway, "WalletOperationInvalidNonce")
+			const third = { ...first, replayAttackHeader: { ...first.replayAttackHeader, nonce: 3n } }
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const quote = await previewBatch([third], [0n])
+			expect(quote.totalFee18).to.equal(u("1"))
+			await gateway.connect(relayer).relayInstantBatch([third], [await signWalletOperation(user, third)], [], [], [0n])
+			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(3)
+			expect(await gateway.walletOperationNonces(user.address, 1n, user.address)).to.equal(0)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("30"))
+		})
+
+		it("settles a prefunded index-zero wallet into new and existing accounts", async () => {
+			const wallet = await addressFor(0n)
+			await collateral.mint(wallet, u("25"))
+			const tx = await gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("zero"))
+			const event = await findEvent(tx, "WalletDepositSettled")
+			expect(event.args.owner).to.equal(user.address)
+			expect(event.args.walletId).to.equal(0)
+			expect(event.args.destination).to.equal(0)
+			await expect(tx).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, 0n, wallet)
+			expect(await core.accountBalance(event.args.subAccount)).to.equal(u("23"))
+			await collateral.mint(wallet, u("10"))
+			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, event.args.subAccount))
+				.to.emit(gateway, "WalletDepositSettled")
+				.withArgs(user.address, 0n, event.args.subAccount, u("8"), u("2"), 1)
+			await collateral.mint(wallet, u("10"))
+			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, event.args.subAccount))
+				.to.emit(gateway, "WalletDepositSettled")
+				.withArgs(user.address, 0n, event.args.subAccount, u("8"), u("2"), 1)
+			expect(await core.accountBalance(event.args.subAccount)).to.equal(u("39"))
+		})
+
+		it("recovers non-collateral tokens from index zero using the original wallet and indexed events", async () => {
+			const wallet = await addressFor(0n)
+			const Token = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
+			const token = await Token.deploy("Other", "OTHER", 6)
+			await token.mint(wallet, u("7"))
+			await collateral.mint(wallet, u("10"))
+			await expect(
+				gateway.connect(admin).recoverNonCollateralToken(user.address, 0n, collateral.target, treasury.address),
+			).to.be.revertedWithCustomError(gateway, "CollateralRecoveryDisabled")
+			const tx = await gateway.connect(admin).recoverNonCollateralToken(user.address, 0n, token.target, treasury.address)
+			await expect(tx).to.emit(gateway, "GaslessWalletDeployed").withArgs(user.address, 0n, wallet)
+			await expect(tx).to.emit(gateway, "WalletNonCollateralTokenRecovered").withArgs(wallet, token.target, treasury.address, u("7"))
+			expect(await collateral.balanceOf(wallet)).to.equal(u("10"))
+		})
+
+		it("predicts distinct addresses across owners and uint256 indices without deployment", async () => {
+			const walletIds = [1n, 2n, 3n, ethers.MaxUint256]
+			const addresses = [await gateway.getGaslessWalletAddress(user.address, 0n)]
+			for (const walletId of walletIds) {
+				const address = await addressFor(walletId)
+				expect(address).to.equal(predictWalletAddress(gatewayAddr, user.address, walletId))
+				expect(await ethers.provider.getCode(address)).to.equal("0x")
+				addresses.push(address, await addressFor(walletId, stranger.address))
+			}
+			expect(new Set(addresses).size).to.equal(addresses.length)
+			expect(await gateway.getGaslessWalletAddress(user.address, 0n)).to.equal(addresses[0])
+		})
+
+		it("settles only the selected deposit while another deposit and pending withdrawal retain their funds", async () => {
+			const first = await addressFor(1n)
+			const second = await addressFor(2n)
+			const withdrawal = await addressFor(3n)
+			const legacy = await gateway.getGaslessWalletAddress(user.address, 0n)
+			for (const address of [first, second, withdrawal, legacy]) await collateral.mint(address, u("20"))
+			await accountLayer.setAccountOwner(affiliate.address, user.address)
+			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 1n, affiliate.address))
+				.to.emit(gateway, "WalletDepositSettled")
+				.withArgs(user.address, 1n, affiliate.address, u("18"), u("2"), 1)
+			expect(await core.accountBalance(affiliate.address)).to.equal(u("18"))
+			expect(await collateral.balanceOf(first)).to.equal(0)
+			for (const address of [second, withdrawal, legacy]) expect(await collateral.balanceOf(address)).to.equal(u("20"))
+			await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, affiliate.address)
+			expect(await collateral.balanceOf(withdrawal)).to.equal(u("20"))
+			expect(await collateral.balanceOf(second)).to.equal(u("20"))
+			await relay(await transferOp(3n, "20"), 3n)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("20"))
+		})
+
+		it("allows any positive index to be used for deposit settlement without a wallet purpose", async () => {
+			await accountLayer.setAccountOwner(affiliate.address, user.address)
+			const wallet = await addressFor(42n)
+			await collateral.mint(wallet, u("30"))
+			await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 42n, affiliate.address)
+			expect(await collateral.balanceOf(wallet)).to.equal(0)
+			expect(await core.accountBalance(affiliate.address)).to.equal(u("28"))
+		})
+
+		it("creates a user-owned subaccount from an indexed deposit and preserves account settings", async () => {
+			await collateral.mint(await addressFor(1n), u("25"))
+			const tx = await gateway.connect(relayer).settleDepositToNewAccount(user.address, 1n, affiliate.address, subAccountData("indexed"))
+			const event = await findEvent(tx, "WalletDepositSettled")
+			expect(await accountLayer.ownerOf(event.args.subAccount)).to.equal(user.address)
+			expect(await core.accountBalance(event.args.subAccount)).to.equal(u("23"))
+			expect(await accountLayer.accountNames(event.args.subAccount)).to.equal("indexed")
+			expect(await accountLayer.lastSubAccountSymmioCore()).to.equal(await core.getAddress())
+		})
+
+		it("rejects unauthorized settlement, wrong destination owners, and incorrect newly created owners atomically", async () => {
+			const source = await addressFor(1n)
+			await collateral.mint(source, u("25"))
+			await accountLayer.setAccountOwner(affiliate.address, stranger.address)
+			await expect(gateway.connect(stranger).settleDepositToExistingAccount(user.address, 1n, affiliate.address)).to.be.revertedWithCustomError(
+				gateway,
+				"AccessControlUnauthorizedAccount",
+			)
+			await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 1n, affiliate.address)).to.be.revertedWithCustomError(
+				gateway,
+				"AccountOwnerMismatch",
+			)
+			await accountLayer.setForcedCreatedAccountOwner(stranger.address)
+			await expect(
+				gateway.connect(relayer).settleDepositToNewAccount(user.address, 1n, affiliate.address, subAccountData("bad")),
+			).to.be.revertedWithCustomError(gateway, "AccountOwnerMismatch")
+			expect(await collateral.balanceOf(source)).to.equal(u("25"))
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0)
+			expect(await ethers.provider.getCode(source)).to.equal("0x")
+		})
+
+		it("allows independently signed transfers to resume in reverse order, without consuming legacy nonces", async () => {
+			const walletIds = [1n, 2n]
+			const ops = []
+			const signatures = []
+			for (const walletId of walletIds) {
+				await collateral.mint(await addressFor(walletId), u("10"))
+				const op = await transferOp(walletId)
+				ops.push(op)
+				signatures.push(await signWalletOperation(user, op))
+			}
+			for (const i of [1, 0]) {
+				await gateway.connect(relayer).relayInstantBatch([ops[i]], [signatures[i]], [], [], [walletIds[i]])
+				expect(await gateway.walletOperationNonces(user.address, walletIds[i], user.address)).to.equal(1)
+			}
+			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(0)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("20"))
+			await expect(relay(ops[0], walletIds[0])).to.be.revertedWithCustomError(gateway, "WalletOperationInvalidNonce")
+		})
+
+		it("rejects a changed index, owner, target or signer", async () => {
+			const walletId = 1n
+			const op = await transferOp(walletId)
+			await collateral.mint(op.target, u("10"))
+			for (const wrongId of [2n, 3n]) {
+				await expect(relay(op, wrongId)).to.be.revertedWithCustomError(gateway, "InvalidWalletOperationTarget")
+			}
+			const wrongAccount = { ...op, signerAccount: { addr: stranger.address, isPartyB: false } }
+			await expect(relay(wrongAccount, walletId)).to.be.revertedWithCustomError(gateway, "InvalidWalletOperationTarget")
+			const moved = { ...op, target: await addressFor(2n) }
+			await expect(
+				gateway.connect(relayer).relayInstantBatch([moved], [await signWalletOperation(user, op)], [], [], [2n]),
+			).to.be.revertedWithCustomError(gateway, "InvalidWalletOperationSignature")
+			await expect(relay({ ...op, signer: stranger.address }, walletId, stranger)).to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
+			expect(await gateway.walletOperationNonces(user.address, walletId, user.address)).to.equal(0)
+			expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
+		})
+
+		it("expires only the signature and recovers retained funds using a fresh signature", async () => {
+			const walletId = 2n
+			const op = await transferOp(walletId, "10", { replayAttackHeader: { nonce: 1n, deadline: 1n, salt: ZERO_HASH } })
+			await collateral.mint(op.target, u("10"))
+			await expect(relay(op, walletId)).to.be.revertedWithCustomError(gateway, "WalletOperationExpired")
+			expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
+			await relay(await transferOp(walletId), walletId)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
+		})
+
+		it("enforces delegated authority for every inner call", async () => {
+			const walletId = 2n
+			const op = await transferOp(walletId, "10", { signer: relayer.address })
+			await collateral.mint(op.target, u("10"))
+			await instant.setDelegation(user.address, relayer.address, await gateway.WALLET_EXECUTION_SENTINEL_SELECTOR(), 9999999999n)
+			await expect(relay(op, walletId, relayer)).to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
+			await instant.setDelegation(user.address, relayer.address, collateral.interface.getFunction("transfer").selector, 9999999999n)
+			await relay(op, walletId, relayer)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
+		})
+
+		it("resolves live VAs to their owner and bills the parent account", async () => {
+			await accountLayer.setAccountOwner(affiliate.address, user.address)
+			await accountLayer.setVirtualAccount(stranger.address, affiliate.address)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const walletId = 2n
+			const op = await transferOp(walletId, "10", { signerAccount: { addr: stranger.address, isPartyB: false } })
+			await collateral.mint(op.target, u("10"))
+			await expect(relay(op, walletId)).to.emit(gateway, "OperationalFeeRouted").withArgs(stranger.address, affiliate.address, u("1"))
+			expect(await gateway.walletOperationNonces(user.address, walletId, stranger.address)).to.equal(1)
+		})
+
+		it("does not grant a deleted VA access to its former owner's indexed wallet", async () => {
+			await accountLayer.setAccountOwner(affiliate.address, user.address)
+			await accountLayer.setVirtualAccount(stranger.address, affiliate.address)
+			await accountLayer.clearVirtualAccount(stranger.address)
+			const op = await transferOp(2n, "10", { signerAccount: { addr: stranger.address, isPartyB: false } })
+			await expect(relay(op, 2n)).to.be.revertedWithCustomError(gateway, "InvalidWalletOperationTarget")
+		})
+
+		for (const walletId of [0n, 2n]) {
+			it(`prices the executed calls after wallet ${walletId} changes account ownership`, async () => {
+				await accountLayer.setAccountOwner(affiliate.address, user.address)
+				const wallet = await ethers.getContractAt("GaslessWallet", await addressFor(walletId))
+				await gateway.connect(admin).setSelectorFeeConfig(wallet.interface.getFunction("execute").selector, true, u("99"))
+				await gateway.connect(admin).setSelectorFeeConfig(accountLayer.interface.getFunction("setAccountOwner").selector, true, u("2"))
+				await gateway.connect(admin).setSelectorFeeConfig(collateral.interface.getFunction("transfer").selector, true, u("3"))
+				// The mock owner setter exercises identity changing inside a validated wallet call.
+				const op = await transferOp(walletId, "10", {
+					signerAccount: { addr: affiliate.address, isPartyB: false },
+					callData: walletExecuteData(wallet.interface, [
+						{
+							target: accountLayer.target,
+							value: 0n,
+							data: accountLayer.interface.encodeFunctionData("setAccountOwner", [affiliate.address, stranger.address]),
+						},
+						{ target: collateral.target, value: 0n, data: collateral.interface.encodeFunctionData("transfer", [stranger.address, u("10")]) },
+					]),
+				})
+				await collateral.mint(op.target, u("10"))
+				const quote = await previewBatch([op], [walletId])
+				expect(quote.totalFee18).to.equal(u("5"))
+				await expect(relay(op, walletId)).to.emit(gateway, "OperationalFeeRouted").withArgs(affiliate.address, affiliate.address, u("5"))
+				expect(await accountLayer.ownerOf(affiliate.address)).to.equal(stranger.address)
+				expect(await collateral.balanceOf(stranger.address)).to.equal(u("10"))
+				expect(await core.operationalFeesCharged(affiliate.address)).to.equal(quote.totalFee18)
+			})
+		}
+
+		it("prices matching execute calldata by the route actually used", async () => {
+			const walletOp = await transferOp(2n)
+			const wallet = await ethers.getContractAt("GaslessWallet", walletOp.target)
+			await collateral.mint(walletOp.target, u("10"))
+			await gateway.connect(admin).setSelectorFeeConfig(wallet.interface.getFunction("execute").selector, true, u("7"))
+			await gateway.connect(admin).setSelectorFeeConfig(collateral.interface.getFunction("transfer").selector, true, u("3"))
+			// The InstantLayer mock accepts an ordinary target with identical calldata.
+			const instantOp = { ...makeSignedOp(user.address), target: stranger.address, callData: walletOp.callData }
+			for (const ops of [[instantOp], [instantOp, walletOp]]) {
+				const indices = ops.length === 1 ? [0n] : [0n, 2n]
+				const signatures = ops.length === 1 ? ["0x"] : ["0x", await signWalletOperation(user, walletOp)]
+				const expectedFee = ops.length === 1 ? u("7") : u("10")
+				const quote = await previewBatch(ops, indices)
+				expect(quote.totalFee18).to.equal(expectedFee)
+				await expect(gateway.connect(relayer).relayInstantBatch(ops, signatures, [[]], [[]], indices))
+					.to.emit(gateway, "InstantBatchRelayed")
+					.withArgs(relayer.address, ops.length, expectedFee)
+			}
+			await expect(gateway.connect(relayer).relayInstantTemplate(1n, [instantOp], ["0x"], [[]], [[]]))
+				.to.emit(gateway, "InstantTemplateRelayed")
+				.withArgs(relayer.address, 1n, 1n, u("7"))
+		})
+
+		it("identifies undeployed wallet targets before applying quote quotas", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			const op = await transferOp(2n)
+			expect(await ethers.provider.getCode(op.target)).to.equal("0x")
+			const quote = await previewBatch([op], [2n])
+			expect(quote.totalFee18).to.equal(0)
+			expect(quote.freeOpsApplied).to.equal(1)
+			await expect(previewBatch([op], [1n]))
+				.to.be.revertedWithCustomError(gateway, "InvalidWalletOperationTarget")
+				.withArgs(await addressFor(1n), op.target)
+		})
+
+		it("prices inner selectors and shares the existing daily quota across indexed wallets", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			await gateway.connect(admin).setSelectorFeeConfig(collateral.interface.getFunction("transfer").selector, true, u("3"))
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			const walletIds = [2n, 1n]
+			const ops = await Promise.all(walletIds.map(walletId => transferOp(walletId)))
+			for (const op of ops) await collateral.mint(op.target, u("10"))
+			const quote = await previewBatch(ops, walletIds)
+			expect(quote.totalFee18).to.equal(u("3"))
+			expect(quote.freeOpsApplied).to.equal(1)
+			await gateway.connect(relayer).relayInstantBatch(ops, await Promise.all(ops.map(op => signWalletOperation(user, op))), [], [], walletIds)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(quote.totalFee18)
+			expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+		})
+
+		it("mixes an InstantLayer allowance approval, a legacy wallet and an indexed wallet", async () => {
+			await core.setInstantLayer(await instant.getAddress())
+			await instant.setTargetExecution(true, await core.getAddress())
+			await core.setEnforceOperationalFeeAllowance(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const approval = {
+				...makeSignedOp(user.address),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [u("3")]]),
+			}
+			const indexed = await transferOp(2n)
+			const legacy = { ...indexed, target: await gateway.getGaslessWalletAddress(user.address, 0n) }
+			for (const op of [indexed, legacy]) await collateral.mint(op.target, u("10"))
+			await gateway
+				.connect(relayer)
+				.relayInstantBatch(
+					[approval, legacy, indexed],
+					["0x", await signWalletOperation(user, legacy), await signWalletOperation(user, indexed)],
+					[],
+					[],
+					[0n, 0n, 2n],
+				)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("3"))
+			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(1)
+			expect(await gateway.walletOperationNonces(user.address, 2n, user.address)).to.equal(1)
+			expect(await collateral.balanceOf(stranger.address)).to.equal(u("20"))
+		})
+
+		it("rolls back deployment, balances and indexed nonces if fee collection fails", async () => {
+			const walletId = 2n
+			const op = await transferOp(walletId)
+			await collateral.mint(op.target, u("10"))
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			await core.setForceChargeFailure(true)
+			await expect(relay(op, walletId)).to.be.revertedWith("MockCore: charge failed")
+			expect(await ethers.provider.getCode(op.target)).to.equal("0x")
+			expect(await collateral.balanceOf(op.target)).to.equal(u("10"))
+			expect(await collateral.balanceOf(stranger.address)).to.equal(0)
+			expect(await gateway.walletOperationNonces(user.address, walletId, user.address)).to.equal(0)
+			await core.setForceChargeFailure(false)
+			await relay(op, walletId)
+		})
+
+		it("rejects malformed index arrays, wrong nonce, PartyB identity and non-relayers", async () => {
+			const walletId = 2n
+			const op = await transferOp(walletId)
+			const signature = await signWalletOperation(user, op)
+			await expect(gateway.connect(relayer).relayInstantBatch([op], [signature], [], [], [])).to.be.revertedWithCustomError(
+				gateway,
+				"ArrayLengthMismatch",
+			)
+			await expect(previewBatch([op], [])).to.be.revertedWithCustomError(gateway, "ArrayLengthMismatch")
+			await expect(gateway.connect(stranger).relayInstantBatch([op], [signature], [], [], [walletId])).to.be.revertedWithCustomError(
+				gateway,
+				"AccessControlUnauthorizedAccount",
+			)
+			await expect(relay({ ...op, replayAttackHeader: { ...op.replayAttackHeader, nonce: 2n } }, walletId)).to.be.revertedWithCustomError(
+				gateway,
+				"WalletOperationInvalidNonce",
+			)
+			await expect(relay({ ...op, signerAccount: { addr: user.address, isPartyB: true } }, walletId)).to.be.revertedWithCustomError(
+				gateway,
+				"WalletOperationForPartyBUnsupported",
+			)
+		})
+
+		it("admin recovery supports indexed non-collateral tokens but cannot sweep collateral", async () => {
+			const walletId = 5n
+			const address = await addressFor(walletId)
+			const ERC20 = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
+			const other = await ERC20.deploy("Other", "OTHER", 6)
+			await other.mint(address, u("7"))
+			await collateral.mint(address, u("10"))
+			await expect(
+				gateway.connect(admin).recoverNonCollateralToken(user.address, walletId, await collateral.getAddress(), treasury.address),
+			).to.be.revertedWithCustomError(gateway, "CollateralRecoveryDisabled")
+			await gateway.connect(admin).recoverNonCollateralToken(user.address, walletId, await other.getAddress(), treasury.address)
+			expect(await other.balanceOf(treasury.address)).to.equal(u("7"))
+			expect(await collateral.balanceOf(address)).to.equal(u("10"))
+		})
+	})
+
+	// ───────────────────────── Deposit address ─────────────────────────
+
+	it("derives a deterministic, stable, per-wallet deposit address", async () => {
+		const a1 = await gateway.getGaslessWalletAddress(user.address, 0n)
+		const a2 = await gateway.getGaslessWalletAddress(user.address, 0n)
+		expect(a1).to.equal(a2)
+		expect(a1).to.not.equal(ethers.ZeroAddress)
+		expect(await gateway.getGaslessWalletAddress(stranger.address, 0n)).to.not.equal(a1)
+	})
+
+	it("derives a deterministic versioned GaslessWallet address per owner", async () => {
+		// Pin to the frozen golden formula (scripts/gaslessLayer/gasless-wallet.ts), NOT a fresh recompile, so a bytecode
+		// or salt-scheme drift that would move every deposit address fails this test too.
+		const salt = walletSalt(user.address, 0n)
+		const expected = ethers.getCreate2Address(gatewayAddr, salt, GOLDEN_WALLET_INITCODE_HASH)
+
+		const a1 = await gateway.getGaslessWalletAddress(user.address, 0n)
+		const a2 = await gateway.getGaslessWalletAddress(user.address, 0n)
+		const other = await gateway.getGaslessWalletAddress(stranger.address, 0n)
+
+		expect(a1).to.equal(expected)
+		expect(a1).to.equal(a2)
+		expect(a1).to.not.equal(ethers.ZeroAddress)
+		expect(other).to.not.equal(a1)
+		expect(await ethers.provider.getCode(a1)).to.equal("0x")
+	})
+
+	it("GaslessWallet execute is callable only by its layer", async () => {
+		const Wallet = await ethers.getContractFactory("GaslessWallet", relayer)
+		const wallet = await Wallet.deploy()
+		await expect(wallet.connect(stranger).execute([])).to.be.revertedWithCustomError(wallet, "CallerNotGateway")
+	})
+
+	it("GaslessWallet execute can call an existing target when invoked by its layer", async () => {
+		const Wallet = await ethers.getContractFactory("GaslessWallet", relayer)
+		const wallet = await Wallet.deploy()
+		const mintData = collateral.interface.encodeFunctionData("mint", [stranger.address, u("1")])
+
+		await wallet.connect(relayer).execute([{ target: await collateral.getAddress(), value: 0, data: mintData }])
+
+		expect(await collateral.balanceOf(stranger.address)).to.equal(u("1"))
+	})
+
+	it("GaslessWallet execute wraps failed inner calls with WalletCallFailed", async () => {
+		const Wallet = await ethers.getContractFactory("GaslessWallet", relayer)
+		const wallet = await Wallet.deploy()
+		const transferData = collateral.interface.encodeFunctionData("transfer", [stranger.address, u("1")])
+
+		await expect(
+			wallet.connect(relayer).execute([{ target: await collateral.getAddress(), value: 0, data: transferData }]),
+		).to.be.revertedWithCustomError(wallet, "WalletCallFailed")
+	})
+
+	it("wallet execution can call any target (no target whitelist)", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const marker = ethers.id("no target policy")
+		const calls = [{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [marker]) }]
+		const op = {
+			signer: user.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("no target policy") },
+		}
+
+		// The target is never whitelisted: wallet calls now execute solely on the user's signed authority.
+		await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(user, op)], [[]], [[]], [0n])
+		expect(await target.lastMarker()).to.equal(marker)
+	})
+
+	it("wallet operation hash matches frontend gateway-domain typed data and validates a signature", async () => {
+		const wallet = await gateway.getGaslessWalletAddress(user.address, 0n)
+		const op = {
+			...makeSignedOp(user.address),
+			target: wallet,
+			callData: ethers.concat([WALLET_EXECUTION_SENTINEL_SELECTOR, ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [123n])]),
+			maxUses: 2n,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.keccak256(ethers.toUtf8Bytes("wallet-op")) },
+		}
+
+		const expectedHash = ethers.TypedDataEncoder.hash(await gatewayDomain(), walletOperationTypes, op)
+		expect(await gateway.getWalletOperationHash(op)).to.equal(expectedHash)
+
+		const signature = await signWalletOperation(user, op)
+		expect(await gateway.isValidWalletOperationSignature(op, signature)).to.equal(true)
+	})
+
+	it("exposes wallet typed-data constants on the gateway ABI", async () => {
+		expect(await gateway.WALLET_ACCOUNT_TYPEHASH()).to.equal(ethers.id("Account(address addr,bool isPartyB)"))
+		expect(await gateway.WALLET_REPLAY_HEADER_TYPEHASH()).to.equal(ethers.id("ReplayAttackHeader(uint256 nonce,uint256 deadline,bytes32 salt)"))
+		expect(await gateway.WALLET_EXECUTION_SENTINEL_SELECTOR()).to.equal(WALLET_EXECUTION_SENTINEL_SELECTOR)
+	})
+
+	it("does not expose a separate allowance-approval relay entrypoint", async () => {
+		expect(gateway.relayOperationalFeeApproval).to.equal(undefined)
+	})
+
+	it("wallet operation signature check rejects a signature from another signer", async () => {
+		const wallet = await gateway.getGaslessWalletAddress(user.address, 0n)
+		const op = {
+			...makeSignedOp(user.address),
+			target: wallet,
+			callData: "0x12345678",
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+		}
+
+		expect(await gateway.isValidWalletOperationSignature(op, await signWalletOperation(stranger, op))).to.equal(false)
+	})
+
+	// ───────────────────── Type 2: deposit + create/fund ─────────────────────
+
+	it("settleDepositToNewAccount: sweeps, takes the fee, creates a wallet-owned account, deposits net", async () => {
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("100"))
+
+		const tx = await gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("Main"))
+		const ev = await findEvent(tx, "WalletDepositSettled")
+		const sub = ev!.args.subAccount
+
+		expect(await accountLayer.ownerOf(sub)).to.equal(user.address)
+		expect(await core.accountBalance(sub)).to.equal(u("98"))
+		expect(await collateral.balanceOf(treasury.address)).to.equal(u("2"))
+		expect((await ethers.provider.getCode(dep)).length).to.be.greaterThan(2)
+		await expect(tx).to.emit(gateway, "DepositFeeCollected").withArgs(user.address, treasury.address, u("2"))
+	})
+
+	it("settleDepositToNewAccount: passes the full creation data through, overriding only symmioCore", async () => {
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("100"))
+		const data = {
+			name: "Cross",
+			metadata: "0x1234",
+			symmioCore: stranger.address,
+			isolationType: 1,
+			singleVAMode: false,
+		}
+		await gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, data)
+		// isolation type flowed through unchanged, but symmioCore was forced to the gateway's core.
+		expect(await accountLayer.lastSubAccountIsolationType()).to.equal(1)
+		expect(await accountLayer.lastSubAccountSymmioCore()).to.equal(await core.getAddress())
+		expect(await accountLayer.lastSubAccountSymmioCore()).to.not.equal(stranger.address)
+		expect(await accountLayer.lastSubAccountAffiliate()).to.equal(affiliate.address)
+	})
+
+	it("settleDepositToNewAccount: reverts if the created account is not owned by the wallet", async () => {
+		await accountLayer.setForcedCreatedAccountOwner(stranger.address) // mock returns an account owned by someone else
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("100"))
+		await expect(
+			gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("Main")),
+		).to.be.revertedWithCustomError(gateway, "AccountOwnerMismatch")
+	})
+
+	it("settleDepositToExistingAccount: relayer-only, credits the wallet's own account", async () => {
+		const sub = ethers.Wallet.createRandom().address
+		await accountLayer.setAccountOwner(sub, user.address)
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("50"))
+
+		await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, sub)
+		expect(await core.accountBalance(sub)).to.equal(u("48"))
+		expect(await collateral.balanceOf(treasury.address)).to.equal(u("2"))
+	})
+
+	it("settleDepositToExistingAccount: rejects a non-relayer caller (no misrouting)", async () => {
+		const sub = ethers.Wallet.createRandom().address
+		await accountLayer.setAccountOwner(sub, user.address)
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("50"))
+		await expect(gateway.connect(stranger).settleDepositToExistingAccount(user.address, 0n, sub)).to.be.revert(ethers)
+	})
+
+	it("settleDepositToExistingAccount: reverts when the account is not owned by the wallet", async () => {
+		const sub = ethers.Wallet.createRandom().address
+		await accountLayer.setAccountOwner(sub, stranger.address)
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("50"))
+		await expect(gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, sub)).to.be.revertedWithCustomError(
+			gateway,
+			"AccountOwnerMismatch",
+		)
+	})
+
+	it("reverts below the minimum deposit", async () => {
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("4")) // < 5
+		await expect(
+			gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("x")),
+		).to.be.revertedWithCustomError(gateway, "DepositAmountBelowMinimum")
+	})
+
+	it("reuses the wallet on a second deposit (no redeploy)", async () => {
+		const sub = ethers.Wallet.createRandom().address
+		await accountLayer.setAccountOwner(sub, user.address)
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+
+		await collateral.mint(dep, u("50"))
+		const tx1 = await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, sub)
+		expect(await findEvent(tx1, "GaslessWalletDeployed")).to.not.equal(null)
+
+		await collateral.mint(dep, u("30"))
+		const tx2 = await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, sub)
+		expect(await findEvent(tx2, "GaslessWalletDeployed")).to.equal(null) // reused, not redeployed
+
+		expect(await core.accountBalance(sub)).to.equal(u("76")) // 48 + 28
+	})
+
+	describe("settlement fees by destination", () => {
+		const coreUnits = (amount: string) => ethers.parseUnits(amount, 18)
+		const existingFee = () => u("0.05")
+		const newAccountFee = () => u("0.8")
+		const creationFee = () => u("0.1")
+
+		beforeEach(async () => {
+			// Lower the new-account fee first: the shared minimum must stay above both settlement fees.
+			await gateway.connect(admin).setNewAccountDepositFee(newAccountFee())
+			await gateway.connect(admin).setDepositFeeConfig(existingFee(), u("1"))
+			await gateway.connect(admin).setWalletCreationFee(creationFee())
+		})
+
+		async function settleNew(walletId: bigint, amount: string) {
+			await collateral.mint(await gateway.getGaslessWalletAddress(user.address, walletId), u(amount))
+			const tx = await gateway.connect(relayer).settleDepositToNewAccount(user.address, walletId, affiliate.address, subAccountData("new"))
+			return { tx, subAccount: (await findEvent(tx, "WalletDepositSettled"))!.args.subAccount }
+		}
+
+		async function settleExisting(walletId: bigint, subAccount: string, amount: string) {
+			await collateral.mint(await gateway.getGaslessWalletAddress(user.address, walletId), u(amount))
+			return gateway.connect(relayer).settleDepositToExistingAccount(user.address, walletId, subAccount)
+		}
+
+		it("initializes, configures and keeps the new-account fee below the shared minimum", async () => {
+			expect(await gateway.newAccountDepositFee()).to.equal(newAccountFee())
+			await expect(gateway.connect(relayer).setNewAccountDepositFee(u("0.5"))).to.be.revertedWithCustomError(
+				gateway,
+				"AccessControlUnauthorizedAccount",
+			)
+			await expect(gateway.connect(admin).setNewAccountDepositFee(u("0.5")))
+				.to.emit(gateway, "NewAccountDepositFeeUpdated")
+				.withArgs(u("0.5"))
+			expect(await gateway.newAccountDepositFee()).to.equal(u("0.5"))
+			await expect(gateway.connect(admin).setNewAccountDepositFee(u("1")))
+				.to.be.revertedWithCustomError(gateway, "MinimumDepositNotAboveFee")
+				.withArgs(u("1"), u("1"))
+			await expect(gateway.connect(admin).setDepositFeeConfig(existingFee(), u("0.5")))
+				.to.be.revertedWithCustomError(gateway, "MinimumDepositNotAboveFee")
+				.withArgs(u("0.5"), u("0.5"))
+			expect(await gateway.depositFee()).to.equal(existingFee())
+			expect(await gateway.minimumDeposit()).to.equal(u("1"))
+
+			const implementationSlot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+			const implementation = ethers.getAddress(`0x${(await ethers.provider.getStorage(gatewayAddr, implementationSlot)).slice(-40)}`)
+			const init = (depositFee: bigint, newFee: bigint) =>
+				gateway.interface.encodeFunctionData("initialize", [
+					admin.address,
+					core.target,
+					accountLayer.target,
+					instant.target,
+					treasury.address,
+					depositFee,
+					newFee,
+					0,
+					u("5"),
+				])
+			const Proxy = await ethers.getContractFactory("contracts/gaslessLayer/mocks/LayerProxy.sol:LayerProxy")
+			await expect(Proxy.deploy(implementation, init(u("2"), u("5"))))
+				.to.be.revertedWithCustomError(gateway, "MinimumDepositNotAboveFee")
+				.withArgs(u("5"), u("5"))
+			const fresh = await ethers.getContractAt("GaslessLayer", await (await Proxy.deploy(implementation, init(u("2"), u("4")))).getAddress())
+			expect(await fresh.depositFee()).to.equal(u("2"))
+			expect(await fresh.newAccountDepositFee()).to.equal(u("4"))
+		})
+
+		it("charges each destination its own flat fee instead of adding them", async () => {
+			const source = await gateway.getGaslessWalletAddress(user.address, 0n)
+			const { tx, subAccount } = await settleNew(0n, "10")
+			await expect(tx).to.emit(gateway, "DepositFeeCollected").withArgs(user.address, treasury.address, newAccountFee())
+			await expect(tx).to.emit(gateway, "WalletCreationFeeCollected").withArgs(source, source, creationFee())
+			await expect(tx).to.emit(gateway, "WalletDepositSettled").withArgs(user.address, 0n, subAccount, u("9.1"), newAccountFee(), 0)
+			expect(await core.accountBalance(subAccount)).to.equal(u("9.1"))
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("0.9"))
+
+			const repeat = await settleExisting(0n, subAccount, "10")
+			await expect(repeat).to.emit(gateway, "DepositFeeCollected").withArgs(user.address, treasury.address, existingFee())
+			await expect(repeat).not.to.emit(gateway, "WalletCreationFeeCollected")
+			await expect(repeat).to.emit(gateway, "WalletDepositSettled").withArgs(user.address, 0n, subAccount, u("9.95"), existingFee(), 1)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("0.95"))
+
+			// A fresh source wallet adds only its creation fee to the existing-account fee.
+			const other = await settleExisting(3n, subAccount, "10")
+			await expect(other).to.emit(gateway, "WalletDepositSettled").withArgs(user.address, 3n, subAccount, u("9.85"), existingFee(), 1)
+
+			// The new-account fee applies to every settlement that creates an account, not once per user.
+			const second = await settleNew(0n, "10")
+			await expect(second.tx).not.to.emit(gateway, "WalletCreationFeeCollected")
+			await expect(second.tx).to.emit(gateway, "WalletDepositSettled").withArgs(user.address, 0n, second.subAccount, u("9.2"), newAccountFee(), 0)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(u("1.9")) // 0.9 + 0.05 + 0.15 + 0.8
+		})
+
+		it("enforces the gross minimum and a positive net deposit on the new-account path", async () => {
+			await gateway.connect(admin).setDepositFeeConfig(existingFee(), u("0.81"))
+			const source = await gateway.getGaslessWalletAddress(user.address, 0n)
+			await collateral.mint(source, u("0.9"))
+			await expect(gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("edge")))
+				.to.be.revertedWithCustomError(gateway, "DepositAmountNotAboveFees")
+				.withArgs(u("0.9"), u("0.9"))
+			expect(await ethers.provider.getCode(source)).to.equal("0x")
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0)
+
+			await collateral.mint(source, 1n)
+			const tx = await gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("edge"))
+			const subAccount = (await findEvent(tx, "WalletDepositSettled"))!.args.subAccount
+			expect(await core.accountBalance(subAccount)).to.equal(1n)
+
+			await collateral.mint(await gateway.getGaslessWalletAddress(user.address, 1n), u("0.8"))
+			await expect(gateway.connect(relayer).settleDepositToNewAccount(user.address, 1n, affiliate.address, subAccountData("low")))
+				.to.be.revertedWithCustomError(gateway, "DepositAmountBelowMinimum")
+				.withArgs(u("0.8"), u("0.81"))
+		})
+
+		it("allows a free new-account settlement while existing-account settlement still pays", async () => {
+			await gateway.connect(admin).setNewAccountDepositFee(0)
+			const { tx, subAccount } = await settleNew(0n, "10")
+			await expect(tx).not.to.emit(gateway, "DepositFeeCollected")
+			await expect(tx).to.emit(gateway, "WalletDepositSettled").withArgs(user.address, 0n, subAccount, u("9.9"), 0, 0)
+			await expect(settleExisting(0n, subAccount, "10"))
+				.to.emit(gateway, "WalletDepositSettled")
+				.withArgs(user.address, 0n, subAccount, u("9.95"), existingFee(), 1)
+		})
+
+		it("previews, simulates and caps each destination's settlement fee", async () => {
+			await collateral.mint(await gateway.getGaslessWalletAddress(user.address, 0n), u("10"))
+			const newData = gateway.interface.encodeFunctionData("settleDepositToNewAccount", [user.address, 0n, affiliate.address, subAccountData("q")])
+			const preview = await quoteGaslessFee({ gateway, callData: newData, mode: "preview" })
+			const exact = await quoteGaslessFee({ gateway, callData: newData, mode: "exact", from: relayer.address })
+			if (preview.status !== "quoted" || exact.status !== "quoted") throw new Error("settlement quote failed")
+			for (const quote of [preview.quote, exact.quote]) {
+				expect(quote.payments.map((p: any) => [p.depositFee18, p.walletCreationFee18])).to.deep.equal([[coreUnits("0.8"), coreUnits("0.1")]])
+				expect(quote.totalFee18).to.equal(coreUnits("0.9"))
+			}
+			await expect(gateway.connect(relayer).executeWithFeeLimit(newData, coreUnits("0.9") - 1n))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("0.9"), coreUnits("0.9") - 1n)
+			const tx = await gateway.connect(relayer).executeWithFeeLimit(newData, coreUnits("0.9"))
+			const subAccount = (await findEvent(tx, "WalletDepositSettled"))!.args.subAccount
+
+			await collateral.mint(await gateway.getGaslessWalletAddress(user.address, 0n), u("10"))
+			const existingData = gateway.interface.encodeFunctionData("settleDepositToExistingAccount", [user.address, 0n, subAccount])
+			const existingPreview = await quoteGaslessFee({ gateway, callData: existingData, mode: "preview" })
+			if (existingPreview.status !== "quoted") throw new Error("settlement quote failed")
+			expect(existingPreview.quote.totalFee18).to.equal(coreUnits("0.05"))
+			await expect(gateway.connect(relayer).executeWithFeeLimit(existingData, coreUnits("0.05") - 1n)).to.be.revertedWithCustomError(
+				gateway,
+				"FeeLimitExceeded",
+			)
+			await gateway.connect(relayer).executeWithFeeLimit(existingData, coreUnits("0.05"))
+			expect(await core.accountBalance(subAccount)).to.equal(u("9.1") + u("9.95"))
+		})
+
+		it("does not apply createSubAccountsFor selector pricing to settlement", async () => {
+			const createSelector = accountLayer.interface.getFunction("createSubAccountsFor")!.selector
+			await gateway.connect(admin).setSelectorFeeConfig(createSelector, true, coreUnits("5"))
+			const { tx } = await settleNew(0n, "10")
+			await expect(tx).to.emit(gateway, "DepositFeeCollected").withArgs(user.address, treasury.address, newAccountFee())
+			expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		})
+	})
+
+	it("GaslessWallet.sweepTokenBalance is gateway-only", async () => {
+		const sub = ethers.Wallet.createRandom().address
+		await accountLayer.setAccountOwner(sub, user.address)
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(dep, u("50"))
+		await gateway.connect(relayer).settleDepositToExistingAccount(user.address, 0n, sub)
+
+		const wallet = await ethers.getContractAt("GaslessWallet", dep)
+		await collateral.mint(dep, u("10"))
+		await expect(wallet.connect(stranger).sweepTokenBalance(await collateral.getAddress(), stranger.address)).to.be.revertedWithCustomError(
+			wallet,
+			"CallerNotGateway",
+		)
+	})
+
+	// ───────────────────── Type 1: instant-layer operations ─────────────────────
+
+	it("relayInstantBatch: charges the resolved fee and forwards the batch", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("0.01"))
+		const op = makeSignedOp(user.address)
+		const tx = await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.01"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.01"))
+		expect(await instant.lastOperationCount()).to.equal(1)
+	})
+
+	it("relayInstantBatch: a pure instant batch with mismatched fill/flex arrays is rejected by the InstantLayer", async () => {
+		const op = makeSignedOp(user.address)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [], [[]], [0n])).to.be.revertedWithCustomError(
+			instant,
+			"ArrayLengthMismatch",
+		)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [], [0n])).to.be.revertedWithCustomError(
+			instant,
+			"ArrayLengthMismatch",
+		)
+	})
+
+	it("relayInstantBatch: forwards all-instant operations in one InstantLayer batch", async () => {
+		const ops = [makeSignedOp(user.address), makeSignedOp(user.address, OTHER_SELECTOR)]
+		await gateway.connect(relayer).relayInstantBatch(
+			ops,
+			["0x", "0x"],
+			[[], []],
+			[[], []],
+			ops.map(() => 0n),
+		)
+
+		expect(await instant.lastOperationCount()).to.equal(2)
+		expect(await instant.lastFillsLength()).to.equal(2)
+		expect(await instant.lastFlexFillerSignaturesLength()).to.equal(2)
+	})
+
+	it("relayInstantBatch: fee == 0 skips chargeOperationalFee but still executes", async () => {
+		const op = makeSignedOp(user.address)
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await instant.lastOperationCount()).to.equal(1)
+	})
+
+	it("relayInstantBatch lets a user approve the gateway for the first time and then charges the approval fee", async () => {
+		await core.setInstantLayer(await instant.getAddress())
+		await core.setEnforceOperationalFeeAllowance(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+		const allowanceBefore = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowanceBefore.allowance).to.equal(0)
+
+		const approvalCall = core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [u("10")]])
+		const approvalOp = {
+			...makeSignedOp(user.address),
+			target: await core.getAddress(),
+			callData: approvalCall,
+		}
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]], [0n])
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("2"))
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, u("2"))
+
+		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowance.allowance).to.equal(u("8"))
+		expect(await instant.lastOperationCount()).to.equal(1)
+	})
+
+	it("relayInstantBatch lets a first approval fund the fees for the rest of the same batch", async () => {
+		await core.setInstantLayer(await instant.getAddress())
+		await core.setEnforceOperationalFeeAllowance(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+
+		const target = await deployWalletTarget()
+		const marker = ethers.id("first-approval-follow-up")
+		const approvalOp = {
+			...makeSignedOp(user.address),
+			target: await core.getAddress(),
+			callData: core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [u("10")]]),
+		}
+		const followUpOp = {
+			...makeSignedOp(user.address),
+			target: await target.getAddress(),
+			callData: target.interface.encodeFunctionData("record", [marker]),
+		}
+
+		const allowanceBefore = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowanceBefore.allowance).to.equal(0)
+
+		const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([approvalOp, followUpOp]))
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("4"))
+
+		const allowanceAfter = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowanceAfter.allowance).to.equal(u("6"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("4"))
+		expect(await target.lastMarker()).to.equal(marker)
+	})
+
+	it("relayInstantBatch quotes and charges with the multiplier established by the approval", async () => {
+		await core.setInstantLayer(await instant.getAddress())
+		await core.setEnforceOperationalFeeAllowance(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+
+		const approvalOp = {
+			...makeSignedOp(user.address),
+			target: await core.getAddress(),
+			callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [u("10")], [5000]]),
+		}
+
+		const quote = await previewBatch([approvalOp], [0n])
+		expect(quote.totalFee18).to.equal(u("1"))
+
+		await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]], [0n])
+		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowance.feeMultiplier).to.equal(5000)
+		expect(allowance.allowance).to.equal(u("9"))
+	})
+
+	it("relayInstantBatch reverts atomically when a normal batch leaves no fee allowance", async () => {
+		await core.setEnforceOperationalFeeAllowance(true)
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+
+		const op = {
+			...makeSignedOp(user.address, OTHER_SELECTOR),
+			target: await core.getAddress(),
+		}
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revertedWith("MockCore: insufficient allowance")
+		expect(await instant.lastOperationCount()).to.equal(0)
+	})
+
+	it("relayInstantBatch rolls the approval back when the new allowance cannot fund the fee", async () => {
+		await core.setInstantLayer(await instant.getAddress())
+		await core.setEnforceOperationalFeeAllowance(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+
+		const approvalOp = {
+			...makeSignedOp(user.address),
+			target: await core.getAddress(),
+			callData: core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [u("1")]]),
+		}
+
+		await expect(gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]], [0n])).to.be.revertedWith(
+			"MockCore: insufficient allowance",
+		)
+		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowance.allowance).to.equal(0)
+		expect(await instant.lastOperationCount()).to.equal(0)
+	})
+
+	it("relayInstantBatch post-charges an approval operation that carries flex metadata", async () => {
+		await core.setInstantLayer(await instant.getAddress())
+		await core.setEnforceOperationalFeeAllowance(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+		const approvalOp = {
+			...makeSignedOp(user.address),
+			target: await core.getAddress(),
+			callData: core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [u("10")]]),
+			flexFields: [{ offset: 0, length: 4, authorizedFlexFiller: relayer.address }],
+		}
+
+		await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [["0x"]], [0n])
+		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowance.allowance).to.equal(u("8"))
+		expect(await instant.lastOperationCount()).to.equal(1)
+	})
+
+	it("relayInstantBatch executes an owner-signed wallet operation and charges the inner selector fees", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(walletAddr, u("20"))
+
+		await gateway.connect(admin).setSelectorFeeConfig(collateral.interface.getFunction("approve").selector, true, u("0.25"))
+		await gateway.connect(admin).setSelectorFeeConfig(target.interface.getFunction("bridgeToken").selector, true, u("2"))
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const calls = [
+			{ target: await collateral.getAddress(), value: 0n, data: collateral.interface.encodeFunctionData("approve", [targetAddr, u("5")]) },
+			{
+				target: targetAddr,
+				value: 0n,
+				data: target.interface.encodeFunctionData("bridgeToken", [await collateral.getAddress(), stranger.address, u("5")]),
+			},
+		]
+		const op = {
+			signer: user.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+		}
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(user, op)], [], [], [0n])
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("2.25"))
+		await expect(tx).to.emit(gateway, "WalletOperationRelayed").withArgs(relayer.address, user.address, walletAddr, 2)
+		expect(await collateral.balanceOf(treasury.address)).to.equal(0)
+		expect(await collateral.balanceOf(stranger.address)).to.equal(u("5"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("2.25"))
+	})
+
+	it("relayInstantBatch wallet execution consumes the normal daily free-operation quota", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setSelectorFeeConfig(target.interface.getFunction("record").selector, true, u("2"))
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const op = {
+			signer: user.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, [
+				{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [ethers.zeroPadValue("0x03", 32)]) },
+			]),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("wallet quota") },
+		}
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(user, op)], [], [], [0n])
+
+		await expect(tx).to.emit(gateway, "DailyFreeOpsUsed").withArgs(user.address, 1, 1, 1)
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, 0)
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+	})
+
+	it("relayInstantBatch leaves the daily free-operation quota to priced operations when a wallet operation has no calls", async () => {
+		const coreUnits = (amount: string) => ethers.parseUnits(amount, 18)
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+		await gateway.connect(admin).setDefaultSelectorFee(coreUnits("1"))
+		await gateway.connect(admin).setWalletCreationFee(u("3"))
+		const walletIface = (await ethers.getContractFactory("GaslessWallet")).interface
+		const emptyOp = async (walletId: bigint, nonce: bigint) => ({
+			signer: user.address,
+			target: await gateway.getGaslessWalletAddress(user.address, walletId),
+			callData: walletExecuteData(walletIface, []),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce, deadline: 9999999999n, salt: ZERO_HASH },
+		})
+		const create1 = await emptyOp(1n, 1n)
+		const create2 = await emptyOp(2n, 1n)
+		const priced = makeSignedOp(user.address)
+		const ops = [create1, create2, priced]
+		const walletIds = [1n, 2n, 0n]
+		const signatures = [await signWalletOperation(user, create1), await signWalletOperation(user, create2), "0x"]
+
+		const preview = await previewBatch(ops, walletIds)
+		expect(preview.freeOpsApplied).to.equal(1)
+		expect(preview.payments.map((p: any) => [p.operationalFee18, p.walletCreationFee18])).to.deep.equal([
+			[0n, coreUnits("3")],
+			[0n, coreUnits("3")],
+			[0n, 0n],
+		])
+		const callData = gateway.interface.encodeFunctionData("relayInstantBatch", [ops, signatures, [], [], walletIds])
+		const exact = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
+		if (exact.status !== "quoted") throw new Error(exact.data)
+		expect(exact.quote.freeOpsApplied).to.equal(1)
+		expect(exact.quote.totalFee18).to.equal(preview.totalFee18)
+
+		const tx = await gateway.connect(relayer).relayInstantBatch(ops, signatures, [], [], walletIds)
+		await expect(tx).to.emit(gateway, "DailyFreeOpsUsed").withArgs(user.address, 1, 1, 1)
+		expect((await tx.wait()).logs.filter((log: any) => gateway.interface.parseLog(log)?.name === "DailyFreeOpsUsed")).to.have.length(1)
+		expect(await core.totalOperationalFeesCharged()).to.equal(coreUnits("6"))
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+
+		// With the quota exhausted in block mode, a priced operation reverts but an empty wallet operation still relays.
+		await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(user.address)])))
+			.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+			.withArgs(user.address, 1)
+		const reuse = await emptyOp(1n, 2n)
+		expect((await previewBatch([reuse], [1n])).totalFee18).to.equal(0)
+		await expect(gateway.connect(relayer).relayInstantBatch([reuse], [await signWalletOperation(user, reuse)], [], [], [1n]))
+			.to.emit(gateway, "OperationalFeeRouted")
+			.withArgs(user.address, user.address, 0)
+		expect(await core.totalOperationalFeesCharged()).to.equal(coreUnits("6"))
+	})
+
+	it("relayInstantBatch rejects wallet operation replay and bad ordered nonce", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const calls = [{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [ethers.zeroPadValue("0x01", 32)]) }]
+		const op = {
+			signer: user.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+		}
+
+		await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(user, op)], [[]], [[]], [0n])
+		await expect(
+			gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(user, op)], [[]], [[]], [0n]),
+		).to.be.revertedWithCustomError(gateway, "WalletOperationInvalidNonce")
+
+		const wrongNonce = { ...op, replayAttackHeader: { nonce: 3n, deadline: 9999999999n, salt: ethers.id("wrong nonce") } }
+		await expect(
+			gateway.connect(relayer).relayInstantBatch([wrongNonce], [await signWalletOperation(user, wrongNonce)], [[]], [[]], [0n]),
+		).to.be.revertedWithCustomError(gateway, "WalletOperationInvalidNonce")
+	})
+
+	it("relayInstantBatch rejects a non-owner wallet operation signer before wallet calls execute", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const calls = [{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [ethers.zeroPadValue("0x02", 32)]) }]
+		const op = {
+			signer: stranger.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("wrong signer") },
+		}
+
+		await expect(gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(stranger, op)], [[]], [[]], [0n]))
+			.to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
+			.withArgs(user.address, stranger.address, WALLET_EXECUTION_SENTINEL_SELECTOR)
+		expect(await target.lastMarker()).to.equal(ethers.ZeroHash)
+		expect(await ethers.provider.getCode(walletAddr)).to.equal("0x")
+	})
+
+	it("delegated wallet execution requires sentinel and every inner selector in InstantLayer storage", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(walletAddr, u("20"))
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const approve = collateral.interface.encodeFunctionData("approve", [targetAddr, u("4")])
+		const bridge = target.interface.encodeFunctionData("bridgeToken", [await collateral.getAddress(), stranger.address, u("4")])
+		const calls = [
+			{ target: await collateral.getAddress(), value: 0n, data: approve },
+			{ target: targetAddr, value: 0n, data: bridge },
+		]
+		const op = {
+			signer: relayer.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 3,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("delegated missing selectors") },
+		}
+
+		await expect(gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(relayer, op)], [[]], [[]], [0n]))
+			.to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
+			.withArgs(user.address, relayer.address, WALLET_EXECUTION_SENTINEL_SELECTOR)
+
+		await instant.setDelegation(user.address, relayer.address, WALLET_EXECUTION_SENTINEL_SELECTOR, 9999999999n)
+		await instant.setDelegation(user.address, relayer.address, "0x095ea7b3", 9999999999n)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(relayer, op)], [[]], [[]], [0n]))
+			.to.be.revertedWithCustomError(gateway, "WalletDelegationMissing")
+			.withArgs(user.address, relayer.address, target.interface.getFunction("bridgeToken").selector)
+
+		await instant.setDelegation(user.address, relayer.address, target.interface.getFunction("bridgeToken").selector, 9999999999n)
+		await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(relayer, op)], [[]], [[]], [0n])
+		expect(await collateral.balanceOf(stranger.address)).to.equal(u("4"))
+	})
+
+	it("delegated wallet execution can reuse selectors granted through a previous relayed batch", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const marker = ethers.id("delegation relay wallet execution")
+		const calls = [{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [marker]) }]
+		const op = {
+			signer: relayer.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("relay granted wallet execution") },
+		}
+		const grantOp = await makeGrantOp(user.address, relayer.address, [
+			WALLET_EXECUTION_SENTINEL_SELECTOR,
+			target.interface.getFunction("record").selector,
+		])
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+		await gateway.connect(relayer).relayInstantBatch([op], [await signWalletOperation(relayer, op)], [[]], [[]], [0n])
+
+		expect(await target.lastMarker()).to.equal(marker)
+		expect(await ethers.provider.getCode(walletAddr)).to.not.equal("0x")
+	})
+
+	it("delegated wallet execution can reuse selectors granted through a grant op in the same relayed batch", async () => {
+		await instant.setTargetExecution(true, await core.getAddress())
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const marker = ethers.id("delegation relay wallet execution")
+		const calls = [{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [marker]) }]
+		const op = {
+			signer: relayer.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, calls),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("relay granted wallet execution") },
+		}
+		const grantOp = await makeGrantOp(user.address, relayer.address, [
+			WALLET_EXECUTION_SENTINEL_SELECTOR,
+			target.interface.getFunction("record").selector,
+		])
+
+		// One relayed batch: the grant lands first, then the wallet op runs under the fresh delegation
+		await gateway.connect(relayer).relayInstantBatch([grantOp, op], ["0x", await signWalletOperation(relayer, op)], [[], []], [[], []], [0n, 0n])
+
+		expect(await target.lastMarker()).to.equal(marker)
+		expect(await ethers.provider.getCode(walletAddr)).to.not.equal("0x")
+	})
+
+	it("mixed instant plus wallet batch rolls back instant fees and state when the wallet call reverts", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await collateral.mint(walletAddr, u("10"))
+		await gateway.connect(admin).setSelectorFeeConfig(target.interface.getFunction("forceRevert").selector, true, u("2"))
+
+		const instantOp = makeSignedOp(user.address)
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const walletOp = {
+			signer: user.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, [
+				{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("forceRevert", []) },
+			]),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+		}
+
+		await expect(
+			gateway
+				.connect(relayer)
+				.relayInstantBatch([instantOp, walletOp], ["0x", await signWalletOperation(user, walletOp)], [[], []], [[], []], [0n, 0n]),
+		).to.be.revertedWithCustomError(wallet, "WalletCallFailed")
+		expect(await core.operationalFeesCharged(user.address)).to.equal(0)
+		expect(await instant.lastOperationCount()).to.equal(0)
+		expect(await collateral.balanceOf(walletAddr)).to.equal(u("10"))
+		expect(await collateral.balanceOf(treasury.address)).to.equal(0)
+	})
+
+	it("mixed instant plus wallet batch keeps instant ops on the single-op dispatch path", async () => {
+		const target = await deployWalletTarget()
+		const targetAddr = await target.getAddress()
+		const walletAddr = await gateway.getGaslessWalletAddress(user.address, 0n)
+
+		const marker = ethers.id("mixed wallet dispatch")
+		const instantOp = makeSignedOp(user.address)
+		const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+		const walletOp = {
+			signer: user.address,
+			target: walletAddr,
+			callData: walletExecuteData(wallet.interface, [
+				{ target: targetAddr, value: 0n, data: target.interface.encodeFunctionData("record", [marker]) },
+			]),
+			signerAccount: { addr: user.address, isPartyB: false },
+			flexFields: [],
+			maxUses: 1,
+			replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ethers.id("mixed dispatch") },
+		}
+
+		await gateway
+			.connect(relayer)
+			.relayInstantBatch([instantOp, walletOp], ["0x", await signWalletOperation(user, walletOp)], [[], []], [[], []], [0n, 0n])
+
+		expect(await instant.lastOperationCount()).to.equal(1)
+		expect(await target.lastMarker()).to.equal(marker)
+	})
+
+	it("relayInstantBatch rejects a mismatched signatures length", async () => {
+		const op = makeSignedOp(user.address)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], [], [[]], [[]], [0n])).to.be.revertedWithCustomError(gateway, "ArrayLengthMismatch")
+	})
+
+	it("relayed grant operation: charges one configured fee and forwards the delegation", async () => {
+		await gateway.connect(admin).setSelectorFeeConfig(instant.interface.getFunction("grantDelegation")!.selector, true, u("0.25"))
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.25"))
+
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.25"))
+		expect(await instant.lastDelegationAccount()).to.equal(user.address)
+		expect(await instant.lastDelegationDelegate()).to.equal(stranger.address)
+		expect(await instant.lastDelegationSelectorCount()).to.equal(2)
+		expect(await instant.lastDelegationFirstSelector()).to.equal(FEE_SELECTOR)
+	})
+
+	it("relayed grant operation: one call consumes one free usage regardless of selector count", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		const freeTx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+		await expect(freeTx).to.emit(gateway, "DailyFreeOpsUsed").withArgs(user.address, 1, 1, 1)
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1"))
+	})
+
+	it("relayed grant operation: block mode reverts after the one-call quota is exhausted", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+		await expect(gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n]))
+			.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+			.withArgs(user.address, 1)
+	})
+
+	it("relayed grant operation: bills a virtual-account delegation to the parent SubAccount", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const subAccount = ethers.Wallet.createRandom().address
+		const virtualAccount = ethers.Wallet.createRandom().address
+		await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+		const grantOp = await makeGrantOp(virtualAccount, stranger.address)
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+
+		expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+		expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+	})
+
+	it("relayed grant operation: applies the resolved payer core multiplier", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
+		const grantOp = await makeGrantOp(user.address, stranger.address)
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
+	})
+
+	it("relayed grant operation: rolls back charged fee and free usage when InstantLayer reverts", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		await instant.setForceDelegationFailure(true)
+		const grantOp = await makeGrantOp(user.address, stranger.address)
+		await instant.setTargetExecution(true, await core.getAddress())
+
+		await expect(gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+			instant,
+			"TargetCallFailed",
+		)
+
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(1)
+	})
+
+	describe("setInstantLayer", () => {
+		it("re-points relayed operations to the new InstantLayer and emits InstantLayerUpdated", async () => {
+			const Instant = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockInstantLayer.sol:MockInstantLayer")
+			const replacement = await Instant.deploy()
+			const replacementAddr = await replacement.getAddress()
+			await replacement.setExecutor(gatewayAddr)
+			await replacement.setTargetExecution(true, await core.getAddress())
+
+			await expect(gateway.connect(admin).setInstantLayer(replacementAddr)).to.emit(gateway, "InstantLayerUpdated").withArgs(replacementAddr)
+			expect(await gateway.instantLayer()).to.equal(replacementAddr)
+
+			const grantOp = {
+				...(await makeGrantOp(user.address, stranger.address)),
+				target: replacementAddr,
+			}
+			await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+
+			expect(await replacement.lastDelegationDelegate()).to.equal(stranger.address)
+			expect(await instant.lastDelegationDelegate()).to.equal(ethers.ZeroAddress)
+		})
+
+		it("rejects the zero address", async () => {
+			await expect(gateway.connect(admin).setInstantLayer(ethers.ZeroAddress)).to.be.revertedWithCustomError(gateway, "ZeroAddress")
+		})
+
+		it("is restricted to CONFIG_ADMIN_ROLE", async () => {
+			await expect(gateway.connect(stranger).setInstantLayer(await instant.getAddress())).to.be.revertedWithCustomError(
+				gateway,
+				"AccessControlUnauthorizedAccount",
+			)
+		})
+	})
+
+	it("bills a delegation-grant operation by its grantDelegation selector and forwards it to the InstantLayer", async () => {
+		await instant.setTargetExecution(true, await core.getAddress())
+		const grantOp = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+		const grantSelector = instant.interface.getFunction("grantDelegation")!.selector
+		await gateway.connect(admin).setSelectorFeeConfig(grantSelector, true, u("0.25"))
+
+		const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.25"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.25"))
+		expect(await instant.lastDelegationAccount()).to.equal(user.address)
+		expect(await instant.lastDelegationDelegate()).to.equal(stranger.address)
+		expect(await instant.lastDelegationSelectorCount()).to.equal(2)
+		expect(await instant.lastDelegationFirstSelector()).to.equal(FEE_SELECTOR)
+	})
+
+	it("rolls back a grant operation's fee and free usage when the InstantLayer reverts", async () => {
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		await instant.setForceDelegationFailure(true)
+		const grantOp = await makeGrantOp(user.address, stranger.address)
+
+		await expect(gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])).to.be.revert(ethers)
+
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(1)
+	})
+
+	it("relayNativeGasTopUp: forwards relayer-funded native gas within the sponsored daily limit without charging collateral", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+		const request = makeNativeTopUpRequest()
+		const signature = await signNativeTopUp(user, request)
+		const before = await ethers.provider.getBalance(user.address)
+
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut })
+
+		await expect(tx)
+			.to.emit(gateway, "NativeGasTopUpRelayed")
+			.withArgs(relayer.address, user.address, user.address, user.address, request.minNativeAmountOut, request.collateralAmount, 0)
+		await expect(tx)
+			.to.emit(gateway, "DailyNativeGasSponsored")
+			.withArgs(user.address, request.minNativeAmountOut, request.minNativeAmountOut, ethers.parseEther("0.05"))
+		expect(await ethers.provider.getBalance(user.address)).to.equal(before + request.minNativeAmountOut)
+		expect(await gateway.topUpNonces(user.address)).to.equal(1)
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+	})
+
+	it("relayNativeGasTopUp: rejects invalid signatures, stale deadlines, bad nonces, and native amount below signed minimum", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("1"), false)
+		const request = makeNativeTopUpRequest()
+		const signature = await signNativeTopUp(user, request)
+		const strangerSignature = await signNativeTopUp(stranger, request)
+
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, strangerSignature, { value: request.minNativeAmountOut }),
+		).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+
+		const expired = makeNativeTopUpRequest({ deadline: 1n })
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(expired, UNCAPPED, await signNativeTopUp(user, expired), { value: expired.minNativeAmountOut }),
+		)
+			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpExpired")
+			.withArgs(1)
+
+		const wrongNonce = makeNativeTopUpRequest({ nonce: 7n })
+		await expect(
+			gateway
+				.connect(relayer)
+				.relayNativeGasTopUp(wrongNonce, UNCAPPED, await signNativeTopUp(user, wrongNonce), { value: wrongNonce.minNativeAmountOut }),
+		)
+			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpNonceMismatch")
+			.withArgs(user.address, 0, 7)
+
+		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut - 1n }))
+			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpAmountBelowMin")
+			.withArgs(request.minNativeAmountOut - 1n, request.minNativeAmountOut)
+	})
+
+	it("relayNativeGasTopUp: rejects zero recipient, zero collateral amount, and zero actual native output", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("1"), false)
+		const zeroRecipient = makeNativeTopUpRequest({ recipientWallet: ethers.ZeroAddress })
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(zeroRecipient, UNCAPPED, await signNativeTopUp(user, zeroRecipient), {
+				value: zeroRecipient.minNativeAmountOut,
+			}),
+		).to.be.revertedWithCustomError(gateway, "ZeroAddress")
+
+		const zeroCollateral = makeNativeTopUpRequest({ collateralAmount: 0n })
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(zeroCollateral, UNCAPPED, await signNativeTopUp(user, zeroCollateral), {
+				value: zeroCollateral.minNativeAmountOut,
+			}),
+		).to.be.revertedWithCustomError(gateway, "NativeGasTopUpCollateralAmountZero")
+
+		const zeroNativeOut = makeNativeTopUpRequest({ minNativeAmountOut: 0n })
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(zeroNativeOut, UNCAPPED, await signNativeTopUp(user, zeroNativeOut), { value: 0 }),
+		).to.be.revertedWithCustomError(gateway, "NativeGasTopUpAmountZero")
+	})
+
+	it("relayNativeGasTopUp: rejects actual native output above the configured max", async () => {
+		await gateway.connect(admin).setMaxNativeGasTopUpAmount(ethers.parseEther("0.005"))
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("1"), false)
+		const request = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.004") })
+		const actualNativeOut = ethers.parseEther("0.006")
+
+		await expect(gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: actualNativeOut }))
+			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpAmountExceedsMax")
+			.withArgs(actualNativeOut, ethers.parseEther("0.005"))
+	})
+
+	it("relayNativeGasTopUp: reverts above the sponsored daily native limit in block mode", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.015"), true)
+		const first = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.01") })
+		await gateway.connect(relayer).relayNativeGasTopUp(first, UNCAPPED, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
+
+		const second = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.006"), nonce: 1n })
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(second, UNCAPPED, await signNativeTopUp(user, second), { value: second.minNativeAmountOut }),
+		)
+			.to.be.revertedWithCustomError(gateway, "DailySponsoredNativeLimitExceeded")
+			.withArgs(user.address, ethers.parseEther("0.015"))
+
+		await ethers.provider.send("evm_increaseTime", [86400])
+		await ethers.provider.send("evm_mine", [])
+		await gateway.connect(relayer).relayNativeGasTopUp(second, UNCAPPED, await signNativeTopUp(user, second), { value: second.minNativeAmountOut })
+		expect(await gateway.topUpNonces(user.address)).to.equal(2)
+	})
+
+	it("relayNativeGasTopUp: charges signed collateral plus on-chain fee above the sponsored daily native limit in charge mode", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.015"), false)
+		await gateway.connect(admin).setNativeGasTopUpFeeBps(3)
+		const first = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.01") })
+		const firstTx = await gateway
+			.connect(relayer)
+			.relayNativeGasTopUp(first, UNCAPPED, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
+		await expect(firstTx)
+			.to.emit(gateway, "DailyNativeGasSponsored")
+			.withArgs(user.address, first.minNativeAmountOut, first.minNativeAmountOut, ethers.parseEther("0.015"))
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+
+		const second = makeNativeTopUpRequest({ minNativeAmountOut: ethers.parseEther("0.006"), nonce: 1n, collateralAmount: u("100") })
+		const feeAmount = nativeTopUpFee(second.collateralAmount, 3n)
+		const totalCharge = second.collateralAmount + feeAmount
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(second, UNCAPPED, await signNativeTopUp(user, second), {
+			value: second.minNativeAmountOut,
+		})
+
+		await expect(tx)
+			.to.emit(gateway, "NativeGasTopUpRelayed")
+			.withArgs(relayer.address, user.address, user.address, user.address, second.minNativeAmountOut, second.collateralAmount, totalCharge)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(totalCharge)
+		expect(await gateway.topUpNonces(user.address)).to.equal(2)
+	})
+
+	it("relayNativeGasTopUp: calculates the fee on-chain and ignores the core multiplier", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(0, false)
+		await gateway.connect(admin).setNativeGasTopUpFeeBps(3)
+		await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
+		const request = makeNativeTopUpRequest({ collateralAmount: u("100") })
+		const feeAmount = u("0.03")
+		const totalCharge = u("100.03")
+
+		const quote = await gateway.getNativeGasTopUpCharge(request.collateralAmount)
+		expect(quote.feeAmount18).to.equal(feeAmount)
+		expect(quote.totalCollateralCharge18).to.equal(totalCharge)
+
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), {
+			value: request.minNativeAmountOut,
+		})
+
+		await expect(tx)
+			.to.emit(gateway, "NativeGasTopUpRelayed")
+			.withArgs(relayer.address, user.address, user.address, user.address, request.minNativeAmountOut, request.collateralAmount, totalCharge)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(totalCharge)
+	})
+
+	it("relayNativeGasTopUp: virtual account requests are signed by the parent owner and use the parent sponsor limit", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.02"), true)
+		const subAccount = ethers.Wallet.createRandom().address
+		const virtualAccount = ethers.Wallet.createRandom().address
+		await accountLayer.setAccountOwner(subAccount, user.address)
+		await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+
+		const request = makeNativeTopUpRequest({ payerAccount: virtualAccount, minNativeAmountOut: ethers.parseEther("0.012") })
+		const tx = await gateway
+			.connect(relayer)
+			.relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: request.minNativeAmountOut })
+
+		await expect(tx)
+			.to.emit(gateway, "NativeGasTopUpRelayed")
+			.withArgs(relayer.address, virtualAccount, subAccount, user.address, request.minNativeAmountOut, request.collateralAmount, 0)
+		await expect(tx)
+			.to.emit(gateway, "DailyNativeGasSponsored")
+			.withArgs(subAccount, request.minNativeAmountOut, request.minNativeAmountOut, ethers.parseEther("0.02"))
+
+		const overLimit = makeNativeTopUpRequest({ payerAccount: virtualAccount, minNativeAmountOut: ethers.parseEther("0.009"), nonce: 1n })
+		await expect(
+			gateway
+				.connect(relayer)
+				.relayNativeGasTopUp(overLimit, UNCAPPED, await signNativeTopUp(user, overLimit), { value: overLimit.minNativeAmountOut }),
+		)
+			.to.be.revertedWithCustomError(gateway, "DailySponsoredNativeLimitExceeded")
+			.withArgs(subAccount, ethers.parseEther("0.02"))
+	})
+
+	it("relayNativeGasTopUp: zero sponsor limit charges every top-up in charge mode", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(0, false)
+		await gateway.connect(admin).setNativeGasTopUpFeeBps(3)
+		const request = makeNativeTopUpRequest({ collateralAmount: u("100") })
+		const signature = await signNativeTopUp(user, request)
+		const feeAmount = u("0.03")
+		const totalCharge = u("100.03")
+
+		const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut })
+
+		await expect(tx)
+			.to.emit(gateway, "NativeGasTopUpRelayed")
+			.withArgs(relayer.address, user.address, user.address, user.address, request.minNativeAmountOut, request.collateralAmount, totalCharge)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(totalCharge)
+	})
+
+	describe("smart-account signers (ERC-1271)", () => {
+		// Coinbase Smart Wallet first wraps the application digest in its own account-specific EIP-712
+		// replay-safe domain. Its owner signs that outer digest, which is then carried in SignatureWrapper.
+		// ABI-encoded with a 65-byte owner signature, the wrapper is 224 bytes.
+		const COINBASE_WRAPPED_SIGNATURE_LENGTH = 224
+		const coinbaseMessageTypes = { CoinbaseSmartWalletMessage: [{ name: "hash", type: "bytes32" }] }
+		let smartAccount: any, smartAccountAddr: string
+
+		beforeEach(async () => {
+			const SmartAccount = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockSmartAccount.sol:MockSmartAccount")
+			smartAccount = await SmartAccount.deploy(user.address)
+			smartAccountAddr = await smartAccount.getAddress()
+		})
+
+		const wrap = (rawSignature: string) =>
+			ethers.AbiCoder.defaultAbiCoder().encode(["tuple(uint256 ownerIndex, bytes signatureData)"], [{ ownerIndex: 0n, signatureData: rawSignature }])
+
+		async function signAsSmartAccount(hash: string) {
+			const domain = {
+				name: "Coinbase Smart Wallet",
+				version: "1",
+				chainId: (await ethers.provider.getNetwork()).chainId,
+				verifyingContract: smartAccountAddr,
+			}
+			const replaySafeHash = ethers.TypedDataEncoder.hash(domain, coinbaseMessageTypes, { hash })
+			expect(await smartAccount.replaySafeHash(hash)).to.equal(replaySafeHash)
+			return wrap(await user.signTypedData(domain, coinbaseMessageTypes, { hash }))
+		}
+
+		async function signSmartAccountNativeTopUp(request: any, maxTotalCharge?: bigint) {
+			const capped = maxTotalCharge !== undefined
+			const types = capped ? cappedNativeGasTopUpTypes : nativeTopUpTypes
+			const value = capped ? { ...request, maxTotalCharge } : request
+			const hash = ethers.TypedDataEncoder.hash(await gatewayDomain(), types, value)
+			return signAsSmartAccount(hash)
+		}
+
+		async function smartAccountWalletOp() {
+			const target = await deployWalletTarget()
+			const walletAddr = await gateway.getGaslessWalletAddress(smartAccountAddr, 0n)
+			const wallet = await ethers.getContractAt("GaslessWallet", walletAddr)
+			const marker = ethers.id("erc1271 wallet op")
+			const calls = [{ target: await target.getAddress(), value: 0n, data: target.interface.encodeFunctionData("record", [marker]) }]
+			const op = {
+				signer: smartAccountAddr,
+				target: walletAddr,
+				callData: walletExecuteData(wallet.interface, calls),
+				signerAccount: { addr: smartAccountAddr, isPartyB: false },
+				flexFields: [],
+				maxUses: 1,
+				replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: ZERO_HASH },
+			}
+			return { op, target, marker }
+		}
+
+		it("wallet operation: accepts the smart account's wrapped signature and executes on its wallet", async () => {
+			const { op, target, marker } = await smartAccountWalletOp()
+			const signature = await signAsSmartAccount(await gateway.getWalletOperationHash(op))
+			expect(ethers.getBytes(signature).length).to.equal(COINBASE_WRAPPED_SIGNATURE_LENGTH)
+
+			expect(await gateway.isValidWalletOperationSignature(op, signature)).to.equal(true)
+			await gateway.connect(relayer).relayInstantBatch([op], [signature], [[]], [[]], [0n])
+			expect(await target.lastMarker()).to.equal(marker)
+			expect(await gateway.walletOperationNonces(smartAccountAddr, 0n, smartAccountAddr)).to.equal(1)
+		})
+
+		it("wallet operation: rejects a bare ECDSA signature the smart account does not recognise", async () => {
+			const { op } = await smartAccountWalletOp()
+			const bare = await signWalletOperation(user, op)
+
+			expect(await gateway.isValidWalletOperationSignature(op, bare)).to.equal(false)
+			await expect(gateway.connect(relayer).relayInstantBatch([op], [bare], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+				gateway,
+				"InvalidWalletOperationSignature",
+			)
+		})
+
+		it("relayNativeGasTopUp: accepts the smart account's wrapped signature for an uncapped request", async () => {
+			await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr })
+			const signature = await signSmartAccountNativeTopUp(request)
+			expect(ethers.getBytes(signature).length).to.equal(COINBASE_WRAPPED_SIGNATURE_LENGTH)
+
+			const tx = await gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut })
+
+			await expect(tx)
+				.to.emit(gateway, "NativeGasTopUpRelayed")
+				.withArgs(relayer.address, smartAccountAddr, smartAccountAddr, smartAccountAddr, request.minNativeAmountOut, request.collateralAmount, 0)
+			expect(await gateway.topUpNonces(smartAccountAddr)).to.equal(1)
+		})
+
+		it("relayNativeGasTopUp: rejects a bare ECDSA signature the smart account does not recognise", async () => {
+			await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr })
+			const bare = await signNativeTopUp(user, request)
+
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, bare, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+		})
+
+		it("relayNativeGasTopUp: rejects an owner signature wrapped without the account replay-safe domain", async () => {
+			await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("0.05"), false)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr })
+			const signature = wrap(await signNativeTopUp(user, request))
+
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+		})
+
+		it("relayNativeGasTopUp: enforces a signed fee cap carried outside the smart account's signature", async () => {
+			const coreUnits = (amount: string) => ethers.parseUnits(amount, 18)
+			await gateway.connect(admin).setNativeGasTopUpConfig(0, false)
+			await gateway.connect(admin).setNativeGasTopUpFeeBps(100)
+			const request = makeNativeTopUpRequest({ payerAccount: smartAccountAddr, recipientWallet: smartAccountAddr, collateralAmount: coreUnits("10") })
+			const max = coreUnits("10.1")
+			const signature = await signSmartAccountNativeTopUp(request, max)
+
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, max + 1n, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+
+			await gateway.connect(admin).setNativeGasTopUpFeeBps(200)
+			await expect(gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut }))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("10.2"), max)
+
+			await gateway.connect(admin).setNativeGasTopUpFeeBps(100)
+			await gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut })
+			expect(await core.operationalFeesCharged(smartAccountAddr)).to.equal(max)
+		})
+	})
+
+	it("setNativeGasTopUpFeeBps: rejects rates above 100%", async () => {
+		await expect(gateway.connect(admin).setNativeGasTopUpFeeBps(10001))
+			.to.be.revertedWithCustomError(gateway, "NativeGasTopUpFeeBpsTooHigh")
+			.withArgs(10001)
+	})
+
+	it("relayNativeGasTopUp: charge mode rolls back the native transfer when core charging fails", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(0, false)
+		await gateway.connect(admin).setNativeGasTopUpFeeBps(3)
+		await core.setForceChargeFailure(true)
+		const request = makeNativeTopUpRequest()
+		const before = await ethers.provider.getBalance(user.address)
+
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: request.minNativeAmountOut }),
+		).to.be.revertedWith("MockCore: charge failed")
+		expect(await ethers.provider.getBalance(user.address)).to.equal(before)
+		expect(await gateway.topUpNonces(user.address)).to.equal(0)
+	})
+
+	it("relayNativeGasTopUp: failed native transfer reverts and rolls back nonce and sponsor usage", async () => {
+		await gateway.connect(admin).setNativeGasTopUpConfig(ethers.parseEther("1"), false)
+		const RejectNativeReceiver = await ethers.getContractFactory("RejectNativeReceiver")
+		const rejectingReceiver = await RejectNativeReceiver.deploy()
+		const request = makeNativeTopUpRequest({ recipientWallet: await rejectingReceiver.getAddress() })
+
+		await expect(
+			gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, await signNativeTopUp(user, request), { value: request.minNativeAmountOut }),
+		)
+			.to.be.revertedWithCustomError(gateway, "NativeGasTransferFailed")
+			.withArgs(await rejectingReceiver.getAddress(), request.minNativeAmountOut)
+
+		expect(await gateway.topUpNonces(user.address)).to.equal(0)
+
+		const retry = makeNativeTopUpRequest()
+		const retryTx = await gateway
+			.connect(relayer)
+			.relayNativeGasTopUp(retry, UNCAPPED, await signNativeTopUp(user, retry), { value: retry.minNativeAmountOut })
+		await expect(retryTx)
+			.to.emit(gateway, "DailyNativeGasSponsored")
+			.withArgs(user.address, retry.minNativeAmountOut, retry.minNativeAmountOut, ethers.parseEther("1"))
+	})
+
+	it("per-key fee overrides the default (configured zero means no charge)", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("0.01"))
+		await gateway.connect(admin).setSelectorFeeConfig(FEE_SELECTOR, true, u("0.05"))
+		expect(await gateway.getBaseOperationalFee(FEE_SELECTOR)).to.equal(u("0.05"))
+		expect(await gateway.getBaseOperationalFee(OTHER_SELECTOR)).to.equal(u("0.01"))
+
+		await gateway.connect(admin).setSelectorFeeConfig(OTHER_SELECTOR, true, 0)
+		expect(await gateway.getBaseOperationalFee(OTHER_SELECTOR)).to.equal(0)
+	})
+
+	it("rolls back batch state when post-execution fee collection fails", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("0.01"))
+		await core.setForceChargeFailure(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		const target = await deployWalletTarget()
+		const marker = ethers.id("rolled-back-post-charge")
+		const op = {
+			...makeSignedOp(user.address),
+			target: await target.getAddress(),
+			callData: target.interface.encodeFunctionData("record", [marker]),
+		}
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revertedWith("MockCore: charge failed")
+		expect(await instant.lastOperationCount()).to.equal(0)
+		expect(await target.lastMarker()).to.equal(ZERO_HASH)
+	})
+
+	it("does not collect a fee when execution fails", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("0.01"))
+		await instant.setForceExecutionFailure(true)
+		const op = makeSignedOp(user.address)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+			instant,
+			"ForcedExecutionFailure",
+		)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(0)
+	})
+
+	it("requires the gateway to be a registered executor on the instant layer", async () => {
+		await instant.setExecutor(stranger.address) // gateway no longer the registered executor
+		const op = makeSignedOp(user.address)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(instant, "NotExecutor")
+	})
+
+	it("derives the fee from the operation selector (per-selector beats the default)", async () => {
+		const SEL = "0xaaaaaaaa"
+		await gateway.connect(admin).setDefaultSelectorFee(u("0.01"))
+		await gateway.connect(admin).setSelectorFeeConfig(SEL, true, u("0.05"))
+		const op = makeSignedOp(user.address, SEL)
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.05"))
+	})
+
+	it("sums per-operation fees across a batch and emits one routing event per operation", async () => {
+		const SEL_A = "0xaaaaaaaa"
+		const SEL_B = "0xbbbbbbbb"
+		await gateway.connect(admin).setSelectorFeeConfig(SEL_A, true, u("0.01"))
+		await gateway.connect(admin).setSelectorFeeConfig(SEL_B, true, u("0.02"))
+		const ops = [makeSignedOp(user.address, SEL_A), makeSignedOp(user.address, SEL_B)]
+		const tx = await gateway.connect(relayer).relayInstantBatch(
+			ops,
+			["0x", "0x"],
+			[[], []],
+			[[], []],
+			ops.map(() => 0n),
+		)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.03"))
+		expect(await core.operationalFeeChargeCount(user.address)).to.equal(1) // still one consolidated charge
+		expect(await instant.lastOperationCount()).to.equal(2)
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.01"))
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("0.02"))
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("0.03"))
+	})
+
+	it("multi-account batch charges each signer for its own ops", async () => {
+		const SEL_A = "0xaaaaaaaa"
+		const SEL_B = "0xbbbbbbbb"
+		await gateway.connect(admin).setSelectorFeeConfig(SEL_A, true, u("0.01"))
+		await gateway.connect(admin).setSelectorFeeConfig(SEL_B, true, u("0.02"))
+		const solver = ethers.Wallet.createRandom().address
+		const ops = [makeSignedOp(user.address, SEL_A), makeSignedOp(solver, SEL_B)] // user op + solver op
+		await gateway.connect(relayer).relayInstantBatch(
+			ops,
+			["0x", "0x"],
+			[[], []],
+			[[], []],
+			ops.map(() => 0n),
+		)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.01"))
+		expect(await core.operationalFeesCharged(solver)).to.equal(u("0.02"))
+		expect(await instant.lastOperationCount()).to.equal(2)
+	})
+
+	it("multi-account batch: each account gets its own daily free quota", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const solver = ethers.Wallet.createRandom().address
+		// user has 2 ops (1 free + 1 paid); solver has 1 op (free)
+		const ops = [makeSignedOp(user.address), makeSignedOp(user.address), makeSignedOp(solver)]
+		await gateway.connect(relayer).relayInstantBatch(
+			ops,
+			["0x", "0x", "0x"],
+			[[], [], []],
+			[[], [], []],
+			ops.map(() => 0n),
+		)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1")) // 1 of user's 2 ops paid
+		expect(await core.operationalFeesCharged(solver)).to.equal(0) // solver's single op free
+	})
+
+	it("emits InstantBatchRelayed with the op count and total fee", async () => {
+		const solver = ethers.Wallet.createRandom().address
+		const ops = [makeSignedOp(user.address), makeSignedOp(user.address), makeSignedOp(solver)]
+		const tx = await gateway.connect(relayer).relayInstantBatch(
+			ops,
+			["0x", "0x", "0x"],
+			[[], [], []],
+			[[], [], []],
+			ops.map(() => 0n),
+		)
+		// no fees configured → totalFee 0 across 3 ops; payers are read from the per-op routing events
+		await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 3, 0)
+	})
+
+	// ──────────────── Type 1: account-aware fee routing ────────────────
+
+	describe("account-aware fee routing", () => {
+		it("routes a virtual-account signer fee to its parent SubAccount", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, u("1"))
+		})
+
+		it("collapses sibling virtual accounts under one payer and shared quota", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const longVA = ethers.Wallet.createRandom().address
+			const shortVA = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(longVA, subAccount)
+			await accountLayer.setVirtualAccount(shortVA, subAccount)
+
+			const ops = [makeSignedOp(longVA), makeSignedOp(shortVA)]
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeeChargeCount(subAccount)).to.equal(1)
+			expect(await core.totalOperationalFeeChargeCount()).to.equal(1)
+			expect(await core.operationalFeesCharged(longVA)).to.equal(0)
+			expect(await core.operationalFeesCharged(shortVA)).to.equal(0)
+			expect(await gateway.dailyFreeOpsRemaining(subAccount)).to.equal(0)
+			expect(await gateway.dailyFreeOpsRemaining(longVA)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(longVA, subAccount, 0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(shortVA, subAccount, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("1"))
+		})
+
+		it("shared parent quota blocks sibling virtual-account ops in block mode", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+			const subAccount = ethers.Wallet.createRandom().address
+			const longVA = ethers.Wallet.createRandom().address
+			const shortVA = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(longVA, subAccount)
+			await accountLayer.setVirtualAccount(shortVA, subAccount)
+
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(longVA), makeSignedOp(shortVA)])))
+				.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+				.withArgs(subAccount, 1)
+		})
+
+		it("uses the parent core multiplier and ignores a virtual account multiplier", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("0.5"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("keeps non-virtual signers billed as-is in mixed batches", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			const solver = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount), makeSignedOp(solver)]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(solver)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(solver, solver, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("2"))
+		})
+
+		it("get helpers resolve virtual accounts to the parent payer", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
+
+			expect(await gateway.dailyFreeOpsRemaining(virtualAccount)).to.equal(await gateway.dailyFreeOpsRemaining(subAccount))
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const actual = await previewBatch(
+				ops,
+				ops.map(() => 0n),
+			)
+			expect(actual.totalFee18).to.equal(u("0.5"))
+			expect(actual.freeOpsApplied).to.equal(1)
+			expect(actual.payments.map((p: any) => [p.account, p.payer])).to.deep.equal([
+				[virtualAccount, subAccount],
+				[virtualAccount, subAccount],
+			])
+		})
+	})
+
+	// ──────────────── Type 1: signer-VA fallback billing ────────────────
+
+	describe("signer-VA fallback billing", () => {
+		it("charges the signer VA when the parent cannot cover the fee and the VA has allowance and balance", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			// parent has no free or allocated balance; the VA holds margin that can fund the fee
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 1, u("1"))
+		})
+
+		it("splits a batch greedily: parent pays while its balance lasts, overflow ops fall to the VA", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("1"), 0) // covers exactly one op
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("2"))
+		})
+
+		it("counts the parent's allocated margin toward its capacity", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, 0, u("1")) // free 0, allocated covers the fee
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("reverts the relay when the VA has balance but no allowance (fee stays on the empty parent)", async () => {
+			await core.setEnforceOperationalFeeAllowance(true)
+			await core.setEnforceBalances(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setOperationalFeeAllowanceDirect(subAccount, gatewayAddr, u("100"))
+			// parent has allowance but no balance; VA has balance but no allowance → no fallback,
+			// so the charge targets the empty parent and the whole relay reverts, as on the real core.
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))).to.be.revertedWith(
+				"MockCore: insufficient balance",
+			)
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("reverts the relay when the VA balance cannot cover it (fee stays on the empty parent)", async () => {
+			await core.setEnforceBalances(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("0.5"), 0) // below the fee
+
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))).to.be.revertedWith(
+				"MockCore: insufficient balance",
+			)
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+		})
+
+		it("balance enforcement debits the VA's ledgers when it pays", async () => {
+			await core.setEnforceBalances(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("0.4"), u("10")) // free below the fee, margin covers the rest
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.freeBalances(virtualAccount)).to.equal(0) // free-first
+			expect(await core.allocatedBalances(virtualAccount)).to.equal(u("9.4")) // then allocated
+		})
+
+		it("exhausted parent allowance falls back to the VA even when the parent balance is fine", async () => {
+			await core.setEnforceOperationalFeeAllowance(true)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("100"), 0)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			await core.setOperationalFeeAllowanceDirect(subAccount, gatewayAddr, u("1")) // one op only
+			await core.setOperationalFeeAllowanceDirect(virtualAccount, gatewayAddr, u("100"))
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+		})
+
+		it("prices a VA-paid fee with the VA's own core multiplier", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
+
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("2"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+		})
+
+		it("consumes the parent's daily free quota even when the overflow op is VA-paid", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+
+			await expect(tx).to.emit(gateway, "DailyFreeOpsUsed").withArgs(subAccount, 1, 1, 1)
+			expect(await gateway.dailyFreeOpsRemaining(subAccount)).to.equal(0)
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+		})
+
+		it("bills the parent of a VA deleted during the batch (parentAccount survives on the record)", async () => {
+			await instant.setTargetExecution(true, await core.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("10"), 0)
+
+			// The op itself deletes its VA mid-batch (the account layer does this on a full close).
+			const deleteOp = {
+				...makeSignedOp(virtualAccount),
+				target: await accountLayer.getAddress(),
+				callData: accountLayer.interface.encodeFunctionData("clearVirtualAccount", [virtualAccount]),
+			}
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([deleteOp]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+		})
+
+		it("charges the parent with funds the batch itself returned (empty parent before removeMargin)", async () => {
+			await instant.setTargetExecution(true, await core.getAddress())
+			await core.setInstantLayer(await instant.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			// parent is empty before the batch; the op itself moves margin back to the parent
+			const removeMarginOp = {
+				...makeSignedOp(virtualAccount),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("setCoreBalances", [subAccount, u("10"), 0]),
+			}
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([removeMarginOp]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+		})
+
+		it("bills the parent of a VA that is only created during the batch", async () => {
+			await instant.setTargetExecution(true, await core.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await core.setCoreBalances(subAccount, u("10"), 0)
+			// The VA does not exist when the batch is submitted; the op itself registers it
+			// (the account layer creates or reuses VAs lazily while opening positions).
+			const createOp = {
+				...makeSignedOp(virtualAccount),
+				target: await accountLayer.getAddress(),
+				callData: accountLayer.interface.encodeFunctionData("setVirtualAccount", [virtualAccount, subAccount]),
+			}
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs([createOp]))
+
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, subAccount, u("1"))
+		})
+
+		it("previewFeeQuote quote matches the charge when the fallback engages", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(subAccount, u("1"), 0)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
+
+			const ops = [makeSignedOp(virtualAccount), makeSignedOp(virtualAccount)]
+			const quote = await previewBatch(
+				ops,
+				ops.map(() => 0n),
+			)
+			expect(quote.totalFee18).to.equal(u("3")) // 1 on the parent + 2 on the VA (2x multiplier)
+
+			const tx = await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+			await expect(tx).to.emit(gateway, "InstantBatchRelayed").withArgs(relayer.address, 2, u("3"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("2"))
+		})
+
+		it("a deleted VA signer does not resolve to the parent's wallet for wallet-operation authorization", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(0)
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setAccountOwner(subAccount, user.address)
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await accountLayer.clearVirtualAccount(virtualAccount)
+
+			// Billing may roll a deleted VA up to its parent, but authorization must not: an op signed
+			// as the dead VA targeting the parent owner's GaslessWallet is a plain instant op, not a
+			// wallet operation.
+			const op = {
+				...makeSignedOp(virtualAccount),
+				target: await gateway.getGaslessWalletAddress(user.address, 0n),
+			}
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs([op]))
+
+			expect(await instant.lastOperationCount()).to.equal(1) // routed through the instant layer, not wallet execution
+		})
+
+		it("relayed grant operation falls back to the VA delegator when the parent cannot pay", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const subAccount = ethers.Wallet.createRandom().address
+			const virtualAccount = ethers.Wallet.createRandom().address
+			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
+			await core.setCoreBalances(virtualAccount, u("10"), 0)
+			const grantOp = await makeGrantOp(virtualAccount, stranger.address)
+			await instant.setTargetExecution(true, await core.getAddress())
+
+			const tx = await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
+
+			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(0)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(virtualAccount, virtualAccount, u("1"))
+		})
+	})
+
+	// ──────────────── Type 1: daily free quota & fee policies ────────────────
+
+	it("policy — N free then block (pre-0.8.6): free up to the limit, then reverts", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(2)
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+		const op = makeSignedOp(user.address)
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+			gateway,
+			"DailyFreeOpsLimitExceeded",
+		)
+	})
+
+	it("policy — block mode reverts a batch that would exceed the remaining quota", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(2)
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+		const ops = [makeSignedOp(user.address), makeSignedOp(user.address), makeSignedOp(user.address)] // 3 > 2
+		await expect(
+			gateway.connect(relayer).relayInstantBatch(
+				ops,
+				["0x", "0x", "0x"],
+				[[], [], []],
+				[[], [], []],
+				ops.map(() => 0n),
+			),
+		).to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+	})
+
+	it("policy — N free then $1/op: first op free, then charges the base fee", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1")) // base fee $1
+		const op = makeSignedOp(user.address)
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n]) // free #1
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+		const tx = await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n]) // pay $1
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("1"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1"))
+	})
+
+	it("policy — $1/op with no free tier (limit 0): charges every time", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("1")) // dailyFreeOpsLimit stays 0
+		const op = makeSignedOp(user.address)
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("2"))
+	})
+
+	it("free quota — a partially-free batch charges only the ops beyond the quota", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(2)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const ops = [makeSignedOp(user.address), makeSignedOp(user.address), makeSignedOp(user.address)] // 2 free + 1 paid
+		await gateway.connect(relayer).relayInstantBatch(
+			ops,
+			["0x", "0x", "0x"],
+			[[], [], []],
+			[[], [], []],
+			ops.map(() => 0n),
+		)
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1")) // only the 3rd op
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+	})
+
+	it("free quota — resets the next day", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+		const op = makeSignedOp(user.address)
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n]) // free #1
+		await expect(gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+			gateway,
+			"DailyFreeOpsLimitExceeded",
+		)
+		await ethers.provider.send("evm_increaseTime", [86400])
+		await ethers.provider.send("evm_mine", [])
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n]) // free again
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(0)
+	})
+
+	it("free quota — disabled (limit 0) with no base fee means unlimited free", async () => {
+		const op = makeSignedOp(user.address)
+		expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(ethers.MaxUint256)
+		for (let i = 0; i < 4; i++) {
+			await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		}
+		expect(await core.totalOperationalFeesCharged()).to.equal(0)
+	})
+
+	it("limit 0 + revertWhenFreeQuotaExhausted charges the base fee (does not block everything)", async () => {
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true) // dailyFreeOpsLimit stays 0
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const op = makeSignedOp(user.address)
+		const tx = await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+		await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(user.address, user.address, u("1"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1"))
+	})
+
+	it("previewFeeQuote reflects free quota, paid ops, and block mode", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const op = makeSignedOp(user.address)
+
+		let q = await previewBatch([op], [0n]) // first op is free-covered
+		expect(q.totalFee18).to.equal(0)
+		expect(q.freeOpsApplied).to.equal(1)
+
+		await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n]) // consume the free op
+		q = await previewBatch([op], [0n])
+		expect(q.totalFee18).to.equal(u("1"))
+		expect(q.freeOpsApplied).to.equal(0)
+
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true) // now over-quota would revert
+		await expect(previewBatch([op], [0n]))
+			.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+			.withArgs(user.address, 1)
+	})
+
+	it("previewFeeQuote exposes each account's share of a multi-account batch", async () => {
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		const solver = ethers.Wallet.createRandom().address
+		const ops = [makeSignedOp(user.address), makeSignedOp(solver), makeSignedOp(user.address)]
+		const quote = await previewBatch(ops, [0n, 0n, 0n])
+		expect(quote.totalFee18).to.equal(u("3"))
+		expect(quote.payments.map((p: any) => [p.account, p.payer, p.operationalFee18])).to.deep.equal([
+			[user.address, user.address, u("1")],
+			[solver, solver, u("1")],
+			[user.address, user.address, u("1")],
+		])
+		const userFee = quote.payments
+			.filter((p: any) => p.account === user.address)
+			.reduce((total: bigint, p: any) => total + p.operationalFee18 + p.walletCreationFee18, 0n)
+		expect(userFee).to.equal(u("2"))
+	})
+
+	it("previewFeeQuote prices wallet-only operations through inner call selectors", async () => {
+		await gateway.connect(admin).setSelectorFeeConfig(FEE_SELECTOR, true, u("2"))
+		const walletOp = await makeWalletQuoteOp()
+
+		const q = await previewBatch([walletOp], [0n])
+
+		expect(q.totalFee18).to.equal(u("2"))
+		expect(q.freeOpsApplied).to.equal(0)
+	})
+
+	it("previewFeeQuote blocks wallet-only operations when the normal free quota is exhausted in block mode", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+		await gateway.connect(relayer).relayInstantBatch([makeSignedOp(user.address)], ["0x"], [[]], [[]], [0n])
+		const walletOp = await makeWalletQuoteOp()
+
+		await expect(previewBatch([walletOp], [0n]))
+			.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+			.withArgs(user.address, 1)
+	})
+
+	it("previewFeeQuote applies quota and fees to mixed instant and wallet batches", async () => {
+		await gateway.connect(admin).setDailyFreeOpsLimit(1)
+		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+		await gateway.connect(admin).setSelectorFeeConfig(FEE_SELECTOR, true, u("2"))
+		const walletOp = await makeWalletQuoteOp()
+		const ops = [makeSignedOp(user.address), walletOp]
+
+		const q = await previewBatch(
+			ops,
+			ops.map(() => 0n),
+		)
+
+		expect(q.totalFee18).to.equal(u("2"))
+		expect(q.freeOpsApplied).to.equal(1)
+	})
+
+	// ───────────────────────── Access control & config ─────────────────────────
+
+	it("rejects the removed delegation relay selector in every fee wrapper", async () => {
+		const removedSelector = "0x3253e757"
+		await expect(gateway.previewFeeQuote(removedSelector, 0))
+			.to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			.withArgs(removedSelector)
+		await expect(gateway.connect(relayer).simulateFeeQuote(removedSelector))
+			.to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			.withArgs(removedSelector)
+		await expect(gateway.connect(relayer).executeWithFeeLimit(removedSelector, 0))
+			.to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			.withArgs(removedSelector)
+		expect(await core.totalOperationalFeesCharged()).to.equal(0n)
+	})
+
+	it("gates relayer-only entrypoints", async () => {
+		const op = makeSignedOp(user.address)
+		const sub = ethers.Wallet.createRandom().address
+		const topUpRequest = makeNativeTopUpRequest()
+		await expect(gateway.connect(stranger).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])).to.be.revert(ethers)
+		await expect(
+			gateway
+				.connect(stranger)
+				.relayNativeGasTopUp(topUpRequest, UNCAPPED, await signNativeTopUp(user, topUpRequest), { value: topUpRequest.minNativeAmountOut }),
+		).to.be.revert(ethers)
+		await expect(gateway.connect(stranger).settleDepositToNewAccount(user.address, 0n, affiliate.address, subAccountData("x"))).to.be.revert(ethers)
+		await expect(gateway.connect(stranger).settleDepositToExistingAccount(user.address, 0n, sub)).to.be.revert(ethers)
+	})
+
+	it("recoverNonCollateralToken sweeps a wrong token but never collateral", async () => {
+		const Other = await ethers.getContractFactory("MockERC20")
+		const other = await Other.deploy("Wrapped X", "WX", 18)
+		const dep = await gateway.getGaslessWalletAddress(user.address, 0n)
+		await other.mint(dep, ethers.parseUnits("3", 18))
+
+		await gateway.connect(admin).recoverNonCollateralToken(user.address, 0n, await other.getAddress(), stranger.address)
+		expect(await other.balanceOf(stranger.address)).to.equal(ethers.parseUnits("3", 18))
+
+		await expect(
+			gateway.connect(admin).recoverNonCollateralToken(user.address, 0n, await collateral.getAddress(), stranger.address),
+		).to.be.revertedWithCustomError(gateway, "CollateralRecoveryDisabled")
+	})
+
+	it("setDepositFeeConfig enforces minimum > fee", async () => {
+		await expect(gateway.connect(admin).setDepositFeeConfig(u("5"), u("5"))).to.be.revertedWithCustomError(gateway, "MinimumDepositNotAboveFee")
+		await gateway.connect(admin).setDepositFeeConfig(u("1"), u("3"))
+		expect(await gateway.depositFee()).to.equal(u("1"))
+		expect(await gateway.minimumDeposit()).to.equal(u("3"))
+	})
+
+	it("setNativeGasTopUpConfig is config-admin only", async () => {
+		await expect(gateway.connect(stranger).setNativeGasTopUpConfig(1, true)).to.be.revert(ethers)
+		await gateway.connect(admin).setNativeGasTopUpConfig(1, true)
+		expect(await gateway.dailySponsoredNativeLimit()).to.equal(1)
+		expect(await gateway.revertWhenNativeSponsorLimitExhausted()).to.equal(true)
+
+		await expect(gateway.connect(stranger).setMaxNativeGasTopUpAmount(ethers.parseEther("0.02"))).to.be.revert(ethers)
+		await expect(gateway.connect(admin).setMaxNativeGasTopUpAmount(ethers.parseEther("0.02")))
+			.to.emit(gateway, "MaxNativeGasTopUpAmountUpdated")
+			.withArgs(ethers.parseEther("0.02"))
+		expect(await gateway.maxNativeGasTopUpAmount()).to.equal(ethers.parseEther("0.02"))
+
+		await expect(gateway.connect(stranger).setNativeGasTopUpFeeBps(3)).to.be.revert(ethers)
+		await gateway.connect(admin).setNativeGasTopUpFeeBps(3)
+		expect(await gateway.nativeGasTopUpFeeBps()).to.equal(3)
+	})
+
+	// ───────────────────── core-owned fee multiplier ─────────────────────
+
+	describe("core-owned fee multiplier", () => {
+		it("applies the perps-core allowance fee multiplier when charging and reading the current value", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
+			const op = makeSignedOp(user.address)
+
+			const q = await previewBatch([op], [0n])
+			expect(q.totalFee18).to.equal(u("0.5"))
+
+			await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
+		})
+
+		it("does not expose a gateway-local fee multiplier setter", async () => {
+			expect(gateway.setAccountFeeMultiplier).to.equal(undefined)
+		})
+
+		it("core multiplier is scoped to the gateway charger", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const solver = ethers.Wallet.createRandom().address
+			await core.setOperationalFeeMultiplier(solver, stranger.address, 2000)
+			const ops = [makeSignedOp(user.address), makeSignedOp(solver)]
+			await gateway.connect(relayer).relayInstantBatch(
+				ops,
+				["0x", "0x"],
+				[[], []],
+				[[], []],
+				ops.map(() => 0n),
+			)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("1"))
+			expect(await core.operationalFeesCharged(solver)).to.equal(u("1")) // multiplier for another charger is ignored
+		})
+
+		it("core multiplier of 0 resolves to the default 1x multiplier", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const solver = ethers.Wallet.createRandom().address
+			await core.setOperationalFeeMultiplier(solver, gatewayAddr, 0)
+			await gateway.connect(relayer).relayInstantBatch([makeSignedOp(solver)], ["0x"], [[]], [[]], [0n])
+			expect(await core.operationalFeesCharged(solver)).to.equal(u("1"))
+		})
+
+		it("core multiplier above 10000 surcharges", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const vip = ethers.Wallet.createRandom().address
+			await core.setOperationalFeeMultiplier(vip, gatewayAddr, 15000) // 150%
+			await gateway.connect(relayer).relayInstantBatch([makeSignedOp(vip)], ["0x"], [[]], [[]], [0n])
+			expect(await core.operationalFeesCharged(vip)).to.equal(u("1.5"))
+		})
+
+		it("previewFeeQuote reflects the core multiplier", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const solver = ethers.Wallet.createRandom().address
+			await core.setOperationalFeeMultiplier(solver, gatewayAddr, 5000) // 50%
+			const ops = [makeSignedOp(solver), makeSignedOp(solver)]
+			const q = await previewBatch(
+				ops,
+				ops.map(() => 0n),
+			)
+			expect(q.totalFee18).to.equal(u("1")) // 2 ops × 1 × 50%
+		})
+
+		it("does not expose fee helpers with quote or estimate naming", async () => {
+			expect(gateway.quoteBaseOperationalFee).to.equal(undefined)
+			expect(gateway.quoteGrossOperationalFee).to.equal(undefined)
+			expect(gateway.quoteAccountOperationalFee).to.equal(undefined)
+			expect(gateway.estimateBaseOperationalFee).to.equal(undefined)
+			expect(gateway.estimateGrossOperationalFee).to.equal(undefined)
+			expect(gateway.estimateAccountOperationalFee).to.equal(undefined)
+			expect(gateway.getGrossOperationalFee).to.equal(undefined)
+		})
+	})
+
+	// ───────────────────── Type 1b: instant-layer templates ─────────────────────
+
+	describe("Type 1b: instant-layer templates", () => {
+		it("relayInstantTemplate executes a first approval before charging its fee", async () => {
+			await core.setInstantLayer(await instant.getAddress())
+			await core.setEnforceOperationalFeeAllowance(true)
+			await instant.setTargetExecution(true, await core.getAddress())
+			await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+
+			const approvalOp = {
+				...makeSignedOp(user.address),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [u("10")]]),
+			}
+
+			const allowanceBefore = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+			expect(allowanceBefore.allowance).to.equal(0)
+
+			await gateway.connect(relayer).relayInstantTemplate(7, [approvalOp], ["0x"], [[]], [[]])
+
+			const allowanceAfter = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+			expect(allowanceAfter.allowance).to.equal(u("8"))
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("2"))
+		})
+
+		it("relayInstantTemplate forwards the templateId and charges each signer for its ops", async () => {
+			const SEL_SEND = "0xaaaaaaaa"
+			const SEL_LOCK = "0xbbbbbbbb"
+			const SEL_OPEN = "0xcccccccc"
+			await gateway.connect(admin).setSelectorFeeConfig(SEL_SEND, true, u("0.01"))
+			await gateway.connect(admin).setSelectorFeeConfig(SEL_LOCK, true, u("0.02"))
+			await gateway.connect(admin).setSelectorFeeConfig(SEL_OPEN, true, u("0.03"))
+			const solver = ethers.Wallet.createRandom().address
+			// sendLockOpen: user signs sendQuote; solver signs lockQuote + openPosition
+			const ops = [makeSignedOp(user.address, SEL_SEND), makeSignedOp(solver, SEL_LOCK), makeSignedOp(solver, SEL_OPEN)]
+			const tx = await gateway.connect(relayer).relayInstantTemplate(7, ops, ["0x", "0x", "0x"], [[], [], []], [[], [], []])
+			expect(await instant.lastTemplateId()).to.equal(7)
+			expect(await instant.lastOperationCount()).to.equal(3)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.01")) // sendQuote
+			expect(await core.operationalFeesCharged(solver)).to.equal(u("0.05")) // lock + open
+			await expect(tx).to.emit(gateway, "InstantTemplateRelayed").withArgs(relayer.address, 7, 3, u("0.06"))
+		})
+
+		it("relayInstantTemplate rolls back fees when execution fails (atomicity)", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("0.01"))
+			await instant.setForceExecutionFailure(true)
+			const op = makeSignedOp(user.address)
+			await expect(gateway.connect(relayer).relayInstantTemplate(0, [op], ["0x"], [[]], [[]])).to.be.revertedWithCustomError(
+				instant,
+				"ForcedExecutionFailure",
+			)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(0)
+		})
+
+		it("relayInstantTemplate is relayer-only", async () => {
+			const op = makeSignedOp(user.address)
+			await expect(gateway.connect(stranger).relayInstantTemplate(0, [op], ["0x"], [[]], [[]])).to.be.revert(ethers)
+		})
+	})
+
+	describe("common fee quotes and limits", () => {
+		const coreUnits = (n: string) => ethers.parseUnits(n, 18)
+		const encode = (name: string, args: any[]) => gateway.interface.encodeFunctionData(name, args)
+		async function quote(callData: string, mode: "preview" | "exact" = "exact", value = 0n, from?: string) {
+			const result = await quoteGaslessFee({ gateway, callData, mode, value, from: from ?? relayer.address })
+			if (result.status !== "quoted") throw new Error(`Quote reverted: ${result.errorName ?? result.data}`)
+			return result.quote
+		}
+
+		it("quotes the complete batch with one payment per operation, quota and VA fallback", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("1"))
+			await gateway.setDailyFreeOpsLimit(1)
+			await accountLayer.setVirtualAccount(stranger.address, user.address)
+			await core.setCoreBalances(stranger.address, coreUnits("20"), 0)
+			await core.setOperationalFeeMultiplier(stranger.address, gatewayAddr, 20000)
+			const args = batchArgs([makeSignedOp(stranger.address), makeSignedOp(stranger.address)])
+			const data = encode("relayInstantBatch", [...args])
+			const preview = await quote(data, "preview")
+			const exact = await quote(data)
+			expect(preview.exact).to.equal(false)
+			expect(exact.exact).to.equal(true)
+			expect(exact.collateralDecimals).to.equal(6)
+			expect(exact.totalFee18).to.equal(coreUnits("2"))
+			expect(exact.totalDebit18).to.equal(exact.totalFee18)
+			expect(exact.freeOpsApplied).to.equal(1n)
+			expect(exact.payments.map(p => p.payer)).to.deep.equal([user.address, stranger.address])
+			expect(exact.payments.map(p => p.operationalFee18)).to.deep.equal([0n, coreUnits("2")])
+			expect(preview.totalFee18).to.equal(exact.totalFee18)
+			expect((await gateway.dailyFreeOpsUsage(user.address)).count).to.equal(0n)
+			expect(await core.operationalFeesCharged(stranger.address)).to.equal(0n)
+			await gateway.connect(relayer).relayInstantBatch(...args)
+			expect(await core.operationalFeesCharged(stranger.address)).to.equal(exact.totalFee18)
+		})
+
+		it("previews the new approval multiplier and matches exact template execution", async () => {
+			await core.setInstantLayer(await instant.getAddress())
+			await gateway.setDefaultSelectorFee(coreUnits("1"))
+			await instant.setTargetExecution(true, await core.getAddress())
+			const op = {
+				...makeSignedOp(user.address),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [coreUnits("20")], [30000]]),
+			}
+			const args = [7n, [op], ["0x"], [[]], [[]]]
+			const data = encode("relayInstantTemplate", args)
+			expect((await quote(data, "preview")).totalFee18).to.equal(coreUnits("3"))
+			const exact = await quote(data)
+			expect(exact.totalFee18).to.equal(coreUnits("3"))
+			expect(await instant.lastTemplateId()).to.equal(0n)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+			await gateway.connect(relayer).relayInstantTemplate(...args)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee18)
+		})
+
+		for (const scenario of [
+			{ name: "plain approval retains the existing multiplier", kind: "plain", expected: "3" },
+			{ name: "zero multiplier resets to the default", kind: "reset", expected: "2" },
+			{ name: "another charger's approval leaves this fee unchanged", kind: "other", expected: "3" },
+			{ name: "the last matching approval sets the multiplier", kind: "duplicate", expected: "4" },
+		]) {
+			it(`approval-only preview matches simulation and charge: ${scenario.name}`, async () => {
+				await core.setInstantLayer(await instant.getAddress())
+				await instant.setTargetExecution(true, await core.getAddress())
+				await core.setEnforceOperationalFeeAllowance(true)
+				await core.setOperationalFeeAllowanceDirect(user.address, gatewayAddr, coreUnits("100"))
+				await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 15000)
+				await gateway.setDefaultSelectorFee(coreUnits("2"))
+				const callData =
+					scenario.kind === "plain"
+						? core.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [coreUnits("20")]])
+						: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [
+								scenario.kind === "duplicate" ? [gatewayAddr, gatewayAddr] : [scenario.kind === "other" ? stranger.address : gatewayAddr],
+								scenario.kind === "duplicate" ? [coreUnits("20"), coreUnits("20")] : [coreUnits("20")],
+								scenario.kind === "duplicate" ? [5000, 20000] : [scenario.kind === "reset" ? 0 : 5000],
+							])
+				const op = { ...makeSignedOp(user.address), target: await core.getAddress(), callData }
+				const args = batchArgs([op])
+				const data = encode("relayInstantBatch", [...args])
+				const preview = await quote(data, "preview")
+				const exact = await quote(data)
+				expect(preview.totalFee18).to.equal(coreUnits(scenario.expected))
+				expect(preview.payments).to.deep.equal(exact.payments)
+				expect(preview.payments[0].payer).to.equal(user.address)
+				expect(preview.payments[0].source).to.equal(0)
+				expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+				await gateway.connect(relayer).relayInstantBatch(...args)
+				expect(await core.operationalFeesCharged(user.address)).to.equal(preview.totalFee18)
+			})
+		}
+
+		it("approval preview keeps quota coverage and rejects malformed multiplier arrays", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("2"))
+			await gateway.setDailyFreeOpsLimit(1)
+			const op = {
+				...makeSignedOp(user.address),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [coreUnits("20")], [30000]]),
+			}
+			const preview = await previewBatch([op], [0n])
+			expect(preview.totalFee18).to.equal(0n)
+			expect(preview.freeOpsApplied).to.equal(1n)
+			expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(1n)
+			op.callData = core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [], [30000]])
+			await expect(previewBatch([op], [0n])).to.be.revertedWithCustomError(gateway, "ArrayLengthMismatch")
+		})
+
+		it("mixed and flexible approval previews keep current-state pricing", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("2"))
+			const op = {
+				...makeSignedOp(user.address),
+				target: await core.getAddress(),
+				callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [coreUnits("20")], [5000]]),
+			}
+			expect((await previewBatch([op], [0n])).totalFee18).to.equal(coreUnits("1"))
+			expect((await previewBatch([op, makeSignedOp(user.address)], [0n, 0n])).totalFee18).to.equal(coreUnits("4"))
+			const flexible = { ...op, flexFields: [{ offset: 0, length: 4, authorizedFlexFiller: relayer.address }] }
+			expect((await previewBatch([flexible], [0n])).totalFee18).to.equal(coreUnits("2"))
+		})
+
+		it("quotes a relayed grant as one operation and preserves quota until submitted", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("1"))
+			await gateway.setDailyFreeOpsLimit(1)
+			const delegation = await makeGrantOp(user.address, stranger.address, [FEE_SELECTOR, OTHER_SELECTOR])
+			await instant.setTargetExecution(true, await core.getAddress())
+			const data = encode("relayInstantBatch", [[delegation], ["0x"], [[]], [[]], [0n]])
+			for (const mode of ["preview", "exact"] as const) {
+				const q = await quote(data, mode)
+				expect(q.totalFee18).to.equal(0n)
+				expect(q.freeOpsApplied).to.equal(1n)
+				expect(q.payments).to.have.length(1)
+			}
+			expect(await instant.lastDelegationAccount()).to.equal(ethers.ZeroAddress)
+			await gateway.connect(relayer).relayInstantBatch([delegation], ["0x"], [[]], [[]], [0n])
+			expect((await quote(data)).totalFee18).to.equal(coreUnits("1"))
+		})
+
+		it("previews deposit fees before funds arrive and reports why the exact settlement cannot execute", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			await accountLayer.setAccountOwner(stranger.address, user.address)
+			const callData = encode("settleDepositToExistingAccount", [user.address, 19n, stranger.address])
+			expect((await quote(callData, "preview")).totalFee18).to.equal(coreUnits("5"))
+			const exact = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
+			expect(exact).to.include({ status: "reverted", errorName: "DepositAmountBelowMinimum" })
+		})
+
+		for (const newAccount of [false, true]) {
+			it(`quotes ${newAccount ? "new" : "existing"} account settlement with raw-token fees normalized to 18 decimals`, async () => {
+				await gateway.setWalletCreationFee(u("3"))
+				const wallet = await gateway.getGaslessWalletAddress(user.address, 42n)
+				await collateral.mint(wallet, u("20"))
+				await accountLayer.setAccountOwner(stranger.address, user.address)
+				const data = newAccount
+					? encode("settleDepositToNewAccount", [user.address, 42n, affiliate.address, subAccountData("quoted")])
+					: encode("settleDepositToExistingAccount", [user.address, 42n, stranger.address])
+				const exact = await quote(data)
+				expect(exact.totalFee18).to.equal(coreUnits("5"))
+				expect(exact.payments[0]).to.include({
+					account: wallet,
+					payer: wallet,
+					source: 1,
+					depositFee18: coreUnits("2"),
+					walletCreationFee18: coreUnits("3"),
+				})
+				expect((await quote(data, "preview")).totalFee18).to.equal(exact.totalFee18)
+				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+				expect(await collateral.balanceOf(wallet)).to.equal(u("20"))
+				expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+				await expect(gateway.connect(relayer).executeWithFeeLimit(data, coreUnits("5") - 1n)).to.be.revertedWithCustomError(
+					gateway,
+					"FeeLimitExceeded",
+				)
+				expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+				await gateway.connect(relayer).executeWithFeeLimit(data, exact.totalDebit18)
+				expect(await collateral.balanceOf(treasury.address)).to.equal(u("5"))
+				await collateral.mint(wallet, u("10"))
+				expect((await quote(data)).totalFee18).to.equal(coreUnits("2"))
+				await gateway.connect(relayer).executeWithFeeLimit(data, coreUnits("2"))
+			})
+		}
+
+		it("quotes admin recovery as fee-free and retains the admin role check", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 3n)
+			const ERC20 = await ethers.getContractFactory("contracts/gaslessLayer/mocks/MockERC20.sol:MockERC20")
+			const other = await ERC20.deploy("Other", "OTHER", 18)
+			await collateral.mint(wallet, u("3"))
+			await other.mint(wallet, coreUnits("10"))
+			const data = encode("recoverNonCollateralToken", [user.address, 3n, await other.getAddress(), user.address])
+			const preview = await quote(data, "preview")
+			expect(preview.totalFee18).to.equal(0n)
+			expect(preview.totalDebit18).to.equal(0n)
+			expect(preview.payments).to.deep.equal([])
+			const exact = await quote(data, "exact", 0n, admin.address)
+			expect(exact.totalFee18).to.equal(0n)
+			expect(exact.totalDebit18).to.equal(0n)
+			expect(exact.payments).to.deep.equal([])
+			const denied = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: relayer.address })
+			expect(denied.status).to.equal("reverted")
+			expect(await other.balanceOf(user.address)).to.equal(0n)
+			await gateway.executeWithFeeLimit(data, 0n)
+			expect(await collateral.balanceOf(treasury.address)).to.equal(0n)
+			expect(await collateral.balanceOf(wallet)).to.equal(u("3"))
+			expect(await other.balanceOf(user.address)).to.equal(coreUnits("10"))
+		})
+
+		it("separates native gas collateral from the top-up fee and accounts for sponsorship", async () => {
+			await gateway.setNativeGasTopUpFeeBps(125)
+			const request = makeNativeTopUpRequest({ collateralAmount: coreUnits("8") })
+			const signature = await signCappedNativeGasTopUp(user, gateway, request, coreUnits("8.1"))
+			const data = encode("relayNativeGasTopUp", [request, coreUnits("8.1"), signature])
+			const exact = await quote(data, "exact", request.minNativeAmountOut)
+			expect(exact.totalFee18).to.equal(coreUnits("0.1"))
+			expect(exact.totalDebit18).to.equal(coreUnits("8.1"))
+			expect(exact.payments[0].nativeGasCollateral18).to.equal(coreUnits("8"))
+			expect((await quote(data, "preview", request.minNativeAmountOut)).totalDebit18).to.equal(exact.totalDebit18)
+			expect(await gateway.topUpNonces(user.address)).to.equal(0n)
+			await gateway.setNativeGasTopUpConfig(request.minNativeAmountOut, false)
+			const sponsored = await quote(data, "exact", request.minNativeAmountOut)
+			expect(sponsored.nativeSponsored).to.equal(true)
+			expect(sponsored.totalDebit18).to.equal(0n)
+			expect((await quote(data, "preview", request.minNativeAmountOut)).nativeSponsored).to.equal(true)
+			expect((await gateway.dailyNativeSponsorUsage(user.address)).amount).to.equal(0n)
+			await gateway.connect(relayer).relayNativeGasTopUp(request, coreUnits("8.1"), signature, { value: request.minNativeAmountOut })
+			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+		})
+
+		it("returns original failure data and never commits an accidentally submitted simulation", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("1"))
+			const data = encode("relayInstantBatch", [...batchArgs([makeSignedOp(user.address)])])
+			await expect(gateway.connect(relayer).simulateFeeQuote(data)).to.be.revertedWithCustomError(gateway, "FeeQuoteResult")
+			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+			await instant.setForceExecutionFailure(true)
+			const failure = await quoteGaslessFee({ gateway, callData: data, mode: "exact", from: relayer.address })
+			expect(failure.status).to.equal("reverted")
+			if (failure.status === "reverted") expect(instant.interface.parseError(failure.data)?.name).to.equal("ForcedExecutionFailure")
+			const configCall = encode("setDefaultSelectorFee", [0n])
+			await expect(gateway.simulateFeeQuote(configCall)).to.be.revertedWithCustomError(gateway, "UnsupportedFeeQuoteCall")
+			await expect(gateway.executeWithFeeLimit(encode("simulateFeeQuote", [data]), 0)).to.be.revertedWithCustomError(
+				gateway,
+				"UnsupportedFeeQuoteCall",
+			)
+		})
+
+		it("deduplicates deployment charges and enforces the signed wallet limit without using the free quota", async () => {
+			await gateway.setWalletCreationFee(u("3"))
+			await gateway.setDailyFreeOpsLimit(2)
+			await gateway.setDefaultSelectorFee(coreUnits("1"))
+			const wallet = await gateway.getGaslessWalletAddress(user.address, 0n)
+			const iface = (await ethers.getContractAt("GaslessWallet", wallet)).interface
+			const op = {
+				...makeSignedOp(user.address),
+				target: wallet,
+				callData: walletExecuteData(iface, []),
+				replayAttackHeader: { nonce: 1n, deadline: 9999999999n, salt: gaslessFeeLimitSalt(coreUnits("3")) },
+			}
+			const second = { ...op, replayAttackHeader: { ...op.replayAttackHeader, nonce: 2n, salt: gaslessFeeLimitSalt(0n) } }
+			const args = [
+				[op, second],
+				[await signWalletOperation(user, op), await signWalletOperation(user, second)],
+				[[], []],
+				[[], []],
+				[0n, 0n],
+			]
+			const data = encode("relayInstantBatch", args)
+			const exact = await quote(data)
+			expect(exact.totalFee18).to.equal(coreUnits("3"))
+			expect(exact.payments.map(p => p.walletCreationFee18)).to.deep.equal([coreUnits("3"), 0n])
+			// Empty wallet executions have no selector fee, so they leave the daily quota untouched.
+			expect(exact.freeOpsApplied).to.equal(0n)
+			expect((await quote(data, "preview")).totalFee18).to.equal(exact.totalFee18)
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			expect(await gateway.walletOperationNonces(user.address, 0n, user.address)).to.equal(0n)
+			await gateway.setWalletCreationFee(u("4"))
+			await expect(gateway.connect(relayer).relayInstantBatch(...args))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("4"), coreUnits("3"))
+			expect(await ethers.provider.getCode(wallet)).to.equal("0x")
+			const altered = { ...op, replayAttackHeader: { ...op.replayAttackHeader, salt: ZERO_HASH } }
+			await expect(gateway.connect(relayer).relayInstantBatch([altered], [args[1][0]], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+				gateway,
+				"InvalidWalletOperationSignature",
+			)
+			await gateway.setWalletCreationFee(u("3"))
+			await gateway.connect(relayer).relayInstantBatch(...args)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(exact.totalFee18)
+			expect(await gateway.dailyFreeOpsRemaining(user.address)).to.equal(2n)
+		})
+
+		it("enforces per-operation limits on batches, templates and grant operations", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("2"))
+			const op = makeSignedOp(user.address)
+			op.replayAttackHeader.salt = gaslessFeeLimitSalt(coreUnits("1"))
+			const delegation = await makeGrantOp(user.address, stranger.address)
+			delegation.replayAttackHeader.salt = gaslessFeeLimitSalt(coreUnits("1"))
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([op]))).to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+			await expect(gateway.connect(relayer).relayInstantTemplate(7, [op], ["0x"], [[]], [[]])).to.be.revertedWithCustomError(
+				gateway,
+				"FeeLimitExceeded",
+			)
+			await instant.setTargetExecution(true, await core.getAddress())
+			await expect(gateway.connect(relayer).relayInstantBatch([delegation], ["0x"], [[]], [[]], [0n])).to.be.revertedWithCustomError(
+				gateway,
+				"FeeLimitExceeded",
+			)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+			expect(await instant.lastOperationCount()).to.equal(0n)
+		})
+
+		it("checks the signed limit against the fallback payer's multiplier and the caller limit against the whole batch", async () => {
+			await gateway.setDefaultSelectorFee(coreUnits("1"))
+			await accountLayer.setVirtualAccount(stranger.address, user.address)
+			await core.setCoreBalances(stranger.address, coreUnits("10"), 0)
+			await core.setOperationalFeeMultiplier(stranger.address, gatewayAddr, 30000)
+			const op = makeSignedOp(stranger.address)
+			op.replayAttackHeader.salt = gaslessFeeLimitSalt(coreUnits("2"))
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs([op])))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("3"), coreUnits("2"))
+			op.replayAttackHeader.salt = gaslessFeeLimitSalt(coreUnits("3"))
+			const callData = encode("relayInstantBatch", [...batchArgs([op, op])])
+			await expect(gateway.connect(relayer).executeWithFeeLimit(callData, coreUnits("5")))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("6"), coreUnits("5"))
+			expect(await core.operationalFeesCharged(stranger.address)).to.equal(0n)
+			await gateway.connect(relayer).executeWithFeeLimit(callData, coreUnits("6"))
+			expect(await core.operationalFeesCharged(stranger.address)).to.equal(coreUnits("6"))
+		})
+
+		it("keeps a zero-cost signed top-up from becoming paid after sponsorship is exhausted", async () => {
+			const first = makeNativeTopUpRequest()
+			const second = makeNativeTopUpRequest({ nonce: 1n })
+			await gateway.setNativeGasTopUpConfig(first.minNativeAmountOut, false)
+			const signature = await signCappedNativeGasTopUp(user, gateway, second, 0n)
+			await gateway.connect(relayer).relayNativeGasTopUp(first, UNCAPPED, await signNativeTopUp(user, first), { value: first.minNativeAmountOut })
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(second, 0n, signature, { value: second.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+			expect(await gateway.topUpNonces(user.address)).to.equal(1n)
+		})
+
+		it("rejects changed or stripped native fee limits and rolls back after a fee increase", async () => {
+			await gateway.setNativeGasTopUpFeeBps(100)
+			const request = makeNativeTopUpRequest({ collateralAmount: coreUnits("10") })
+			const max = coreUnits("10.1")
+			const signature = await signCappedNativeGasTopUp(user, gateway, request, max)
+			// Relaying a capped signature as uncapped, or with a different cap, verifies against a different digest.
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, UNCAPPED, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+			await expect(
+				gateway.connect(relayer).relayNativeGasTopUp(request, max + 1n, signature, { value: request.minNativeAmountOut }),
+			).to.be.revertedWithCustomError(gateway, "InvalidNativeGasTopUpSignature")
+			await gateway.setNativeGasTopUpFeeBps(200)
+			await expect(gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut }))
+				.to.be.revertedWithCustomError(gateway, "FeeLimitExceeded")
+				.withArgs(coreUnits("10.2"), max)
+			expect(await gateway.topUpNonces(user.address)).to.equal(0n)
+			expect(await core.operationalFeesCharged(user.address)).to.equal(0n)
+			await gateway.setNativeGasTopUpFeeBps(100)
+			await gateway.connect(relayer).relayNativeGasTopUp(request, max, signature, { value: request.minNativeAmountOut })
+			expect(await core.operationalFeesCharged(user.address)).to.equal(max)
+		})
+	})
+
+	describe("fee quote/charge parity", () => {
+		// previewFeeQuote is the quote the relayer/frontend prices from; relayInstantBatch is the
+		// actual charge. The quota clamp is single-sourced (_usedFreeOpsToday / _remainingFreeOps); these
+		// assertions lock the two paths together across the quota boundaries so they cannot silently drift.
+		const parityOps = (count: number) =>
+			Array.from({ length: count }, (_unused, i) => ({
+				...makeSignedOp(user.address),
+				replayAttackHeader: { nonce: BigInt(i), deadline: 0n, salt: ethers.id(`parity-${i}`) },
+			}))
+
+		it("quote equals the charge when a batch straddles the free quota", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(2)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const ops = parityOps(3)
+
+			const { totalFee18: amountDue, freeOpsApplied } = await previewBatch(
+				ops,
+				ops.map(() => 0n),
+			)
+			expect(freeOpsApplied).to.equal(2n)
+			expect(amountDue).to.equal(u("1")) // 2 free, 1 charged
+
+			const before = await core.operationalFeesCharged(user.address)
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+			expect((await core.operationalFeesCharged(user.address)) - before).to.equal(amountDue)
+		})
+
+		it("quote equals the charge with the quota disabled", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			const ops = parityOps(2)
+
+			const { totalFee18: amountDue, freeOpsApplied } = await previewBatch(
+				ops,
+				ops.map(() => 0n),
+			)
+			expect(freeOpsApplied).to.equal(0n)
+			expect(amountDue).to.equal(u("2"))
+
+			const before = await core.operationalFeesCharged(user.address)
+			await gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))
+			expect((await core.operationalFeesCharged(user.address)) - before).to.equal(amountDue)
+		})
+
+		it("preview and execution both reject an exhausted quota in block mode", async () => {
+			await gateway.connect(admin).setDailyFreeOpsLimit(1)
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			await gateway.connect(admin).setRevertWhenFreeQuotaExhausted(true)
+			const ops = parityOps(2)
+
+			await expect(
+				previewBatch(
+					ops,
+					ops.map(() => 0n),
+				),
+			)
+				.to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+				.withArgs(user.address, 1)
+
+			await expect(gateway.connect(relayer).relayInstantBatch(...batchArgs(ops))).to.be.revertedWithCustomError(gateway, "DailyFreeOpsLimitExceeded")
+		})
+	})
+})

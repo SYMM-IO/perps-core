@@ -1,43 +1,41 @@
-import {task, types} from "hardhat/config"
-import {readData, writeData} from "../utils/fs"
-import {DEPLOYMENT_LOG_FILE} from "./constants"
-import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers"
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
+import { task } from "hardhat/config"
+import { ArgumentType } from "hardhat/types/arguments"
 
-task("deploy:multicall", "Deploys the Multicall")
-	.addOptionalParam("logData", "Write the deployed addresses to a data file", true, types.boolean)
-	.setAction(async ({logData}, {ethers, run}) => {
-		console.log("Running deploy:multicall")
+import { upsertDeploymentRecords } from "../utils/fs.js"
+import { DEPLOYMENT_LOG_FILE } from "./constants.js"
+import { assertStandaloneDeploymentTaskAllowed, getConnection } from "./helpers.js"
+import { logger } from "./logger.js"
+import { confirmDeployment } from "./tx.js"
 
-		const signers: SignerWithAddress[] = await ethers.getSigners()
-		const owner: SignerWithAddress = signers[0]
+export const multicallTask = task("deploy:multicall", "Deploys the Multicall")
+	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
+	.setAction(async () => ({
+		default: async ({ logData }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:multicall")
+			const { ethers } = await getConnection(hre)
+			logger.section("Multicall3 Deployment")
 
-		const Factory = await ethers.getContractFactory("Multicall3")
-		const multicall = await Factory.connect(owner).deploy()
-		await multicall.waitForDeployment()
+			const signers: HardhatEthersSigner[] = await ethers.getSigners()
+			const owner: HardhatEthersSigner = signers[0]
 
-		await multicall.deploymentTransaction()!.wait()
-		console.log("Multicall3 deployed:", await multicall.getAddress())
+			const Factory = await ethers.getContractFactory("Multicall3")
+			const multicall = await Factory.connect(owner).deploy()
+			const address = await confirmDeployment(multicall, "Multicall3")
+			logger.deployed("Multicall3", address)
 
-		if (logData) {
-			// Read existing data
-			let deployedData = []
-			try {
-				deployedData = readData(DEPLOYMENT_LOG_FILE)
-			} catch (err) {
-				console.error(`Could not read existing JSON file: ${err}`)
+			if (logData) {
+				upsertDeploymentRecords(DEPLOYMENT_LOG_FILE, [
+					{
+						name: "Multicall3",
+						address,
+						constructorArguments: [],
+					},
+				])
+				logger.debug("Deployed addresses written to JSON file")
 			}
 
-			// Append new data
-			deployedData.push({
-				name: "Multicall3",
-				address: await multicall.getAddress(),
-				constructorArguments: [],
-			})
-
-			// Write updated data back to JSON file
-			writeData(DEPLOYMENT_LOG_FILE, deployedData)
-			console.log("Deployed addresses written to JSON file")
-		}
-
-		return multicall
-	})
+			return multicall
+		},
+	}))
+	.build()

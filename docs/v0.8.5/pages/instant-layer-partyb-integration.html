@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="For a high-level architectural overview, see the InstantLayer Overview." />
+		<title>InstantLayer PartyB Integration Guide - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-overview">Overview</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-what-partyb-needs-to-sign">What PartyB Needs to Sign</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-signedoperation-structure">SignedOperation Structure</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-eip-712-configuration">EIP-712 Configuration</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-domain">Domain</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-hyperevm-v085-deployment">HyperEVM v0.8.5 Deployment</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-types">Types</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-code-examples">Code Examples</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-complete-signing-example-ethersjs-v6"
+					>Complete Signing Example (ethers.js v6)</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-example-sign-a-lockquote-operation"
+					>Example: Sign a lockQuote Operation</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-example-sign-an-openposition-operation"
+					>Example: Sign an openPosition Operation</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-example-batch-multiple-operations"
+					>Example: Batch Multiple Operations</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-template-execution">Template Execution</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-self-execution-mode-no-signature-required"
+					>Self-Execution Mode (No Signature Required)</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-how-it-works">How It Works</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-example-partyb-self-execution"
+					>Example: PartyB Self-Execution</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-example-mixed-batch-user-signed-partyb-self-execution"
+					>Example: Mixed Batch (User Signed + PartyB Self-Execution)</a
+				>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-when-to-use-self-execution">When to Use Self-Execution</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-nonce-modes">Nonce Modes</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-salt-only-mode-nonce-0">Salt-Only Mode (nonce = 0)</a>
+				<a class="toc-link level-3" href="#doc-instant-layer-partyb-integration-sequential-mode-nonce-0">Sequential Mode (nonce &gt; 0)</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-partyb-contract-setup">PartyB Contract Setup</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-validation-rules">Validation Rules</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-error-reference">Error Reference</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-quick-reference">Quick Reference</a>
+				<a class="toc-link level-2" href="#doc-instant-layer-partyb-integration-related-documentation">Related Documentation</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>InstantLayer PartyB Integration Guide</h1>
+							<p class="hero-copy">This document explains how PartyB integrators can sign operations for the InstantLayer system.</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>For a high-level architectural overview, see the <a href="instant-layer-overview.html">InstantLayer Overview</a>.</p>
+					<h2 id="doc-instant-layer-partyb-integration-overview">Overview</h2>
+					<p>
+						InstantLayer allows PartyB to sign operations off-chain that can be executed by anyone on-chain. This enables batched
+						execution and delegated transaction submission.
+					</p>
+					<p>
+						<strong>New: Self-Execution Mode</strong> - When PartyB is the transaction sender (<code>msg.sender</code>), signature
+						verification is skipped for their own operations. This means PartyB can execute their operations directly without signing,
+						while still providing user signatures for user operations in the same batch.
+					</p>
+					<h2 id="doc-instant-layer-partyb-integration-what-partyb-needs-to-sign">What PartyB Needs to Sign</h2>
+					<p>PartyB signs a <code>SignedOperation</code> struct using EIP-712 typed data signing.</p>
+					<h3 id="doc-instant-layer-partyb-integration-signedoperation-structure">SignedOperation Structure</h3>
+					<pre><code class="language-typescript">interface SignedOperation {
+  signer: string;           // PartyB contract address
+  target: string;           // Symmio contract address
+  callData: string;         // Encoded function call (e.g., lockQuote, openPosition)
+  signerAccount: {
+    addr: string;           // PartyB contract address (must match signer)
+    isPartyB: boolean;      // Must be true for PartyB
+  };
+  flexFields: FlexField[];  // Modifiable calldata regions (empty for standard ops)
+  maxUses: number;           // Max execution count (1 for standard ops)
+  replayAttackHeader: {
+    nonce: bigint;          // Sequential nonce (0 for salt-only mode)
+    deadline: bigint;       // Unix timestamp expiry (0 for no deadline)
+    salt: string;           // Unique 32-byte hex string
+  };
+}
+
+interface FlexField {
+  offset: number;            // Byte offset after 4-byte selector
+  length: number;            // Number of bytes (typically 32)
+  authorizedFlexFiller: string; // Address authorized to fill this field
+}
+</code></pre>
+					<p>
+						For standard PartyB operations, <code>flexFields</code> is always <code>[]</code> and <code>maxUses</code> is <code>1</code>.
+						See the <a href="instant-layer-overview.html#doc-instant-layer-overview-flex-fields">InstantLayer Overview</a> for flex field
+						details.
+					</p>
+					<h2 id="doc-instant-layer-partyb-integration-eip-712-configuration">EIP-712 Configuration</h2>
+					<h3 id="doc-instant-layer-partyb-integration-domain">Domain</h3>
+					<pre><code class="language-typescript">const domain = {
+  name: "SymmioInstantLayer",
+  version: "1",
+  chainId: &lt;network_chain_id&gt;,
+  verifyingContract: &lt;instant_layer_address&gt;
+};
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-hyperevm-v085-deployment">HyperEVM v0.8.5 Deployment</h3>
+					<p>
+						For the current HyperEVM v0.8.5 deployment, use the Instant Layer address as the EIP-712 <code>verifyingContract</code> and
+						the Symmio address as the <code>target</code> for Symmio core calls:
+					</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Contract</th>
+								<th>Address</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Symmio</td>
+								<td><code>0x57331038c21982116EE9b0906E4a5c5cB52dcE2e</code></td>
+							</tr>
+							<tr>
+								<td>Collateral</td>
+								<td><code>0xb88339CB7199b77E23DB6E890353E22632Ba630f</code></td>
+							</tr>
+							<tr>
+								<td>Account Layer</td>
+								<td><code>0x46493c376758Da47823D7E3Ae5d417eA6546eEB3</code></td>
+							</tr>
+							<tr>
+								<td>Instant Layer</td>
+								<td><code>0x72DBF07457b2712b160F67A85D338F860c1CA620</code></td>
+							</tr>
+							<tr>
+								<td>Muon Signature Verifier</td>
+								<td><code>0xcFEedF3C16f59d19eEE5F18C708cf8e84A9340b0</code></td>
+							</tr>
+							<tr>
+								<td>Create2 Factory</td>
+								<td><code>0x93a457232a3376E1F94f368A85D0b8BC469ead00</code></td>
+							</tr>
+							<tr>
+								<td>Symbol Manager</td>
+								<td><code>0xe877d634D5Fe44172B983cBd5900E30169a7A6Ce</code></td>
+							</tr>
+							<tr>
+								<td>Main MultiSig</td>
+								<td><code>0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9</code></td>
+							</tr>
+							<tr>
+								<td>Signature Verifier</td>
+								<td><code>0xaD97EdE10D84BD797a3240864Ca7898cf666A784</code></td>
+							</tr>
+							<tr>
+								<td>Instant Withdraw</td>
+								<td><code>0xb1b12E91E456D02184E4B934Bd8dD0c443962015</code></td>
+							</tr>
+							<tr>
+								<td>Liquidator</td>
+								<td><code>0x97EDFA4Be38Bfd934E08D4D1222c2Cf976b2969a</code></td>
+							</tr>
+						</tbody>
+					</table>
+					<pre><code class="language-typescript">const HYPEREVM_CHAIN_ID = 999n;
+const INSTANT_LAYER_ADDRESS = "0x72DBF07457b2712b160F67A85D338F860c1CA620";
+const SYMMIO_ADDRESS = "0x57331038c21982116EE9b0906E4a5c5cB52dcE2e";
+const ACCOUNT_LAYER_ADDRESS = "0x46493c376758Da47823D7E3Ae5d417eA6546eEB3";
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-types">Types</h3>
+					<pre><code class="language-typescript">const types = {
+  Account: [
+    { name: "addr", type: "address" },
+    { name: "isPartyB", type: "bool" },
+  ],
+  FlexField: [
+    { name: "offset", type: "uint256" },
+    { name: "length", type: "uint256" },
+    { name: "authorizedFlexFiller", type: "address" },
+  ],
+  ReplayAttackHeader: [
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+    { name: "salt", type: "bytes32" },
+  ],
+  SignedOperation: [
+    { name: "signer", type: "address" },
+    { name: "target", type: "address" },
+    { name: "callData", type: "bytes" },
+    { name: "signerAccount", type: "Account" },
+    { name: "flexFields", type: "FlexField[]" },
+    { name: "maxUses", type: "uint256" },
+    { name: "replayAttackHeader", type: "ReplayAttackHeader" },
+  ],
+};
+</code></pre>
+					<h2 id="doc-instant-layer-partyb-integration-code-examples">Code Examples</h2>
+					<h3 id="doc-instant-layer-partyb-integration-complete-signing-example-ethersjs-v6">Complete Signing Example (ethers.js v6)</h3>
+					<pre><code class="language-typescript">import { ethers } from "ethers";
+import { randomBytes } from "crypto";
+
+// Configuration
+const INSTANT_LAYER_ADDRESS = "0x..."; // InstantLayer contract address
+const SYMMIO_ADDRESS = "0x...";        // Symmio contract address
+const PARTY_B_ADDRESS = "0x...";       // Your PartyB contract address
+
+// EIP-712 Domain
+async function getDomain(provider: ethers.Provider) {
+  const network = await provider.getNetwork();
+  return {
+    name: "SymmioInstantLayer",
+    version: "1",
+    chainId: network.chainId,
+    verifyingContract: INSTANT_LAYER_ADDRESS,
+  };
+}
+
+// EIP-712 Types
+const types = {
+  Account: [
+    { name: "addr", type: "address" },
+    { name: "isPartyB", type: "bool" },
+  ],
+  FlexField: [
+    { name: "offset", type: "uint256" },
+    { name: "length", type: "uint256" },
+    { name: "authorizedFlexFiller", type: "address" },
+  ],
+  ReplayAttackHeader: [
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+    { name: "salt", type: "bytes32" },
+  ],
+  SignedOperation: [
+    { name: "signer", type: "address" },
+    { name: "target", type: "address" },
+    { name: "callData", type: "bytes" },
+    { name: "signerAccount", type: "Account" },
+    { name: "flexFields", type: "FlexField[]" },
+    { name: "maxUses", type: "uint256" },
+    { name: "replayAttackHeader", type: "ReplayAttackHeader" },
+  ],
+};
+
+// Generate unique salt
+function generateSalt(): string {
+  return "0x" + randomBytes(32).toString("hex");
+}
+
+// Create and sign an operation
+async function signPartyBOperation(
+  signer: ethers.Wallet,
+  callData: string,
+  nonce: bigint = 0n,
+  deadlineSeconds: number = 300 // 5 minutes default
+) {
+  const provider = signer.provider!;
+  const domain = await getDomain(provider);
+
+  const block = await provider.getBlock("latest");
+  const deadline = deadlineSeconds &gt; 0
+    ? BigInt(block!.timestamp) + BigInt(deadlineSeconds)
+    : 0n;
+
+  const operation = {
+    signer: PARTY_B_ADDRESS,
+    target: SYMMIO_ADDRESS,
+    callData: callData,
+    signerAccount: {
+      addr: PARTY_B_ADDRESS,
+      isPartyB: true,
+    },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: {
+      nonce: nonce,
+      deadline: deadline,
+      salt: generateSalt(),
+    },
+  };
+
+  const signature = await signer.signTypedData(domain, types, operation);
+
+  return { operation, signature };
+}
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-example-sign-a-lockquote-operation">Example: Sign a lockQuote Operation</h3>
+					<pre><code class="language-typescript">// Encode the lockQuote function call
+const symmioInterface = new ethers.Interface([
+  "function lockQuote(uint256 quoteId, uint256 upnl, int256 price, bytes memory upnlSig, bytes memory priceSig)"
+]);
+
+const callData = symmioInterface.encodeFunctionData("lockQuote", [
+  quoteId,
+  upnl,
+  price,
+  upnlSig,
+  priceSig
+]);
+
+// Sign the operation
+const { operation, signature } = await signPartyBOperation(
+  hedgerSigner,  // The signer configured in your PartyB contract
+  callData,
+  0n,            // nonce: 0 for salt-only mode
+  300            // deadline: 5 minutes
+);
+
+// Submit to InstantLayer (can be done by anyone)
+await instantLayer.executeBatch([operation], [signature], [[]], [[]]);
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-example-sign-an-openposition-operation">Example: Sign an openPosition Operation</h3>
+					<pre><code class="language-typescript">const symmioInterface = new ethers.Interface([
+  "function openPosition(uint256 quoteId, uint256 filledAmount, uint256 openedPrice, uint256 upnl, int256 price, bytes memory upnlSig, bytes memory priceSig)"
+]);
+
+const callData = symmioInterface.encodeFunctionData("openPosition", [
+  quoteId,
+  filledAmount,
+  openedPrice,
+  upnl,
+  price,
+  upnlSig,
+  priceSig
+]);
+
+const { operation, signature } = await signPartyBOperation(
+  hedgerSigner,
+  callData
+);
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-example-batch-multiple-operations">Example: Batch Multiple Operations</h3>
+					<pre><code class="language-typescript">// Create multiple operations
+const lockOp = await signPartyBOperation(hedgerSigner, lockQuoteCallData, 1n, 300);
+const openOp = await signPartyBOperation(hedgerSigner, openPositionCallData, 2n, 300);
+
+// Execute as batch
+await instantLayer.executeBatch(
+  [lockOp.operation, openOp.operation],
+  [lockOp.signature, openOp.signature],
+  [[], []],
+  [[], []]
+);
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-template-execution">Template Execution</h3>
+					<p>
+						Use <code>executeBatch</code> when every operation can be encoded independently. Use <code>executeTemplate</code> when a later
+						operation needs a value returned by an earlier operation, such as a <code>quoteId</code> returned by a user quote operation
+						and then consumed by PartyB <code>lockQuote</code> and <code>openPosition</code>.
+					</p>
+					<p>
+						The signature still covers the original <code>SignedOperation.callData</code>. For templated PartyB calls, encode placeholder
+						32-byte values in the positions that the template will replace. InstantLayer verifies the operation signature first, then
+						applies flex fills, then injects template results into the calldata.
+					</p>
+					<pre><code class="language-solidity">function executeTemplate(
+    uint256 templateId,
+    SignedOperation[] calldata signedOps,
+    bytes[] calldata signatures,
+    bytes[][] calldata fills,
+    bytes[][] calldata flexFillerSignatures
+) external returns (bytes[] memory results);
+</code></pre>
+					<p>The array rules are the same as <code>executeBatch</code>:</p>
+					<ul>
+						<li><code>signedOps.length == signatures.length == fills.length == flexFillerSignatures.length</code></li>
+						<li><code>signedOps.length</code> must also match the number of operations in the selected template</li>
+						<li>
+							pass <code>[]</code> for <code>fills[i]</code> and <code>flexFillerSignatures[i]</code> when the operation has no flex
+							fields
+						</li>
+						<li>pass <code>"0x"</code> for a PartyB signature only when PartyB is the transaction sender for its own operation</li>
+					</ul>
+					<p>Template injection uses three arrays per operation:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Field</th>
+								<th>Meaning</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>insertionPoints</code></td>
+								<td>ABI argument offsets after the 4-byte function selector where a 32-byte result should be inserted</td>
+							</tr>
+							<tr>
+								<td><code>sourceIndices</code></td>
+								<td>Previous operation indexes whose return data should be read</td>
+							</tr>
+							<tr>
+								<td><code>sourceOffsets</code></td>
+								<td>32-byte slot offsets inside the source return data</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						For example, if op 1 returns a <code>quoteId</code> as its first return value, an operation with
+						<code>insertionPoints: [0]</code>, <code>sourceIndices: [1]</code>, and <code>sourceOffsets: [0]</code> replaces its first ABI
+						argument with that <code>quoteId</code>.
+					</p>
+					<h4 id="doc-instant-layer-partyb-integration-hyperevm-v085-templates">HyperEVM v0.8.5 Templates</h4>
+					<p>The current HyperEVM v0.8.5 Instant Layer has the standard template set registered in this order:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Template ID</th>
+								<th>Name</th>
+								<th>Operations</th>
+								<th>PartyB relevance</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>0</code></td>
+								<td><code>InstantOpen</code></td>
+								<td>4</td>
+								<td>
+									User quote flow followed by PartyB <code>lockQuote</code> and <code>openPosition</code>; the quote ID returned by
+									the quote operation is injected into both PartyB calls. <code>instantOpenMode</code> is enabled for this template.
+								</td>
+							</tr>
+							<tr>
+								<td><code>1</code></td>
+								<td><code>InstantClose</code></td>
+								<td>2</td>
+								<td>User close request followed by PartyB close fill. No result injection is configured.</td>
+							</tr>
+							<tr>
+								<td><code>2</code></td>
+								<td><code>InstantCloseWithAllocation</code></td>
+								<td>3</td>
+								<td>Close flow with an additional allocation/deallocation step. No result injection is configured.</td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						Admins can add, disable, or update template modes, so production clients should read the current state before relying on
+						hardcoded IDs:
+					</p>
+					<pre><code class="language-typescript">const nextTemplateId = await instantLayer.getNextTemplateId();
+const instantOpen = await instantLayer.getTemplate(0);
+const instantOpenMode = await instantLayer.templateInstantOpenMode(0);
+</code></pre>
+					<h4 id="doc-instant-layer-partyb-integration-example-execute-the-hyperevm-instantopen-template">
+						Example: Execute The HyperEVM InstantOpen Template
+					</h4>
+					<p>
+						For <code>InstantOpen</code>, the PartyB operations should be signed with placeholder <code>quoteId</code> values. The
+						template injects the quote ID returned by the quote operation before executing <code>lockQuote</code> and
+						<code>openPosition</code>.
+					</p>
+					<pre><code class="language-typescript">const templateId = 0n; // InstantOpen on the HyperEVM v0.8.5 deployment
+
+const lockQuoteCallData = symmioInterface.encodeFunctionData("lockQuote", [
+  0n,       // quoteId placeholder; replaced by the template
+  upnlSig,
+]);
+
+const openPositionCallData = symmioInterface.encodeFunctionData("openPosition", [
+  0n,       // quoteId placeholder; replaced by the template
+  filledAmount,
+  openedPrice,
+  upnlSig,
+]);
+
+const lockOp = await signPartyBOperation(hedgerSigner, lockQuoteCallData, 1n, 300);
+const openOp = await signPartyBOperation(hedgerSigner, openPositionCallData, 2n, 300);
+
+await instantLayer.executeTemplate(
+  templateId,
+  [userMarginOrQuoteOp, userQuoteOp, lockOp.operation, openOp.operation],
+  [userMarginOrQuoteSig, userQuoteSig, lockOp.signature, openOp.signature],
+  [[], [], [], []],
+  [[], [], [], []]
+);
+</code></pre>
+					<p>
+						If PartyB is submitting the transaction itself and its registered PartyB contract has <code>OPERATOR_ROLE</code>, the PartyB
+						entries can use empty signatures:
+					</p>
+					<pre><code class="language-typescript">await instantLayer.connect(partyB).executeTemplate(
+  0n,
+  [userMarginOrQuoteOp, userQuoteOp, lockOp.operation, openOp.operation],
+  [userMarginOrQuoteSig, userQuoteSig, "0x", "0x"],
+  [[], [], [], []],
+  [[], [], [], []]
+);
+</code></pre>
+					<h2 id="doc-instant-layer-partyb-integration-self-execution-mode-no-signature-required">
+						Self-Execution Mode (No Signature Required)
+					</h2>
+					<p>
+						When PartyB is the transaction sender (<code>msg.sender</code>), signature verification is automatically skipped for
+						operations where <code>signer == msg.sender</code>. This allows PartyB to execute operations directly without signing them.
+					</p>
+					<h3 id="doc-instant-layer-partyb-integration-how-it-works">How It Works</h3>
+					<ol>
+						<li>The contract verifies that the signer is a registered PartyB</li>
+						<li>If <code>signer == msg.sender</code>, signature verification is bypassed</li>
+						<li>An empty signature (<code>"0x"</code>) can be provided for self-executed operations</li>
+						<li>All other security checks (replay protection, nonce, deadline) still apply</li>
+					</ol>
+					<h3 id="doc-instant-layer-partyb-integration-example-partyb-self-execution">Example: PartyB Self-Execution</h3>
+					<pre><code class="language-typescript">// PartyB executing their own operation - no signature needed
+function createSelfOperation(callData: string): SignedOperation {
+  return {
+    signer: PARTY_B_ADDRESS,        // Same as msg.sender when PartyB calls
+    target: SYMMIO_ADDRESS,
+    callData: callData,
+    signerAccount: {
+      addr: PARTY_B_ADDRESS,
+      isPartyB: true,
+    },
+    flexFields: [],
+    maxUses: 1,
+    replayAttackHeader: {
+      nonce: 0n,
+      deadline: 0n,                  // No deadline needed
+      salt: generateSalt(),
+    },
+  };
+}
+
+// Execute directly as PartyB - empty signature
+const operation = createSelfOperation(lockQuoteCallData);
+await instantLayer.executeBatch([operation], ["0x"], [[]], [[]]);
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-example-mixed-batch-user-signed-partyb-self-execution">
+						Example: Mixed Batch (User Signed + PartyB Self-Execution)
+					</h3>
+					<p>This is the most common pattern - combining user-signed operations with PartyB self-executed operations:</p>
+					<pre><code class="language-typescript">// User's sendQuote operation - requires signature
+const userOperation = {
+  signer: userAddress,
+  target: SYMMIO_ADDRESS,
+  callData: encodedSendQuote,
+  signerAccount: { addr: userAccountAddress, isPartyB: false },
+  flexFields: [],
+  maxUses: 1,
+  replayAttackHeader: { nonce: 0n, deadline: deadline, salt: generateSalt() }
+};
+const userSignature = await userSigner.signTypedData(domain, types, userOperation);
+
+// PartyB's lockQuote operation - no signature needed when PartyB is msg.sender
+const partyBOperation = {
+  signer: PARTY_B_ADDRESS,
+  target: SYMMIO_ADDRESS,
+  callData: encodedLockQuote,
+  signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  flexFields: [],
+  maxUses: 1,
+  replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+};
+
+// PartyB calls executeBatch directly
+await instantLayer.executeBatch(
+  [userOperation, partyBOperation],
+  [userSignature, "0x"],               // User signature + empty for PartyB
+  [[], []],                            // No flex fills
+  [[], []]                             // No flex filler signatures
+);
+</code></pre>
+					<h3 id="doc-instant-layer-partyb-integration-when-to-use-self-execution">When to Use Self-Execution</h3>
+					<table>
+						<thead>
+							<tr>
+								<th>Scenario</th>
+								<th>Signature Required?</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>PartyB calls directly, executing own operation</td>
+								<td>No (empty <code>"0x"</code>)</td>
+							</tr>
+							<tr>
+								<td>PartyB calls directly, executing user operation</td>
+								<td>Yes (user signature)</td>
+							</tr>
+							<tr>
+								<td>Operator calls, executing PartyB operation</td>
+								<td>Yes (PartyB signature)</td>
+							</tr>
+							<tr>
+								<td>Operator calls, executing user operation</td>
+								<td>Yes (user signature)</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-instant-layer-partyb-integration-nonce-modes">Nonce Modes</h2>
+					<h3 id="doc-instant-layer-partyb-integration-salt-only-mode-nonce-0">Salt-Only Mode (nonce = 0)</h3>
+					<ul>
+						<li>Operations can be executed in any order</li>
+						<li>Each operation must have a unique salt</li>
+						<li>Recommended for independent operations</li>
+					</ul>
+					<h3 id="doc-instant-layer-partyb-integration-sequential-mode-nonce-0">Sequential Mode (nonce &gt; 0)</h3>
+					<ul>
+						<li>Operations must be executed in order</li>
+						<li>Next nonce must be <code>currentNonce + 1</code></li>
+						<li>Query current nonce: <code>instantLayer.nonces(partyBAddress)</code></li>
+					</ul>
+					<pre><code class="language-typescript">// Get current nonce for your PartyB
+const currentNonce = await instantLayer.nonces(PARTY_B_ADDRESS);
+const nextNonce = currentNonce + 1n;
+</code></pre>
+					<h2 id="doc-instant-layer-partyb-integration-partyb-contract-setup">PartyB Contract Setup</h2>
+					<p>Your PartyB contract must:</p>
+					<ol>
+						<li><strong>Be registered</strong> with InstantLayer:</li>
+					</ol>
+					<pre><code class="language-solidity">// Called by InstantLayer admin
+instantLayer.registerPartyBs([partyBAddress]);
+</code></pre>
+					<ol start="2">
+						<li><strong>Have a signer configured</strong> (for ERC-1271 signature verification):</li>
+					</ol>
+					<pre><code class="language-solidity">// In your PartyB contract
+function setSigner(address _signer) external onlyRole(SETTER_ROLE) {
+    signer = _signer;
+}
+</code></pre>
+					<ol start="3">
+						<li><strong>Implement ERC-1271</strong> (already implemented in SymmioPartyB):</li>
+					</ol>
+					<pre><code class="language-solidity">function isValidSignature(bytes32 hash, bytes memory signature)
+    external view returns (bytes4)
+{
+    return SignatureChecker.isValidSignatureNow(signer, hash, signature)
+        ? bytes4(0x1626ba7e)
+        : bytes4(0xffffffff);
+}
+</code></pre>
+					<h2 id="doc-instant-layer-partyb-integration-validation-rules">Validation Rules</h2>
+					<p>Your operations must satisfy:</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Rule</th>
+								<th>Description</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>signer == signerAccount.addr</code></td>
+								<td>Signer must match account address</td>
+							</tr>
+							<tr>
+								<td><code>signerAccount.isPartyB == true</code></td>
+								<td>Must be true for PartyB operations</td>
+							</tr>
+							<tr>
+								<td><code>deadline == 0 OR deadline &gt; block.timestamp</code></td>
+								<td>Valid deadline</td>
+							</tr>
+							<tr>
+								<td><code>nonce == 0 OR nonce == currentNonce + 1</code></td>
+								<td>Valid nonce</td>
+							</tr>
+							<tr>
+								<td><code>callData.length &gt;= 4</code></td>
+								<td>Must include function selector</td>
+							</tr>
+							<tr>
+								<td>Unique salt</td>
+								<td>Salt must not have been used before</td>
+							</tr>
+							<tr>
+								<td>Valid signature OR self-execution</td>
+								<td>Signature required unless <code>signer == msg.sender</code></td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-instant-layer-partyb-integration-error-reference">Error Reference</h2>
+					<table>
+						<thead>
+							<tr>
+								<th>Error</th>
+								<th>Cause</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>InstantLayerInvalidCallDataLength</code></td>
+								<td>callData is less than 4 bytes</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerOperationExpired</code></td>
+								<td>Deadline has passed</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerTargetNotWhitelisted</code></td>
+								<td>Target contract not whitelisted</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerInvalidOperationSignature</code></td>
+								<td>Signature verification failed (skipped if <code>signer == msg.sender</code>)</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerInvalidNonce</code></td>
+								<td>Nonce is not sequential (when &gt; 0)</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerOperationAlreadyUsed</code></td>
+								<td>Salt/operation already executed</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerSignerMismatch</code></td>
+								<td>Signer doesn't match signerAccount.addr</td>
+							</tr>
+							<tr>
+								<td><code>InstantLayerInvalidPartyB</code></td>
+								<td>PartyB is not registered</td>
+							</tr>
+						</tbody>
+					</table>
+					<h2 id="doc-instant-layer-partyb-integration-quick-reference">Quick Reference</h2>
+					<pre><code class="language-typescript">// Option 1: Signed operation (when executed by a third-party operator)
+const operation = {
+  signer: PARTY_B_ADDRESS,
+  target: SYMMIO_ADDRESS,
+  callData: encodedFunctionCall,
+  signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  flexFields: [],
+  maxUses: 1,
+  replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+};
+const signature = await signer.signTypedData(domain, types, operation);
+await instantLayer.connect(operator).executeBatch(
+  [operation], [signature], [[]], [[]]
+);
+
+// Option 2: Self-execution (when PartyB calls directly)
+const operation = {
+  signer: PARTY_B_ADDRESS,
+  target: SYMMIO_ADDRESS,
+  callData: encodedFunctionCall,
+  signerAccount: { addr: PARTY_B_ADDRESS, isPartyB: true },
+  flexFields: [],
+  maxUses: 1,
+  replayAttackHeader: { nonce: 0n, deadline: 0n, salt: generateSalt() }
+};
+await instantLayer.connect(partyB).executeBatch(
+  [operation], ["0x"], [[]], [[]]
+); // Empty signature
+</code></pre>
+					<hr />
+					<h2 id="doc-instant-layer-partyb-integration-related-documentation">Related Documentation</h2>
+					<ul>
+						<li><a href="instant-layer-overview.html">InstantLayer Overview</a> - High-level architecture and concepts</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

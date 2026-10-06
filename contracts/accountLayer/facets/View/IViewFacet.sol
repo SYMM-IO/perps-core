@@ -1,0 +1,241 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
+
+import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountStorage.sol";
+import { AffiliateDetail, AffiliateSelectorConfig, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import { SelectorTimelock, Schedule, TimelockApproval } from "../../storages/TimelockStorage.sol";
+
+/// @notice Read-only interface for accounts, affiliates, roles, and system state
+interface IViewFacet is IDiamondAccessControlView {
+	// ==================== Sub-Account View Functions ====================
+
+	/// @notice Returns the full details of a sub-account
+	/// @param account The sub-account address
+	function getSubAccount(address account) external view returns (SubAccountDetail memory);
+
+	/// @notice Returns paginated sub-account addresses owned by a user
+	/// @param owner The user address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	function getUserSubAccountsAddresses(address owner, uint256 offset, uint256 limit) external view returns (address[] memory);
+
+	/// @notice Returns paginated sub-account details owned by a user
+	/// @param owner The user address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	function getUserSubAccounts(address owner, uint256 offset, uint256 limit) external view returns (SubAccountDetail[] memory);
+
+	/// @notice Returns the total number of sub-accounts owned by a user
+	/// @param owner The user address
+	function getSubAccountsCountOfUser(address owner) external view returns (uint256);
+
+	// ==================== Virtual Account View Functions ====================
+
+	/// @notice Returns the full details of a virtual account
+	/// @param account The virtual account address
+	function getVirtualAccount(address account) external view returns (VirtualAccountDetail memory);
+
+	/// @notice Returns paginated virtual account addresses belonging to a sub-account
+	/// @param subAccount The parent sub-account address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	function getVirtualAccountsAddressesOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (address[] memory);
+
+	/// @notice Returns paginated virtual account details belonging to a sub-account
+	/// @param subAccount The parent sub-account address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	function getVirtualAccountsOfSubAccount(address subAccount, uint256 offset, uint256 limit) external view returns (VirtualAccountDetail[] memory);
+
+	/// @notice Returns paginated quote IDs tracked by a virtual account
+	/// @param account The virtual account address
+	/// @param offset The starting index
+	/// @param limit The maximum number of results
+	function getVirtualAccountQuoteIds(address account, uint256 offset, uint256 limit) external view returns (uint256[] memory);
+
+	/// @notice Returns the number of active virtual accounts under a sub-account
+	/// @param subAccount The parent sub-account address
+	function getVirtualAccountsCountOfSubAccount(address subAccount) external view returns (uint256);
+
+	// ==================== Single VA Mode ====================
+
+	/// @notice Returns the active VA for a given isolation key in singleVAMode
+	/// @param subAccount The parent sub-account address
+	/// @param isolationType The isolation type
+	/// @param symbolId The symbol identifier
+	function getActiveVAByKey(address subAccount, VirtualAccountIsolationType isolationType, uint256 symbolId) external view returns (address);
+
+	// ==================== Nonce and Prediction ====================
+
+	/// @notice Returns the current virtual account nonce for a sub-account
+	/// @param subAccount The sub-account address
+	function getSubAccountVirtualNonce(address subAccount) external view returns (uint256);
+
+	/// @notice Predicts the next virtual account address for a given isolation key
+	/// @param subAccount The parent sub-account address
+	/// @param isolationType The isolation type
+	/// @param symbolId The symbol identifier
+	function predictNextVirtualAccountAddress(
+		address subAccount,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId
+	) external view returns (address);
+
+	// ==================== AccountManager ====================
+
+	/// @notice Computes the next deterministic address for an AccountManager
+	/// @param registrant The registrant address
+	/// @param name The affiliate name
+	function generateAccountManagerAddress(address registrant, string memory name) external view returns (address);
+
+	// ==================== Signer and Core ====================
+
+	/// @notice Returns the current effective signer
+	function getSigner() external view returns (address);
+
+	/// @notice Returns the account family the current signer session is confined to, or address(0) when unconfined
+	function getSignerScope() external view returns (address);
+
+	/// @notice Returns the Symmio core address associated with an account
+	/// @param account The account address
+	function getRelatedCore(address account) external view returns (address);
+
+	/// @notice Resolves the owner of an account
+	/// @param account The account address
+	function ownerOf(address account) external view returns (address);
+
+	/// @notice Returns the affiliate for a live sub-account or virtual account
+	/// @param account The AccountLayer account address
+	function getAffiliateForAccount(address account) external view returns (address affiliate, bool exists);
+
+	/// @notice Returns the global nonce used for sub-account address generation
+	function globalNonce() external view returns (uint256);
+
+	/// @notice Returns the current AccountManager proxy bytecode
+	function accountManagerImplementation() external view returns (bytes memory);
+
+	// ==================== Affiliate View Functions ====================
+
+	/// @notice Returns everything stored about an affiliate in a single call, including any pending fee update
+	/// @param affiliate The affiliate address
+	function getAffiliate(address affiliate) external view returns (AffiliateDetail memory);
+
+	/// @notice Returns the hook and allow-list configuration of an affiliate for the given selectors
+	/// @param affiliate The affiliate address
+	/// @param selectors The function selectors to look up
+	function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata selectors) external view returns (AffiliateSelectorConfig[] memory);
+
+	/// @notice Returns the registration state of an affiliate
+	/// @param affiliate The affiliate address
+	function getAffiliateState(address affiliate) external view returns (AffiliateState);
+
+	/// @notice Returns the admin address of an affiliate
+	/// @param affiliate The affiliate address
+	function getAffiliateAdmin(address affiliate) external view returns (address);
+
+	/// @notice Returns the fee distributor address of an affiliate
+	/// @param affiliate The affiliate address
+	function getAffiliateFeeDistributor(address affiliate) external view returns (address);
+
+	/// @notice Returns the Symmio core addresses registered for an affiliate
+	/// @param affiliate The affiliate address
+	function getAffiliateSymmioCores(address affiliate) external view returns (address[] memory);
+
+	/// @notice Returns the fee stakeholders for an affiliate
+	/// @param affiliate The affiliate address
+	function getAffiliateStakeholders(address affiliate) external view returns (Stakeholder[] memory);
+
+	/// @notice Returns the Symmio share of fees for an affiliate
+	/// @param affiliate The affiliate address
+	function getAffiliateSymmioShare(address affiliate) external view returns (uint256);
+
+	/// @notice Checks whether a Symmio core address is whitelisted
+	/// @param core The Symmio core address
+	function isWhitelistedSymmioCore(address core) external view returns (bool);
+
+	/// @notice Checks whether an address is a registered legacy MultiAccount contract
+	/// @param account The address to check
+	function isLegacyMultiAccount(address account) external view returns (bool);
+
+	/// @notice Returns all registered legacy MultiAccount contract addresses
+	function getLegacyMultiAccounts() external view returns (address[] memory);
+
+	/// @notice Returns legacy accounts owned by a user across all legacy contracts
+	/// @param owner The user address
+	/// @param maxResults The maximum number of results
+	function getLegacyAccountsOfUser(address owner, uint256 maxResults) external view returns (LegacyAccountInfo[] memory accounts, bool hasMore);
+
+	/// @notice Returns the hook contract for an affiliate's function selector
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector
+	function getHook(address affiliate, bytes4 selector) external view returns (address);
+
+	/// @notice Checks whether an address is an authorized operator for an affiliate's selector
+	/// @param affiliate The affiliate address
+	/// @param selector The function selector
+	/// @param operator The operator address
+	function isOperator(address affiliate, bytes4 selector, address operator) external view returns (bool);
+
+	/// @notice Returns the Symmio fee receiver address
+	function symmioFeeReceiver() external view returns (address);
+
+	/// @notice Simulates claiming all fees and returns the distribution per stakeholder
+	/// @param affiliate The affiliate address
+	/// @param symmio The Symmio core address
+	function dryClaimAllFees(address affiliate, address symmio) external view returns (address[] memory holders, uint256[] memory shares);
+
+	/// @notice Returns the maximum allowed name length
+	function MAX_NAME_LENGTH() external view returns (uint256);
+
+	// ==================== Role Management ====================
+
+	// ==================== Ownership ====================
+
+	/// @notice Returns the current diamond owner address
+	function getOwner() external view returns (address);
+
+	/// @notice Returns the pending owner address (for two-step ownership transfer)
+	function pendingOwner() external view returns (address);
+
+	// ==================== Timelock View Functions ====================
+
+	/// @notice Timelock on one selector of a root sub-account; unlocker == address(0) means not timelocked.
+	function getSelectorTimelock(address subAccount, bytes4 selector) external view returns (SelectorTimelock memory);
+
+	/// @notice True when every selector in a non-empty set is timelocked by unlocker with a delay of at least minDelay.
+	///         The solver's pre-hedge check.
+	/// @dev A zero unlocker or empty selectors array returns false.
+	function allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] calldata selectors) external view returns (bool);
+
+	/// @notice Timelock nonce of a root sub-account; advances on every policy change, and schedules stamped with an older nonce are dead.
+	function timelockNonce(address subAccount) external view returns (uint32);
+
+	/// @notice The schedule for an op on the account's family (a virtual account resolves to its parent); one stamped
+	///         with an older nonce reads as empty.
+	function getSchedule(address account, bytes32 callDataHash) external view returns (Schedule memory);
+
+	/// @notice True once an approval digest has been consumed.
+	function isApprovalUsed(bytes32 approvalHash) external view returns (bool);
+
+	/// @notice EIP-712 domain separator for TimelockApproval signatures (name SymmioAccountLayerTimelock, version 1).
+	function timelockDomainSeparator() external view returns (bytes32);
+
+	/// @notice EIP-712 digest an unlocker signs for approval.
+	function hashTimelockApproval(TimelockApproval calldata approval) external view returns (bytes32);
+
+	/// @notice Lower bound for a selector delay; zero means no minimum.
+	function minTimelockDelay() external view returns (uint256);
+
+	/// @notice How long a schedule stays valid once its delay has passed: the configured value, or 10 minutes when unset.
+	function scheduleGracePeriod() external view returns (uint256);
+
+	// ==================== Pause Control ====================
+
+	/// @notice Returns whether the AccountLayer diamond is paused
+	function paused() external view returns (bool);
+}

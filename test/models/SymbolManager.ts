@@ -79,8 +79,7 @@ export let symbolsMock = {
 export class SymbolManager {
 	symbols: Map<number, Symbol> = new Map<number, Symbol>()
 
-	constructor() {
-	}
+	constructor() {}
 
 	public async loadSymbols() {
 		if (process.env.TEST_MODE != "fuzz") return
