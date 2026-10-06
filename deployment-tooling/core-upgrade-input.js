@@ -41,7 +41,7 @@ export function validateCoreUpgradeInput(input) {
 	for (const item of Object.values(input.inventory || {}))
 		if (item.kind !== "subgraph" && getAddress(item.address) === ZeroAddress) throw new Error("Zero inventory address");
 	const grants = new Set();
-	for (const grant of input.roleGrants) {
+	for (const grant of coreUpgradeRoleGrants(input)) {
 		if (getAddress(grant.holder) === ZeroAddress) throw new Error("Zero role holder");
 		if (grant.role === "MIGRATION_ROLE" && grant.holder.toLowerCase() === input.governance.owner.toLowerCase())
 			throw new Error("The Core owner's migration role must be restored, not persistently granted");
@@ -55,6 +55,33 @@ export function validateCoreUpgradeInput(input) {
 	return input;
 }
 export const isStandardCoreInput = config => [CORE_INPUT_API, CORE_INPUT_API_V2].includes(config?.apiVersion);
+
+/** Resolve Core recipients without rewriting the original input or old snapshots. */
+export function coreUpgradeRoleGrants(config) {
+	if (!config.roleGrants) return [];
+	if (Array.isArray(config.roleGrants)) return config.roleGrants;
+	if (config.apiVersion !== CORE_INPUT_API_V2 || Object.keys(config.roleGrants).length !== 1 || !Array.isArray(config.roleGrants.core))
+		throw new Error("roleGrants.core: only Core contract grants are supported");
+	const holders = { "target.symbolManager": config.target.symbolManager, "governance.owner": config.governance.owner };
+	return config.roleGrants.core.map(grant => {
+		if (!grant.holderRef) return grant;
+		if (!Object.hasOwn(holders, grant.holderRef) || !holders[grant.holderRef])
+			throw new Error(`roleGrants.core: unsupported holderRef ${grant.holderRef}`);
+		return { ...grant, holder: holders[grant.holderRef] };
+	});
+}
+
+export function coreUpgradeRoleGrantReview(config) {
+	const grants = coreUpgradeRoleGrants(config),
+		target = `Core (${config.target.core})`;
+	return [
+		`roleGrants.core: ${target}; ${grants.length} planned grants; already-held roles are skipped`,
+		...grants.map(grant => {
+			const holder = getAddress(grant.holder);
+			return `${grant.role} on ${target} to ${grant.holderRef ? `${grant.holderRef} (${holder})` : holder}`;
+		}),
+	].join("\n");
+}
 
 /** Read categorized policies without rewriting the original, digest-bound input. */
 export function coreUpgradePolicies(config) {

@@ -1,5 +1,12 @@
 export const CORE_INPUT_API: string
 export const CORE_INPUT_API_V2: string
+export interface CoreUpgradeRoleGrant {
+	holder: string
+	role: string
+	holderRef?: string
+}
+export function coreUpgradeRoleGrants(config: any): CoreUpgradeRoleGrant[]
+export function coreUpgradeRoleGrantReview(config: any): string
 export interface CoreUpgradePolicies {
 	storage: { symbolAdjustment: { legacyAdjustmentWords: number; upgradedAdjustmentWords: number; requireEmptyAdjustments: true } }
 	funding: { aggregate: { repair: boolean } }

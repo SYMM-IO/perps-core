@@ -241,22 +241,7 @@
 			"$ref": "#/definitions/allowedRemovals"
 		},
 		"roleGrants": {
-			"type": "array",
-			"items": {
-				"type": "object",
-				"additionalProperties": false,
-				"properties": {
-					"holder": {
-						"type": "string",
-						"pattern": "^0x[0-9a-fA-F]{40}$"
-					},
-					"role": {
-						"type": "string",
-						"pattern": "^[A-Z][A-Z0-9_]*_ROLE$"
-					}
-				},
-				"required": ["holder", "role"]
-			}
+			"oneOf": [{ "$ref": "#/definitions/flatRoleGrants" }, { "$ref": "#/definitions/categorizedRoleGrants" }]
 		},
 		"inventory": {
 			"type": "object",
@@ -315,6 +300,42 @@
 		"roleGrants"
 	],
 	"definitions": {
+		"flatRoleGrants": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"properties": {
+					"holder": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+					"role": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*_ROLE$" }
+				},
+				"required": ["holder", "role"]
+			}
+		},
+		"categorizedRoleGrants": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"core": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"properties": {
+							"holder": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+							"holderRef": { "enum": ["target.symbolManager", "governance.owner"] },
+							"role": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*_ROLE$" }
+						},
+						"required": ["role"],
+						"oneOf": [
+							{ "properties": { "holder": {} }, "required": ["holder"] },
+							{ "properties": { "holderRef": {} }, "required": ["holderRef"] }
+						]
+					}
+				}
+			},
+			"required": ["core"]
+		},
 		"symbolAdjustment": {
 			"type": "object",
 			"additionalProperties": false,
@@ -393,6 +414,7 @@
 	},
 	"then": {
 		"properties": {
+			"roleGrants": { "$ref": "#/definitions/flatRoleGrants" },
 			"storage": {
 				"$ref": "#/definitions/symbolAdjustment"
 			},
