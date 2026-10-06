@@ -2,7 +2,7 @@ import fs from "node:fs"
 
 import { IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js"
-import { isStandardCoreInput, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
+import { isStandardCoreInput, coreUpgradeAuthority, coreGovernanceKind, coreUpgradePolicies } from "../../deployment-tooling/core-upgrade-input.js"
 import { captureMuonConfiguration } from "../../deployment-tooling/operations/muon-upgrade.js"
 import { addFunding, calculateGroupFunding } from "../../scripts/utils/aggregateFundingResync.js"
 import { json, lower, selectorsAt } from "./accountInstantSnapshot.js"
@@ -20,11 +20,11 @@ export function coreQuoteScanIds(lastId: bigint | number, maxQuotes: number) {
 }
 
 export function assertEmptySymbolAdjustment(returnData: string, upgraded: boolean, policy?: any) {
-	if (
-		returnData.length !== 2 + (upgraded ? policy?.upgradedAdjustmentWords || 17 : policy?.legacyAdjustmentWords || 15) * 64 ||
-		!/^0x0+$/.test(returnData)
-	)
-		throw new Error("Nonzero or unexpected SymbolAdjustment layout; a separate storage migration is required")
+	const words = upgraded ? (policy?.upgradedAdjustmentWords ?? 17) : (policy?.legacyAdjustmentWords ?? 15)
+	if (returnData.length !== 2 + words * 64 || !/^0x0+$/.test(returnData))
+		throw new Error(
+			`storage.symbolAdjustment: expected ${words} zero ABI words ${upgraded ? "after" : "before"} upgrade; nonzero or unexpected layout requires a separate storage migration`,
+		)
 }
 
 /** Pin every read to one block and refuse incomplete scans. No signer is loaded. */
@@ -224,7 +224,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		)
 		for (const row of rows) {
 			if (!row.success) throw new Error("SymbolAdjustment call failed")
-			assertEmptySymbolAdjustment(row.returnData, upgraded, config.storage)
+			assertEmptySymbolAdjustment(row.returnData, upgraded, coreUpgradePolicies(config).storage.symbolAdjustment)
 		}
 	}
 	const restatements = await batch(
