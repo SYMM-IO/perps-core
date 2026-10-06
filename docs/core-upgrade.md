@@ -30,7 +30,7 @@ Use the filename **`core-upgrade.<deployment>.input.json`**. Keep it under `task
 | `limits`                         | Maximum complete historical quote and symbol scans. Exceeding a limit stops the task.                                                                                                                       |
 | `storage.symbolAdjustment`       | Expected legacy 15-word and upgraded 17-word empty SymbolAdjustment getter results.                                                                                                                         |
 | `funding.aggregate.repair`       | Require aggregate-funding reconciliation and repair any mismatches against the checked paused snapshot.                                                                                                     |
-| `roleGrants`                     | Explicit reviewed role holders and role names. Only missing grants are included.                                                                                                                            |
+| `roleGrants.core`                | Grants on `target.core`, with named recipient references or explicit holder addresses. Only missing grants are included.                                                                                    |
 | `selectors.core.allowedRemovals` | Explicit Core selector-removal policy. Unreviewed removals stop planning.                                                                                                                                   |
 
 The task generates internal live/fork credential recipes and a source-bound run input. Operators maintain only the standard input; generated recipes, reports and checkpoints are evidence for that run.
@@ -61,6 +61,18 @@ The supplied production input and Base example use `operations.symm.io/core-upgr
 		"core": {
 			"allowedRemovals": ["0x9dcdbdda", "0xff363ccc"]
 		}
+	},
+	"roleGrants": {
+		"core": [
+			{
+				"holderRef": "target.symbolManager",
+				"role": "SYMBOL_LISTING_ROLE"
+			},
+			{
+				"holderRef": "governance.owner",
+				"role": "GLOBAL_PAUSER_ROLE"
+			}
+		]
 	}
 }
 ```
@@ -69,9 +81,11 @@ The supplied production input and Base example use `operations.symm.io/core-upgr
 
 `funding.aggregate.repair` must be `true` for this release. Funding mismatches are repaired using checked old values and the owner's migration authority; its original role membership is restored. `selectors.core.allowedRemovals` lists the reviewed selectors that the cut may remove. Categorization does not change upgrade scope: this task still upgrades Core and preserves its declared dependencies.
 
-The deployment authorization review displays all three categories, and new inspection reports record them under `client.policies`. Layout, funding-policy and selector-removal errors identify their category. Unknown subjects, missing categories, mixed v1/v2 fields and unsupported input versions are rejected.
+`roleGrants.core` explicitly identifies the contract on which roles are granted: `target.core`. Each `holderRef` identifies the recipient and resolves to an address already declared in the input. `target.symbolManager` receives `SYMBOL_LISTING_ROLE` on Core; this does not grant a role on the Symbol Manager contract. `governance.owner` receives the declared Core pause roles. These are the two supported references. For another operator, use `"holder": "0x..."` with its full address instead of `holderRef`. Each entry must specify exactly one recipient form. Unsupported contract categories, unknown references, zero holders and duplicate resolved holder/role pairs are rejected.
 
-Existing `operations.symm.io/core-upgrade-input-v1` files remain accepted with flat `storage`, `repairAggregateFunding` and `allowedRemovedSelectors`. The compatibility reader resolves them to the same policies without rewriting the original input or its digest. The historical Arbitrum-specific profile retains its existing format. Existing run evidence and source bindings are not migrated automatically: keep the original files and source for continuation, and start a new run when changing an input to v2.
+The deployment authorization review displays the rule categories and each Core grant's target, named recipient and resolved address. New inspection reports record the rules under `client.policies` and the grant contract address and resolved recipients under `client.roleGrants.core`. Layout, funding-policy and selector-removal errors identify their category. Unknown subjects, missing categories, mixed v1/v2 policy fields and unsupported input versions are rejected.
+
+Existing `operations.symm.io/core-upgrade-input-v1` files remain accepted with flat `storage`, `repairAggregateFunding`, `allowedRemovedSelectors` and a flat `roleGrants` array. Previously saved v2 files with a flat role array also remain accepted; those grants implicitly target Core. The compatibility readers resolve policies and recipients without rewriting the original input or its digest. The historical Arbitrum-specific profile retains its existing format. Existing run evidence and source bindings are not migrated automatically: keep the original files and source for continuation, and start a new run when changing an input's structure or recipients.
 
 ## Optional Git release
 
@@ -165,6 +179,7 @@ npm run test:upgrade -- governance --match Core
 npm run test:upgrade -- verification --match Core
 npm run test:upgrade -- recovery --match Core
 npm run test:upgrade -- input --match categories
+npm run test:upgrade -- input --match role-grants
 npm run test:upgrade -- workflow --match categories
 npm run test:upgrade -- input --chain-bound --match core
 npm run test:upgrade -- workflow --chain-bound --match core
