@@ -411,11 +411,11 @@
 					"properties": {
 						"maxRoleMembers": {
 							"$ref": "#/definitions/scanBound",
-							"description": "Maximum members per inventoried verifier role. Defaults to 100 when this category is omitted."
+							"description": "Maximum members per inventoried verifier role. When omitted, uses legacy muon.maxRoleMembers or defaults to 100."
 						},
 						"maxSigners": {
 							"$ref": "#/definitions/scanBound",
-							"description": "Maximum entries separately in verifier public-key and gateway-signer lists. Defaults to 100 when this category is omitted."
+							"description": "Maximum entries separately in verifier public-key and gateway-signer lists. When omitted, uses legacy muon.maxSigners or defaults to 100."
 						}
 					},
 					"required": ["maxRoleMembers", "maxSigners"],

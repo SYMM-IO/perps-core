@@ -17,21 +17,23 @@ The existing Arbitrum-specific Core task targets `0x573310dB6d160B26026B8706EBe9
 
 Use the filename **`core-upgrade.<deployment>.input.json`**. Keep it under `tasks/config/` for menu discovery, or choose another path in the menu. The schema is [core-upgrade-input.schema.json](../deployment-tooling/core-upgrade-input.schema.json); unknown fields and inline secrets are rejected.
 
-| Field                            | Meaning                                                                                                                                                                                                     |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network`                        | Configured live network, chain ID and matching fork network. Arbitrum uses `arbitrum` / `42161` / `fork-arbitrum`; Base uses `base` / `8453` / `fork-base`.                                                 |
-| `release.ref`                    | Intended target Solidity release. The checked-out `contracts` tree must match it.                                                                                                                           |
-| `release.baselineRef`            | Reviewed Git reference for the deployed baseline. Arbitrum uses `version_0.8.6.2`, the local tag corresponding to the supplied 0.8.6.2 version.                                                             |
-| `credentials`                    | Keystore references for deployment wallet, archive-capable RPC and explorer key.                                                                                                                            |
-| `execution`                      | Confirmation depth, transaction timeout, slow-transaction notice and logging. Explorer publication is required.                                                                                             |
-| `governance`                     | Actual Core owner and owner type; independently specified AccountLayer owner; Safe-file, Ledger or keystore delivery. Ledger derivation family or governance keystore key must be supplied when applicable. |
-| `target`                         | Core, existing layers, collateral, verifier, Symbol Manager, liquidator, receiver, solver and Multicall addresses.                                                                                          |
-| `inventory`                      | Additional supplied contract/account addresses and subgraph URLs. Runtime hashes are recorded for addresses; URLs are context for integration checks.                                                       |
-| `limits`                         | Maximum complete historical quote and symbol scans. Exceeding a limit stops the task.                                                                                                                       |
-| `storage.symbolAdjustment`       | Expected legacy 15-word and upgraded 17-word empty SymbolAdjustment getter results.                                                                                                                         |
-| `funding.aggregate.repair`       | Require aggregate-funding reconciliation and repair any mismatches against the checked paused snapshot.                                                                                                     |
-| `roleGrants.core`                | Grants on `target.core`, with named recipient references or explicit holder addresses. Only missing grants are included.                                                                                    |
-| `selectors.core.allowedRemovals` | Explicit Core selector-removal policy. Unreviewed removals stop planning.                                                                                                                                   |
+| Field                              | Meaning                                                                                                                                                                                                     |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `network`                          | Configured live network, chain ID and matching fork network. Arbitrum uses `arbitrum` / `42161` / `fork-arbitrum`; Base uses `base` / `8453` / `fork-base`.                                                 |
+| `release.ref`                      | Intended target Core Solidity release. The checked-out `contracts` tree must match it.                                                                                                                      |
+| `release.baselineRef`              | Reviewed Git reference for the deployed baseline. Arbitrum uses `version_0.8.6.2`, the local tag corresponding to the supplied 0.8.6.2 version.                                                             |
+| `credentials`                      | Keystore references for deployment wallet, archive-capable RPC and explorer key.                                                                                                                            |
+| `execution`                        | Workflow-wide confirmation depth, transaction timeout in seconds, slow-transaction notice in seconds and logging. Explorer publication is required.                                                         |
+| `governance`                       | Actual Core owner and owner type; independently specified AccountLayer owner; Safe-file, Ledger or keystore delivery. Ledger derivation family or governance keystore key must be supplied when applicable. |
+| `target`                           | `core` is the upgrade target. Other entries identify existing dependencies, collateral, a treasury receiver and Multicall read infrastructure.                                                              |
+| `inventory`                        | Additional supplied contract/account addresses and subgraph URLs. Runtime hashes are recorded for addresses; URLs are context for integration checks.                                                       |
+| `limits.coreSnapshot`              | Maximum historical quotes and registered symbols read from Core during complete snapshots.                                                                                                                  |
+| `limits.signatureVerifierSnapshot` | Maximum members per inventoried verifier role and entries per public-key/gateway-signer list.                                                                                                               |
+| `muon`                             | Core route restoration canaries and additional Signature Verifier administrative roles to preserve.                                                                                                         |
+| `storage.symbolAdjustment`         | Expected legacy 15-word and upgraded 17-word empty SymbolAdjustment getter results.                                                                                                                         |
+| `funding.aggregate.repair`         | Require aggregate-funding reconciliation and repair any mismatches against the checked paused snapshot.                                                                                                     |
+| `roleGrants.core`                  | Grants on `target.core`, with named recipient references or explicit holder addresses. Only missing grants are included.                                                                                    |
+| `selectors.core.allowedRemovals`   | Explicit Core selector-removal policy. Unreviewed removals stop planning.                                                                                                                                   |
 
 The task generates internal live/fork credential recipes and a source-bound run input. Operators maintain only the standard input; generated recipes, reports and checkpoints are evidence for that run.
 
@@ -45,6 +47,16 @@ The supplied production input and Base example use `operations.symm.io/core-upgr
 
 ```json
 {
+	"limits": {
+		"coreSnapshot": {
+			"maxHistoricalQuotes": 10000,
+			"maxRegisteredSymbols": 1000
+		},
+		"signatureVerifierSnapshot": {
+			"maxRoleMembers": 100,
+			"maxSigners": 100
+		}
+	},
 	"storage": {
 		"symbolAdjustment": {
 			"legacyAdjustmentWords": 15,
@@ -77,15 +89,60 @@ The supplied production input and Base example use `operations.symm.io/core-upgr
 }
 ```
 
+`limits.coreSnapshot` bounds the off-chain inspection of `target.core`. `maxHistoricalQuotes` includes every assigned historical quote ID, including closed quotes; `maxRegisteredSymbols` bounds the registry returned by Core's `getSymbols`. These values do not configure the Symbol Manager, change symbol listing capacity or limit new trading positions. If an inventory exceeds its reviewed bound, the task stops without accepting a partial snapshot.
+
+`limits.signatureVerifierSnapshot` bounds administrative and signer inventories on `target.signatureVerifier`. `maxRoleMembers` applies separately to each inventoried role; `maxSigners` applies separately to the public-key list and gateway-signer list. The two values remain 100 in the supplied files, matching the previous implicit defaults. When the category is omitted, legacy `muon.maxRoleMembers` / `muon.maxSigners` or those defaults apply. Declaring verifier limits in both places is rejected.
+
 `storage.symbolAdjustment` applies specifically to `getSymbolAdjustment(symbolId)`: all scanned symbols must return 15 zero ABI words before the cut and 17 zero ABI words afterward. An ABI word is 32 bytes; these counts describe the getter result, not physical storage slots. A completed adjustment with nonzero retained fields also blocks this workflow. The supported transition and empty-state requirement are fixed safety rules, not operator bypass switches.
 
 `funding.aggregate.repair` must be `true` for this release. Funding mismatches are repaired using checked old values and the owner's migration authority; its original role membership is restored. `selectors.core.allowedRemovals` lists the reviewed selectors that the cut may remove. Categorization does not change upgrade scope: this task still upgrades Core and preserves its declared dependencies.
 
 `roleGrants.core` explicitly identifies the contract on which roles are granted: `target.core`. Each `holderRef` identifies the recipient and resolves to an address already declared in the input. `target.symbolManager` receives `SYMBOL_LISTING_ROLE` on Core; this does not grant a role on the Symbol Manager contract. `governance.owner` receives the declared Core pause roles. These are the two supported references. For another operator, use `"holder": "0x..."` with its full address instead of `holderRef`. Each entry must specify exactly one recipient form. Unsupported contract categories, unknown references, zero holders and duplicate resolved holder/role pairs are rejected.
 
-The deployment authorization review displays the rule categories and each Core grant's target, named recipient and resolved address. New inspection reports record the rules under `client.policies` and the grant contract address and resolved recipients under `client.roleGrants.core`. Layout, funding-policy and selector-removal errors identify their category. Unknown subjects, missing categories, mixed v1/v2 policy fields and unsupported input versions are rejected.
+The input and deployment authorization reviews describe the scope of the source references, credentials, signing authority, execution settings and every target address. Authorization also displays the scan bounds, rule categories and each Core grant's target, named recipient and resolved address. New inspection reports record the rules under `client.policies`, effective scan bounds under `client.limits` and the grant contract address and resolved recipients under `client.roleGrants.core`. Scan, layout, funding-policy and selector-removal errors identify their subject. Unknown subjects, missing categories, mixed v1/v2 policy fields and unsupported input versions are rejected.
 
-Existing `operations.symm.io/core-upgrade-input-v1` files remain accepted with flat `storage`, `repairAggregateFunding`, `allowedRemovedSelectors` and a flat `roleGrants` array. Previously saved v2 files with a flat role array also remain accepted; those grants implicitly target Core. The compatibility readers resolve policies and recipients without rewriting the original input or its digest. The historical Arbitrum-specific profile retains its existing format. Existing run evidence and source bindings are not migrated automatically: keep the original files and source for continuation, and start a new run when changing an input's structure or recipients.
+Existing `operations.symm.io/core-upgrade-input-v1` files remain accepted with flat `storage`, `limits.maxQuotes`, `limits.maxSymbols`, `repairAggregateFunding`, `allowedRemovedSelectors` and a flat `roleGrants` array. Previously saved v2 files with flat scan limits or a flat role array also remain accepted; those scans and grants implicitly target Core. The compatibility readers resolve policies, scan bounds and recipients without rewriting the original input or its digest. The historical Arbitrum-specific profile retains its existing format. Existing run evidence and source bindings are not migrated automatically: keep the original files and source for continuation, and start a new run when changing an input's structure or recipients.
+
+## Scope of the remaining fields
+
+The JSON schema describes each input field for editor tooltips. Workflow-wide settings keep their existing structure because they apply to the run as a whole:
+
+| Field                                                                          | Scope and units                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$schema`, `apiVersion`, `kind`, `name`                                        | Editor schema, format version, workflow kind and deployment identifier used in run artifacts.                                                                                                        |
+| `network.name`, `network.chainId`, `network.fork`                              | Live chain for all addresses and operations, its expected numeric ID, and the optional matching rehearsal network.                                                                                   |
+| `credentials.deployer`                                                         | Keystore wallet that funds new Core library/facet deployments.                                                                                                                                       |
+| `credentials.rpc`                                                              | Archive-capable RPC keystore reference for chain reads and transaction submission.                                                                                                                   |
+| `credentials.explorer`                                                         | Explorer API key keystore reference for publishing new Core libraries/facets.                                                                                                                        |
+| `execution.confirmations`                                                      | Confirmations required for deployments and governance receipts; integer 1–64.                                                                                                                        |
+| `execution.txTimeoutSeconds`                                                   | Transaction receipt wait timeout; 30–86400 seconds. Recovery checks the existing transaction intent after a timeout.                                                                                 |
+| `execution.slowNoticeSeconds`                                                  | Slow transaction notice delay; 5–86400 seconds and less than the receipt timeout.                                                                                                                    |
+| `execution.verify`                                                             | Required explorer publication after verified service restoration; must be `true`. Runtime parity and state checks are separate.                                                                      |
+| `execution.logLevel`                                                           | Live runtime logging: `minimal` or `verbose`.                                                                                                                                                        |
+| `governance.kind`, `governance.owner`                                          | Owner type and expected owner of Core, used for Core pause, cut and restoration authority.                                                                                                           |
+| `governance.signerMode`, `governance.signerKey`, `governance.ledgerDerivation` | Core owner's delivery method, applicable keystore entry name or Ledger derivation family. Independent of the deployment wallet.                                                                      |
+| `governance.accountLayerOwner`                                                 | Expected owner of the existing Account Layer, checked independently; not a signer for this Core upgrade.                                                                                             |
+| `muon.requiredFunctions`                                                       | Muon function names requiring fresh routed positive/negative restoration canaries. By default, all defined Muon function names except `ExpressCredit`.                                               |
+| `muon.additionalVerifierRoles`                                                 | Additional role hashes whose administrative membership is preserved on the Signature Verifier. Standard verifier default-admin and setter roles are already included. These do not grant Core roles. |
+| `inventory.<name>.kind`                                                        | Context item type: `contract`, `account` or `subgraph`; does not authorize an upgrade or role grant.                                                                                                 |
+| `inventory.<name>.address`                                                     | Runtime hash recorded at the snapshot block. Contract entries must have code; account entries may be EOAs.                                                                                           |
+| `inventory.<name>.url`                                                         | Context subgraph endpoint. This workflow does not query or validate its indexed contents automatically.                                                                                              |
+
+Only `target.core` receives the facet upgrade. The other named addresses identify dependencies and read infrastructure:
+
+| Address field              | Use in this workflow                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `target.core`              | Core diamond receiving the cut, grants, checked funding repairs and maintenance pause/restoration.                                     |
+| `target.collateral`        | Existing collateral token checked against Core and Gasless pointers.                                                                   |
+| `target.accountLayer`      | Existing Account Layer owner, selectors, pause and role wiring checks.                                                                 |
+| `target.instantLayer`      | Existing Instant Layer Core/Account Layer pointers, context state, template counter and operator wiring checks.                        |
+| `target.signatureVerifier` | Existing Muon verifier runtime, signer permissions and administrative membership checks.                                               |
+| `target.symbolManager`     | Existing Symbol Manager runtime and required Core role identity checks. Symbol Manager settings are not modified by these scan bounds. |
+| `target.gaslessLayer`      | Existing Gasless Layer pointers, treasury and operator/account-creation wiring checks.                                                 |
+| `target.liquidator`        | Existing Liquidator proxy runtime, implementation and Core liquidation-role checks.                                                    |
+| `target.gaslessReceiver`   | Expected Gasless treasury receiver account.                                                                                            |
+| `target.partyB`            | Existing solver contract Core pointer, implementation and Instant Layer permissions/whitelist checks.                                  |
+| `target.multicall`         | Batch contract used for block-pinned snapshot read calls.                                                                              |
 
 ## Optional Git release
 
@@ -180,6 +237,7 @@ npm run test:upgrade -- verification --match Core
 npm run test:upgrade -- recovery --match Core
 npm run test:upgrade -- input --match categories
 npm run test:upgrade -- input --match role-grants
+npm run test:upgrade -- input --match limits
 npm run test:upgrade -- workflow --match categories
 npm run test:upgrade -- input --chain-bound --match core
 npm run test:upgrade -- workflow --chain-bound --match core
