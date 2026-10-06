@@ -3,6 +3,7 @@ import fs from "node:fs"
 import { IMPLEMENTATION_SLOT } from "../../deployment-tooling/account-instant-upgrade.js"
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js"
 import { isStandardCoreInput, coreUpgradeAuthority, coreGovernanceKind } from "../../deployment-tooling/core-upgrade-input.js"
+import { captureMuonConfiguration } from "../../deployment-tooling/operations/muon-upgrade.js"
 import { addFunding, calculateGroupFunding } from "../../scripts/utils/aggregateFundingResync.js"
 import { json, lower, selectorsAt } from "./accountInstantSnapshot.js"
 import { logger } from "./logger.js"
@@ -177,11 +178,23 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	for (const address of new Set(Object.values(wiring.accountSelectors) as string[]))
 		code[address] = ethers.keccak256(await provider.getCode(address, block.number))
 	const selectors = await selectorsAt(ethers, t.core, block.number)
+	const muon = await captureMuonConfiguration(
+		provider,
+		{
+			schemaVersion: 1,
+			kind: "symmio.muon-upgrade-profile",
+			chainId: Number((await provider.getNetwork()).chainId),
+			core: { address: t.core, codeHash: code.core },
+			verifier: { address: t.signatureVerifier, codeHash: code.signatureVerifier },
+			policy: config.muon || {},
+		},
+		{ blockNumber: block.number, blockHash: block.hash },
+	)
 	const facetCode: any = {}
 	for (const address of new Set(Object.values(selectors))) facetCode[address] = ethers.keccak256(await provider.getCode(address, block.number))
 	if (configurationOnly) {
 		await assertCanonical()
-		return json({ plannedRoles, blockNumber: block.number, blockHash: block.hash, preserved, wiring, code, facetCode, selectors, pause, roles })
+		return json({ plannedRoles, blockNumber: block.number, blockHash: block.hash, preserved, wiring, code, facetCode, selectors, pause, roles, muon })
 	}
 
 	const next = Number(await call("getNextQuoteId"))
@@ -298,6 +311,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		selectors,
 		pause,
 		roles,
+		muon,
 		economy: { next, quotes, symbols, parties, balances, pairBalances, restatements },
 		funding,
 		globals: [...globals.values()],
@@ -305,6 +319,8 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 }
 
 export function assertCoreSnapshotPreserved(before: any, after: any, upgraded = false, unpaused = false) {
+	if (!before.muon?.configuration || !after.muon?.configuration) throw new Error("Missing Muon configuration evidence")
+	if (digest(before.muon?.configuration) !== digest(after.muon?.configuration)) throw new Error("Core upgrade changed Muon configuration")
 	for (const key of ["preserved", "wiring", "code", "economy"])
 		if (digest(before[key]) !== digest(after[key])) throw new Error(`Core upgrade changed preserved ${key}`)
 	const expectedPause = [...before.pause]

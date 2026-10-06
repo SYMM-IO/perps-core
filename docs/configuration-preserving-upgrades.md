@@ -73,6 +73,16 @@ Both require a deployed `target`. Role profiles bind exactly the same source and
 
 The report keeps configuration setters, role grants, wiring activations and old-permission retirements separate, with each call's actual authority. Preparation rejects source-setting, source-role or consumer-membership drift between the source and target checkpoints. Retirements require the execution adapter's reviewed ordering and receipt checks; the preparation task sends none of these calls.
 
+## Muon configuration preservation
+
+Add `"muon": { "file": "./muon-profile.json", "sha256": "sha256:<64 hexadecimal characters>" }` to a configuration request to include Muon evidence. This is also available before deploying the replacement. The profile uses `schemaVersion: 1`, `kind: "symmio.muon-upgrade-profile"`, the same `chainId`, and `core` and `verifier` records containing `{ address, codeHash }`. These records describe the preserved Core and verifier; this adapter does not replace or reconfigure the verifier.
+
+Pinned view reads capture the Core verifier pointer, app ID, global price/UPNL windows, effective per-function UPNL windows and override flags; all enumerated verifier public keys and gateways; every current function category's capability and permission bits; and default-admin/SETTER role memberships and role administrators. False permission bits are preserved as well as true ones. A missing getter, changed runtime, exceeded enumeration limit or configuration drift rejects the result. No signature, delegation, nonce or raw storage export is needed.
+
+The optional `policy` accepts `requiredFunctions`, `additionalVerifierRoles`, `maxRoleMembers` and `maxSigners`. Defaults cover the Core categories, the verifier's standard administrative roles and limits of 100 members/signers. Add ExpressCredit when checking its separate provider integration. ExpressCredit has no Core UPNL window; preserve and check its provider freshness policy in that component's configuration profile. Additional custom role IDs must be supplied explicitly. The ordinary Core upgrade snapshots include these Muon reads automatically; a standard Core input can supply the same policy as `muon`.
+
+Configuration preservation proves the declared contract views and identities, not a running Muon service registration or signed payload compatibility. InstantLayer has no Muon configuration of its own: it routes calls through AccountLayer or PartyB to Core. A replacement still needs its Core/AccountLayer permissions, PartyB enrollment, templates and calldata offsets checked. The off-chain deployment identity remains `(chainId, Core address)` when only InstantLayer is replaced. Service and routed-call readiness are separate prerequisites for restoration.
+
 ## Configuration profile
 
 A profile has `schemaVersion: 1`, `kind: "symmio.configuration-profile"`, `chainId`, `source: { address, codeHash }` and `fields`. For a proxy, bind its implementation with `implementation: { slot, address, codeHash }` on the source and target contract records. Runtime parity and implementation identity are checked separately from scanner publication.

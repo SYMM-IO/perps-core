@@ -35,6 +35,7 @@ describe("Generic Core governance (governance)", function () {
 			allowedRemovedSelectors: [],
 		}
 		const before: any = {
+			muon: { configuration: { appId: "7" } },
 			preserved: { getOwner: address(2) },
 			wiring: {},
 			code: {},

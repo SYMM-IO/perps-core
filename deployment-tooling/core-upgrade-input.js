@@ -1,4 +1,5 @@
 import { CHAINS } from "../cli/lib/context.js";
+import { muonUpgradePolicy } from "./operations/muon-upgrade.js";
 import { parseSecretRef, validateDeploymentRecipe } from "./recipe.js";
 import Ajv from "ajv";
 import { getAddress, ZeroAddress, id } from "ethers";
@@ -10,6 +11,7 @@ const validateSchema = new Ajv({ allErrors: true, strict: true }).compile(
 );
 export function validateCoreUpgradeInput(input) {
 	if (!validateSchema(input)) throw new Error(`Invalid Core upgrade input: ${JSON.stringify(validateSchema.errors)}`);
+	muonUpgradePolicy(input.muon);
 	const network = CHAINS[input.network.name],
 		fork = CHAINS[input.network.fork];
 	if (!network || network.simulated || network.chainId !== input.network.chainId || !fork?.simulated || fork.upstream !== input.network.name)

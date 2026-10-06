@@ -9,6 +9,7 @@ import { address, rejects } from "../helpers/CoreUpgrade.fixture.js"
 describe("Current Core upgrade safety gates (verification)", function () {
 	it("refuses economic, peripheral, pause, role and funding drift even after a successful receipt", () => {
 		const before = {
+			muon: { configuration: { appId: "7" } },
 			preserved: { owner: address(1) },
 			wiring: {},
 			code: {},
@@ -24,6 +25,8 @@ describe("Current Core upgrade safety gates (verification)", function () {
 		}
 		expect(() => assertCoreSnapshotPreserved(before, after, true)).not.to.throw()
 		for (const mutate of [
+			(s: any) => (s.muon.configuration.appId = "8"),
+			(s: any) => delete s.muon,
 			(s: any) => (s.economy.quote = "124"),
 			(s: any) => (s.code.new = "different"),
 			(s: any) => (s.roles.migration = true),
