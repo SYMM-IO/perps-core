@@ -34,9 +34,25 @@ Use the filename **`core-upgrade.<deployment>.input.json`**. Keep it under `task
 
 The task generates internal live/fork credential recipes and a source-bound run input. Operators maintain only the standard input; generated recipes, reports and checkpoints are evidence for that run.
 
-Preparation pins HEAD, target and baseline commits, the target contracts tree, the original input digest and both generated recipes. Continuation refuses changes to these bindings. Commit reviewed tracked changes before starting, and keep source and inputs fixed until completion.
+Preparation pins HEAD, target and baseline commits, the target contracts tree, the original input digest and both generated recipes. Continuation refuses changes to these bindings. Keep source and inputs fixed until completion. If you skip Git publication or run a fork rehearsal, commit reviewed tracked edits before starting. If you select Git publication, stage the exact reviewed changes first; the task can commit that staged tree before binding the final upgrade source.
 
 Git baseline provenance is separate from deployed bytecode parity: naming the baseline tag does not prove that every deployed facet was compiled from that commit. Snapshot ABI/storage and deployed runtime checks remain required. Fork rehearsal is a separate optional action.
+
+## Optional Git release
+
+The standard live task asks **Upgrade Git tag** after loading the input:
+
+- **Skip Git release** continues with a clean, committed checkout. It performs no Git commit, tag creation or push, and needs no Git remote.
+- **Create a new tag** asks for its name. With reviewed changes already staged, it also asks for a conventional commit message. It commits precisely the reviewed index; it never stages files automatically. A clean checkout reuses its current commit.
+- Selecting a current tag reuses its exact object, including an existing lightweight or signed tag. It must point to HEAD with no staged edits. If a tag points elsewhere, check out the intended release before starting, or choose a new tag. Existing tags are never moved or overwritten.
+
+Select the configured Git remote, review the staged-file summary and approve the release plan. New tags are annotated, using the repository's tag-signing configuration. Configure Git identity and credentials before starting; remote commands have a bounded timeout and do not request hidden terminal input. The remote must have exactly one push URL. Its URL and credentials are not saved in the release journal or displayed in task output.
+
+The durable steps are **review → commit → tag → publish and verify → bind upgrade**. Only the selected tag is pushed, together with its reachable commits; branch refs and unrelated tags are not pushed. The task verifies the remote tag object and its peeled commit against the local release, then binds Core's source and input digest to that commit before compilation or live deployment. `release.ref` remains the target Solidity reference, and `release.baselineRef` remains the deployed baseline. The separately chosen upgrade tag does not replace either field.
+
+`git-release.json` records the reviewed intent digest, commit, tag object and verified publication. **Continue active task** reconciles an interrupted commit, tag creation or push and checks the remote publication again before resuming Core work. A conflicting remote tag stops the task. Cancellation preserves completed Git effects. To change the tag/remote choice or choose Skip after preparation, cancel and start a new task; saved intent is immutable.
+
+Fork rehearsal does not ask for or publish a Git release. Explorer source/ABI publication remains the final stage after service restoration. The live task's changed plan is version 5; existing version 4 runs require their original task/source to continue.
 
 ## Optional rehearsal
 
