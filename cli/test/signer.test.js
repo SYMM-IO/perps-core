@@ -343,7 +343,7 @@ test("Safe file dispatch writes fork-scoped canonical artifacts without spawning
 		[{ to: TARGET, value: "0", data: iface.encodeFunctionData("setLimit", [7n]), description: "Set limit" }],
 		{ root, chainId: 42161, network: "fork-arbitrum", name: "Fork review", description: "Simulation only" },
 	);
-	assert.match(result.builderPath, /tasks\/data\/42161-fork\/safe\//);
+	assert.match(result.builderPath.split(path.sep).join("/"), /tasks\/data\/42161-fork\/safe\//);
 	assert.equal(fs.existsSync(result.builderPath), true);
 	assert.equal(fs.existsSync(result.intentPath), true);
 	assert.equal(events.at(-1).type, "safe.exported");

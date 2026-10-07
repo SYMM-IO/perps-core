@@ -2,6 +2,8 @@
 // operator runs; tests set DEPLOY_LOG_LEVEL=silent in their shared connection helper.
 import fs from "node:fs"
 
+import { redactText, sanitizeEvidence } from "../../deployment-tooling/operations/redaction.js"
+
 export type LogLevel = "silent" | "minimal" | "verbose"
 
 const LOG_LEVELS = new Set<LogLevel>(["silent", "minimal", "verbose"])
@@ -78,7 +80,7 @@ export function emitTaskEvent(type: string, detail: Record<string, unknown> = {}
 	const rawFd = process.env.SYMMIO_TASK_EVENT_FD
 	if (!rawFd || !/^\d+$/.test(rawFd)) return
 	try {
-		fs.writeSync(Number(rawFd), `${JSON.stringify({ type, detail })}\n`)
+		fs.writeSync(Number(rawFd), `${JSON.stringify(sanitizeEvidence({ type, detail }))}\n`)
 	} catch {
 		// The event channel is presentation-only. Deployment receipts/checkpoints remain
 		// authoritative and must never fail because a parent renderer disappeared.
@@ -88,10 +90,10 @@ export function emitTaskEvent(type: string, detail: Record<string, unknown> = {}
 export const logger = {
 	// Errors and warnings remain visible even in silent mode. Silent suppresses routine
 	// progress, never evidence that a deployment is unsafe or incomplete.
-	error: (...args: any[]) => console.error(color("[ERROR]", COLORS.red), ...args),
+	error: (...args: any[]) => console.error(color("[ERROR]", COLORS.red), ...args.map(value => sanitizeEvidence(value))),
 	warn: (...args: any[]) => {
-		emitTaskEvent("warning", { message: args.map(value => String(value)).join(" ") })
-		console.warn(color("[WARN]", COLORS.yellow), ...args)
+		emitTaskEvent("warning", { message: args.map(value => redactText(value)).join(" ") })
+		console.warn(color("[WARN]", COLORS.yellow), ...args.map(value => sanitizeEvidence(value)))
 	},
 
 	// Minimal and verbose lifecycle output.

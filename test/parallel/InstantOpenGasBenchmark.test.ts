@@ -1,5 +1,5 @@
 import { expect } from "chai"
-import { TypedDataDomain, toUtf8Bytes } from "ethers"
+import { type TypedDataDomain, toUtf8Bytes } from "ethers"
 
 import type { InstantLayer } from "../../src/types/index.js"
 import { initializeFixture } from "../Initialize.fixture.js"
@@ -7,8 +7,8 @@ import { ethers } from "../helpers/hardhat-connection.js"
 import { cloneTypes } from "../helpers/instantLayerEIP712Types.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 import { RunContext } from "../models/RunContext.js"
-import { limitOpenRequestBuilder, OpenRequest } from "../models/requestModels/OpenRequest.js"
-import { limitQuoteRequestBuilder, QuoteRequest } from "../models/requestModels/QuoteRequest.js"
+import { limitOpenRequestBuilder, type OpenRequest } from "../models/requestModels/OpenRequest.js"
+import { limitQuoteRequestBuilder, type QuoteRequest } from "../models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "../utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "../utils/SignatureUtils.js"
 

@@ -350,7 +350,7 @@ test("component handoff evidence is bound to the recipe, target, lifecycle, and 
 	);
 	assert.match(
 		componentReportPath(42161, { simulated: true, recipeName: "add-partyb", component: "partyB" }),
-		/tasks\/data\/42161-fork\/components\/add-partyb\/partyB-report\.json$/,
+		/tasks[\\/]data[\\/]42161-fork[\\/]components[\\/]add-partyb[\\/]partyB-report\.json$/,
 	);
 });
 

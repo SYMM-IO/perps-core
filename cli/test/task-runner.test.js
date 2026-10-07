@@ -235,7 +235,7 @@ test("a failed subprocess promotes a useful stdout error when stderr is empty", 
 test("an interrupt records why its subprocess stopped instead of reporting a generic exit code", async () => {
 	const run = async ctx => {
 		await ctx.step("run", "Run", async () => {
-			const interrupt = setTimeout(() => process.kill(process.pid, "SIGINT"), 50);
+			const interrupt = setTimeout(() => (process.platform === "win32" ? process.emit("SIGINT") : process.kill(process.pid, "SIGINT")), 50);
 			try {
 				await ctx.runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
 			} finally {

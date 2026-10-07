@@ -71,7 +71,7 @@ describe("vanity plan", function () {
 		const plan = buildVanityPlan({ factoryAddress: FACTORY, groups: { diamonds: { prefix: "573310" } } })!
 		const table = formatVanityPlan(plan, 100_000)
 		expect(table).to.contain("core/Diamond")
-		expect(table).to.contain("16,777,216")
+		expect(table).to.contain((16_777_216).toLocaleString())
 	})
 })
 

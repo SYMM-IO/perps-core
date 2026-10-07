@@ -9,6 +9,9 @@ import {
 } from "../tasks/arbitrum-perps-upgrade.js";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 test("Safe hardening offers skip or wait without changing the active task step identity", async () => {
@@ -159,7 +162,25 @@ test("InstantLayer state chunking refuses actions without a stable template id",
 	);
 });
 
-test("source migration environment binds the active journal to the checked-out commit", () => {
+test("source migration environment binds the active journal to the checked-out commit", t => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "symmio-source-migration-"));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+	git(["init", "-q"]);
+	git([
+		"-c",
+		"user.name=Test",
+		"-c",
+		"user.email=test@example.invalid",
+		"-c",
+		"commit.gpgSign=false",
+		"-c",
+		"core.hooksPath=/dev/null",
+		"commit",
+		"--allow-empty",
+		"-qm",
+		"source fixture",
+	]);
 	const sourceHash = `sha256:${"2".repeat(64)}`;
 	const migrations = [
 		{
@@ -172,12 +193,13 @@ test("source migration environment binds the active journal to the checked-out c
 	const environment = buildArbitrumPerpsUpgradeSourceMigrationEnvironment(
 		{ inputDigest: "input-digest", sourceCommit: "a".repeat(40) },
 		{ runId: "run-1", sourceHash, sourceMigrations: migrations },
+		root,
 	);
 	const evidence = JSON.parse(environment.SYMMIO_ARBITRUM_UPGRADE_SOURCE_MIGRATION);
 	assert.equal(evidence.taskId, "maintenance.arbitrum-perps-upgrade");
 	assert.equal(evidence.taskRunId, "run-1");
 	assert.equal(evidence.inputDigest, "input-digest");
 	assert.equal(evidence.originalCommit, "a".repeat(40));
-	assert.equal(evidence.currentCommit, execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim());
+	assert.equal(evidence.currentCommit, git(["rev-parse", "HEAD"]));
 	assert.deepEqual(evidence.migrations, migrations);
 });

@@ -105,7 +105,7 @@ test("an existing scope can select any JSON recipe file from deployment-recipes"
 	assert.equal(input.config, selectedRecipePath);
 	const selection = ui.prompts.find(prompt => prompt.message === "Which reviewed recipe file do you want to use?");
 	assert.deepEqual(
-		selection.options.map(option => option.label),
+		selection.options.map(option => option.label.replaceAll("\\", "/")),
 		["deployment-recipes/fork-arbitrum-reviewed-alternative.json", "deployment-recipes/fork-arbitrum.json"],
 	);
 	assert.equal(ui.prompts.filter(prompt => prompt.message === "Deployment transaction signer").length, 1);

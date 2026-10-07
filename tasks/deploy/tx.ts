@@ -8,6 +8,7 @@ import {
 	type ContractTransactionResponse,
 } from "ethers"
 
+import { redactText } from "../../deployment-tooling/operations/redaction.js"
 import { emitTaskEvent } from "./logger.js"
 
 // Awaiting a contract call in ethers v6 resolves as soon as the transaction is
@@ -151,7 +152,7 @@ function applyReceipt(
 	record.gasUsed = BigInt(receipt.gasUsed).toString()
 	record.effectiveGasPrice = effectiveGasPrice?.toString()
 	record.nativeCostWei = effectiveGasPrice === undefined ? undefined : (BigInt(receipt.gasUsed) * effectiveGasPrice).toString()
-	if (error) record.error = error
+	if (error) record.error = redactText(error)
 	else delete record.error
 }
 
@@ -170,6 +171,65 @@ function sameTransactionIntent(record: DeploymentTransactionRecord, replacement:
 		replacement.data.toLowerCase() === expectedData &&
 		BigInt(replacement.value ?? 0).toString() === expectedValue
 	)
+}
+
+/** Read-only receipt observation at an explicitly selected finalized checkpoint.
+ * Never mutates the supplied journal or makes a nonce reusable; absence is unknown.
+ * The caller must pin getCode/getBlock reads to its evidence snapshot.
+ */
+export async function observeDeploymentTransaction(
+	record: DeploymentTransactionRecord,
+	provider: Pick<ReconciliationProvider, "getTransaction" | "getTransactionReceipt" | "getCode"> & {
+		getBlock(number: number): Promise<{ hash: string } | null>
+	},
+	finalized: { number: number; hash: string },
+): Promise<{ hash: string; replacementHash?: string; status: "confirmed" | "replaced" | "failed" | "unknown" }> {
+	const result = { hash: record.hash, replacementHash: record.replacementHash, status: "unknown" as "confirmed" | "replaced" | "failed" | "unknown" }
+	try {
+		if (!Number.isSafeInteger(finalized.number) || finalized.number < 0 || !Number.isSafeInteger(record.confirmations) || record.confirmations < 1)
+			return result
+		const finalBlock = await provider.getBlock(finalized.number)
+		if (finalBlock?.hash.toLowerCase() !== finalized.hash.toLowerCase()) return result
+		const effectiveHash = record.replacementHash || record.hash
+		const receipt = await provider.getTransactionReceipt(effectiveHash)
+		if (
+			!receipt ||
+			receipt.hash?.toLowerCase() !== effectiveHash.toLowerCase() ||
+			!Number.isSafeInteger(receipt.blockNumber) ||
+			receipt.blockNumber > finalized.number
+		)
+			return result
+		const canonical = await provider.getBlock(receipt.blockNumber)
+		if (
+			!canonical ||
+			canonical.hash.toLowerCase() !== receipt.blockHash?.toLowerCase() ||
+			receiptConfirmations(receipt, finalized.number) < record.confirmations
+		)
+			return result
+		const transaction = await provider.getTransaction(effectiveHash)
+		if (!transaction || transaction.hash?.toLowerCase() !== effectiveHash.toLowerCase()) return result
+		if (!sameTransactionIntent(record, transaction)) {
+			result.status = "failed"
+			return result
+		}
+		if (Number(receipt.status) === 0) result.status = "failed"
+		else if (Number(receipt.status) === 1) {
+			if (record.deployment) {
+				if (!provider.getCode) return result
+				const code = await provider.getCode(record.deployment.expectedAddress)
+				try {
+					await validateDeploymentLanding(structuredClone(record), receipt, { getCode: async () => code }, transaction)
+				} catch {
+					result.status = "failed"
+					return result
+				}
+			}
+			result.status = record.replacementHash ? "replaced" : "confirmed"
+		}
+	} catch {
+		/* Partial evidence cannot prove inclusion or deployment identity. */
+	}
+	return result
 }
 
 function isPlainNonceCancellation(replacement: any): boolean {
@@ -439,7 +499,7 @@ export async function reconcileDeploymentTransactions(
 				continue
 			}
 			record.status = "failed"
-			record.error = `Operator confirmed ${record.hash} dropped after RPC nonce reconciliation`
+			record.error = redactText(`Operator confirmed ${record.hash} dropped after RPC nonce reconciliation`)
 			record.durationMs = Math.max(record.durationMs, Date.now() - Date.parse(record.submittedAt))
 			reconciled++
 			continue
@@ -553,7 +613,7 @@ export async function send(
 	const startedAt = Date.now()
 	const submittedAt = new Date(startedAt).toISOString()
 	const record: DeploymentTransactionRecord = {
-		label,
+		label: redactText(label),
 		hash: tx.hash,
 		nonce: tx.nonce,
 		status: "unresolved",
@@ -570,7 +630,9 @@ export async function send(
 		try {
 			await writeAhead(record)
 		} catch (error) {
-			record.error = `Failed to persist submitted transaction before receipt wait: ${error instanceof Error ? error.message : String(error)}`
+			record.error = redactText(
+				`Failed to persist submitted transaction before receipt wait: ${error instanceof Error ? error.message : String(error)}`,
+			)
 			throw new Error(`${label}: transaction ${tx.hash} was broadcast, but its write-ahead record could not be persisted. ${record.error}`)
 		}
 	}
@@ -629,7 +691,7 @@ export async function send(
 		record.durationMs = durationMs
 		record.blockNumber = errorReceipt?.blockNumber
 		record.gasUsed = errorReceipt?.gasUsed?.toString()
-		record.error = message
+		record.error = redactText(message)
 		emitTaskEvent("tx.failed", { transaction: { ...record } })
 		throw error
 	} finally {
@@ -640,7 +702,7 @@ export async function send(
 		const message = `${label}: transaction ${tx.hash} was dropped or replaced before ${confirmations} confirmation(s)`
 		record.status = "unresolved"
 		record.durationMs = Date.now() - startedAt
-		record.error = message
+		record.error = redactText(message)
 		emitTaskEvent("tx.failed", { transaction: { ...record } })
 		throw new Error(message)
 	}
@@ -713,7 +775,7 @@ export async function confirmDeploymentWithReceipt(
 	} catch (error) {
 		if (record) {
 			record.status = "failed"
-			record.error = `Deployment binding validation failed: ${error instanceof Error ? error.message : String(error)}`
+			record.error = redactText(`Deployment binding validation failed: ${error instanceof Error ? error.message : String(error)}`)
 		}
 		throw error
 	}

@@ -1,3 +1,4 @@
+import { registerRedactionSecrets } from "../../deployment-tooling/operations/redaction.js";
 import { PROJECT_ROOT } from "../lib/paths.js";
 import { createSafeBatch, safeBatchDigest, writeSafeBatch, writeSafeIntent } from "./safe-batch.js";
 import { Wallet, getAddress, isAddress } from "ethers";
@@ -20,6 +21,7 @@ const transientSecrets = new WeakMap();
 const transientSecretValues = new Set();
 
 function rememberSecrets(values) {
+	registerRedactionSecrets(Object.values(values));
 	for (const value of Object.values(values)) if (typeof value === "string" && value) transientSecretValues.add(value);
 	return values;
 }

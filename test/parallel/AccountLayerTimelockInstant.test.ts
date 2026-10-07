@@ -1,5 +1,5 @@
 import { expect } from "chai"
-import { TypedDataDomain, ZeroAddress, ZeroHash, toUtf8Bytes } from "ethers"
+import { type TypedDataDomain, ZeroAddress, ZeroHash, toUtf8Bytes } from "ethers"
 
 import type { InstantLayer } from "../../src/types/index.js"
 import { initializeFixture } from "../Initialize.fixture.js"

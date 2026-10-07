@@ -26,11 +26,14 @@ export async function initializeFixture(): Promise<RunContext> {
 	const symmioPartyB = await deploySymmioPartyB(hre, {
 		symmioAddress: await diamond.getAddress(),
 		admin: admin,
+		// Parallel local-chain fixtures must not replace each other's operator records.
+		logData: false,
 	})
 
 	const instantLayer = await deployInstantLayer(hre, {
 		symmioaddress: await diamond.getAddress(),
 		admin: admin,
+		logData: false,
 	})
 
 	const context = await createRunContext(await diamond.getAddress(), await collateral.getAddress(), true)

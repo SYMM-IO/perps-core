@@ -31,6 +31,7 @@ function releaseFixture(t) {
 	};
 	git(["init", "-q"]);
 	git(["config", "user.name", "Release Test"]);
+	git(["config", "tag.gpgSign", "false"]);
 	git(["config", "user.email", "release@example.invalid"]);
 	git(["config", "core.hooksPath", "/dev/null"]);
 	const commit = files => {

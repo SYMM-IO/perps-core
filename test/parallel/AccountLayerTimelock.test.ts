@@ -1,5 +1,5 @@
 import { expect } from "chai"
-import { FunctionFragment, Interface, ParamType, TypedDataDomain, ZeroAddress, ZeroHash } from "ethers"
+import { FunctionFragment, Interface, ParamType, type TypedDataDomain, ZeroAddress, ZeroHash } from "ethers"
 
 import { initializeFixture } from "../Initialize.fixture.js"
 import {
