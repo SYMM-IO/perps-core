@@ -1,4 +1,5 @@
 import { normalizeDeploymentSummary, renderDeploymentTerminal } from "../deployment-tooling/deployment-report.js";
+import { registerRedactionSecrets } from "../deployment-tooling/operations/redaction.js";
 import { resolveNetwork } from "./lib/context.js";
 import * as defaultRunner from "./task-runner.js";
 import * as clack from "@clack/prompts";
@@ -275,6 +276,7 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 	let passwordPromptActive = false;
 	let passwordSubmitted = false;
 	let cachedKeystoreInput = null;
+	let clearKeystoreRedaction = null;
 	let pendingKeystoreInput = [];
 	let titleBeforePassword = "";
 	let stopPasswordInput = null;
@@ -330,6 +332,8 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 				// The password may be exactly why this failed; asking again beats replaying a
 				// rejected secret into every later subprocess of the run.
 				cachedKeystoreInput.fill(0);
+				clearKeystoreRedaction?.();
+				clearKeystoreRedaction = null;
 				cachedKeystoreInput = null;
 			}
 			if (event.type === "process.completed")
@@ -411,6 +415,8 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 				if (accepted.length > 0) pendingKeystoreInput.push(Buffer.from(accepted));
 				if (terminator >= 0) {
 					cachedKeystoreInput = Buffer.concat(pendingKeystoreInput);
+					clearKeystoreRedaction?.();
+					clearKeystoreRedaction = registerRedactionSecrets([cachedKeystoreInput]);
 					for (const part of pendingKeystoreInput) part.fill(0);
 					pendingKeystoreInput = [];
 					channel.end?.();
@@ -517,6 +523,8 @@ async function runWithProgress(action, { ui, runner, input, output, controllerRe
 		for (const part of pendingKeystoreInput) part.fill(0);
 		pendingKeystoreInput = [];
 		cachedKeystoreInput?.fill(0);
+		clearKeystoreRedaction?.();
+		clearKeystoreRedaction = null;
 		cachedKeystoreInput = null;
 		controllerRef.current?.stop();
 		controllerRef.current = null;

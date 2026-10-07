@@ -4,7 +4,13 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import nodeTest from "node:test";
+
+// These Python fixtures exercise POSIX fcntl/pty, unavailable on Windows.
+const test = (name, options, action) => {
+	if (typeof options === "function") return nodeTest(name, { skip: process.platform === "win32" ? "POSIX PTY fixture" : false }, options);
+	return nodeTest(name, { ...options, skip: process.platform === "win32" ? "POSIX PTY fixture" : options.skip }, action);
+};
 
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 

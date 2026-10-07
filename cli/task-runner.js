@@ -3,6 +3,9 @@
 // The terminal UI deliberately knows only this interface: catalog(), start(),
 // resumeActive(), cancelActive(), and getActive(). Task definitions own prompts and
 // implementation details; the runner owns lifecycle, locking, evidence and recovery.
+import { redactText, sanitizeEvidence, sanitizeEvidenceInPlace } from "../deployment-tooling/operations/redaction.js";
+import { hashSourceTree } from "../deployment-tooling/operations/source-manifest.js";
+import { createTelemetryPublisher } from "../deployment-tooling/operations/telemetry.js";
 import { createChildOutputReader, createStdinChannel, HARDHAT_KEYSTORE_PROMPT } from "./lib/child-output.js";
 import { PROJECT_ROOT } from "./lib/paths.js";
 import { withTaskOutputSink } from "./lib/task-output.js";
@@ -78,10 +81,7 @@ function safeSegment(value) {
 }
 
 function redact(value) {
-	return redactSignerSecrets(value)
-		.replace(/(?:https?|wss?):\/\/[^\s'"`<>]+/giu, "<redacted-url>")
-		.replace(/((?:private|secret)[ _-]?key\s*[:=]\s*)0x[a-fA-F0-9]{64}/giu, "$1<redacted-private-key>")
-		.replace(/((?:password|secret|token|api[ _-]?key)\s*[:=]\s*)\S+/giu, "$1<redacted>");
+	return redactText(redactSignerSecrets(value));
 }
 
 function atomicWrite(file, value) {
@@ -115,43 +115,6 @@ function processAlive(pid) {
 	} catch (error) {
 		return error?.code === "EPERM";
 	}
-}
-
-function hashSourceTree(root) {
-	const hash = createHash("sha256");
-	const entries = [
-		"cli",
-		"contracts",
-		"deployment",
-		"deployment-tooling",
-		"scripts",
-		"tasks",
-		"utils",
-		"hardhat.config.ts",
-		"package.json",
-		"package-lock.json",
-		"tsconfig.json",
-	];
-	const files = [];
-	const visit = entry => {
-		if (!fs.existsSync(entry)) return;
-		const relative = path.relative(root, entry);
-		if (relative === path.join("tasks", "data") || relative.startsWith(`${path.join("tasks", "data")}${path.sep}`)) return;
-		const stat = fs.statSync(entry);
-		if (stat.isDirectory()) {
-			for (const child of fs.readdirSync(entry).sort()) visit(path.join(entry, child));
-		} else if (stat.isFile()) {
-			files.push(entry);
-		}
-	};
-	for (const entry of entries) visit(path.join(root, entry));
-	for (const file of files.sort()) {
-		hash.update(path.relative(root, file));
-		hash.update("\0");
-		hash.update(fs.readFileSync(file));
-		hash.update("\0");
-	}
-	return `sha256:${hash.digest("hex")}`;
 }
 
 function validateDefinition(definition) {
@@ -270,6 +233,16 @@ export function createTaskRunner(options = {}) {
 	const byId = new Map(definitions.map(definition => [definition.id, definition]));
 	const clock = options.clock || (() => new Date());
 	const idFactory = options.idFactory || randomUUID;
+	const publishTelemetry =
+		typeof options.telemetry === "function"
+			? createTelemetryPublisher(options.telemetry, {
+					operations: definitions.map(definition => definition.id),
+					phases: [...new Set(options.telemetryPhases || ["prepare", "execution", "verification", "checklist", "handover"])],
+					chain: "unknown",
+					provider: "unknown",
+					...options.telemetryLabels,
+				})
+			: () => {};
 
 	function now() {
 		return clock().toISOString();
@@ -277,11 +250,23 @@ export function createTaskRunner(options = {}) {
 
 	function saveActive(state) {
 		state.updatedAt = now();
+		sanitizeEvidenceInPlace(state);
 		atomicWrite(activePath, `${JSON.stringify(state, null, 2)}\n`);
 	}
 
 	function appendEvent(state, event) {
-		const record = { at: now(), runId: state.runId, taskId: state.taskId, ...event };
+		state.eventSequence = (state.eventSequence || 0) + 1;
+		const record = sanitizeEvidence({
+			...event,
+			at: now(),
+			runId: state.runId,
+			taskId: state.taskId,
+			sequence: state.eventSequence,
+			eventId: randomUUID(),
+		});
+		if (["task.completed", "task.failed", "task.paused", "task.waiting", "task.cancelled"].includes(record.type)) {
+			state.attemptEndedAt ??= record.at;
+		}
 		fs.mkdirSync(path.dirname(state.eventPath), { recursive: true });
 		fs.appendFileSync(state.eventPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
 		state.lastEvent = record;
@@ -315,6 +300,7 @@ export function createTaskRunner(options = {}) {
 		fs.mkdirSync(directory, { recursive: true });
 		const archivedPath = path.join(directory, "state.json");
 		state.archivedPath = archivedPath;
+		sanitizeEvidenceInPlace(state);
 		atomicWrite(archivedPath, `${JSON.stringify(state, null, 2)}\n`);
 		if (fs.existsSync(activePath)) {
 			const active = readJson(activePath);
@@ -324,7 +310,7 @@ export function createTaskRunner(options = {}) {
 	}
 
 	function getActive() {
-		const state = readJson(activePath);
+		const state = sanitizeEvidenceInPlace(readJson(activePath));
 		if (!state) return null;
 		if (!ACTIVE_STATUSES.has(state.status)) {
 			throw new Error(`Active task file contains terminal/unknown status ${JSON.stringify(state.status)}`);
@@ -383,6 +369,8 @@ export function createTaskRunner(options = {}) {
 		const activeChildren = new Set();
 
 		const emit = (type, detail = {}) => {
+			detail = sanitizeEvidence(detail);
+			if (type === "step.started") state.currentPhase = detail.phase;
 			const event = appendEvent(state, { type, ...detail });
 			if (type === "warning") state.warnings.push({ at: event.at, message: detail.message });
 			if (type === "tx.submitted") {
@@ -417,6 +405,7 @@ export function createTaskRunner(options = {}) {
 				}
 			}
 			if (definition.risk !== "read-only") saveActive(state);
+			publishTelemetry(state, event);
 			runtime.onEvent?.(event, state);
 			return event;
 		};
@@ -521,6 +510,9 @@ export function createTaskRunner(options = {}) {
 			},
 			setWaiting: message => {
 				state.status = "waiting_external";
+				const waitingKey = digest(redact(message));
+				if (state.waitingKey !== waitingKey) state.waitingSince = now();
+				state.waitingKey = waitingKey;
 				state.waitingFor = message;
 				if (definition.risk !== "read-only") saveActive(state);
 				emit("task.waiting", { message });
@@ -648,6 +640,9 @@ export function createTaskRunner(options = {}) {
 
 		try {
 			state.status = "running";
+			state.attempt = (state.attempt || 0) + 1;
+			state.attemptStartedAt = now();
+			delete state.attemptEndedAt;
 			state.lastError = null;
 			delete state.waitingFor;
 			if (definition.risk !== "read-only") saveActive(state);
@@ -774,6 +769,7 @@ export function createTaskRunner(options = {}) {
 			const event = appendEvent(state, { type: "task.cancel.requested" });
 			runtime.onEvent?.(event, state);
 			const cancellationEmit = (type, detail = {}) => {
+				detail = sanitizeEvidence(detail);
 				const next = appendEvent(state, { type, ...detail });
 				if (type === "warning") state.warnings.push({ at: next.at, message: detail.message });
 				if (type === "tx.confirmed" || type === "tx.failed") {
@@ -783,6 +779,7 @@ export function createTaskRunner(options = {}) {
 					if (transaction) Object.assign(transaction, detail.transaction);
 				}
 				saveActive(state);
+				publishTelemetry(state, next);
 				runtime.onEvent?.(next, state);
 				return next;
 			};
@@ -896,8 +893,10 @@ export function createTaskRunner(options = {}) {
 				transactions: state.transactions,
 			};
 			const cancelled = appendEvent(state, { type: "task.cancelled", cancellation: state.cancellation });
+			const archived = archive(state, "cancelled");
+			publishTelemetry(state, cancelled);
 			runtime.onEvent?.(cancelled, state);
-			return archive(state, "cancelled");
+			return archived;
 		} finally {
 			release();
 		}

@@ -87,12 +87,12 @@ function phaseEnvironment(input, extra = {}) {
 	};
 }
 
-export function buildArbitrumPerpsUpgradeSourceMigrationEnvironment(input, state) {
+export function buildArbitrumPerpsUpgradeSourceMigrationEnvironment(input, state, root = PROJECT_ROOT) {
 	if (!state?.sourceMigrations?.length) return {};
 	if (state.sourceMigrations.at(-1)?.to !== state.sourceHash) {
 		throw new Error("Task source migration journal does not end at the active source hash");
 	}
-	const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: PROJECT_ROOT, encoding: "utf8" }).trim();
+	const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 	return {
 		SYMMIO_ARBITRUM_UPGRADE_SOURCE_MIGRATION: JSON.stringify({
 			apiVersion: ARBITRUM_PERPS_UPGRADE_SOURCE_MIGRATION_API_VERSION,

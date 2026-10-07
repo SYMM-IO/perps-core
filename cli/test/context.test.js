@@ -55,8 +55,8 @@ test("fork RPC and checkpoint scopes use upstream config without touching live p
 	);
 	assert.match(deploymentCheckpointPath(fork.chainId), /checkpoint-42161\.json$/);
 	assert.throws(() => deploymentCheckpointPath(fork.chainId, { scope: "../escape" }), /invalid deployment checkpoint scope/);
-	assert.match(deploymentRecordDir(fork.chainId, { simulated: true }), /tasks\/data\/42161-fork$/);
-	assert.match(deploymentRecordDir(fork.chainId), /tasks\/data\/42161$/);
+	assert.match(deploymentRecordDir(fork.chainId, { simulated: true }), /tasks[\\/]data[\\/]42161-fork$/);
+	assert.match(deploymentRecordDir(fork.chainId), /tasks[\\/]data[\\/]42161$/);
 });
 
 test("RPC resolution mirrors Hardhat override and encrypted-keystore precedence", () => {
@@ -109,7 +109,7 @@ test("Blockscout chains use current explorer endpoints without an Etherscan key"
 	for (const network of ["iota", "mode", "coti"]) {
 		const chain = resolveNetwork(network);
 		assert.equal(verificationProviderForChain(chain), "blockscout");
-		assert.match(chain.verification.apiUrl, /^https:\/\//);
+		assert.match(chain.verification.apiUrl, /^https:[\\/][\\/]/);
 	}
 	assert.equal(resolveNetwork("mode").explorer, "https://explorer.mode.network");
 	assert.equal(verificationProviderForChain(resolveNetwork("arbitrum")), "etherscan");

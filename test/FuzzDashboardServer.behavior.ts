@@ -97,7 +97,7 @@ export function shouldBehaveLikeFuzzDashboardServer(): void {
 			expect(config.host).to.equal("::1")
 			expect(config.port).to.equal(65_535)
 			expect(config.reportFile).to.equal(resolve("/workspace/project", "output/live.json"))
-			expect(config.archiveDir).to.equal("/var/tmp/fuzz-runs")
+			expect(config.archiveDir).to.equal(resolve("/var/tmp/fuzz-runs"))
 			expect(resolveFuzzDashboardServerConfig({ FUZZ_DASHBOARD_HOST: "localhost" }).host).to.equal("localhost")
 		})
 

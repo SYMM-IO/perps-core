@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const hardhatBin = path.join(process.cwd(), "node_modules", ".bin", "hardhat");
+const hardhatBin = path.join(process.cwd(), "node_modules", "hardhat", "dist", "src", "cli.js");
 
 // A developer's deployment .env must never change the local test topology. In
 // particular, a production CREATE2 factory, keystore selection, signer, RPC, or
@@ -145,7 +145,7 @@ function createProgressBar(percent, width = 30) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const args = process.argv.slice(2);
-const jobsRaw = args[0] ?? "8";
+const jobsRaw = args[0] ?? process.env.PARALLEL_JOBS ?? "8";
 if (!/^\d+$/.test(jobsRaw) || Number(jobsRaw) < 1 || Number(jobsRaw) > 64 || !Number.isSafeInteger(Number(jobsRaw))) {
 	throw new Error(`parallel jobs must be an integer between 1 and 64; received "${jobsRaw}"`);
 }
@@ -195,7 +195,7 @@ function runTest(file) {
 
 		let proc;
 		try {
-			proc = spawn(hardhatBin, ["test", "mocha", "--no-compile", ...extraArgs, "--", file], {
+			proc = spawn(process.execPath, [hardhatBin, "test", "mocha", "--no-compile", ...extraArgs, "--", file], {
 				stdio: ["ignore", "pipe", "pipe"],
 				env: isolatedTestEnvironment({ FORCE_COLOR: colorsEnabled ? "1" : "0" }),
 			});
@@ -328,6 +328,10 @@ function printResults(totalDuration) {
 			// Strip ANSI codes from mocha output for clean parsing
 			const stripAnsi = str => str.replace(/\x1b\[[0-9;]*m/g, "");
 			const rawOutput = stripAnsi(failure.stdout);
+			if (failure.crashed) {
+				console.log(rawOutput || `    Worker exited with code ${failure.code} before Mocha reported results.`);
+				continue;
+			}
 			const lines = rawOutput.split("\n");
 
 			let inFailureBlock = false;
@@ -468,7 +472,7 @@ function printResults(totalDuration) {
 async function compile() {
 	console.log(style("cyan", "  ⟳ Compiling contracts..."));
 	try {
-		execFileSync(hardhatBin, ["compile", "--quiet"], { stdio: "pipe", env: isolatedTestEnvironment() });
+		execFileSync(process.execPath, [hardhatBin, "compile", "--quiet"], { stdio: "pipe", env: isolatedTestEnvironment() });
 		execFileSync(process.execPath, ["utils/check-contract-sizes.mjs"], { stdio: "inherit", env: isolatedTestEnvironment() });
 		console.log(style("brightGreen", "  ✓ Compilation complete!"));
 	} catch (e) {

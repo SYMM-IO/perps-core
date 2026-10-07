@@ -1,45 +1,30 @@
-# Project: symmio
-
-FROM node:lts
-
-######################################################################
-# LABELS
-######################################################################
-ARG COMMIT_ID
-ARG COMMIT_TIMESTAMP
-ARG COMMIT_AUTHOR
-ARG BUILD_APPLICATION
-ARG BUILD_DATE
-
-LABEL org.vcs.CommitId=${COMMIT_ID} \
-      org.vcs.CommitTimestamp=${COMMIT_TIMESTAMP} \
-      org.vcs.CommitAuthor=${COMMIT_AUTHOR} \
-      org.build.Application=${BUILD_APPLICATION} \
-      org.build.Date=${BUILD_DATE}
-
-######################################################################
-# BUILD
-######################################################################
-RUN npm config set fetch-retries 10 \
-    && npm config set fetch-retry-mintimeout 20000
-
-# Install dependencies first (cached unless package.json changes)
-WORKDIR /app
-COPY package.json ./
-RUN npm install --ignore-scripts
-
-# Pre-download solc compiler (cached unless hardhat config or tasks change)
+# syntax=docker/dockerfile:1.7.1@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+# Official multi-platform Node 22.15.0/bookworm index verified from registry-1.docker.io.
+FROM node:22.15.0-bookworm@sha256:a1f1274dadd49738bcd4cf552af43354bb781a7e9e3bc984cfeedc55aba2ddd8 AS dependencies
 WORKDIR /app/symmio
-COPY hardhat.config.ts ./
-# tasks/ is required because hardhat.config.ts imports from it; without it the
-# config fails to load and solc won't be downloaded. scripts/ carries the
-# remaining standalone operator scripts, which are run inside the image.
-COPY tasks/ tasks/
-COPY scripts/ scripts/
-RUN ln -s /app/node_modules . \
-    && npx hardhat compile
+RUN chown node:node /app/symmio
+USER node
+COPY --chown=node:node package.json package-lock.json .node-version ./
+RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
+    test "$(node -p 'process.versions.node')" = "$(cat .node-version)" \
+    && npm ci --ignore-scripts --no-audit --no-fund
 
-# Copy source and compile
-COPY .env.example .env
-COPY . .
-RUN ./docker/compile.sh
+FROM dependencies AS operator
+ARG COMMIT_ID=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="SYMMIO Perps Core operator" \
+      org.opencontainers.image.vendor="SYMMIO" \
+      org.opencontainers.image.base.name="node:22.15.0-bookworm" \
+      org.opencontainers.image.base.digest="sha256:a1f1274dadd49738bcd4cf552af43354bb781a7e9e3bc984cfeedc55aba2ddd8" \
+      org.opencontainers.image.source="https://old-git.symmio.foundation/symmio/contracts/perps-core" \
+      org.opencontainers.image.revision=${COMMIT_ID} \
+      org.opencontainers.image.created=${BUILD_DATE} \
+      org.opencontainers.image.version="0.8.6"
+# Copy the entire config import closure, including schemas and utilities, before
+# Hardhat starts. .dockerignore permits only source and reviewed build inputs.
+COPY --chown=node:node . .
+# Only the reviewed verification patch runs; dependency hooks and husky stay off.
+RUN node scripts/patch-hardhat-verify.js \
+    && node node_modules/hardhat/dist/src/cli.js compile \
+    && node utils/check-contract-sizes.mjs
+CMD ["node", "cli/symmio.js"]

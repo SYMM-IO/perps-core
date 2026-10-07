@@ -3,6 +3,8 @@ import fs from "fs"
 import { createHash, randomUUID } from "node:crypto"
 import path from "path"
 
+import { sanitizeEvidence } from "../../deployment-tooling/operations/redaction.js"
+import { hashSourceTree as hashManifestSource } from "../../deployment-tooling/operations/source-manifest.js"
 import { atomicWriteFile } from "../utils/fs.js"
 import { logger } from "./logger.js"
 import type { DeploymentTransactionRecord } from "./tx.js"
@@ -374,7 +376,7 @@ export function saveCheckpoint(checkpoint: DeploymentCheckpoint): void {
 	checkpoint.updatedAt = new Date().toISOString()
 
 	const checkpointPath = getCheckpointPath(checkpoint.chainId!, checkpoint.scope)
-	atomicWriteFile(checkpointPath, `${JSON.stringify(checkpoint, null, 2)}\n`)
+	atomicWriteFile(checkpointPath, `${JSON.stringify(sanitizeEvidence(checkpoint), null, 2)}\n`)
 }
 
 export function createCheckpoint(network: string, chainId?: number, scope?: string): DeploymentCheckpoint {
@@ -400,9 +402,7 @@ export function createCheckpoint(network: string, chainId?: number, scope?: stri
 export function createDeploymentManifest(intent: unknown, options: { deploymentId?: string; sourcePaths?: string[] } = {}): DeploymentManifest {
 	const deploymentId = options.deploymentId || randomUUID()
 	const intentHash = sha256(stableSerialize(intent))
-	const sourceHash = hashSourceTree(
-		options.sourcePaths || ["contracts", "tasks/deploy", "tasks/utils/diamondCut.ts", "hardhat.config.ts", "package.json", "package-lock.json"],
-	)
+	const sourceHash = hashManifestSource(process.cwd(), options.sourcePaths, { requireEntries: Boolean(options.sourcePaths) })
 	return {
 		version: 1,
 		deploymentId,
@@ -506,28 +506,6 @@ export function migrateCheckpointManifestSource(
 	checkpoint.manifestSourceMigrations.push(record)
 	checkpoint.manifest = current
 	return record
-}
-
-function hashSourceTree(entries: string[]): string {
-	const hash = createHash("sha256")
-	const files: string[] = []
-	const visit = (entry: string) => {
-		if (!fs.existsSync(entry)) throw new Error(`Deployment manifest source is missing: ${entry}`)
-		const stat = fs.statSync(entry)
-		if (stat.isDirectory()) {
-			for (const child of fs.readdirSync(entry).sort()) visit(path.join(entry, child))
-		} else if (stat.isFile()) {
-			files.push(entry)
-		}
-	}
-	for (const entry of entries) visit(entry)
-	for (const file of files.sort()) {
-		hash.update(path.relative(process.cwd(), file))
-		hash.update("\0")
-		hash.update(fs.readFileSync(file))
-		hash.update("\0")
-	}
-	return `sha256:${hash.digest("hex")}`
 }
 
 function stableSerialize(value: unknown): string {
