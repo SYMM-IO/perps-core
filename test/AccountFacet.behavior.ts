@@ -2017,6 +2017,86 @@ export function shouldBehaveLikeAccountFacet(): void {
 		})
 	})
 
+	describe("InternalTransferToAllocatedBalance", async function () {
+		const BALANCE_SETTLER_ROLE = ethers.keccak256(toUtf8Bytes("BALANCE_SETTLER_ROLE"))
+
+		beforeEach(async () => {
+			context = await loadFixture(initializeFixture)
+
+			user = new User(context, context.signers.user)
+			await user.setup()
+			await user.setBalances(BALANCES.INITIAL_COLLATERAL, BALANCES.DEPOSIT_AMOUNT)
+
+			user2 = new User(context, context.signers.user2)
+			await user2.setup()
+			await user2.setBalances(BALANCES.INITIAL_COLLATERAL)
+		})
+
+		it("Should fail when caller does not have BALANCE_SETTLER_ROLE", async () => {
+			await expect(
+				context.accountFacet.connect(context.signers.user).internalTransferToAllocatedBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
+			).to.be.revertedWith("Accessibility: Must have role")
+		})
+
+		describe("when caller has BALANCE_SETTLER_ROLE", async () => {
+			beforeEach(async () => {
+				await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), BALANCE_SETTLER_ROLE)
+			})
+
+			it("Should move the sender's balance into the recipient's allocated balance", async () => {
+				const userAddress = await user.getAddress()
+				const user2Address = await user2.getAddress()
+
+				await expect(context.accountFacet.connect(context.signers.user).internalTransferToAllocatedBalance(user2Address, BALANCES.TRANSFER_AMOUNT))
+					.to.emit(context.accountFacet, "InternalTransfer")
+					.withArgs(userAddress, user2Address, BALANCES.TRANSFER_AMOUNT, BALANCES.TRANSFER_AMOUNT)
+
+				expect(await context.viewFacet.allocatedBalanceOfPartyA(user2Address)).to.equal(BALANCES.TRANSFER_AMOUNT)
+				expect(await context.viewFacet.balanceOf(user2Address)).to.equal(0n)
+				expect(await context.viewFacet.balanceOf(userAddress)).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.TRANSFER_AMOUNT)
+			})
+
+			it("Should succeed while internal transfers are paused", async () => {
+				await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+
+				await context.accountFacet
+					.connect(context.signers.user)
+					.internalTransferToAllocatedBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT)
+				expect(await context.viewFacet.allocatedBalanceOfPartyA(await user2.getAddress())).to.equal(BALANCES.TRANSFER_AMOUNT)
+			})
+
+			it("Should fail when accounting is paused", async () => {
+				await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+
+				await expect(
+					context.accountFacet.connect(context.signers.user).internalTransferToAllocatedBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
+				).to.be.revertedWith("Pausable: Accounting paused")
+			})
+
+			it("Should fail when globally paused", async () => {
+				await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+
+				await expect(
+					context.accountFacet.connect(context.signers.user).internalTransferToAllocatedBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
+				).to.be.revertedWith("Pausable: Global paused")
+			})
+
+			it("Should fail when the recipient is suspended", async () => {
+				await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await user2.getAddress())
+
+				await expect(
+					context.accountFacet.connect(context.signers.user).internalTransferToAllocatedBalance(await user2.getAddress(), BALANCES.TRANSFER_AMOUNT),
+				).to.be.revertedWith("Accessibility: Sender is Suspended")
+			})
+
+			it("Should fail when sender has insufficient balance", async () => {
+				await expect(
+					context.accountFacet.connect(context.signers.user).internalTransferToAllocatedBalance(await user2.getAddress(), BALANCES.LARGE_AMOUNT),
+				).to.be.revertedWith("AccountFacet: Insufficient balance")
+			})
+		})
+	})
+
 	describe("ExternalTransfer", async function () {
 		let mockTarget: any
 
