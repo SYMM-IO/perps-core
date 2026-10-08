@@ -109,7 +109,7 @@
 				},
 				"verify": {
 					"const": true,
-					"description": "Require explorer publication of new Core facets and libraries after verified service restoration."
+					"description": "Require explorer publication of new Core facets and libraries after verified service checks."
 				},
 				"logLevel": {
 					"enum": ["minimal", "verbose"],
@@ -130,7 +130,7 @@
 				"owner": {
 					"type": "string",
 					"pattern": "^0x[0-9a-fA-F]{40}$",
-					"description": "Expected owner of target.core; authorizes the Core pause, cut and restoration actions."
+					"description": "Expected owner of target.core; authorizes the cut and declared administrative actions. Pause flags are preserved."
 				},
 				"signerMode": {
 					"enum": ["safe-file", "ledger", "hardhat-keystore"],
@@ -161,7 +161,7 @@
 				"core": {
 					"type": "string",
 					"pattern": "^0x[0-9a-fA-F]{40}$",
-					"description": "Core diamond receiving the facet cut, role grants, funding repairs and maintenance pause actions."
+					"description": "Core diamond receiving the facet cut and declared role grants. The workflow preserves every existing pause flag."
 				},
 				"collateral": {
 					"type": "string",
@@ -240,7 +240,7 @@
 					"items": {
 						"type": "string"
 					},
-					"description": "Muon function names requiring fresh routed positive and negative restoration canaries."
+					"description": "Muon function names requiring fresh routed positive and negative service canaries."
 				},
 				"additionalVerifierRoles": {
 					"type": "array",
@@ -262,7 +262,7 @@
 					"description": "Legacy maximum entries in each verifier public-key and gateway-signer list; prefer limits.signatureVerifierSnapshot.maxSigners."
 				}
 			},
-			"description": "Preservation and restoration-readiness policy for Core Muon routes and the existing Signature Verifier; no verifier roles are granted."
+			"description": "Preservation and service-readiness policy for Core Muon routes and the existing Signature Verifier; no verifier roles are granted."
 		},
 		"limits": {
 			"oneOf": [
@@ -538,7 +538,7 @@
 					"properties": {
 						"repair": {
 							"const": true,
-							"description": "Require checked repair of mismatched Core aggregate funding and restoration of the owner migration role."
+							"description": "Require funding consistency on active Core. Checked repair is authorized only when Core was independently paused; its original migration-role membership is restored."
 						}
 					},
 					"required": ["repair"],
