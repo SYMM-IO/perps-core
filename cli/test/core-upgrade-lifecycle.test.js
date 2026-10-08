@@ -1,7 +1,7 @@
 import { digest } from "../../deployment-tooling/arbitrum-core-upgrade.js";
 import { publishUpgradeItems, rehearsalStatus, upgradeCompletionStatus } from "../../deployment-tooling/operations/upgrade-lifecycle.js";
 import { createTaskRunner } from "../task-runner.js";
-import { CORE_UPGRADE_PLAN } from "../tasks/arbitrum-core-upgrade.js";
+import { CORE_UPGRADE_PLAN, deliverCoreBatch } from "../tasks/arbitrum-core-upgrade.js";
 import { TASK_DEFINITIONS } from "../tasks/registry.js";
 import { coreUpgradeFixture, read, write } from "./fixtures/core-upgrade.js";
 import assert from "node:assert/strict";
@@ -19,6 +19,45 @@ test("live upgrades omit fork steps and publish only after restoration", () => {
 	assert.ok(ids.indexOf("cut") < ids.indexOf("unpause"));
 	assert.ok(ids.indexOf("cut") < ids.indexOf("muon-ready"));
 	assert.ok(ids.indexOf("muon-ready") < ids.indexOf("unpause"));
+});
+
+test("standard upgrades preserve production availability and verify service without pause governance", () => {
+	const task = TASK_DEFINITIONS.find(task => task.id === "maintenance.core-upgrade");
+	const ids = task.plan({}, {}).map(step => step.id);
+	assert.equal(ids.includes("pause"), false);
+	assert.equal(ids.includes("unpause"), false);
+	assert.ok(ids.indexOf("cut") < ids.indexOf("muon-ready"));
+	assert.ok(ids.indexOf("muon-ready") < ids.indexOf("verify-service"));
+	assert.equal(ids.at(-1), "publish");
+});
+
+test("standard Safe export contains only reviewed cut actions and refuses pause governance", async t => {
+	const f = await coreUpgradeFixture(t, "safe");
+	const report = read(f.input.output);
+	report.batch = {
+		actions: [{ to: f.config.target.core, value: "0", data: "0x1f931c1c", description: "Reviewed Core cut" }],
+		envelope: { safeTxHash: "0x" + "a".repeat(64) },
+	};
+	write(f.input.output, report);
+	const phases = [];
+	const ctx = {
+		root: f.root,
+		state: { runId: "standard-safe-test" },
+		ui: { note() {}, confirm: async () => true },
+		emit() {},
+		runProcess: async (_command, args) => phases.push(args[args.indexOf("--phase") + 1]),
+		wait: message => {
+			throw new Error(message);
+		},
+	};
+	for (const key of ["pause", "unpause"]) await assert.rejects(deliverCoreBatch(ctx, f.input, key), /only cut governance/);
+	await assert.rejects(deliverCoreBatch(ctx, f.input, "cut"), /ONE Safe transaction/);
+	assert.deepEqual(Object.keys(ctx.state.safeDispatches), ["cut"]);
+	assert.deepEqual(
+		read(ctx.state.safeDispatches.cut.builderPath).transactions.map(tx => tx.data),
+		["0x1f931c1c"],
+	);
+	assert.deepEqual(phases, ["check-export"]);
 });
 
 test("optional rehearsal evidence becomes outdated when its bindings change", () => {
@@ -55,10 +94,11 @@ test("publication retry skips completed items and rejects changed item intent", 
 	);
 });
 
-test("real runner blocks restoration on failed Muon readiness and retries final publication without repeating execution", async t => {
+test("standard runner verifies live service and retries publication without pause or repeated execution", async t => {
 	const f = await coreUpgradeFixture(t),
 		definition = TASK_DEFINITIONS.find(task => task.id === "maintenance.core-upgrade");
 	const phases = [];
+	const governanceKeys = [];
 	let failPublication = true;
 	let failMuonReadiness = true;
 	const run = (ctx, input) =>
@@ -80,12 +120,13 @@ test("real runner blocks restoration on failed Muon readiness and retries final 
 							actions: [{ to: f.config.target.core, value: "0", data: "0x12345678", description: "Reviewed operation" }],
 							envelope: {},
 						};
+					if (phase === "plan-cut") report.cutSnapshot = { blockNumber: 200, pause: [false] };
 					if (phase === "execute-governance") {
 						const key = options.env.SYMMIO_CORE_UPGRADE_BATCH;
+						governanceKeys.push(key);
 						report.governanceExecutions ||= {};
 						report.governanceExecutions[key] = { receipts: "[]" };
 					}
-					if (phase === "verify-pause") report.paused = { blockNumber: 200 };
 					if (phase === "verify-cut") report.verifiedCut = { success: true };
 					if (phase === "verify-muon") {
 						assert.ok(ctx.state.completedSteps.includes("cut"));
@@ -93,12 +134,12 @@ test("real runner blocks restoration on failed Muon readiness and retries final 
 						if (failMuonReadiness) throw new Error("Muon readiness RPC unavailable");
 						report.muonReadiness = { canaries: "verified" };
 					}
-					if (phase === "verify-unpause") {
-						report.restoredService = { cutDigest: ctx.state.coreEvidence.verifiedCut };
+					if (phase === "verify-service") {
+						report.verifiedService = { cutDigest: ctx.state.coreEvidence.verifiedCut };
 						report.status = "publication-pending";
 					}
 					if (phase === "publish") {
-						assert.ok(ctx.state.completedSteps.includes("unpause"));
+						assert.ok(ctx.state.completedSteps.includes("verify-service"));
 						if (failPublication) throw new Error("Explorer unavailable");
 						report.publication = { complete: true };
 						report.status = "complete";
@@ -147,7 +188,12 @@ test("real runner blocks restoration on failed Muon readiness and retries final 
 	assert.equal(state.status, "completed", state.lastError);
 	assert.equal(phases.filter(phase => phase === "deploy").length, 1);
 	assert.equal(phases.filter(phase => phase === "verify-cut").length, 1);
-	assert.equal(phases.filter(phase => phase === "verify-unpause").length, 1);
+	assert.equal(phases.filter(phase => phase === "verify-service").length, 1);
+	assert.deepEqual(governanceKeys, ["cut"]);
+	assert.equal(
+		phases.some(phase => /pause/.test(phase)),
+		false,
+	);
 	assert.equal(
 		phases.some(phase => phase.startsWith("rehearse-")),
 		false,

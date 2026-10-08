@@ -249,22 +249,26 @@ export function createCoreUpgradeTask(common) {
 		title: "Upgrade Core from a standard input file",
 		supportedNetworks: ["any"],
 		description:
-			"Load a reviewed Core input, optionally commit and publish an upgrade Git tag, deploy the manifest, execute through its owner, verify and restore service, then publish on the explorer.",
+			"Load a reviewed Core input, deploy the manifest, execute through its owner while preserving pause flags, verify live service, then publish on the explorer.",
 		prepare: context => prepareStandardCoreUpgrade({ ...context, askGitRelease: true }),
-		upgradePlan: CORE_UPGRADE_PLAN.map(step => ({
-			...step,
-			title:
-				{
-					pause: "Execute or export the maintenance pause and verify its receipt",
-					"rehearse-cut": "Rehearse the exact deployed governance payload on the paused fork",
-					cut: "Execute or export the complete Core upgrade and verify every action",
-					"plan-cut": "Bind the paused state and complete Core governance plan",
-				}[step.id] || step.title,
-		})),
+		upgradePlan: CORE_UPGRADE_PLAN.filter(step => !["pause", "unpause"].includes(step.id)).flatMap(step => [
+			...(step.id === "publish"
+				? [{ id: "verify-service", phase: "verification", title: "Verify live Core service and unchanged pause flags" }]
+				: []),
+			{
+				...step,
+				title:
+					{
+						cut: "Execute or export the complete Core upgrade and verify every action",
+						"plan-cut": "Bind a fresh live snapshot and complete Core governance plan",
+						"service-ready": "Confirm application and indexer checks after the upgrade",
+					}[step.id] || step.title,
+			},
+		]),
 		artifacts: [
 			"optional Git release journal and verified remote tag",
 			"source-bound input and report",
-			"initial and paused snapshots",
+			"initial and live cut snapshots",
 			"deployment and governance journals",
 			"core-abi.json",
 			"optional separate fork rehearsal",
@@ -274,7 +278,7 @@ export function createCoreUpgradeTask(common) {
 	});
 	return common({
 		...task,
-		version: 6,
+		version: 7,
 		inputs: [...task.inputs, { id: "releaseGit", label: "Optional Git release", type: "selection", required: false }],
 		plan: (ctx, input) => [...(input?.releaseGit ? CORE_GIT_RELEASE_PLAN : []), ...task.plan(ctx, input)].map(step => ({ ...step })),
 		validateResume: (ctx, input) => {
@@ -297,11 +301,11 @@ export function createCoreUpgradeRehearsalTask(common) {
 	const steps = [
 		{ id: "compile", phase: "prepare", title: "Compile the reviewed release" },
 		{ id: "inspect", phase: "prepare", title: "Inspect the deployment at one block" },
-		{ id: "rehearse-initial", phase: "rehearsal", title: "Rehearse deployment, upgrade and restoration on the fork" },
+		{ id: "rehearse-initial", phase: "rehearsal", title: "Rehearse deployment and upgrade while preserving pause flags" },
 	];
 	return common({
 		id: "maintenance.core-upgrade-rehearse",
-		version: 1,
+		version: 2,
 		category: "maintenance",
 		risk: "local-write",
 		title: "Rehearse a Core upgrade on fork (optional)",

@@ -50,6 +50,15 @@ export async function captureCoreRoleGrants(config: any, call: (name: string, ar
 	return plannedRoles
 }
 
+export function requiredCoreUpgradeRoles(config: any) {
+	return isStandardCoreInput(config) ? ["DEFAULT_ADMIN_ROLE"] : ["DEFAULT_ADMIN_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"]
+}
+
+export function assertLiveCoreFunding(snapshot: any) {
+	if (!snapshot.pause[0] && snapshot.funding.some((g: any) => g.a !== g.expected || g.b !== g.expected))
+		throw new Error("Aggregate funding mismatch requires separate funding maintenance; this upgrade never pauses Core")
+}
+
 /** Pin every read to one block and refuse incomplete scans. No signer is loaded. */
 export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgraded = false, atBlock?: number, configurationOnly = false) {
 	const t = config.target,
@@ -104,7 +113,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	])
 		if (lower(preserved[name]) !== lower(expected)) throw new Error(`Unexpected Core ${name}`)
 	if (!preserved.isAccumulatedFundingActivated) throw new Error("This upgrade requires accumulated funding already enabled")
-	for (const role of ["DEFAULT_ADMIN_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"])
+	for (const role of requiredCoreUpgradeRoles(config))
 		if (!(await call("hasRole", [owner, ethers.id(role)]))) throw new Error(`Core governance owner lacks ${role}`)
 	const roles = {
 		migration: await call("hasRole", [owner, ethers.id("MIGRATION_ROLE")]),
@@ -171,10 +180,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	wiring.accountSelectors = await selectorsAt(ethers, t.accountLayer, block.number)
 	const plannedRoles = await captureCoreRoleGrants(config, call)
 	if (isStandardCoreInput(config)) {
-		for (const [holder, role] of [
-			[owner, "GLOBAL_PAUSER_ROLE"],
-			[t.symbolManager, "SYMBOL_LISTING_ROLE"],
-		])
+		for (const [holder, role] of [[t.symbolManager, "SYMBOL_LISTING_ROLE"]])
 			if (!(await call("hasRole", [holder, ethers.id(role)])) && !plannedRoles.some(g => lower(g.holder) === lower(holder) && g.role === role))
 				throw new Error(`Input must explicitly plan the missing ${role} grant for ${holder}`)
 	}
@@ -322,6 +328,7 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 		g.stored = await call("getPartyBAggregatedFunding", [g.partyB, g.symbolId, g.positionType])
 		if (g.stored !== g.pairTotal) throw new Error("Global aggregate funding differs from pair totals; separate investigation required")
 	}
+	if (isStandardCoreInput(config)) assertLiveCoreFunding({ pause, funding })
 	await assertCanonical()
 	return json({
 		plannedRoles,
@@ -341,13 +348,14 @@ export async function captureCoreUpgradeSnapshot(ethers: any, config: any, upgra
 	})
 }
 
-export function assertCoreSnapshotPreserved(before: any, after: any, upgraded = false, unpaused = false) {
+export function assertCoreSnapshotPreserved(before: any, after: any, upgraded = false, unpaused = false, preserveAvailability = false) {
 	if (!before.muon?.configuration || !after.muon?.configuration) throw new Error("Missing Muon configuration evidence")
 	if (digest(before.muon?.configuration) !== digest(after.muon?.configuration)) throw new Error("Core upgrade changed Muon configuration")
-	for (const key of ["preserved", "wiring", "code", "economy"])
+	const liveTrading = preserveAvailability && !before.pause[0]
+	for (const key of ["preserved", "wiring", "code", ...(!liveTrading ? ["economy"] : [])])
 		if (digest(before[key]) !== digest(after[key])) throw new Error(`Core upgrade changed preserved ${key}`)
 	const expectedPause = [...before.pause]
-	expectedPause[0] = !unpaused
+	if (!preserveAvailability) expectedPause[0] = !unpaused
 	if (digest(expectedPause) !== digest(after.pause)) throw new Error("Unexpected Core pause flags")
 	if (after.roles.migration !== before.roles.migration) throw new Error("Temporary migration role was not restored")
 	if (upgraded) {
@@ -356,6 +364,6 @@ export function assertCoreSnapshotPreserved(before: any, after: any, upgraded = 
 		if (after.funding.some((g: any) => g.a !== g.expected || g.b !== g.expected) || after.globals.some((g: any) => g.stored !== g.expected))
 			throw new Error("Aggregate funding reconciliation incomplete")
 	} else
-		for (const key of ["roles", "plannedRoles", "funding", "globals", "selectors", "facetCode"])
+		for (const key of ["roles", "plannedRoles", "selectors", "facetCode", ...(!liveTrading ? ["funding", "globals"] : [])])
 			if (digest(before[key] ?? []) !== digest(after[key] ?? [])) throw new Error(`Paused snapshot ${key} changed`)
 }
