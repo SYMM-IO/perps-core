@@ -290,6 +290,12 @@ interface ISymmio {
 	/// @param amount The amount to transfer
 	function internalTransferToBalance(address user, uint256 amount) external;
 
+	/// @notice Transfers from the signer's deposited balance to another account's allocated balance.
+	///         Restricted to BALANCE_SETTLER_ROLE and not stopped by the core internal-transfer pause.
+	/// @param user The recipient account address
+	/// @param amount The amount to transfer
+	function internalTransferToAllocatedBalance(address user, uint256 amount) external;
+
 	/// @notice Deallocates collateral without requiring a UPNL signature (zero UPNL assumed)
 	/// @param amount The amount to deallocate
 	function zeroUpnlDeallocate(uint256 amount) external;

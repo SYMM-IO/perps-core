@@ -201,7 +201,10 @@
 								<tr>
 									<td><code>INTERNAL_TRANSFER_PAUSER_ROLE</code></td>
 									<td><code>pauseInternalTransfer()</code></td>
-									<td>Internal transfers protected by the internal-transfer guard.</td>
+									<td>
+										<code>internalTransfer</code>. The role-gated <code>internalTransferToBalance</code> and
+										<code>internalTransferToAllocatedBalance</code> are not covered.
+									</td>
 								</tr>
 								<tr>
 									<td><code>EXTERNAL_TRANSFER_PAUSER_ROLE</code></td>
@@ -230,6 +233,18 @@
 						This changes authorization only. Core pause function selectors, events, pause flags, balances and storage layout are unchanged
 						by the role split. Existing guard coverage is preserved: for example, <code>internalTransferToBalance</code> and
 						<code>zeroUpnlDeallocate</code> remain governed by their existing role checks, without acquiring new pause checks.
+					</p>
+					<p>
+						<code>internalTransferToAllocatedBalance</code> moves the signer&rsquo;s balance into a user&rsquo;s allocated balance exactly
+						as <code>internalTransfer</code> does, with the same recipient checks and events. It differs only in authorization: it
+						requires <code>BALANCE_SETTLER_ROLE</code> and is not stopped by <code>pauseInternalTransfer()</code>. The global and
+						accounting pauses still stop it.
+					</p>
+					<p>
+						The AccountLayer holds <code>BALANCE_SETTLER_ROLE</code> and uses this function for its margin moves (<code>addMargin</code>,
+						<code>addMarginToNextVA</code> and <code>_callWithMargin</code>), so they keep working while internal transfers are paused.
+						The AccountLayer refuses this selector inside <code>_call</code>, so an account owner cannot use it to reach an arbitrary
+						recipient. Calls routed through <code>_call</code> to <code>internalTransfer</code> stay paused.
 					</p>
 					<p>
 						<code>UNPAUSER_ROLE</code> continues to authorize all existing unpause functions. Suspension, unsuspension and emergency

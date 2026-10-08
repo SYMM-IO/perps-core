@@ -275,7 +275,8 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 
 	/// @notice Executes an array of Symmio core calls on behalf of an account
 	/// @dev Handles sendQuote routing to virtual accounts based on sub-account isolation type.
-	///      Blocks internalTransferToBalance to prevent unauthorized fund extraction.
+	///      Blocks internalTransferToBalance, internalTransferToAllocatedBalance and zeroUpnlDeallocate, which core
+	///      allows only for the AccountLayer, so account owners cannot call them with arbitrary arguments.
 	/// @param account The account to execute calls for
 	/// @param callDatas Array of encoded function calls to execute on the Symmio core
 	/// @return Array of return data from each call
@@ -295,7 +296,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 	/// @param account The sub-account to fund and execute calls for
 	/// @param isolationType The isolation type matching the sub-account's strategy
 	/// @param symbolId The symbol ID for the target virtual account
-	/// @param marginAmount The amount to transfer to the next VA via internalTransfer
+	/// @param marginAmount The amount to transfer to the next VA via internalTransferToAllocatedBalance
 	/// @param callDatas Array of encoded function calls to execute on the Symmio core
 	/// @return Array of return data from each call
 	function _callWithMargin(
@@ -331,7 +332,11 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		for (uint256 i = 0; i < callDatas.length; i++) {
 			bytes calldata cd = callDatas[i];
 			bytes4 selector = bytes4(cd[:4]);
-			if (selector == ISymmio.internalTransferToBalance.selector || selector == ISymmio.zeroUpnlDeallocate.selector) revert Unauthorized();
+			if (
+				selector == ISymmio.internalTransferToBalance.selector ||
+				selector == ISymmio.internalTransferToAllocatedBalance.selector ||
+				selector == ISymmio.zeroUpnlDeallocate.selector
+			) revert Unauthorized();
 
 			bool isVirtualAccount = ahLayout.virtualAccounts[account].isExists;
 			bool isSubAccount = ahLayout.subAccounts[account].isExists;
