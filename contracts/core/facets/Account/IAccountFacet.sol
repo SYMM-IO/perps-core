@@ -41,6 +41,8 @@ interface IAccountFacet is IAccountEvents {
 
 	function internalTransferToBalance(address user, uint256 amount) external;
 
+	function internalTransferToAllocatedBalance(address user, uint256 amount) external;
+
 	function chargeOperationalFee(address payer, uint256 amount) external;
 
 	function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external;

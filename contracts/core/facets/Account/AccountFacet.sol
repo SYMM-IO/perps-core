@@ -192,6 +192,31 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address user,
 		uint256 amount
 	) external whenNotInternalTransferPaused userNotPartyB(user) notSuspended(LibSigner.getSigner()) notSuspended(user) notLiquidatedPartyA(user) {
+		_internalTransfer(user, amount);
+	}
+
+	/// @notice Transfers the sender's deposited balance to the user allocated balance, same as internalTransfer.
+	/// @dev Restricted to BALANCE_SETTLER_ROLE and not stopped by pauseInternalTransfer(). Global and accounting pauses still apply.
+	/// @dev The recipient user cannot be partyB.
+	/// @dev PartyA should not be in the liquidation process.
+	/// @param user The address of the user to whom the amount will be allocated.
+	/// @param amount The amount to transfer and allocate in 18 decimals.
+	function internalTransferToAllocatedBalance(
+		address user,
+		uint256 amount
+	)
+		external
+		onlyRoleAllowProxy(LibAccessibility.BALANCE_SETTLER_ROLE)
+		whenNotAccountingPaused
+		userNotPartyB(user)
+		notSuspended(LibSigner.getSigner())
+		notSuspended(user)
+		notLiquidatedPartyA(user)
+	{
+		_internalTransfer(user, amount);
+	}
+
+	function _internalTransfer(address user, uint256 amount) private {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.internalTransfer(user, amount);
