@@ -46,7 +46,7 @@ import {
 	verifyCoreGovernanceReceipt,
 	executeCoreGovernancePayload,
 } from "./coreUpgradeGovernance.js"
-import { captureCoreUpgradeSnapshot, assertCoreSnapshotPreserved, coreUpgradeABI } from "./coreUpgradeSnapshot.js"
+import { captureCoreUpgradeSnapshot, assertCoreSnapshotPreserved, assertLiveCoreFunding, coreUpgradeABI } from "./coreUpgradeSnapshot.js"
 import { persistSubmittedTransaction } from "./deploymentRecovery.js"
 import { resolveVerificationContractName, verificationProviderForChain } from "./explorer.js"
 import { getConnection } from "./helpers.js"
@@ -71,6 +71,7 @@ const PHASES = [
 	"check-export",
 	"verify-cut",
 	"verify-muon",
+	"verify-service",
 	"plan-unpause",
 	"verify-unpause",
 	"reconcile",
@@ -100,7 +101,8 @@ export function assertCoreUpgradeExecution(
 }
 
 export function buildCoreUpgradeActions(ethers: any, input: any, snapshot: any, deployments: any) {
-	if (!snapshot.pause[0]) throw new Error("A global pause is required before planning the Core cut")
+	if (!isStandardCoreInput(input.config) && !snapshot.pause[0]) throw new Error("A global pause is required before planning the Core cut")
+	assertLiveCoreFunding(snapshot)
 	const t = input.config.target,
 		owner = coreUpgradeAuthority(input.config),
 		policies = coreUpgradePolicies(input.config),
@@ -208,15 +210,16 @@ async function deployCore(hre: any, ethers: any, input: any, report: any, direct
 	}
 }
 
-function assertStaticBaseline(before: any, after: any) {
+function assertStaticBaseline(before: any, after: any, preserveAvailability = false) {
 	if (!before.muon?.configuration || !after.muon?.configuration) throw new Error("Missing Muon configuration evidence")
 	same(before.muon?.configuration, after.muon?.configuration, "Initial Muon configuration changed")
 	for (const key of ["preserved", "wiring", "code", "selectors", "facetCode", "roles", "plannedRoles"])
 		same(before[key] ?? [], after[key] ?? [], `Initial ${key} changed; refuse upgrade drift`)
-	if (digest(before.pause.slice(1)) !== digest(after.pause.slice(1))) throw new Error("Unrelated pause flags changed")
+	if (digest(preserveAvailability ? before.pause : before.pause.slice(1)) !== digest(preserveAvailability ? after.pause : after.pause.slice(1)))
+		throw new Error("Unrelated pause flags changed")
 }
 
-/** Derive the only permitted paused state after a confirmed prefix of the EOA plan. */
+/** Check configuration and governance progress; active trading may change economic state. */
 export function assertCoreGovernanceProgress(ethers: any, before: any, after: any, batch: any, confirmed: number, config: any) {
 	if (!Number.isInteger(confirmed) || confirmed < 0 || confirmed > batch.actions.length) throw new Error("Invalid governance progress")
 	const expected = structuredClone(before),
@@ -240,8 +243,23 @@ export function assertCoreGovernanceProgress(ethers: any, before: any, after: an
 			for (const group of expected.globals) group.stored = group.pairTotal = group.expected
 		} else throw new Error("Unexpected action in Core governance progress")
 	}
-	for (const key of ["preserved", "wiring", "code", "economy", "pause", "roles", "plannedRoles", "funding", "globals", "selectors"])
+	const liveTrading = isStandardCoreInput(config) && !before.pause[0]
+	for (const key of [
+		"preserved",
+		"wiring",
+		"code",
+		"pause",
+		"roles",
+		"plannedRoles",
+		"selectors",
+		...(!liveTrading ? ["economy", "funding", "globals"] : []),
+	])
 		same(expected[key] ?? [], after[key] ?? [], `Core governance progress changed ${key}`)
+	if (
+		liveTrading &&
+		(after.funding.some((g: any) => g.a !== g.expected || g.b !== g.expected) || after.globals.some((g: any) => g.stored !== g.expected))
+	)
+		throw new Error("Core governance aggregate funding is inconsistent")
 	if (!before.muon?.configuration || !after.muon?.configuration) throw new Error("Missing Muon configuration evidence")
 	same(before.muon.configuration, after.muon.configuration, "Core governance changed Muon configuration")
 }
@@ -249,26 +267,31 @@ export function assertCoreGovernanceProgress(ethers: any, before: any, after: an
 export async function verifyCoreUpgradePostState(hre: any, ethers: any, input: any, report: any, atBlock?: number, unpaused = false) {
 	await assertCoreDeployments(hre, ethers, report.deployments)
 	const state = await captureCoreUpgradeSnapshot(ethers, input.config, true, atBlock)
-	assertCoreSnapshotPreserved(report.paused, state, true, unpaused)
+	const standard = isStandardCoreInput(input.config)
+	assertCoreSnapshotPreserved(standard ? report.cutSnapshot : report.paused, state, true, unpaused, standard)
 	same(report.batch.desired, state.selectors, "Installed selector map does not equal the complete reviewed cut")
 	return state
 }
 
-/** Models restoration only in a read-only simulation. Safe authorization still requires its real execution receipt. */
+/** Bind routed Muon checks to the preserved configuration and the verified cut. */
 function coreMuonBindings(input: any, report: any) {
+	const snapshot = isStandardCoreInput(input.config) ? report.cutSnapshot : report.paused
 	return {
 		chainId: coreUpgradeNetwork(input.config).chainId,
 		core: input.config.target.core,
 		upgradeInputDigest: digest(input),
 		cutDigest: digest(report.verifiedCut),
 		releaseCommit: input.releaseCommit || input.sourceCommit,
-		configurationDigest: operationDigest(report.paused.muon.configuration),
+		configurationDigest: operationDigest(snapshot.muon.configuration),
 	}
 }
 
 async function checkCoreMuonReadiness(ethers: any, input: any, report: any, document: any) {
+	const standard = isStandardCoreInput(input.config),
+		snapshot = standard ? report.cutSnapshot : report.paused
 	const state = await captureCoreUpgradeSnapshot(ethers, input.config, true, undefined, true)
-	for (const key of ["preserved", "wiring", "code"]) same(report.paused[key], state[key], `Muon readiness ${key} changed`)
+	for (const key of ["preserved", "wiring", "code"]) same(snapshot[key], state[key], `Muon readiness ${key} changed`)
+	if (standard) same(snapshot.pause, state.pause, "Muon readiness pause flags changed")
 	same(report.batch.desired, state.selectors, "Muon readiness selector map changed")
 	const t = input.config.target,
 		core = new ethers.Interface(coreUpgradeABI)
@@ -283,26 +306,30 @@ async function checkCoreMuonReadiness(ethers: any, input: any, report: any, docu
 				verifier: { address: t.signatureVerifier, codeHash: state.code.signatureVerifier },
 				policy: coreUpgradeMuonPolicy(input.config),
 			},
-			snapshot: report.paused.muon,
+			snapshot: snapshot.muon,
 			checkpoint: { blockNumber: state.blockNumber, blockHash: state.blockHash },
 			bindings: coreMuonBindings(input, report),
 			entrypoints: ["instantLayer", "gaslessLayer", "accountLayer", "partyB"].map(id => ({ id, address: t[id], codeHash: state.code[id] })),
-			restoreCall: state.pause[0]
-				? { from: coreUpgradeAuthority(input.config), to: t.core, value: "0x0", data: core.encodeFunctionData("unpauseGlobal") }
-				: null,
+			restoreCall:
+				!standard && state.pause[0]
+					? { from: coreUpgradeAuthority(input.config), to: t.core, value: "0x0", data: core.encodeFunctionData("unpauseGlobal") }
+					: null,
 		},
 		document,
 	)
 }
 
 async function assertMuonRestoreReady(ethers: any, input: any, report: any, bindings: any) {
-	if (!bindings.muonReadiness || !report.muonReadiness?.document) throw new Error("Verify Muon service and routed canaries before restoration")
+	if (!bindings.muonReadiness || !report.muonReadiness?.document)
+		throw new Error("Verify Muon service and routed canaries before completing the upgrade")
 	assertCoreEvidence(report, "muonReadiness", bindings.muonReadiness)
 	await checkCoreMuonReadiness(ethers, input, report, report.muonReadiness.document)
 }
 
 export async function rehearseInitialCoreUpgrade(hre: any, ethers: any, input: any, report: any, directory: string) {
 	const initial = report.initial,
+		standard = isStandardCoreInput(input.config),
+		snapshotField = standard ? "cutSnapshot" : "paused",
 		metadata = await ethers.provider.send("hardhat_metadata", [])
 	if (Number(metadata.forkedNetwork?.forkBlockNumber) !== initial.blockNumber) throw new Error("Initial rehearsal fork mismatch")
 	if ((await ethers.provider.getBlock(initial.blockNumber))?.hash !== initial.blockHash) throw new Error("Initial rehearsal block hash mismatch")
@@ -311,19 +338,19 @@ export async function rehearseInitialCoreUpgrade(hre: any, ethers: any, input: a
 	await ethers.provider.send("hardhat_setBalance", [await signer.getAddress(), "0x3635c9adc5dea00000"])
 	await deployCore(hre, ethers, input, local, directory, true)
 	const core = await ethers.getContractAt(coreUpgradeABI, input.config.target.core)
-	if (!initial.pause[0]) {
+	if (!standard && !initial.pause[0]) {
 		const actions = [
 			{ to: input.config.target.core, value: "0", data: core.interface.encodeFunctionData("pauseGlobal"), description: "Maintenance pause" },
 		]
 		await rehearseCoreGovernancePayload(ethers, input.config, await prepareCoreGovernancePayload(ethers, input.config, actions), initial.blockNumber)
 	}
-	local.paused = await captureCoreUpgradeSnapshot(ethers, input.config)
-	assertStaticBaseline(initial, local.paused)
-	local.batch = { ...buildCoreUpgradeActions(ethers, input, local.paused, local.deployments) }
+	local[snapshotField] = await captureCoreUpgradeSnapshot(ethers, input.config)
+	assertStaticBaseline(initial, local[snapshotField], standard)
+	local.batch = { ...buildCoreUpgradeActions(ethers, input, local[snapshotField], local.deployments) }
 	local.batch.envelope = await prepareCoreGovernancePayload(ethers, input.config, local.batch.actions)
 	const execution = await rehearseCoreGovernancePayload(ethers, input.config, local.batch.envelope, initial.blockNumber)
 	await verifyCoreUpgradePostState(hre, ethers, input, local)
-	if (!initial.pause[0]) {
+	if (!standard && !initial.pause[0]) {
 		const actions = [
 			{
 				to: input.config.target.core,
@@ -350,6 +377,10 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 	const input = JSON.parse(fs.readFileSync(inputFile, "utf8")),
 		inputDigest = digest(input)
 	validateCoreUpgradeConfig(input.config)
+	const standard = isStandardCoreInput(input.config),
+		snapshotField = standard ? "cutSnapshot" : "paused"
+	if (standard && /^(plan|verify)-(un)?pause$/.test(phase))
+		throw new Error("Standard Core upgrades preserve pause flags and have no pause governance")
 	assertCoreUpgradeSourceBinding(process.cwd(), input)
 	if (
 		input.apiVersion !== (isStandardCoreInput(input.config) ? "operations.symm.io/core-upgrade-run-v1" : CORE_UPGRADE_API) ||
@@ -426,14 +457,15 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			return
 		}
 		if (phase === "deploy") {
-			assertStaticBaseline(report.initial, await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true))
+			assertStaticBaseline(report.initial, await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true), standard)
 			await deployCore(hre, ethers, input, report, directory, false)
 			return
 		}
 		if (!bindings.deployments) throw new Error("Missing bound deployment evidence")
 		const records = await assertCoreDeployments(hre, ethers, report.deployments)
 		if (phase === "publish") {
-			if (!bindings.verifiedCut || !bindings.restoredService || report.restoredService.cutDigest !== bindings.verifiedCut)
+			const serviceField = standard ? "verifiedService" : "restoredService"
+			if (!bindings.verifiedCut || !bindings[serviceField] || report[serviceField].cutDigest !== bindings.verifiedCut)
 				throw new Error("Verify execution and service restoration before explorer publication")
 			report.status = "publication-pending"
 			report.publicationProgress ||= {}
@@ -470,18 +502,21 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			)
 				throw new Error("Direct governance requires explicit execution and chain authorization")
 			const key = process.env.SYMMIO_CORE_UPGRADE_BATCH
+			if (standard && key !== "cut") throw new Error("Standard Core upgrades have only cut governance")
 			if (!["pause", "cut", "unpause"].includes(key || "")) throw new Error("Unknown governance phase")
 			const field = key === "cut" ? "batch" : `${key}Batch`
 			if (!bindings[field] || (key === "unpause" && !bindings.verifiedCut)) throw new Error("Missing reviewed governance evidence")
 			if (
 				key === "cut" &&
-				(!bindings.paused || report.batch.pausedDigest !== bindings.paused || report.batch.deploymentDigest !== bindings.deployments)
+				(!bindings[snapshotField] ||
+					report.batch[standard ? "snapshotDigest" : "pausedDigest"] !== bindings[snapshotField] ||
+					report.batch.deploymentDigest !== bindings.deployments)
 			)
-				throw new Error("Governance payload must match the bound deployments and paused snapshot")
+				throw new Error("Governance payload must match the bound deployments and Core cut snapshot")
 			report.governanceExecutions ||= {}
 			const journal = (report.governanceExecutions[key!] ||= {})
 			if (key === "unpause" && !journal.transactions?.length) await assertMuonRestoreReady(ethers, input, report, bindings)
-			if (key === "cut" && !(await core.pauseState())[0]) throw new Error("Core must stay paused throughout direct governance")
+			if (!standard && key === "cut" && !(await core.pauseState())[0]) throw new Error("Core must stay paused throughout direct governance")
 			journal.receipts = await executeCoreGovernancePayload(ethers, input.config, report[field].envelope, journal, persist, async confirmed => {
 				if (key === "pause") {
 					const current = await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true)
@@ -489,12 +524,13 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 					if (confirmed && !current.pause[0]) throw new Error("Executed maintenance pause is no longer active")
 				} else if (key === "cut") {
 					const current = await captureCoreUpgradeSnapshot(ethers, input.config, confirmed > 0)
-					assertCoreGovernanceProgress(ethers, report.paused, current, report.batch, confirmed, input.config)
+					assertCoreGovernanceProgress(ethers, report[snapshotField], current, report.batch, confirmed, input.config)
 				} else if (!confirmed) await verifyCoreUpgradePostState(hre, ethers, input, report)
 			})
 			return
 		}
 		const exportKey = process.env.SYMMIO_CORE_UPGRADE_BATCH || "cut"
+		if (standard && exportKey !== "cut") throw new Error("Standard Core upgrades have only cut governance")
 		if (phase === "check-export" && exportKey !== "cut") {
 			if (!["pause", "unpause"].includes(exportKey) || !bindings[`${exportKey}Batch`]) throw new Error("Missing bound Safe export")
 			if (exportKey === "pause") assertStaticBaseline(report.initial, await captureCoreUpgradeSnapshot(ethers, input.config, false, undefined, true))
@@ -546,15 +582,21 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			else report.paused = current
 			return
 		}
-		if (!bindings.paused) throw new Error("A fresh bound paused snapshot is required")
+		if (standard && phase === "plan-cut" && !report.cutSnapshot) {
+			const current = await captureCoreUpgradeSnapshot(ethers, input.config)
+			assertStaticBaseline(report.initial, current, true)
+			report.cutSnapshot = current
+		}
+		if (!report[snapshotField] || (!bindings[snapshotField] && phase !== "plan-cut")) throw new Error("A fresh bound Core cut snapshot is required")
 		if (phase === "plan-cut" || phase === "check-export") {
-			assertCoreSnapshotPreserved(report.paused, await captureCoreUpgradeSnapshot(ethers, input.config))
-			const batch = buildCoreUpgradeActions(ethers, input, report.paused, report.deployments)
+			const current = await captureCoreUpgradeSnapshot(ethers, input.config)
+			assertCoreSnapshotPreserved(report[snapshotField], current, false, false, standard)
+			const batch = buildCoreUpgradeActions(ethers, input, standard ? current : report.paused, report.deployments)
 			if (!report.batch)
 				report.batch = {
 					...batch,
 					envelope: await prepareCoreGovernancePayload(ethers, input.config, batch.actions),
-					pausedDigest: bindings.paused,
+					[standard ? "snapshotDigest" : "pausedDigest"]: standard ? digest(report.cutSnapshot) : bindings.paused,
 					deploymentDigest: bindings.deployments,
 				}
 			else same(batch.actions, report.batch.actions, "Saved Core actions changed")
@@ -566,19 +608,29 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				)
 			return
 		}
-		if (!bindings.batch || report.batch.pausedDigest !== bindings.paused || report.batch.deploymentDigest !== bindings.deployments)
+		if (
+			!bindings.batch ||
+			report.batch[standard ? "snapshotDigest" : "pausedDigest"] !== bindings[snapshotField] ||
+			report.batch.deploymentDigest !== bindings.deployments
+		)
 			throw new Error("Missing bound atomic Core batch")
 		if (phase === "rehearse-cut") {
-			if ((await ethers.provider.getBlock(report.paused.blockNumber))?.hash !== report.paused.blockHash)
-				throw new Error("Paused rehearsal block hash mismatch")
-			assertCoreSnapshotPreserved(report.paused, await captureCoreUpgradeSnapshot(ethers, input.config))
-			const execution = await rehearseCoreGovernancePayload(ethers, input.config, report.batch.envelope, report.paused.blockNumber)
+			if ((await ethers.provider.getBlock(report[snapshotField].blockNumber))?.hash !== report[snapshotField].blockHash)
+				throw new Error("Core cut rehearsal block hash mismatch")
+			assertCoreSnapshotPreserved(report[snapshotField], await captureCoreUpgradeSnapshot(ethers, input.config), false, false, standard)
+			const execution = await rehearseCoreGovernancePayload(ethers, input.config, report.batch.envelope, report[snapshotField].blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report)
-			report.cutRehearsal = { status: "complete", batchDigest: bindings.batch, execution, blockNumber: report.paused.blockNumber }
+			report.cutRehearsal = { status: "complete", batchDigest: bindings.batch, execution, blockNumber: report[snapshotField].blockNumber }
 			return
 		}
 		if (phase === "verify-cut") {
-			report.cutReceipt = await verifyCoreGovernanceReceipt(ethers, input.config, report.batch.envelope, receiptHash, report.paused.blockNumber)
+			report.cutReceipt = await verifyCoreGovernanceReceipt(
+				ethers,
+				input.config,
+				report.batch.envelope,
+				receiptHash,
+				report[snapshotField].blockNumber,
+			)
 			await verifyCoreUpgradePostState(hre, ethers, input, report, report.cutReceipt.blockNumber)
 			await verifyCoreUpgradePostState(hre, ethers, input, report)
 			report.verifiedCut = { receipt: report.cutReceipt, batchDigest: bindings.batch }
@@ -590,7 +642,7 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 				service: {
 					chainId: muonBindings.chainId,
 					core: t.core,
-					appId: report.paused.muon.configuration.appId,
+					appId: report[snapshotField].muon.configuration.appId,
 					releaseCommit: muonBindings.releaseCommit,
 					configurationDigest: "<hash of reviewed service configuration>",
 					methods: [],
@@ -622,6 +674,15 @@ export async function runCoreUpgradePhase(hre: any, phase: string, inputFile: st
 			const evidence = await checkCoreMuonReadiness(ethers, input, report, document)
 			if (report.muonReadiness) (report.muonReadinessHistory ||= []).push(report.muonReadiness)
 			report.muonReadiness = { document, evidence }
+			return
+		}
+		if (phase === "verify-service") {
+			if (!standard) throw new Error("The legacy Core workflow requires its separate restoration phase")
+			await verifyCoreUpgradePostState(hre, ethers, input, report)
+			await assertMuonRestoreReady(ethers, input, report, bindings)
+			same(Array.from(await core.pauseState()), report.initial.pause, "Final pause flags differ from their original values")
+			report.verifiedService = { cutDigest: bindings.verifiedCut, pause: report.initial.pause, governance: "cut-only" }
+			report.status = upgradeCompletionStatus({ executionVerified: true, serviceRestored: true, publicationVerified: false })
 			return
 		}
 		if (phase === "plan-unpause") {

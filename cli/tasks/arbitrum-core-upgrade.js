@@ -50,6 +50,7 @@ const BINDINGS = {
 	"rehearse-cut": ["cutRehearsal"],
 	"verify-cut": ["verifiedCut"],
 	"verify-muon": ["muonReadiness"],
+	"verify-service": ["verifiedService"],
 	"plan-unpause": ["unpauseBatch"],
 	"verify-unpause": ["restoredService"],
 };
@@ -140,7 +141,8 @@ export async function runCoreUpgradePhase(ctx, input, phase, { fork = false, env
 	}
 	const report = read(input.output);
 	ctx.state.coreEvidence ||= {};
-	for (const field of BINDINGS[phase] || []) {
+	const fields = phase === "plan-cut" && isStandardCoreInput(read(input.input).config) ? ["cutSnapshot", "batch"] : BINDINGS[phase] || [];
+	for (const field of fields) {
 		if (!report[field]) throw new Error(`Missing ${field} evidence after ${phase}`);
 		const hash = digest(report[field]);
 		if (ctx.state.coreEvidence[field] && ctx.state.coreEvidence[field] !== hash && phase !== "verify-muon")
@@ -155,7 +157,9 @@ const runPhase = runCoreUpgradePhase;
 
 export async function rehearseCoreUpgrade(ctx, input, phase = "rehearse-initial") {
 	if (!["rehearse-initial", "rehearse-cut"].includes(phase)) throw new Error("Unknown Core rehearsal phase");
-	const snapshot = read(input.output)[phase === "rehearse-initial" ? "initial" : "paused"];
+	const snapshot = read(input.output)[
+		phase === "rehearse-initial" ? "initial" : isStandardCoreInput(read(input.input).config) ? "cutSnapshot" : "paused"
+	];
 	if (!snapshot) throw new Error("Inspect the deployment before rehearsal");
 	return runPhase(ctx, input, phase, {
 		fork: true,
@@ -171,6 +175,7 @@ export async function rehearseCoreUpgrade(ctx, input, phase = "rehearse-initial"
 export async function deliverCoreBatch(ctx, input, key) {
 	const field = key === "cut" ? "batch" : `${key}Batch`,
 		standard = validateCoreTaskInput(ctx, input);
+	if (isStandardCoreInput(standard.config) && key !== "cut") throw new Error("Standard Core upgrades have only cut governance");
 	let report = read(input.output);
 	if (
 		key === "unpause" &&
@@ -392,9 +397,10 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 						initialValue: false,
 					}))
 				)
-					ctx.wait("Prepare the ABI consumers and review operator role changes before pausing Core.");
+					ctx.wait("Prepare the ABI consumers and review operator role changes before upgrading Core.");
 			});
-			await step("pause", () => deliverCoreBatch(ctx, input, "pause"));
+			const preserveAvailability = isStandardCoreInput(read(input.input).config);
+			if (!preserveAvailability) await step("pause", () => deliverCoreBatch(ctx, input, "pause"));
 			await step("plan-cut", () => runPhase(ctx, input, "plan-cut"));
 			await step("cut", () => deliverCoreBatch(ctx, input, "cut"));
 			await step("service-ready", async () => {
@@ -409,7 +415,11 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 						initialValue: false,
 					}))
 				)
-					ctx.wait("Core stays paused until application and indexer checks pass.");
+					ctx.wait(
+						preserveAvailability
+							? "Upgrade completion awaits application and indexer checks."
+							: "Core stays paused until application and indexer checks pass.",
+					);
 				ctx.state.coreServiceReadiness = { verifiedCutDigest: ctx.state.coreEvidence.verifiedCut, confirmedAt: new Date().toISOString() };
 			});
 			await step("muon-ready", async () => {
@@ -418,11 +428,17 @@ export function createArbitrumCoreUpgradeTask(common, overrides = {}) {
 					"Muon readiness",
 				);
 				const file = await ctx.ui.text({ message: "Muon readiness JSON path", initialValue: ctx.state.coreMuonReadinessFile || "" });
-				if (!file) ctx.wait("Core stays paused until Muon readiness evidence is supplied.");
+				if (!file)
+					ctx.wait(
+						preserveAvailability
+							? "Upgrade completion awaits Muon readiness evidence."
+							: "Core stays paused until Muon readiness evidence is supplied.",
+					);
 				ctx.state.coreMuonReadinessFile = path.resolve(ctx.root, file);
 				await runPhase(ctx, input, "verify-muon", { env: { SYMMIO_MUON_READY_INPUT: ctx.state.coreMuonReadinessFile } });
 			});
-			await step("unpause", () => deliverCoreBatch(ctx, input, "unpause"));
+			if (preserveAvailability) await step("verify-service", () => runPhase(ctx, input, "verify-service"));
+			else await step("unpause", () => deliverCoreBatch(ctx, input, "unpause"));
 			await step("publish", () => runPhase(ctx, input, "publish"));
 			ctx.ui.note(`Core upgrade verified. Report: ${input.output}`, "Complete");
 		},

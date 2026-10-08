@@ -2,11 +2,49 @@ import { expect } from "chai"
 
 import { digest } from "../../../deployment-tooling/arbitrum-core-upgrade.js"
 import { SAFE_EXECUTION_ABI, verifyCoreSafeReceipt } from "../../../tasks/deploy/coreUpgradeSafe.js"
-import { assertCoreSnapshotPreserved } from "../../../tasks/deploy/coreUpgradeSnapshot.js"
+import { assertCoreSnapshotPreserved, requiredCoreUpgradeRoles } from "../../../tasks/deploy/coreUpgradeSnapshot.js"
 import { ethers } from "../../helpers/hardhat-connection.js"
 import { address, rejects } from "../helpers/CoreUpgrade.fixture.js"
 
 describe("Current Core upgrade safety gates (verification)", function () {
+	it("preserves every pause flag during a standard upgrade and accepts consistent live trading", () => {
+		const before = {
+			muon: { configuration: { appId: "7" } },
+			preserved: {},
+			wiring: {},
+			code: {},
+			economy: { next: 1 },
+			pause: [false, false],
+			roles: { migration: true, listing: false },
+		}
+		const after = {
+			...structuredClone(before),
+			economy: { next: 2 },
+			roles: { migration: true, listing: true },
+			plannedRoles: [],
+			funding: [{ a: "3", b: "3", expected: "3" }],
+			globals: [{ stored: "3", expected: "3" }],
+		}
+		expect(() => assertCoreSnapshotPreserved(before, after, true, false, true)).not.to.throw()
+		for (const pause of [
+			[true, false],
+			[false, true],
+		])
+			expect(() => assertCoreSnapshotPreserved(before, { ...after, pause }, true, false, true)).to.throw(/pause flags/)
+		expect(() => assertCoreSnapshotPreserved(before, { ...after, funding: [{ a: "4", b: "3", expected: "3" }] }, true, false, true)).to.throw(
+			/funding/,
+		)
+		const alreadyPaused = { ...before, pause: [true, false] }
+		expect(() =>
+			assertCoreSnapshotPreserved(alreadyPaused, { ...after, economy: before.economy, pause: [true, false] }, true, false, true),
+		).not.to.throw()
+	})
+
+	it("does not require pause or unpause authority for the standard upgrade", () => {
+		expect(requiredCoreUpgradeRoles({ apiVersion: "operations.symm.io/core-upgrade-input-v2" })).to.deep.equal(["DEFAULT_ADMIN_ROLE"])
+		expect(requiredCoreUpgradeRoles({})).to.deep.equal(["DEFAULT_ADMIN_ROLE", "PAUSER_ROLE", "UNPAUSER_ROLE"])
+	})
+
 	it("refuses economic, peripheral, pause, role and funding drift even after a successful receipt", () => {
 		const before = {
 			muon: { configuration: { appId: "7" } },

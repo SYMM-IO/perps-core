@@ -8,6 +8,61 @@ import { ethers } from "../../helpers/hardhat-connection.js"
 import { address, rejects, fixture } from "../helpers/CoreUpgradeGovernance.fixture.js"
 
 describe("Generic Core governance (governance)", function () {
+	it("plans an unpaused standard upgrade without pause calls and keeps paused funding maintenance separate", () => {
+		const config = {
+			apiVersion: "operations.symm.io/core-upgrade-input-v1",
+			governance: { owner: address(2) },
+			target: { core: address(1), symbolManager: address(3) },
+			allowedRemovedSelectors: [],
+			repairAggregateFunding: true,
+		}
+		const snapshot = {
+			pause: [false],
+			selectors: { [CUT_SELECTOR]: address(4), "0x12345678": address(5) },
+			roles: { migration: false, listing: true },
+			plannedRoles: [],
+			funding: [],
+		}
+		const deployments = { facets: { f: { address: address(8), selectors: ["0x12345678"] } } }
+		const plan = buildCoreUpgradeActions(ethers, { config }, snapshot, deployments)
+		expect(plan.actions).to.have.length(1)
+		expect(plan.actions[0].data.slice(0, 10)).to.equal(CUT_SELECTOR)
+		const inconsistent = {
+			...snapshot,
+			funding: [{ partyA: address(6), partyB: address(7), symbolId: "1", positionType: 0, a: "1", b: "1", expected: "0" }],
+		}
+		expect(() => buildCoreUpgradeActions(ethers, { config }, inconsistent, deployments)).to.throw(/separate.*funding.*maintenance/i)
+		expect(() => buildCoreUpgradeActions(ethers, { config }, { ...snapshot, pause: [true] }, deployments)).not.to.throw()
+	})
+
+	it("allows trading between standard EOA actions while rejecting configuration, pause and role drift", () => {
+		const config = { apiVersion: "operations.symm.io/core-upgrade-input-v1", target: { symbolManager: address(3) } }
+		const before = {
+			muon: { configuration: { appId: "7" } },
+			preserved: { getOwner: address(2) },
+			wiring: {},
+			code: {},
+			economy: { next: 1 },
+			pause: [false, false],
+			selectors: { [CUT_SELECTOR]: address(4) },
+			roles: { migration: false, listing: true },
+			plannedRoles: [],
+			funding: [],
+			globals: [],
+		}
+		const batch = { actions: [{ data: CUT_SELECTOR }], desired: { [CUT_SELECTOR]: address(8) } }
+		const after = {
+			...structuredClone(before),
+			selectors: batch.desired,
+			economy: { next: 2 },
+			funding: [{ a: "3", b: "3", expected: "3" }],
+			globals: [{ stored: "3", expected: "3" }],
+		}
+		expect(() => assertCoreGovernanceProgress(ethers, before, after, batch, 1, config)).not.to.throw()
+		for (const drift of [{ pause: [true, false] }, { wiring: { changed: true } }, { roles: { migration: true, listing: true } }])
+			expect(() => assertCoreGovernanceProgress(ethers, before, { ...after, ...drift }, batch, 1, config)).to.throw(/progress changed/)
+	})
+
 	it("stops before the next action if a mined transaction differs from its reviewed intent", async () => {
 		const f = await fixture()
 		let broadcasts = 0

@@ -104,7 +104,7 @@ export function coreUpgradeInputReview(config) {
 		`governance.owner: Core (${config.target.core}) owner ${config.governance.owner} (${config.governance.kind}); signer ${config.governance.signerMode}`,
 		`governance.accountLayerOwner: expected existing Account Layer (${config.target.accountLayer}) owner ${config.governance.accountLayerOwner}`,
 		...Object.entries(config.target).map(([name, address]) => `target.${name}: ${purposes[name]} (${address})`),
-		`muon.requiredFunctions: restoration canaries through Core (${config.target.core}) and Signature Verifier (${config.target.signatureVerifier}): ${muon.requiredFunctions.join(", ")}`,
+		`muon.requiredFunctions: service canaries through Core (${config.target.core}) and Signature Verifier (${config.target.signatureVerifier}): ${muon.requiredFunctions.join(", ")}`,
 		`muon.additionalVerifierRoles: ${muon.additionalVerifierRoles.length} additional Signature Verifier roles to preserve; no grants performed`,
 		...Object.entries(config.inventory || {}).map(
 			([name, item]) => `inventory.${name}: ${item.kind}; contextual inventory, outside the Core cut`,
@@ -159,7 +159,9 @@ export function coreUpgradePolicyReview(config) {
 		`limits.coreSnapshot: Core (${config.target.core}); at most ${limits.coreSnapshot.maxHistoricalQuotes} historical quotes and ${limits.coreSnapshot.maxRegisteredSymbols} registered symbols; complete scans required`,
 		`limits.signatureVerifierSnapshot: Signature Verifier (${config.target.signatureVerifier}); at most ${limits.signatureVerifierSnapshot.maxRoleMembers} members per role and ${limits.signatureVerifierSnapshot.maxSigners} entries per public-key/gateway-signer list`,
 		`storage.symbolAdjustment: Core getter; ${adjustment.legacyAdjustmentWords} zero ABI words before upgrade; ${adjustment.upgradedAdjustmentWords} afterward; empty adjustments required`,
-		`funding.aggregate: Core accounting reconciliation and repair ${policies.funding.aggregate.repair ? "required" : "disabled"}`,
+		isStandardCoreInput(config)
+			? `funding.aggregate: Core accounting reconciliation; repair ${policies.funding.aggregate.repair ? "authorized only when Core is already paused" : "disabled"}. Active Core mismatches require separate funding maintenance; this task preserves pause flags.`
+			: `funding.aggregate: Core accounting reconciliation and repair ${policies.funding.aggregate.repair ? "required" : "disabled"}`,
 		`selectors.core: allowed removals ${policies.selectors.core.allowedRemovals.join(", ") || "none"}; unreviewed removals rejected`,
 	].join("\n");
 }
