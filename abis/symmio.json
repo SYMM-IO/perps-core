@@ -13333,25 +13333,6 @@
         "inputs": [
             {
                 "internalType": "address",
-                "name": "token",
-                "type": "address"
-            }
-        ],
-        "name": "isPledgeTokenWhitelisted",
-        "outputs": [
-            {
-                "internalType": "bool",
-                "name": "",
-                "type": "bool"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
                 "name": "partyA",
                 "type": "address"
             },
@@ -13441,24 +13422,6 @@
             }
         ],
         "name": "deferredSetSymbolsPrice",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "token",
-                "type": "address"
-            },
-            {
-                "internalType": "bool",
-                "name": "whitelisted",
-                "type": "bool"
-            }
-        ],
-        "name": "setPledgeTokenWhitelist",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -14225,6 +14188,25 @@
                 "internalType": "address",
                 "name": "token",
                 "type": "address"
+            }
+        ],
+        "name": "isPledgeTokenWhitelisted",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
             },
             {
                 "internalType": "uint256",
@@ -14238,6 +14220,24 @@
             }
         ],
         "name": "requestPledgeWithdraw",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "token",
+                "type": "address"
+            },
+            {
+                "internalType": "bool",
+                "name": "whitelisted",
+                "type": "bool"
+            }
+        ],
+        "name": "setPledgeTokenWhitelist",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -20025,6 +20025,24 @@
                 "type": "uint256"
             }
         ],
+        "name": "internalTransferToAllocatedBalance",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
         "name": "internalTransferToBalance",
         "outputs": [],
         "stateMutability": "nonpayable",
@@ -23542,6 +23560,19 @@
     },
     {
         "inputs": [],
+        "name": "ACCOUNTING_PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "AFFILIATE_MANAGER_ROLE",
         "outputs": [
             {
@@ -23672,6 +23703,19 @@
     },
     {
         "inputs": [],
+        "name": "EXTERNAL_TRANSFER_PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "FEE_ADMIN_ROLE",
         "outputs": [
             {
@@ -23698,6 +23742,32 @@
     },
     {
         "inputs": [],
+        "name": "GLOBAL_PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "INSTANT_LAYER_PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "INSTANT_LAYER_ROLE",
         "outputs": [
             {
@@ -23712,6 +23782,32 @@
     {
         "inputs": [],
         "name": "INTEGRATION_ADMIN_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "INTERNAL_TRANSFER_PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "LIQUIDATION_PAUSER_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",
@@ -23776,124 +23872,20 @@
     },
     {
         "inputs": [],
-        "name": "PARTY_B_MANAGER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "PLEDGE_TOKEN_MANAGER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "PARTY_B_REGISTRAR_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "ACCOUNTING_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "EXTERNAL_TRANSFER_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "GLOBAL_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "INSTANT_LAYER_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "INTERNAL_TRANSFER_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "LIQUIDATION_PAUSER_ROLE",
-        "outputs": [
-            {
-                "internalType": "bytes32",
-                "name": "",
-                "type": "bytes32"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
         "name": "PARTY_A_PAUSER_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "PARTY_B_MANAGER_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",
@@ -23919,7 +23911,20 @@
     },
     {
         "inputs": [],
-        "name": "WITHDRAW_ADVANCE_PAUSER_ROLE",
+        "name": "PARTY_B_REGISTRAR_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "PLEDGE_TOKEN_MANAGER_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",
@@ -24076,6 +24081,19 @@
     {
         "inputs": [],
         "name": "VIRTUAL_DEPOSITOR_ROLE",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "WITHDRAW_ADVANCE_PAUSER_ROLE",
         "outputs": [
             {
                 "internalType": "bytes32",

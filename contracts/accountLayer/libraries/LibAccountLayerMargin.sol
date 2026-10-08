@@ -38,7 +38,10 @@ library LibAccountLayerMargin {
 
 		address predictedVA = predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
 
-		LibAccountLayerUtils.executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
+		LibAccountLayerUtils.executeWithSigner(
+			subAccount,
+			abi.encodeWithSelector(ISymmio.internalTransferToAllocatedBalance.selector, predictedVA, amount)
+		);
 
 		emit AddMargin(predictedVA, subAccount, amount);
 	}

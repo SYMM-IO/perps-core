@@ -1409,6 +1409,30 @@ export function shouldBehaveLikeAccountLayer(): void {
 					expect(recipientBalanceAfter).to.equal(recipientBalanceBefore)
 					expect(cooldownAfter).to.equal(cooldownBefore)
 				})
+
+				it("should not allow internalTransferToAllocatedBalance via _call", async () => {
+					const recipient = context.signers.user2.address
+					const callData: BytesLike[] = [
+						context.accountFacet.interface.encodeFunctionData("internalTransferToAllocatedBalance", [recipient, BALANCES.SMALL_AMOUNT]),
+					]
+
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWithCustomError(
+						context.alCoreFacet,
+						"Unauthorized",
+					)
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(recipient)).to.equal(0n)
+				})
+
+				it("should keep internalTransfer via _call blocked while core internal transfers are paused", async () => {
+					await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+					const callData: BytesLike[] = [
+						context.accountFacet.interface.encodeFunctionData("internalTransfer", [context.signers.user2.address, BALANCES.SMALL_AMOUNT]),
+					]
+
+					await expect(context.alCoreFacet.connect(context.signers.user)._call(subAccountAddress, callData)).to.be.revertedWith(
+						"Pausable: Internal transfer paused",
+					)
+				})
 			})
 
 			describe("SendQuote with isolation types", async () => {
@@ -1449,6 +1473,20 @@ export function shouldBehaveLikeAccountLayer(): void {
 							context.alCoreFacet,
 							"PositionTypeNotAllowedForThisAccount",
 						)
+					})
+
+					it("should fund and open via _callWithMargin while core internal transfers are paused", async () => {
+						await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+						const quoteRequest = limitQuoteRequestBuilder().build()
+						const sendQuoteCallData = await createSendQuoteCallData(quoteRequest)
+
+						await context.alCoreFacet
+							.connect(context.signers.user)
+							._callWithMargin(positionSubAccount, 0, quoteRequest.symbolId, decimal(500n), [sendQuoteCallData])
+
+						const virtualAccounts = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(positionSubAccount, 0, 10)
+						expect(virtualAccounts.length).to.equal(1)
+						expect(await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccounts[0], 0, 10)).to.have.length(1)
 					})
 				})
 
@@ -2252,6 +2290,20 @@ export function shouldBehaveLikeAccountLayer(): void {
 
 				const cooldown = await context.viewFacet.withdrawCooldownOf(positionSubAccountAddress)
 				expect(cooldown).to.be.gt(0n)
+			})
+
+			it("Should run the full open, close and fund-return cycle while core internal transfers are paused", async () => {
+				await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+				const quoteRequest = limitQuoteRequestBuilder().positionType(PositionType.LONG).build()
+				const virtualAccountAddress = (await sendQuoteAndGetVirtualAccount(positionSubAccountAddress, quoteRequest))[0]
+				const quoteId = (await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10))[0]
+				const parentBalanceBefore = await context.viewFacet.balanceOf(positionSubAccountAddress)
+
+				await openPositionForQuote(quoteId)
+				await closePositionForQuote(context.signers.user, quoteId, virtualAccountAddress)
+
+				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+				expect(await context.viewFacet.balanceOf(positionSubAccountAddress)).to.be.gt(parentBalanceBefore)
 			})
 		})
 
@@ -3821,6 +3873,22 @@ export function shouldBehaveLikeAccountLayer(): void {
 				expect(activeAfter - activeBefore).to.equal(BALANCES.TRANSFER_AMOUNT)
 				expect(pooledAfter - pooledBefore).to.equal(0n)
 			})
+
+			it("should still pre-fund the next VA while core internal transfers are paused", async () => {
+				const subAccount = await createSubAccountAndDeposit(
+					context.signers.user,
+					[createSubAccountData("MARKET_ACCOUNT", 1, "MARKET")],
+					BALANCES.DEPOSIT_AMOUNT,
+				)
+				const symbolId = 1
+				const predictedVA = await context.alViewFacet.predictNextVirtualAccountAddress(subAccount, 1, symbolId)
+				await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+
+				await context.alMarginFacet.connect(context.signers.user).addMarginToNextVA(subAccount, 1, symbolId, BALANCES.TRANSFER_AMOUNT)
+
+				expect(await context.viewFacet.allocatedBalanceOfPartyA(predictedVA)).to.equal(BALANCES.TRANSFER_AMOUNT)
+				expect(await context.viewFacet.balanceOf(subAccount)).to.equal(BALANCES.DEPOSIT_AMOUNT - BALANCES.TRANSFER_AMOUNT)
+			})
 		})
 
 		describe("emergencyRecoverMargin", async () => {
@@ -3959,6 +4027,23 @@ export function shouldBehaveLikeAccountLayer(): void {
 						context.alMarginFacet.connect(context.signers.user2).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT),
 					).to.be.revertedWithCustomError(context.alMarginFacet, "NotOwner")
 				})
+
+				it("should still add margin while core internal transfers are paused", async () => {
+					await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+
+					await expect(context.alMarginFacet.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT))
+						.to.emit(context.alMarginFacet, "AddMargin")
+						.withArgs(virtualAccount, customSubAccount, BALANCES.TRANSFER_AMOUNT)
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(BALANCES.TRANSFER_AMOUNT)
+				})
+
+				it("should revert while core accounting is paused", async () => {
+					await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+
+					await expect(context.alMarginFacet.connect(context.signers.user).addMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT)).to.be.revertedWith(
+						"Pausable: Accounting paused",
+					)
+				})
 			})
 
 			describe("removeMargin", async () => {
@@ -3991,6 +4076,18 @@ export function shouldBehaveLikeAccountLayer(): void {
 					const subAccountAllocatedBalanceAfter = await context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
 					expect(subAccountBalanceAfter).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
 					expect(subAccountAllocatedBalanceAfter).to.equal(subAccountAllocatedBalanceBefore)
+				})
+
+				it("should still remove margin while core internal transfers are paused", async () => {
+					await context.pauseControlFacet.connect(context.signers.admin).pauseInternalTransfer()
+					const subAccountBalanceBefore = await context.viewFacet.balanceOf(customSubAccount)
+
+					await context.alMarginFacet
+						.connect(context.signers.user)
+						.removeMargin(virtualAccount, BALANCES.TRANSFER_AMOUNT, await getDummySingleUpnlSig())
+
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccount)).to.equal(0n)
+					expect(await context.viewFacet.balanceOf(customSubAccount)).to.equal(subAccountBalanceBefore + BALANCES.TRANSFER_AMOUNT)
 				})
 
 				it("should not be blocked by parent allocated balance limit when removing margin", async () => {
