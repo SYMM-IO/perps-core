@@ -9,12 +9,26 @@ import { LibAccountLayerUtils } from "./LibAccountLayerUtils.sol";
 import { QuoteParams } from "./LibQuoteParams.sol";
 import { ISymmio } from "../interfaces/ISymmio.sol";
 import { IAccountLayerErrors } from "../interfaces/IAccountLayerErrors.sol";
+import { IDiamondLoupe } from "../../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 
 /// @notice Shared logic for pre-funding the next virtual account of a sub-account.
 ///         Used by MarginFacet.addMarginToNextVA and CoreFacet._callWithMargin.
 library LibAccountLayerMargin {
 	/// @dev Same signature as IMarginFacetEvents.AddMargin so both emit the identical topic.
 	event AddMargin(address indexed virtualAccount, address indexed subAccount, uint256 amount);
+
+	/// @notice Transfers margin using the selector supported by the account's Core.
+	/// @dev Allows AccountLayer to be upgraded before Core without disabling existing margin flows.
+	///      Only an absent selector selects the legacy path; transfer failures must propagate so
+	///      permission and pause checks on an upgraded Core cannot be bypassed.
+	function transferToAllocatedBalance(address subAccount, address virtualAccount, uint256 amount) internal {
+		address core = LibAccountLayerUtils.getRelatedCore(subAccount);
+		bytes4 selector =
+			IDiamondLoupe(core).facetAddress(ISymmio.internalTransferToAllocatedBalance.selector) == address(0)
+				? ISymmio.internalTransfer.selector
+				: ISymmio.internalTransferToAllocatedBalance.selector;
+		LibAccountLayerUtils.executeWithSignerOnCore(core, subAccount, abi.encodeWithSelector(selector, virtualAccount, amount));
+	}
 
 	/// @notice Validates the isolation key and transfers deposited balance from the sub-account
 	///         to the predicted next virtual account's allocated balance.
@@ -38,10 +52,7 @@ library LibAccountLayerMargin {
 
 		address predictedVA = predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
 
-		LibAccountLayerUtils.executeWithSigner(
-			subAccount,
-			abi.encodeWithSelector(ISymmio.internalTransferToAllocatedBalance.selector, predictedVA, amount)
-		);
+		transferToAllocatedBalance(subAccount, predictedVA, amount);
 
 		emit AddMargin(predictedVA, subAccount, amount);
 	}

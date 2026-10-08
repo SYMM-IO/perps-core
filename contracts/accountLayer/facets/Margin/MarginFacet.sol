@@ -22,7 +22,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 	/// @notice Transfers deposited balance from a parent sub-account to a virtual account's allocated balance
 	/// @param virtualAccount The virtual account to add margin to
-	/// @param amount The amount to transfer via internalTransferToAllocatedBalance
+	/// @param amount The amount to transfer into allocated balance
 	function addMargin(
 		address virtualAccount,
 		uint256 amount
@@ -33,10 +33,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
-		LibAccountLayerUtils.executeWithSigner(
-			parent,
-			abi.encodeWithSelector(ISymmio.internalTransferToAllocatedBalance.selector, virtualAccount, amount)
-		);
+		LibAccountLayerMargin.transferToAllocatedBalance(parent, virtualAccount, amount);
 
 		emit AddMargin(virtualAccount, parent, amount);
 	}
@@ -46,7 +43,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	/// @param subAccount The parent sub-account
 	/// @param isolationType The isolation type matching the sub-account's strategy
 	/// @param symbolId The symbol ID for the target virtual account
-	/// @param amount The amount to transfer via internalTransferToAllocatedBalance
+	/// @param amount The amount to transfer into allocated balance
 	function addMarginToNextVA(
 		address subAccount,
 		VirtualAccountIsolationType isolationType,
