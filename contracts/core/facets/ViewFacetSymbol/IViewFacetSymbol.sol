@@ -70,6 +70,9 @@ interface IViewFacetSymbol {
 
 	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch);
 
+	/// @notice Returns restatement flags and epochs in the same order as the supplied symbol IDs.
+	function getRestatementStates(uint256[] calldata symbolIds) external view returns (bool[] memory restating, uint256[] memory epochs);
+
 	function getRestatementFundingProgress(
 		uint256 symbolId
 	) external view returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp);
