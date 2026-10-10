@@ -117,6 +117,7 @@ export function shouldBehaveLikeDiamond(): void {
 			"previewQuoteAdjustment(uint256,uint256)",
 			"isSymbolFrozen(uint256)",
 			"getRestatementState(uint256)",
+			"getRestatementStates(uint256[])",
 			"getRestatementFundingProgress(uint256)",
 			"isRestatementFundingCheckpointed(uint256,address)",
 			"getQuoteRestatedEpoch(uint256)",
