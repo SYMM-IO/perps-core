@@ -151,4 +151,16 @@ owners and deployment mapping before integration. Their acceptance fixtures must
   Preserve workflow IDs across attempts, signed bytes, Muon/EIP-712 structures and calldata.
   Keep IDs out of metric labels and inspect existing caller spans before integration.
 
-Solidity findings 001/012 are outside this fix branch.
+Withdrawal finding 001 is fixed in source: `WithdrawFinalized(requestId, user)` identifies
+the request owner for owner, keeper and provider finalizations. Its signature, argument
+order and indexed fields remain unchanged. The separate legacy `Withdraw(sender, user,
+amount)` event retains the resolved caller and original payout amount.
+
+Consumers must record the facet-upgrade cutover block for each deployment. Earlier
+`WithdrawFinalized.user` values may identify a caller or provider; reconstruct ownership
+from validated call arguments (including provider call traces where needed) and reconcile
+the owner/request pair against canonical Core state. Do not use `transaction.from` or an
+old finalization event alone to assign ownership or infer payout. Rebuild affected
+projections without modifying historical raw logs. Consumer owners must approve and
+verify that rollout/backfill for their deployment; no production upgrade is performed by
+the source fix. Solidity policy finding 012 remains outside this fix.

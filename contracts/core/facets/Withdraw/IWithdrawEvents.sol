@@ -18,6 +18,7 @@ interface IWithdrawEvents {
 
 	event WithdrawAccepted(uint256 indexed requestId, address indexed user);
 
+	/// @notice Identifies the request owner even when another account or provider finalizes it.
 	event WithdrawFinalized(uint256 indexed requestId, address indexed user);
 
 	event WithdrawCancelRequested(uint256 indexed requestId, address indexed user);
