@@ -85,6 +85,43 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 		await context.controlFacet.connect(context.signers.admin).setMuonConfig(upnlValidTime, priceValidTime)
 	}
 
+	describe("batch restatement state views", function () {
+		it("should return empty arrays for no symbol IDs", async function () {
+			expect(await context.viewFacetSymbol.getRestatementStates([])).to.deep.equal([[], []])
+		})
+
+		it("should preserve input order, duplicate IDs, and unset states across restatement windows", async function () {
+			const secondSymbolId = 2
+			await context.symbolControlFacet
+				.connect(context.signers.admin)
+				.addSymbol("ETHUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(SYMBOL_ID, decimal(4n), now)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(secondSymbolId, decimal(2n), now)
+			await startRestatementWithCurrentLiquidationNonce(SYMBOL_ID)
+			await startRestatementWithCurrentLiquidationNonce(secondSymbolId)
+			await completeFundingPreparation(secondSymbolId)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(secondSymbolId)
+			await startRestatementWithCurrentLiquidationNonce(secondSymbolId)
+
+			expect(await context.viewFacetSymbol.getRestatementStates([SYMBOL_ID, secondSymbolId])).to.deep.equal([
+				[true, true],
+				[1n, 2n],
+			])
+			await completeFundingPreparation(SYMBOL_ID)
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
+
+			expect(
+				await context.viewFacetSymbol.getRestatementStates([secondSymbolId, SYMBOL_ID, 999, secondSymbolId, 0, ethers.MaxUint256]),
+			).to.deep.equal([
+				[true, false, false, true, false, false],
+				[2n, 1n, 0n, 2n, 0n, 0n],
+			])
+			expect(await context.viewFacetSymbol.getRestatementState(SYMBOL_ID)).to.deep.equal([false, 1n])
+			expect(await context.viewFacetSymbol.getRestatementState(secondSymbolId)).to.deep.equal([true, 2n])
+		})
+	})
+
 	describe("registry lifecycle", function () {
 		it("should schedule an adjustment and freeze at effective time", async function () {
 			const now = await getBlockTimestamp()
