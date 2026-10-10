@@ -405,13 +405,52 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const balanceBefore = await context.collateral.balanceOf(user.address)
 
-			await expect(context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 1)).not.to.reverted
+			const transaction = await context.withdrawFacet.connect(context.signers.user).finalizeWithdrawRequest(user.address, 1)
+			await expect(transaction).to.emit(context.withdrawFacet, "WithdrawFinalized").withArgs(1, user.address)
+			await expect(transaction).to.emit(context.withdrawFacet, "Withdraw").withArgs(user.address, user.address, ethers.parseUnits("70", 18))
 
 			const balanceAfter = await context.collateral.balanceOf(user.address)
 			expect(balanceAfter - balanceBefore).be.equal(ethers.parseUnits("70", 18))
 
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(withdrawRequest.status).to.equal(WithdrawStatus.COMPLETED)
+		})
+
+		it("Should attribute third-party finalization to the owner when both owners have request ID 1", async function () {
+			await userDeposit("100")
+			const caller = context.signers.user2
+			const otherUser = new User(context, caller)
+			await otherUser.setup()
+			await otherUser.setBalances(ethers.parseEther("100"))
+			await context.accountFacet.connect(caller).deposit(ethers.parseEther("50"))
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw([await buildPart("100")], false, "0x")
+			await context.withdrawFacet.connect(caller).initiateWithdraw([await buildPart("50", { receiver: toBytes20(caller.address) })], false, "0x")
+			await time.increase(1000)
+
+			const ownerBalance = await context.collateral.balanceOf(user.address)
+			const callerBalance = await context.collateral.balanceOf(caller.address)
+			const transaction = await context.withdrawFacet.connect(caller).finalizeWithdrawRequest(user.address, 1)
+			await expect(transaction).to.emit(context.withdrawFacet, "WithdrawFinalized").withArgs(1, user.address)
+			await expect(transaction).to.emit(context.withdrawFacet, "Withdraw").withArgs(caller.address, user.address, ethers.parseEther("100"))
+
+			const receipt = await transaction.wait()
+			const topic = ethers.id("WithdrawFinalized(uint256,address)")
+			const finalizationLogs = receipt!.logs.filter(log => log.address.toLowerCase() === context.diamond.toLowerCase() && log.topics[0] === topic)
+			expect(finalizationLogs).to.have.length(1)
+			expect(finalizationLogs[0].topics).to.deep.equal([topic, ethers.zeroPadValue(ethers.toBeHex(1), 32), ethers.zeroPadValue(user.address, 32)])
+			expect(finalizationLogs[0].data).to.equal("0x")
+
+			expect(await context.collateral.balanceOf(user.address)).to.equal(ownerBalance + ethers.parseEther("100"))
+			expect(await context.collateral.balanceOf(caller.address)).to.equal(callerBalance)
+			expect((await context.viewFacet.getWithdrawRequests(user.address, 1)).status).to.equal(WithdrawStatus.COMPLETED)
+			const otherRequest = await context.viewFacet.getWithdrawRequests(caller.address, 1)
+			expect(otherRequest.status).to.equal(WithdrawStatus.PENDING)
+			expect(otherRequest.totalAmount).to.equal(ethers.parseEther("50"))
+			await expect(context.withdrawFacet.connect(caller).finalizeWithdrawRequest(user.address, 1)).to.be.revertedWith(
+				"WithdrawFacet : Invalid withdraw request status",
+			)
+			expect(await context.collateral.balanceOf(user.address)).to.equal(ownerBalance + ethers.parseEther("100"))
 		})
 
 		it("Should fail to request to cancel withdraw with wrong id", async function () {
@@ -1242,7 +1281,10 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await time.increase(1000)
 			const expressBalanceBefore = await context.collateral.balanceOf(epAddress)
 
-			await expect(expressProvider.finalizeWithdrawRequest(user.address, 1)).not.to.reverted
+			const transaction = await expressProvider.finalizeWithdrawRequest(user.address, 1)
+			await expect(transaction).to.emit(context.withdrawFacet, "WithdrawFinalized").withArgs(1, user.address)
+			await expect(transaction).to.emit(context.withdrawFacet, "Withdraw").withArgs(epAddress, user.address, ethers.parseUnits("70", 18))
+			expect(await expressProvider.completeCount()).to.equal(1)
 
 			const expressBalanceAfter = await context.collateral.balanceOf(epAddress)
 			expect(expressBalanceAfter - expressBalanceBefore).to.equal(ethers.parseUnits("70", 18))

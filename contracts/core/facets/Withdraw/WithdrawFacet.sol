@@ -88,10 +88,11 @@ contract WithdrawFacet is Accessibility, Pausable, IWithdrawFacet, ReentrancyGua
 	/// - Request must be in:
 	///      - `PENDING` (classic-only) OR
 	///      - `PROVIDER_ACCEPTED` or `CANCEL_REQUESTED` (provider flow)
+	/// @param user The owner of the withdrawal request, also identified in WithdrawFinalized.
 	/// @param requestId ID of the withdrawal request.
 	function finalizeWithdrawRequest(address user, uint256 requestId) external notSuspended(user) whenNotAccountingPaused nonReentrant {
 		WithdrawFacetImpl.finalizeWithdrawRequest(user, requestId);
-		emit WithdrawFinalized(requestId, LibSigner.getSigner());
+		emit WithdrawFinalized(requestId, user);
 	}
 
 	/// @notice Requests cancellation of a withdrawal.
