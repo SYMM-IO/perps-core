@@ -117,7 +117,10 @@ export function shouldBehaveLikePartyModels(): void {
 			const context = {
 				partyAFacet: {
 					connect: () => ({
-						requestToCancelQuote: () => minedTransaction(() => mined++),
+						getFunction: (method: string) => {
+							expect(method).to.equal("requestToCancelQuote")
+							return () => minedTransaction(() => mined++)
+						},
 					}),
 				},
 			} as unknown as RunContext
@@ -188,7 +191,10 @@ export function shouldBehaveLikePartyModels(): void {
 			const context = {
 				partyAFacet: {
 					connect: () => ({
-						requestToCancelQuote: () => minedTransaction(),
+						getFunction: (method: string) => {
+							expect(method).to.equal("requestToCancelQuote")
+							return () => minedTransaction()
+						},
 					}),
 				},
 			} as unknown as RunContext

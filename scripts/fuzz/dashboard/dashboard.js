@@ -29,6 +29,18 @@
 		{ key: "EXPIRE_QUOTE", label: "Quote expiry", short: "EXPIRY" },
 		{ key: "LIQUIDATE_PARTY_A", label: "User liquidation", short: "USER LIQ" },
 		{ key: "LIQUIDATE_PARTY_B", label: "Hedger liquidation", short: "HEDGER LIQ" },
+		{ key: "ACCOUNT_LAYER_LIFECYCLE", label: "AccountLayer lifecycle", short: "ACCOUNT" },
+		{ key: "INSTANT_LAYER_LIFECYCLE", label: "InstantLayer lifecycle", short: "INSTANT" },
+		{ key: "ACCOUNT_LAYER_SINGLE_VA", label: "Single VA routing", short: "SINGLE VA" },
+		{ key: "ACCOUNT_LAYER_OWNERSHIP", label: "Account ownership", short: "OWNER" },
+		{ key: "ACCOUNT_LAYER_LEGACY_IMPORT", label: "Legacy account import", short: "IMPORT" },
+		{ key: "ACCOUNT_LAYER_MARGIN_RECOVERY", label: "Safe margin and recovery", short: "RECOVERY" },
+		{ key: "ACCOUNT_LAYER_TIMELOCK", label: "AccountLayer timelocks", short: "AL LOCK" },
+		{ key: "INSTANT_LAYER_TIMELOCK", label: "InstantLayer timelocks", short: "IL LOCK" },
+		{ key: "INSTANT_LAYER_DELEGATION", label: "Delegation lifecycle", short: "DELEGATE" },
+		{ key: "INSTANT_LAYER_FLEX_FIELDS", label: "Flex field fills", short: "FLEX" },
+		{ key: "INSTANT_LAYER_TEMPLATE", label: "Instant-open template", short: "TEMPLATE" },
+		{ key: "INSTANT_LAYER_PARTY_B_RELAYS", label: "PartyB signed relays", short: "PARTY B" },
 	];
 
 	const ACTION_ORDER = [
