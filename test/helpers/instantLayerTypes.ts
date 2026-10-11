@@ -1,8 +1,10 @@
 import type {
 	AccountStruct as AccountStructType,
+	DelegationInfoStruct as DelegationInfoStructType,
 	FlexFieldStruct as FlexFieldStructType,
 	IInstantLayerDiamond,
 	OperationStruct as OperationStructType,
+	SignedDelegationStruct as SignedDelegationStructType,
 	SignedOperationStruct as SignedOperationStructType,
 } from "../../src/types/instantLayer/interfaces/IInstantLayerDiamond.js"
 
@@ -13,7 +15,9 @@ export type InstantLayer = IInstantLayerDiamond
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export declare namespace InstantLayer {
 	export type AccountStruct = AccountStructType
+	export type DelegationInfoStruct = DelegationInfoStructType
 	export type FlexFieldStruct = FlexFieldStructType
 	export type OperationStruct = OperationStructType
+	export type SignedDelegationStruct = SignedDelegationStructType
 	export type SignedOperationStruct = SignedOperationStructType
 }
