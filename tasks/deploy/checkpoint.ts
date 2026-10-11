@@ -37,6 +37,14 @@ export interface AccountLayerCheckpoint {
 	diamondCutComplete?: boolean
 }
 
+export interface InstantLayerDiamondCheckpoint {
+	diamondCutFacet?: DeployedContract
+	diamond?: DeployedContract
+	init?: DeployedContract
+	facets?: Record<string, DeployedContract>
+	diamondCutComplete?: boolean
+}
+
 export interface ExpressProviderCheckpoint {
 	diamondCutFacet?: DeployedContract
 	diamond?: DeployedContract
@@ -68,7 +76,7 @@ export interface DeploymentCheckpoint {
 		diamond?: DiamondCheckpoint
 		accountLayerDiamond?: AccountLayerCheckpoint
 		signatureVerifier?: DeployedContract
-		instantLayer?: DeployedContract
+		instantLayerDiamond?: InstantLayerDiamondCheckpoint
 		symmioPartyB?: DeployedContract & { implementation?: string; admin?: string }
 		symmioLiquidator?: DeployedContract & { implementation?: string; admin?: string }
 		accountManager?: DeployedContract
@@ -684,8 +692,15 @@ export function displayCheckpointStatus(checkpoint: DeploymentCheckpoint): void 
 			logger.info(`    - Diamond cut complete`)
 		}
 	}
-	if (checkpoint.contracts.instantLayer) {
-		logger.info(`  - InstantLayer: ${checkpoint.contracts.instantLayer.address}`)
+	if (checkpoint.contracts.instantLayerDiamond?.diamond) {
+		logger.info(`  - InstantLayerDiamond: ${checkpoint.contracts.instantLayerDiamond.diamond.address}`)
+		const facetCount = Object.keys(checkpoint.contracts.instantLayerDiamond.facets || {}).length
+		if (facetCount > 0) {
+			logger.info(`    - ${facetCount} facets deployed`)
+		}
+		if (checkpoint.contracts.instantLayerDiamond.diamondCutComplete) {
+			logger.info(`    - Diamond cut complete`)
+		}
 	}
 	if (checkpoint.contracts.signatureVerifier) {
 		logger.info(`  - MuonSignatureVerifier: ${checkpoint.contracts.signatureVerifier.address}`)

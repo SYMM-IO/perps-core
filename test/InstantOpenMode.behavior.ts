@@ -1,10 +1,10 @@
 import { expect } from "chai"
 import { ZeroAddress, TypedDataDomain, toUtf8Bytes } from "ethers"
 
-import type { InstantLayer } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { cloneTypes } from "./helpers/instantLayerEIP712Types.js"
+import type { InstantLayer } from "./helpers/instantLayerTypes.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"

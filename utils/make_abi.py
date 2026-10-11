@@ -179,10 +179,21 @@ def main():
         "expressProvider",
     )
 
+    # Generate InstantLayer diamond ABI (combines instantLayer facets, libraries, utils, storages)
+    print("\n=== Generating InstantLayer ABI ===")
+    generate_diamond_abi(
+        [
+            "instantLayer/facets",
+            "instantLayer/libraries",
+            "instantLayer/utils",
+            "instantLayer/storages",
+        ],
+        "instantLayer",
+    )
+
     # Generate ABIs for standalone contracts
     standalone_contracts = [
         ("helpers/accounts/SymmioPartyB.sol", "SymmioPartyB", "partyB"),
-        ("instantLayer/InstantLayer.sol", "InstantLayer", "instantLayer"),
         ("accountLayer/AccountManager.sol", "AccountManager", "accountManager"),
         ("helpers/accounts/MultiAccount.sol", "MultiAccount", "multiAccount"),
         ("gaslessLayer/GaslessLayer.sol", "GaslessLayer", "gaslessLayer"),

@@ -53,8 +53,8 @@ describe("vanity plan", function () {
 
 	it("totals expected attempts across every matching contract", function () {
 		const plan = buildVanityPlan({ factoryAddress: FACTORY, groups: { diamonds: { prefix: "573310" } } })!
-		// Three diamonds at 16^6 each.
-		expect(plan.total()).to.equal(3 * 16_777_216)
+		// Four diamonds at 16^6 each: core, accountLayer, expressProvider, instantLayer.
+		expect(plan.total()).to.equal(4 * 16_777_216)
 	})
 
 	it("accepts a plan inside its budget", function () {

@@ -5,6 +5,7 @@ import { ArgumentType } from "hardhat/types/arguments"
 import path from "path"
 
 import { CORE_PAUSE_ROLES } from "../../utils/corePauseRoles.js"
+import { AccountLayerFacetNames, InstantLayerFacetNames } from "../../utils/deploymentManifest.js"
 import { getSelectors } from "../utils/diamondCut.js"
 import { getDataDir, setDataScope, writeData } from "../utils/fs.js"
 import { inspectGaslessLayerPostState } from "./componentDeployment.js"
@@ -516,7 +517,9 @@ interface VerificationResult {
 // FacetNames covers the facets cut in by deploy:diamond; DiamondCutFacet is deployed
 // with the Diamond itself and is not in that list, hence the +1.
 const EXPECTED_CORE_FACETS = FacetNames.length + 1
-const EXPECTED_ACCOUNTLAYER_FACETS = 8
+// As for core: the manifest lists the facets a cut installs, and DiamondCutFacet comes with the diamond.
+const EXPECTED_ACCOUNTLAYER_FACETS = AccountLayerFacetNames.length + 1
+const EXPECTED_INSTANTLAYER_FACETS = InstantLayerFacetNames.length + 1
 export const CORE_ADMIN_ROLES = [
 	"DEFAULT_ADMIN_ROLE",
 	"SYMBOL_MANAGER_ROLE",
@@ -1711,9 +1714,28 @@ async function verifyInstantLayerFull(
 	protocolConfig: ProtocolConfig,
 	partyBAddresses: string[],
 	deployerAddress: string,
+	ownerOptions: { allowPendingOwnership?: boolean; deployerAddress?: string } = {},
 ) {
 	const cat = "InstantLayer"
-	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", instantLayerAddress)
+
+	// Facet count
+	try {
+		const loupe = await ethers.getContractAt("IDiamondLoupe", instantLayerAddress)
+		const facetCount = (await loupe.facets()).length
+		pushAndLog(results, {
+			category: cat,
+			check: "Facet count",
+			status: facetCount === EXPECTED_INSTANTLAYER_FACETS ? "pass" : "fail",
+			expected: String(EXPECTED_INSTANTLAYER_FACETS),
+			actual: String(facetCount),
+			...(facetCount === EXPECTED_INSTANTLAYER_FACETS ? {} : { hint: "Cut the InstantLayer diamond so it holds exactly its six facets" }),
+		})
+	} catch (err: any) {
+		pushAndLog(results, { category: cat, check: "Facet count", status: "fail", actual: err.message, hint: "InstantLayer is not a diamond" })
+	}
+
+	await checkDiamondOwner(ethers, instantLayerAddress, "IInstantLayerDiamond", cat, addresses.admin, results, ownerOptions)
 
 	// AccountLayer set
 	await checkAddress(results, cat, "AccountLayer set", () => instantLayer.accountLayer(), ethers, {
@@ -1778,6 +1800,23 @@ async function verifyInstantLayerFull(
 			ozStyle: true,
 			contractLabel: "InstantLayer",
 		})
+	}
+	// A role admin holds no role but can grant one to itself later, so it counts as a privilege.
+	const shortDeployer = `${deployerAddress.slice(0, 6)}...${deployerAddress.slice(-4)}`
+	for (const role of INSTANTLAYER_PRIVILEGED_ROLES) {
+		const check = `${shortDeployer} is not a role admin of ${role}`
+		try {
+			const hash = role === "DEFAULT_ADMIN_ROLE" ? await instantLayer.DEFAULT_ADMIN_ROLE() : roleHash(ethers, role)
+			const isAdmin = await instantLayer.isRoleAdmin(deployerAddress, hash)
+			pushAndLog(results, {
+				category: "InstantLayer: Deployer",
+				check,
+				status: isAdmin ? "fail" : "pass",
+				...(isAdmin ? { hint: `Call InstantLayer.setRoleAdmin(${deployerAddress}, ${role}, false) from a DEFAULT_ADMIN_ROLE holder` } : {}),
+			})
+		} catch (e: any) {
+			pushAndLog(results, { category: "InstantLayer: Deployer", check, status: "fail", message: e.message?.slice(0, 120) })
+		}
 	}
 
 	// Templates
@@ -1901,7 +1940,7 @@ async function verifyPartyBFull(
 	// Registered in InstantLayer
 	if (addresses.instantLayer) {
 		try {
-			const il = await ethers.getContractAt("InstantLayer", addresses.instantLayer)
+			const il = await ethers.getContractAt("IInstantLayerDiamond", addresses.instantLayer)
 			await checkBool(
 				results,
 				cat,
@@ -2190,7 +2229,7 @@ function loadAddressesFromCheckpoint(checkpoint: any, existing: any) {
 	return {
 		diamond: existing.diamond || checkpoint.contracts?.diamond?.diamond?.address,
 		accountLayer: existing.accountLayer || checkpoint.contracts?.accountLayerDiamond?.diamond?.address,
-		instantLayer: existing.instantLayer || checkpoint.contracts?.instantLayer?.address,
+		instantLayer: existing.instantLayer || checkpoint.contracts?.instantLayerDiamond?.diamond?.address,
 		partyB: existing.partyB || checkpoint.contracts?.symmioPartyB?.address,
 		symbolManager: existing.symbolManager || checkpoint.contracts?.symbolManager?.address,
 		gaslessLayer: existing.gaslessLayer || checkpoint.contracts?.gaslessLayer?.proxy?.address,
@@ -2811,7 +2850,10 @@ export const checkDeploymentTask = task("check:deployment", "Checks deployment h
 					})
 				} else {
 					pushAndLog(results, { category: "InstantLayer", check: "Contract exists", status: "pass" })
-					await verifyInstantLayerFull(ethers, addresses.instantLayer, addresses, results, protocolConfig, partyBAddresses, originalDeployerAddress)
+					await verifyInstantLayerFull(ethers, addresses.instantLayer, addresses, results, protocolConfig, partyBAddresses, originalDeployerAddress, {
+						allowPendingOwnership: args.allowPendingOwnership,
+						deployerAddress: originalDeployerAddress,
+					})
 				}
 				console.log("")
 			}

@@ -1294,7 +1294,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					order: ++deploymentStepOrder,
 					run: async () => {
 						try {
-							const wasAlreadyDeployed = !!checkpoint.contracts.instantLayer
+							const wasAlreadyDeployed = !!checkpoint.contracts.instantLayerDiamond?.diamondCutComplete
 							const instantLayer = await deployInstantLayer(hre, {
 								symmioaddress: deployedContracts.diamond!,
 								admin: deployerAddress,
@@ -1764,7 +1764,7 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 					title: "Transferring Diamond ownership to admin",
 					order: ++deploymentStepOrder,
 					run: async () => {
-						// Both diamonds must be handed over. Only the core Diamond used to be
+						// Every diamond must be handed over. Only the core Diamond used to be
 						// transferred, leaving the deploy wallet as permanent owner of the
 						// AccountLayer — and owner is what authorises diamondCut, so a hot wallet
 						// kept the ability to upgrade the AccountLayer arbitrarily. Revoking roles
@@ -1786,6 +1786,15 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 									deployedContracts.accountLayerDiamond,
 								),
 								view: await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", deployedContracts.accountLayerDiamond),
+							})
+						}
+						if (deployedContracts.instantLayer) {
+							const instantLayerDiamond = await ethers.getContractAt("IInstantLayerDiamond", deployedContracts.instantLayer)
+							owned.push({
+								label: "InstantLayer",
+								address: deployedContracts.instantLayer,
+								control: instantLayerDiamond,
+								view: instantLayerDiamond,
 							})
 						}
 
@@ -1839,6 +1848,11 @@ export const deployAllTask = task("deploy:system", "Deploys all system contracts
 						label: "AccountLayerDiamond",
 						address: deployedContracts.accountLayerDiamond!,
 						viewName: "contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet",
+					},
+					{
+						label: "InstantLayer",
+						address: deployedContracts.instantLayer!,
+						viewName: "IInstantLayerDiamond",
 					},
 				]
 				const ownershipStates: Array<{ label: string; address: string; owner: string; pendingOwner: string }> = []
@@ -2148,7 +2162,7 @@ async function setupSystem(
 		"contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet",
 		deployedContracts.accountLayerDiamond!,
 	)
-	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", deployedContracts.instantLayer!)
 	const isMockVerifier = !!(config as any).deployMockVerifier
 	const signatureVerifier = deployedContracts.signatureVerifier
 		? await ethers.getContractAt(isMockVerifier ? "MockMuonSignatureVerifier" : "MuonSignatureVerifier", deployedContracts.signatureVerifier)
@@ -2907,7 +2921,7 @@ async function setupInstantLayerTemplates(
 ): Promise<void> {
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
-	const instantLayer = await ethers.getContractAt("InstantLayer", deployedContracts.instantLayer!)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", deployedContracts.instantLayer!)
 
 	const templates = protocolConfig.instantLayerTemplates
 	logger.info(`  Setting up ${templates.length} InstantLayer template(s)...`)
@@ -3060,9 +3074,9 @@ async function revokeDeployerPrivileges(
 		}
 	}
 
-	// ---- OpenZeppelin AccessControl peripherals -----------------------------------
+	// ---- Peripherals with (role, account) role functions ---------------------------
 	// The mock verifier has no roles at all, so it is skipped.
-	const ozTargets: Array<{ label: string; address?: string; roles: string[] }> = [
+	const ozTargets: Array<{ label: string; address?: string; roles: string[]; defaultAdminRoleHash?: string }> = [
 		{
 			label: "MuonSignatureVerifier",
 			address: config.deployMockVerifier ? undefined : deployedContracts.signatureVerifier,
@@ -3072,6 +3086,8 @@ async function revokeDeployerPrivileges(
 			label: "InstantLayer",
 			address: deployedContracts.instantLayer,
 			roles: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "TEMPLATE_MANAGER_ROLE", "OPERATOR_ROLE"],
+			// The diamond hashes its admin role's name; the other targets use OpenZeppelin's zero role.
+			defaultAdminRoleHash: roleHash("DEFAULT_ADMIN_ROLE"),
 		},
 		{
 			label: "SymmioPartyB",
@@ -3085,8 +3101,8 @@ async function revokeDeployerPrivileges(
 		const contract = new ethers.Contract(target.address, ACCESS_CONTROL_ABI, deployer)
 
 		for (const role of target.roles) {
-			// OZ's DEFAULT_ADMIN_ROLE is bytes32(0); the named roles are keccak hashes.
-			const hash = role === "DEFAULT_ADMIN_ROLE" ? ethers.ZeroHash : roleHash(role)
+			// OZ's DEFAULT_ADMIN_ROLE is bytes32(0) unless the target overrides it; the named roles are keccak hashes.
+			const hash = role === "DEFAULT_ADMIN_ROLE" ? (target.defaultAdminRoleHash ?? ethers.ZeroHash) : roleHash(role)
 
 			let deployerHas: boolean
 			let adminHas: boolean

@@ -53,8 +53,19 @@ describe("checkpoint deployment-record recovery", function () {
 		expect(readData(DEPLOYMENT_LOG_FILE)).to.deep.equal([
 			{ name: "MuonSignatureVerifier", address: await verifier.getAddress(), constructorArguments: [admin] },
 		])
-		expect(readData(INSTANTLAYER_DEPLOYMENT_FILE)).to.deep.equal([
-			{ name: "InstantLayer", address: await instantLayer.getAddress(), constructorArguments: [symmio, admin] },
+		const instantLayerRecords = readData(INSTANTLAYER_DEPLOYMENT_FILE) as Array<{ name: string; address: string; constructorArguments: unknown[] }>
+		const diamondRecord = instantLayerRecords.find(record => record.name === "Diamond")!
+		expect(diamondRecord.address).to.equal(await instantLayer.getAddress())
+		expect(diamondRecord.constructorArguments[0]).to.equal(admin)
+		expect(instantLayerRecords.map(record => record.name)).to.deep.equal([
+			"DiamondCutFacet",
+			"Diamond",
+			"contracts/instantLayer/Init.sol:Init",
+			"contracts/instantLayer/facets/Control/ControlFacet.sol:ControlFacet",
+			"contracts/instantLayer/facets/View/ViewFacet.sol:ViewFacet",
+			"contracts/instantLayer/facets/Delegation/DelegationFacet.sol:DelegationFacet",
+			"contracts/instantLayer/facets/Execution/ExecutionFacet.sol:ExecutionFacet",
+			"contracts/diamond/facets/DiamondLoup/DiamondLoupeFacet.sol:DiamondLoupeFacet",
 		])
 		expect(readData(SYMBOLMANAGER_DEPLOYMENT_FILE)).to.deep.equal([
 			{ name: "SymmioSymbolManager", address: await symbolManager.getAddress(), constructorArguments: [symmio, admin] },

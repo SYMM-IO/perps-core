@@ -17,7 +17,11 @@ describe("vanity address deployment", function () {
 		// component. Each case here deploys the same components again, so it starts clean.
 		resetDeploymentTransactionJournal()
 		const [deployer] = await ethers.getSigners()
-		const factory = await ethers.getContractFactory("Create2Factory")
+		// A dedicated wallet deploys the factory, so its address and every salt mined against it
+		// do not depend on how many transactions earlier suites sent from the shared signers.
+		const factoryDeployer = new ethers.Wallet(ethers.id("vanity-deployment-test-factory"), ethers.provider)
+		await deployer.sendTransaction({ to: factoryDeployer.address, value: ethers.parseEther("1") })
+		const factory = await ethers.getContractFactory("Create2Factory", factoryDeployer)
 		const create2Factory = await factory.deploy(deployer.address, deployer.address)
 		await create2Factory.waitForDeployment()
 		factoryAddress = await create2Factory.getAddress()
