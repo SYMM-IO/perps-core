@@ -1,4 +1,4 @@
-import { Interface, ZeroHash, keccak256, toUtf8Bytes } from "ethers"
+import { Interface, ZeroHash, getAddress, keccak256, toUtf8Bytes } from "ethers"
 import assert from "node:assert/strict"
 import test from "node:test"
 
@@ -8,6 +8,7 @@ import {
 	buildInstantLayerReplayPlan,
 	buildSafeTransactionBuilderBatch,
 	compareInstantLayerConfiguration,
+	instantLayerRoleHash,
 	mergePartyBCandidates,
 	planAdditionalTemplates,
 	type InstantLayerSnapshot,
@@ -142,6 +143,7 @@ test("cutover Safe actions bind the new layer everywhere and upgrade the Gasless
 	assert.deepEqual(
 		actions.map(a => [a.to, a.data]),
 		[
+			[NEW_IL, new Interface(["function acceptOwnership()"]).encodeFunctionData("acceptOwnership", [])],
 			[CORE, diamond.encodeFunctionData("grantRole", [NEW_IL, role("INSTANT_LAYER_ROLE")])],
 			[ACCOUNT_LAYER, diamond.encodeFunctionData("grantRole", [NEW_IL, role("SIGNER_SETTER_ROLE")])],
 			[PARTY_B, partyB.encodeFunctionData("grantRole", [role("TRUSTED_ROLE"), NEW_IL])],
@@ -304,4 +306,48 @@ test("additional templates refuse a recipe whose leading entries drift from the 
 			]),
 		/name/,
 	)
+})
+
+test("replay plan grants DEFAULT_ADMIN_ROLE on the diamond by its hashed id", () => {
+	const holder = getAddress("0x00000000000000000000000000000000000000a1")
+	const plan = buildInstantLayerReplayPlan(
+		snapshot({ roles: { DEFAULT_ADMIN_ROLE: [holder], SETTER_ROLE: [], TEMPLATE_MANAGER_ROLE: [], OPERATOR_ROLE: [], REVOKER_ROLE: [] } }),
+		{ deployer: DEPLOYER, safe: SAFE },
+	)
+	const grants = plan.filter(action => action.kind === "grantRole")
+	assert.equal(grants.length, 1)
+	assert.deepEqual(grants[0].args, [role("DEFAULT_ADMIN_ROLE"), holder])
+})
+
+test("role ids differ between the legacy layer and the diamond only for the admin role", () => {
+	assert.equal(instantLayerRoleHash("DEFAULT_ADMIN_ROLE", "legacy"), ZeroHash)
+	assert.equal(instantLayerRoleHash("DEFAULT_ADMIN_ROLE", "diamond"), role("DEFAULT_ADMIN_ROLE"))
+	assert.equal(instantLayerRoleHash("SETTER_ROLE", "legacy"), instantLayerRoleHash("SETTER_ROLE", "diamond"))
+})
+
+test("the cutover batch accepts ownership of the new layer", () => {
+	const actions = buildCutoverSafeActions({
+		core: CORE,
+		accountLayer: ACCOUNT_LAYER,
+		partyBs: [PARTY_B],
+		gaslessLayer: GASLESS,
+		newGaslessImplementation: NEW_IMPL,
+		newInstantLayer: NEW_IL,
+	})
+	const accept = actions.filter(action => action.to === getAddress(NEW_IL) && action.data === "0x79ba5097")
+	assert.equal(accept.length, 1)
+})
+
+test("the cutover batch leaves ownership alone once the Safe is no longer pending owner", () => {
+	const actions = buildCutoverSafeActions({
+		core: CORE,
+		accountLayer: ACCOUNT_LAYER,
+		partyBs: [PARTY_B],
+		gaslessLayer: GASLESS,
+		newGaslessImplementation: NEW_IMPL,
+		newInstantLayer: NEW_IL,
+		acceptInstantLayerOwnership: false,
+	})
+	assert.equal(actions.filter(action => action.data === "0x79ba5097").length, 0)
+	assert.equal(actions[0].to, CORE)
 })

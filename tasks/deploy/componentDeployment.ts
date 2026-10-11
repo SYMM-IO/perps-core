@@ -199,7 +199,7 @@ export async function inspectPartyBPostState(
 	const contract = await ethers.getContractAt("SymmioPartyB", address)
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
-	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", instantLayerAddress)
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 	const defaultAdminRole = await contract.DEFAULT_ADMIN_ROLE()
 	const trustedRole = roleHash("TRUSTED_ROLE")
@@ -589,7 +589,7 @@ export async function inspectGaslessLayerPostState(ethers: any, input: GaslessLa
 	const contract = await ethers.getContractAt("GaslessLayer", address)
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", input.core)
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", input.core)
-	const instantLayer = await ethers.getContractAt("InstantLayer", input.instantLayer)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", input.instantLayer)
 	const [defaultAdminRole, configAdminRole, relayerRole, instantOperatorRole] = await Promise.all([
 		contract.DEFAULT_ADMIN_ROLE(),
 		contract.CONFIG_ADMIN_ROLE(),
@@ -865,7 +865,7 @@ export async function deployAndConfigureGaslessLayer(
 
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", resolved.core)
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", resolved.core)
-	const instantLayer = await ethers.getContractAt("InstantLayer", resolved.instantLayer)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", resolved.instantLayer)
 	const roleHash = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
 	const manualActions: SafeManualAction[] = []
 	if (!(await coreView.isOperationalFeeCharger(address))) {
@@ -1024,7 +1024,7 @@ export async function assertComponentDeploymentAuthority(
 		if (!deployerCanManagePartyB && !adminCanManagePartyB) {
 			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core PARTY_B_REGISTRAR_ROLE`)
 		}
-		const instantLayer = await ethers.getContractAt("InstantLayer", coreReport.addresses.instantLayer)
+		const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", coreReport.addresses.instantLayer)
 		const setterRole = await instantLayer.SETTER_ROLE()
 		const [deployerCanSetInstant, adminCanSetInstant] = await Promise.all([
 			instantLayer.hasRole(setterRole, deployer),
@@ -1066,7 +1066,7 @@ export async function assertComponentDeploymentAuthority(
 		if (!deployerCanRegister && !adminCanRegister) {
 			throw new Error(`AUTHORITY_MISSING: neither deployer ${deployer} nor dependency-report admin ${admin} holds core FEE_ADMIN_ROLE`)
 		}
-		const instantLayer = await ethers.getContractAt("InstantLayer", coreReport.addresses.instantLayer)
+		const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", coreReport.addresses.instantLayer)
 		const instantAdminRole = await instantLayer.DEFAULT_ADMIN_ROLE()
 		const [deployerCanGrant, adminCanGrant] = await Promise.all([
 			instantLayer.hasRole(instantAdminRole, deployer),
@@ -1169,7 +1169,7 @@ async function executePartyB(
 
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", core)
 	const coreControl = await ethers.getContractAt("contracts/core/facets/Control/ControlFacet.sol:ControlFacet", core)
-	const instantLayer = await ethers.getContractAt("InstantLayer", instantLayerAddress)
+	const instantLayer = await ethers.getContractAt("IInstantLayerDiamond", instantLayerAddress)
 	const manualActions: SafeManualAction[] = []
 	const partyBRegistrarRole = roleHash("PARTY_B_REGISTRAR_ROLE")
 	const partyBManagerRole = roleHash("PARTY_B_MANAGER_ROLE")

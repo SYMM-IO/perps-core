@@ -17,6 +17,7 @@ import connection, { ethers, networkHelpers } from "../test/helpers/hardhat-conn
 import { cloneTypes } from "../test/helpers/instantLayerEIP712Types.js"
 import { planAdditionalTemplates, roleHash, type RecipeTemplate, type SafeAction } from "./utils/instantLayerMigration.js"
 import {
+	LEGACY_INSTANT_LAYER,
 	checkInstantLayerWiring,
 	executeSafeActions,
 	findDeploymentBlock,
@@ -108,7 +109,7 @@ async function main(): Promise<void> {
 		log,
 	})
 	check(result.snapshot.registeredPartyBs.length > 0, "old layer snapshot found registered PartyBs", result.snapshot.registeredPartyBs.join(", "))
-	const freshLayer = await ethers.getContractAt("InstantLayer", result.newInstantLayer)
+	const freshLayer = await ethers.getContractAt("IInstantLayerDiamond", result.newInstantLayer)
 	for (const partyB of result.snapshot.registeredPartyBs)
 		check(await freshLayer.registeredPartyBs(partyB), `PartyB registered on the new layer: ${partyB}`)
 	check(result.snapshot.whitelistedTargets.length >= 2, "old layer snapshot found whitelisted targets", result.snapshot.whitelistedTargets.join(", "))
@@ -210,8 +211,8 @@ async function main(): Promise<void> {
 	const alView = await ethers.getContractAt(["function ownerOf(address) view returns (address)"], defaults.accountLayer)
 	check((await alView.ownerOf(subAccount)).toLowerCase() === user.address.toLowerCase(), "fresh sub-account owned by the rehearsal user", subAccount)
 
-	const newLayer = await ethers.getContractAt("InstantLayer", result.newInstantLayer)
-	const oldLayer = await ethers.getContractAt("InstantLayer", defaults.oldInstantLayer)
+	const newLayer = await ethers.getContractAt("IInstantLayerDiamond", result.newInstantLayer)
+	const oldLayer = new ethers.Contract(defaults.oldInstantLayer, LEGACY_INSTANT_LAYER.abi, ethers.provider)
 	const core = await ethers.getContractAt("contracts/core/facets/Binding/BindingFacet.sol:BindingFacet", defaults.core)
 	const bindSelector = core.interface.getFunction("bindToPartyB")!.selector
 	const accountFacet = await ethers.getContractAt("contracts/core/facets/Account/AccountFacet.sol:AccountFacet", defaults.core)

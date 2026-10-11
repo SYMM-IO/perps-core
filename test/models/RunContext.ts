@@ -33,7 +33,6 @@ import type {
 	ViewFacetSymbol,
 	ViewFacetQuote,
 	ViewFacetAggregate,
-	InstantLayer,
 	SymmioPartyB,
 	AccountManager,
 	FakeStablecoin,
@@ -50,6 +49,7 @@ import type {
 	AffiliateFacet as ALAffiliateFacet,
 } from "../../src/types/index.js"
 import { ethers } from "../helpers/hardhat-connection.js"
+import type { InstantLayer } from "../helpers/instantLayerTypes.js"
 import { TestManager } from "./TestManager.js"
 
 export class RunContext {

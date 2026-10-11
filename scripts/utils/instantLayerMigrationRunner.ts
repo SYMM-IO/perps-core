@@ -10,6 +10,7 @@ import { ZeroAddress, getAddress, isAddress } from "ethers"
 import fs from "node:fs"
 import path from "node:path"
 
+import { deployInstantLayerWith } from "../../tasks/deploy/instantLayer.js"
 import { confirmDeployment, send } from "../../tasks/deploy/tx.js"
 import { gaslessLayerFactoryOptions, type GaslessLayerLibraryAddresses } from "../gaslessLayer/layer-libraries.js"
 import {
@@ -19,7 +20,9 @@ import {
 	buildInstantLayerReplayPlan,
 	compareInstantLayerConfiguration,
 	mergePartyBCandidates,
+	instantLayerRoleHash,
 	roleHash,
+	type InstantLayerKind,
 	type InstantLayerRoleName,
 	type InstantLayerSnapshot,
 	type ReplayAction,
@@ -146,7 +149,23 @@ async function collectAddressesFromEvents(
 	return [...current.values()]
 }
 
+/** ABI and bytecode of the monolith InstantLayer, for reading layers deployed before the diamond. */
+export const LEGACY_INSTANT_LAYER = JSON.parse(fs.readFileSync(new URL("./legacy/InstantLayerV1.json", import.meta.url), "utf8")) as {
+	abi: any[]
+	bytecode: string
+}
+
+async function attachInstantLayer(ethers: any, address: string, kind: InstantLayerKind): Promise<any> {
+	return kind === "diamond"
+		? ethers.getContractAt("IInstantLayerDiamond", getAddress(address))
+		: new ethers.Contract(getAddress(address), LEGACY_INSTANT_LAYER.abi, ethers.provider)
+}
+
 export interface SnapshotOptions {
+	/** Which contract the address holds. A legacy monolith is the default. */
+	kind?: InstantLayerKind
+	/** Addresses to test for each role on a diamond, which cannot enumerate members. */
+	roleCandidates?: string[]
 	/** First block to scan for events; defaults to the layer's deployment block (binary search). */
 	fromBlock?: number
 	/** Additional PartyB addresses to confirm on chain (deployment records, operator input). */
@@ -159,7 +178,8 @@ export interface SnapshotOptions {
 /** Read everything a replacement InstantLayer needs to reproduce from the old one. */
 export async function snapshotInstantLayer(ethers: any, address: string, options: SnapshotOptions = {}): Promise<InstantLayerSnapshot> {
 	const log = options.log ?? (() => {})
-	const il = await ethers.getContractAt("InstantLayer", getAddress(address))
+	const kind = options.kind ?? "legacy"
+	const il = await attachInstantLayer(ethers, address, kind)
 	const symmio = getAddress(await il.symmio())
 	const accountLayer = getAddress(await il.accountLayer())
 
@@ -182,10 +202,17 @@ export async function snapshotInstantLayer(ethers: any, address: string, options
 
 	const roles = {} as Record<InstantLayerRoleName, string[]>
 	for (const name of INSTANT_LAYER_ROLE_NAMES) {
-		const hash = roleHash(name)
-		const count = Number(await il.getRoleMemberCount(hash))
+		const hash = instantLayerRoleHash(name, kind)
 		const members: string[] = []
-		for (let i = 0; i < count; i++) members.push(getAddress(await il.getRoleMember(hash, i)))
+		if (kind === "legacy") {
+			const count = Number(await il.getRoleMemberCount(hash))
+			for (let i = 0; i < count; i++) members.push(getAddress(await il.getRoleMember(hash, i)))
+		} else {
+			// The diamond has no role enumeration; each known candidate is confirmed against storage.
+			for (const candidate of unique(options.roleCandidates ?? [])) {
+				if (await il.hasRole(hash, candidate)) members.push(candidate)
+			}
+		}
 		roles[name] = members
 	}
 
@@ -327,17 +354,18 @@ export async function migrateInstantLayer(options: MigrateInstantLayerOptions): 
 		log(`warn: GaslessLayer ${gaslessLayer} currently points at ${await gateway.instantLayer()}, not the old InstantLayer ${snapshot.address}`)
 	}
 
-	// 1. Replacement InstantLayer, deployer as temporary admin
+	// 1. Replacement InstantLayer diamond, deployer as temporary admin and owner.
+	// The address is recorded only once the cut is verified, so a run that fails mid-deployment
+	// starts a fresh diamond next time and leaves the unused contracts behind.
 	let il: any
 	if (await hasCode(ethers, state.newInstantLayer)) {
-		il = (await ethers.getContractAt("InstantLayer", state.newInstantLayer)).connect(deployer)
+		il = (await ethers.getContractAt("IInstantLayerDiamond", state.newInstantLayer)).connect(deployer)
 		log(`reusing new InstantLayer ${state.newInstantLayer}`)
 	} else {
-		const factory = await ethers.getContractFactory("InstantLayer", deployer)
-		const deployed = await factory.deploy(snapshot.symmio, deployerAddress)
-		state.newInstantLayer = await confirmDeployment(deployed, "InstantLayer")
+		const deployed = await deployInstantLayerWith(ethers, { symmioaddress: snapshot.symmio, admin: deployerAddress, deployer, logData: false })
+		state.newInstantLayer = await deployed.getAddress()
 		transactionsSent++
-		il = (await ethers.getContractAt("InstantLayer", state.newInstantLayer)).connect(deployer)
+		il = deployed.connect(deployer)
 		log(`deployed new InstantLayer ${state.newInstantLayer}`)
 	}
 	if (!same(await il.symmio(), snapshot.symmio)) throw new Error(`New InstantLayer ${state.newInstantLayer} is bound to a different core`)
@@ -366,16 +394,21 @@ export async function migrateInstantLayer(options: MigrateInstantLayerOptions): 
 
 	// 4. Handover: Safe receives every role, then the deployer renounces its own (admin last)
 	for (const name of INSTANT_LAYER_ROLE_NAMES) {
-		if (!(await il.hasRole(roleHash(name), safe))) {
-			await send(il.grantRole(roleHash(name), safe), `grantRole(${name}, Safe ${safe})`)
+		if (!(await il.hasRole(instantLayerRoleHash(name, "diamond"), safe))) {
+			await send(il.grantRole(instantLayerRoleHash(name, "diamond"), safe), `grantRole(${name}, Safe ${safe})`)
 			transactionsSent++
 		}
 	}
 	for (const name of ["SETTER_ROLE", "TEMPLATE_MANAGER_ROLE", "OPERATOR_ROLE", "REVOKER_ROLE", "DEFAULT_ADMIN_ROLE"] as const) {
-		if (await il.hasRole(roleHash(name), deployerAddress)) {
-			await send(il.renounceRole(roleHash(name), deployerAddress), `renounceRole(${name}, deployer)`)
+		if (await il.hasRole(instantLayerRoleHash(name, "diamond"), deployerAddress)) {
+			await send(il.renounceRole(instantLayerRoleHash(name, "diamond"), deployerAddress), `renounceRole(${name}, deployer)`)
 			transactionsSent++
 		}
+	}
+	// Ownership follows the roles: the Safe becomes pending owner and accepts in the cutover batch.
+	if (same(await il.getOwner(), deployerAddress) && !same(await il.pendingOwner(), safe)) {
+		await send(il.transferOwnership(safe), `transferOwnership(Safe ${safe})`)
+		transactionsSent++
 	}
 
 	const newInstantLayer = state.newInstantLayer!
@@ -391,6 +424,7 @@ export async function migrateInstantLayer(options: MigrateInstantLayerOptions): 
 			gaslessLayer,
 			newGaslessImplementation,
 			newInstantLayer,
+			acceptInstantLayerOwnership: same(await il.pendingOwner(), safe),
 		}),
 		decommissionActions: buildDecommissionSafeActions({
 			core: snapshot.symmio,
@@ -431,7 +465,7 @@ export async function checkInstantLayerWiring(ethers: any, targets: WiringTarget
 	const core = await ethers.getContractAt(diamondAbi, getAddress(targets.core))
 	const accountLayer = await ethers.getContractAt(diamondAbi, getAddress(targets.accountLayer))
 	const gateway = await ethers.getContractAt("GaslessLayer", getAddress(targets.gaslessLayer))
-	const layer = await ethers.getContractAt("InstantLayer", il)
+	const layer = await ethers.getContractAt("IInstantLayerDiamond", il)
 
 	const bindings: WiringBinding[] = []
 	const push = (label: string, ok: boolean, detail: string) => bindings.push({ label, ok, detail })
@@ -509,16 +543,34 @@ export async function verifyInstantLayerReplacement(
 	ethers: any,
 	input: { oldSnapshot: InstantLayerSnapshot; newInstantLayer: string; safe: string; deployer?: string; gaslessLayer: string; fromBlock?: number },
 ): Promise<ReplacementVerification> {
+	const roleCandidates = [
+		...INSTANT_LAYER_ROLE_NAMES.flatMap(name => input.oldSnapshot.roles[name] || []),
+		input.safe,
+		input.gaslessLayer,
+		...(input.deployer ? [input.deployer] : []),
+	]
 	const replacementSnapshot = await snapshotInstantLayer(ethers, input.newInstantLayer, {
+		kind: "diamond",
+		roleCandidates,
 		partyBCandidates: input.oldSnapshot.registeredPartyBs,
 		whitelistedTargetCandidates: input.oldSnapshot.whitelistedTargets,
 	})
 	const findings = compareInstantLayerConfiguration(input.oldSnapshot, replacementSnapshot)
-	const il = await ethers.getContractAt("InstantLayer", getAddress(input.newInstantLayer))
+	const il = await ethers.getContractAt("IInstantLayerDiamond", getAddress(input.newInstantLayer))
+	const owner = getAddress(await il.getOwner())
+	const pendingOwner = getAddress(await il.pendingOwner())
+	if (!same(owner, input.safe) && !same(pendingOwner, input.safe)) {
+		findings.push(`Safe ${input.safe} is neither owner nor pending owner of the new layer (owner ${owner})`)
+	}
 	for (const name of INSTANT_LAYER_ROLE_NAMES) {
-		if (!(await il.hasRole(roleHash(name), getAddress(input.safe)))) findings.push(`Safe ${input.safe} lacks ${name} on the new layer`)
-		if (input.deployer && (await il.hasRole(roleHash(name), getAddress(input.deployer)))) {
+		if (!(await il.hasRole(instantLayerRoleHash(name, "diamond"), getAddress(input.safe))))
+			findings.push(`Safe ${input.safe} lacks ${name} on the new layer`)
+		if (input.deployer && (await il.hasRole(instantLayerRoleHash(name, "diamond"), getAddress(input.deployer)))) {
 			findings.push(`deployer ${input.deployer} still holds ${name} on the new layer`)
+		}
+		// A role admin holds no role but can grant one to itself later.
+		if (input.deployer && (await il.isRoleAdmin(getAddress(input.deployer), instantLayerRoleHash(name, "diamond")))) {
+			findings.push(`deployer ${input.deployer} is still a role admin of ${name} on the new layer`)
 		}
 	}
 	if (!(await il.hasRole(roleHash("OPERATOR_ROLE"), getAddress(input.gaslessLayer)))) {
