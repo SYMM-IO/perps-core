@@ -8,7 +8,6 @@ import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/Sig
 
 import { Account, DelegationInfo, SignedDelegation, ReplayAttackHeader } from "../../InstantLayerTypes.sol";
 import { IDelegationFacet } from "./IDelegationFacet.sol";
-import { InstantLayerStorage } from "../../storages/InstantLayerStorage.sol";
 import { DelegationStorage } from "../../storages/DelegationStorage.sol";
 import { LibInstantLayerEIP712 } from "../../libraries/LibInstantLayerEIP712.sol";
 import { LibInstantLayerAccessibility } from "../../libraries/LibInstantLayerAccessibility.sol";
@@ -87,7 +86,7 @@ contract DelegationFacet is IDelegationFacet {
 		}
 
 		DelegationStorage.Layout storage l = DelegationStorage.layout();
-		uint256 cooldown = InstantLayerStorage.layout().revocationCooldown;
+		uint256 cooldown = l.revocationCooldown;
 		for (uint256 i = 0; i < selectors.length; ++i) {
 			bytes4 sel = selectors[i];
 			// only schedule if currently active

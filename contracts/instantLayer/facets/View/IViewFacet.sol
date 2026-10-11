@@ -9,9 +9,7 @@ import { IInstantLayerErrors } from "../../interfaces/IInstantLayerErrors.sol";
 
 /// @notice Read-only interface for the InstantLayer diamond
 /// @dev Named IInstantLayerViewFacet, not IViewFacet, so it does not collide with AccountLayer's
-///      IViewFacet when both are imported into the same composite context. hasRole is not
-///      declared here: ControlFacet already owns that selector, and a diamond cannot route one
-///      selector to two facets.
+///      IViewFacet when both are imported into the same composite context.
 interface IInstantLayerViewFacet is IInstantLayerErrors {
 	// ==================== Moved view functions ====================
 
@@ -150,16 +148,25 @@ interface IInstantLayerViewFacet is IInstantLayerErrors {
 	///      is omitted, leaving only name and active.
 	function templates(uint256 templateId) external view returns (string memory name, bool active);
 
+	// ==================== Role queries ====================
+
+	/// @notice Reports whether an account holds a role
+	/// @dev Keeps the OpenZeppelin (role, account) order of the role externals on the control
+	///      facet, unlike isRoleAdmin below.
+	/// @param role The role identifier to check
+	/// @param account The address to check
+	function hasRole(bytes32 role, address account) external view returns (bool);
+
+	/// @notice Whether `user` may grant and revoke `role`: a per-role admin, or a holder of DEFAULT_ADMIN_ROLE.
+	/// @dev A per-role admin keeps this right after renouncing every role, so hand-over checks read it too.
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
+
 	// ==================== Constant getters ====================
 
 	/// @notice Default admin role identifier.
 	/// @dev keccak256("DEFAULT_ADMIN_ROLE"), not OpenZeppelin's bytes32(0) — a pinned spec
 	///      decision for this diamond, matching LibInstantLayerAccessibility.
 	function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
-
-	/// @notice Whether `user` may grant and revoke `role`: a per-role admin, or a holder of DEFAULT_ADMIN_ROLE.
-	/// @dev A per-role admin keeps this right after renouncing every role, so hand-over checks read it too.
-	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
 
 	/// @notice Role identifier for managing contract configuration and templates.
 	function SETTER_ROLE() external view returns (bytes32);

@@ -9,6 +9,8 @@ import { IDiamondLoupe } from "../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IDiamondCut } from "../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IERC165 } from "../diamond/interfaces/IERC165.sol";
 import { InstantLayerStorage } from "./storages/InstantLayerStorage.sol";
+import { ExecutionStorage } from "./storages/ExecutionStorage.sol";
+import { DelegationStorage } from "./storages/DelegationStorage.sol";
 import { LibInstantLayerAccessibility } from "./libraries/LibInstantLayerAccessibility.sol";
 import { IInstantLayerErrors } from "./interfaces/IInstantLayerErrors.sol";
 import { IInstantLayerEvents } from "./interfaces/IInstantLayerEvents.sol";
@@ -31,7 +33,7 @@ contract Init is IInstantLayerErrors, IInstantLayerEvents {
 		// default) so the first executeBatch/executeTemplate call after deployment pays a warm
 		// SSTORE instead of a cold one. Not load-bearing for correctness: InstantLayerReentrancyGuard's
 		// enter check reads a bare zero slot as not-entered too, since it only compares against 2.
-		l.reentrancyStatus = 1;
+		ExecutionStorage.layout().reentrancyStatus = 1;
 
 		LibDiamond.DiamondStorage storage ds = LibDiamond.diamondStorage();
 		ds.supportedInterfaces[type(IERC165).interfaceId] = true;
@@ -53,7 +55,7 @@ contract Init is IInstantLayerErrors, IInstantLayerEvents {
 		LibInstantLayerAccessibility.grantRole(_admin, LibInstantLayerAccessibility.OPERATOR_ROLE);
 		emit RoleGranted(LibInstantLayerAccessibility.OPERATOR_ROLE, _admin, msg.sender);
 
-		l.revocationCooldown = 10 minutes;
+		DelegationStorage.layout().revocationCooldown = 10 minutes;
 		emit RevocationCooldownUpdated(0, 10 minutes);
 
 		l.whitelistedTargets[_symmio] = true;

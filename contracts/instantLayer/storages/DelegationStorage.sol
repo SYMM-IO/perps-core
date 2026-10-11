@@ -6,8 +6,8 @@ pragma solidity >=0.8.18;
 
 /// @title DelegationStorage
 /// @notice Delegation grants, revocation scheduling, and replay tracking for InstantLayer.
-/// @dev Slot-isolated from InstantLayerStorage and TemplateStorage so each concern can evolve
-///      independently.
+/// @dev Slot-isolated from InstantLayerStorage, ExecutionStorage and TemplateStorage so each
+///      concern can evolve independently.
 library DelegationStorage {
 	bytes32 internal constant DELEGATION_STORAGE_SLOT = keccak256("diamond.standard.storage.instantlayer.delegation");
 
@@ -22,6 +22,9 @@ library DelegationStorage {
 		/// @notice Tracking of executed delegation hashes to prevent replay attacks.
 		/// @dev Each delegation can only be executed once.
 		mapping(bytes32 => bool) usedDelegationHashes;
+		/// @notice Cooldown period for revoking delegation permissions.
+		/// @dev Settable by SETTER_ROLE.
+		uint256 revocationCooldown; // in seconds
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { Account, DelegationInfo, Operation, Template, SignedOperation, SignedDelegation } from "../../InstantLayerTypes.sol";
 import { IInstantLayerViewFacet } from "./IViewFacet.sol";
 import { InstantLayerStorage } from "../../storages/InstantLayerStorage.sol";
+import { ExecutionStorage } from "../../storages/ExecutionStorage.sol";
 import { DelegationStorage } from "../../storages/DelegationStorage.sol";
 import { TemplateStorage } from "../../storages/TemplateStorage.sol";
 import { LibInstantLayerAccessibility } from "../../libraries/LibInstantLayerAccessibility.sol";
@@ -16,9 +17,7 @@ import { LibInstantLayerDelegation } from "../../libraries/LibInstantLayerDelega
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 
 /// @notice Read-only facet for the InstantLayer diamond
-/// @dev No modifiers: every function here is a view. hasRole(bytes32,address) is deliberately
-///      absent — ControlFacet already declares that selector, and a diamond cannot route one
-///      selector to two facets.
+/// @dev No modifiers: every function here is a view.
 contract ViewFacet is IInstantLayerViewFacet {
 	// ==================== Moved view functions ====================
 
@@ -179,7 +178,7 @@ contract ViewFacet is IInstantLayerViewFacet {
 
 	/// @inheritdoc IInstantLayerViewFacet
 	function nonces(address account) external view returns (uint256) {
-		return InstantLayerStorage.layout().nonces[account];
+		return ExecutionStorage.layout().nonces[account];
 	}
 
 	/// @inheritdoc IInstantLayerViewFacet
@@ -204,7 +203,7 @@ contract ViewFacet is IInstantLayerViewFacet {
 
 	/// @inheritdoc IInstantLayerViewFacet
 	function operationUsageCount(bytes32 opHash) external view returns (uint256) {
-		return InstantLayerStorage.layout().operationUsageCount[opHash];
+		return ExecutionStorage.layout().operationUsageCount[opHash];
 	}
 
 	/// @inheritdoc IInstantLayerViewFacet
@@ -234,7 +233,7 @@ contract ViewFacet is IInstantLayerViewFacet {
 
 	/// @inheritdoc IInstantLayerViewFacet
 	function revocationCooldown() external view returns (uint256) {
-		return InstantLayerStorage.layout().revocationCooldown;
+		return DelegationStorage.layout().revocationCooldown;
 	}
 
 	/// @inheritdoc IInstantLayerViewFacet
@@ -253,16 +252,23 @@ contract ViewFacet is IInstantLayerViewFacet {
 		return (t.name, t.active);
 	}
 
-	// ==================== Constant getters ====================
+	// ==================== Role queries ====================
 
 	/// @inheritdoc IInstantLayerViewFacet
-	function DEFAULT_ADMIN_ROLE() external view returns (bytes32) {
-		return LibInstantLayerAccessibility.DEFAULT_ADMIN_ROLE;
+	function hasRole(bytes32 role, address account) external view returns (bool) {
+		return LibInstantLayerAccessibility.hasRole(account, role);
 	}
 
 	/// @inheritdoc IInstantLayerViewFacet
 	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
 		return LibInstantLayerAccessibility.isRoleAdmin(user, role);
+	}
+
+	// ==================== Constant getters ====================
+
+	/// @inheritdoc IInstantLayerViewFacet
+	function DEFAULT_ADMIN_ROLE() external view returns (bytes32) {
+		return LibInstantLayerAccessibility.DEFAULT_ADMIN_ROLE;
 	}
 
 	/// @inheritdoc IInstantLayerViewFacet

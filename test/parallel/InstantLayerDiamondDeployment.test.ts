@@ -45,10 +45,11 @@ describe("InstantLayer diamond production deployment", function () {
 
 		// Every facet actually routes: call one selector that only exists on each of them.
 		expect(await diamond.symmio()).to.equal(symmio) // ViewFacet
-		expect(await diamond.hasRole(DEFAULT_ADMIN_ROLE, deployer.address)).to.equal(true) // ControlFacet
+		const grantRoleSelector = diamond.interface.getFunction("grantRole")!.selector
 		const executeBatchSelector = diamond.interface.getFunction("executeBatch")!.selector
 		const grantDelegationSelector = diamond.interface.getFunction("grantDelegation")!.selector
 		const ownedBy = (selector: string) => facetList.find((f: any) => f.functionSelectors.includes(selector))?.facetAddress
+		expect(ownedBy(grantRoleSelector), "grantRole (ControlFacet) is not routed").to.not.equal(undefined)
 		expect(ownedBy(executeBatchSelector), "executeBatch (ExecutionFacet) is not routed").to.not.equal(undefined)
 		expect(ownedBy(grantDelegationSelector), "grantDelegation (DelegationFacet) is not routed").to.not.equal(undefined)
 

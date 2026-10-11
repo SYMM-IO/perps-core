@@ -5,9 +5,9 @@
 pragma solidity >=0.8.18;
 
 /// @title InstantLayerStorage
-/// @notice Global configuration and replay-protection state for the InstantLayer diamond.
-/// @dev Slot-isolated from DelegationStorage and TemplateStorage so each concern can evolve
-///      independently.
+/// @notice Global configuration and access control for the InstantLayer diamond.
+/// @dev Slot-isolated from ExecutionStorage, DelegationStorage and TemplateStorage so each
+///      concern can evolve independently. Written only by Init and the control facet.
 library InstantLayerStorage {
 	bytes32 internal constant INSTANT_LAYER_STORAGE_SLOT = keccak256("diamond.standard.storage.instantlayer.global");
 
@@ -24,25 +24,11 @@ library InstantLayerStorage {
 		bool transientContextEnabled;
 		/// @notice Whether the diamond has completed initialization.
 		bool initialized;
-		/// @notice Reentrancy guard flag for execution entry points.
-		/// @dev 1 (not entered) / 2 (entered), checked and set by InstantLayerReentrancyGuard.
-		///      Init seeds this to 1 so the slot is warm before the first executeBatch/executeTemplate
-		///      call; the guard treats the field's zero default the same as 1, so seeding is a gas
-		///      optimization, not a correctness requirement.
-		uint256 reentrancyStatus;
-		/// @notice Cooldown period for revoking delegation permissions.
-		uint256 revocationCooldown; // in seconds
 		/// @notice Registry of whitelisted call targets.
 		mapping(address => bool) whitelistedTargets;
 		/// @notice Registry of authorized PartyB contracts.
 		/// @dev PartyB contracts must be registered before they can execute operations.
 		mapping(address => bool) registeredPartyBs;
-		/// @notice Tracking of operation usage counts for replay protection.
-		/// @dev Must be < maxUses to execute (or unlimited if maxUses=0).
-		mapping(bytes32 => uint256) operationUsageCount;
-		/// @notice Sequential nonce tracking per address for ordered execution.
-		/// @dev Only enforced when nonce > 0 in operations.
-		mapping(address => uint256) nonces;
 		/// @notice Role-based access control.
 		/// @dev Maps user => role hash => has_role. Roles are SETTER_ROLE, OPERATOR_ROLE,
 		///      REVOKER_ROLE and DEFAULT_ADMIN_ROLE.

@@ -8,8 +8,8 @@ import { Template } from "../InstantLayerTypes.sol";
 
 /// @title TemplateStorage
 /// @notice Operation templates and template-scoped execution flags for InstantLayer.
-/// @dev Slot-isolated from InstantLayerStorage and DelegationStorage so each concern can evolve
-///      independently.
+/// @dev Slot-isolated from InstantLayerStorage, ExecutionStorage and DelegationStorage so each
+///      concern can evolve independently.
 library TemplateStorage {
 	bytes32 internal constant TEMPLATE_STORAGE_SLOT = keccak256("diamond.standard.storage.instantlayer.template");
 
