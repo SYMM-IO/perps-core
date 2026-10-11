@@ -2,10 +2,10 @@ import { anyValue } from "@nomicfoundation/hardhat-ethers-chai-matchers/withArgs
 import { expect } from "chai"
 import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
 
-import type { InstantLayer } from "../src/types/index.js"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { cloneTypes, DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "./helpers/instantLayerEIP712Types.js"
+import type { InstantLayer } from "./helpers/instantLayerTypes.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { OrderType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"

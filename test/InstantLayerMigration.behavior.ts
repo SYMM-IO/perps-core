@@ -3,6 +3,7 @@ import { TypedDataDomain, toUtf8Bytes } from "ethers"
 
 import { deployGaslessLayerLibraries, gaslessLayerFactoryOptions } from "../scripts/gaslessLayer/layer-libraries.js"
 import {
+	LEGACY_INSTANT_LAYER,
 	checkInstantLayerWiring,
 	executeSafeActions,
 	migrateInstantLayer,
@@ -29,6 +30,7 @@ describe("InstantLayer migration rehearsal", function () {
 	let gateway: any
 	let gatewayAddr: string
 	let oldInstantLayer: string
+	let legacy: any
 	let libraries: Awaited<ReturnType<typeof deployGaslessLayerLibraries>>
 	const emptyOp = { insertionPoints: [], sourceIndices: [], sourceOffsets: [] }
 
@@ -39,21 +41,25 @@ describe("InstantLayer migration rehearsal", function () {
 		relayer = context.signers.others[0]
 		user = context.signers.user
 		sessionKey = context.signers.others[1]
-		oldInstantLayer = await context.instantLayer.getAddress()
+		// The layer being migrated away from is the monolith, deployed from its frozen build.
+		const Legacy = new ethers.ContractFactory(LEGACY_INSTANT_LAYER.abi, LEGACY_INSTANT_LAYER.bytecode, safe)
+		legacy = await Legacy.deploy(context.diamond, safe.address)
+		await legacy.waitForDeployment()
+		oldInstantLayer = await legacy.getAddress()
+		await legacy.setAccountLayer(context.accountLayerDiamond)
+		await context.alControlFacet.connect(safe).grantRole(oldInstantLayer, role("SIGNER_SETTER_ROLE"))
 
 		// Production-like wiring of the old layer (mirrors the Arbitrum snapshot)
 		await context.controlFacet.connect(safe).grantRole(oldInstantLayer, role("INSTANT_LAYER_ROLE"))
 		await context.controlFacet.connect(safe).registerPartyB(await context.symmioPartyB.getAddress())
 		await context.symmioPartyB.connect(safe).grantRole(role("TRUSTED_ROLE"), oldInstantLayer)
 		await context.symmioPartyB.connect(safe).setMulticastWhitelist(oldInstantLayer, true)
-		await context.instantLayer.connect(safe).registerPartyBs([await context.symmioPartyB.getAddress()])
-		await context.instantLayer.connect(safe).setTargetWhitelist(context.accountLayerDiamond, true)
-		await context.instantLayer
-			.connect(safe)
-			.addTemplate("InstantOpen", [emptyOp, emptyOp, { insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }])
-		await context.instantLayer.connect(safe).setTemplateInstantOpenMode(0, true)
-		await context.instantLayer.connect(safe).addTemplate("InstantClose", [emptyOp, emptyOp])
-		await context.instantLayer.connect(safe).grantRole(role("REVOKER_ROLE"), safe.address)
+		await legacy.connect(safe).registerPartyBs([await context.symmioPartyB.getAddress()])
+		await legacy.connect(safe).setTargetWhitelist(context.accountLayerDiamond, true)
+		await legacy.connect(safe).addTemplate("InstantOpen", [emptyOp, emptyOp, { insertionPoints: [0], sourceIndices: [1], sourceOffsets: [0] }])
+		await legacy.connect(safe).setTemplateInstantOpenMode(0, true)
+		await legacy.connect(safe).addTemplate("InstantClose", [emptyOp, emptyOp])
+		await legacy.connect(safe).grantRole(role("REVOKER_ROLE"), safe.address)
 
 		libraries = await deployGaslessLayerLibraries(ethers)
 		const Gateway = await ethers.getContractFactory("GaslessLayer", gaslessLayerFactoryOptions(libraries))
@@ -74,7 +80,7 @@ describe("InstantLayer migration rehearsal", function () {
 		gatewayAddr = await proxy.getAddress()
 		gateway = await ethers.getContractAt("GaslessLayer", gatewayAddr)
 		await gateway.connect(safe).grantRole(await gateway.RELAYER_ROLE(), relayer.address)
-		await context.instantLayer.connect(safe).grantRole(role("OPERATOR_ROLE"), gatewayAddr)
+		await legacy.connect(safe).grantRole(role("OPERATOR_ROLE"), gatewayAddr)
 		await context.controlFacet.connect(safe).registerOperationalFeeCharger(gatewayAddr)
 	})
 
@@ -124,7 +130,7 @@ describe("InstantLayer migration rehearsal", function () {
 			additionalTemplates,
 			log: () => {},
 		})
-		const newInstantLayer = await ethers.getContractAt("InstantLayer", result.newInstantLayer)
+		const newInstantLayer = await ethers.getContractAt("IInstantLayerDiamond", result.newInstantLayer)
 		const newAddr = result.newInstantLayer
 		expect(newAddr).to.not.equal(oldInstantLayer)
 
@@ -142,15 +148,18 @@ describe("InstantLayer migration rehearsal", function () {
 		expect(added.name).to.equal("InstantOpenAndSettleUpnl")
 		expect(await newInstantLayer.templateInstantOpenMode(2)).to.be.true
 		expect([...added.operations[3].insertionPoints]).to.deep.equal([448n])
-		expect(await context.instantLayer.nextTemplateId()).to.equal(2n)
-		expect(await newInstantLayer.revocationCooldown()).to.equal(await context.instantLayer.revocationCooldown())
+		expect(await legacy.nextTemplateId()).to.equal(2n)
+		expect(await newInstantLayer.revocationCooldown()).to.equal(await legacy.revocationCooldown())
 
 		// Handed over: the Safe holds every role, the deployer none
-		for (const r of [ethers.ZeroHash, role("SETTER_ROLE"), role("TEMPLATE_MANAGER_ROLE"), role("OPERATOR_ROLE"), role("REVOKER_ROLE")]) {
+		for (const r of [role("DEFAULT_ADMIN_ROLE"), role("SETTER_ROLE"), role("TEMPLATE_MANAGER_ROLE"), role("OPERATOR_ROLE"), role("REVOKER_ROLE")]) {
 			expect(await newInstantLayer.hasRole(r, safe.address), r).to.be.true
 			expect(await newInstantLayer.hasRole(r, deployer.address), r).to.be.false
 		}
 		expect(await newInstantLayer.hasRole(role("OPERATOR_ROLE"), gatewayAddr)).to.be.true
+		// Ownership follows the roles: pending on the Safe until the cutover batch accepts it
+		expect(await newInstantLayer.getOwner()).to.equal(deployer.address)
+		expect(await newInstantLayer.pendingOwner()).to.equal(safe.address)
 
 		// Re-running is a no-op that returns the same addresses
 		const again = await migrateInstantLayer({
@@ -186,6 +195,31 @@ describe("InstantLayer migration rehearsal", function () {
 			cutoverSimulation.map(s => `${s.description}: ${s.error ?? "ok"}`).join("\n"),
 		).to.be.true
 		await executeAsSafe(result.cutoverActions)
+		expect(await newInstantLayer.getOwner()).to.equal(safe.address)
+		// Once accepted, a fresh plan no longer asks the Safe to accept ownership, so the batch stays re-runnable
+		const afterCutover = await migrateInstantLayer({
+			ethers,
+			deployer,
+			oldInstantLayer,
+			safe: safe.address,
+			gaslessLayer: gatewayAddr,
+			gaslessLibraries: libraries,
+			state: result.state,
+			additionalTemplates,
+			log: () => {},
+		})
+		expect(afterCutover.cutoverActions.some(action => action.data === "0x79ba5097")).to.be.false
+		// A deployer left as a per-role admin could re-grant itself later; the verification must see it
+		await newInstantLayer.connect(safe).setRoleAdmin(deployer.address, role("SETTER_ROLE"), true)
+		const lingering = await verifyInstantLayerReplacement(ethers, {
+			oldSnapshot: result.expectedSnapshot,
+			newInstantLayer: newAddr,
+			safe: safe.address,
+			deployer: deployer.address,
+			gaslessLayer: gatewayAddr,
+		})
+		expect(lingering.findings.join("\n")).to.match(/role admin of SETTER_ROLE/)
+		await newInstantLayer.connect(safe).setRoleAdmin(deployer.address, role("SETTER_ROLE"), false)
 		const after = await checkInstantLayerWiring(ethers, wiringTargets(newAddr))
 		expect(after.ok, after.bindings.map(b => `${b.label}: ${b.detail}`).join("\n")).to.be.true
 		expect(await gateway.instantLayer()).to.equal(newAddr)
@@ -226,7 +260,7 @@ describe("InstantLayer migration rehearsal", function () {
 		const grantSig = await user.signTypedData(domain, cloneTypes(), grantOp)
 		await gateway.connect(relayer).relayInstantBatch([grantOp], [grantSig], [[]], [[]], [0n])
 		expect(await newInstantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.true
-		expect(await context.instantLayer.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.false
+		expect(await legacy.isDelegationActive(subAccount, sessionKey.address, bindSelector)).to.be.false
 
 		// Decommission: the old layer loses every binding
 		const decommissionSimulation = await simulateSafeActions(ethers, safe.address, result.decommissionActions)
