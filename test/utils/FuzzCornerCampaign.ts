@@ -14,6 +14,12 @@ import { limitOpenRequestBuilder } from "../models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "../models/requestModels/QuoteRequest.js"
 import { EmergencyCloseRequestValidator } from "../models/validators/EmergencyCloseRequestValidator.js"
 import { decimal, getBlockTimestamp, unDecimal } from "./Common.js"
+import { executeFuzzLegacyImport, executeFuzzMarginRecovery, executeFuzzOwnership, executeFuzzSingleVA } from "./FuzzAccountLayerFeatures.js"
+import { executeFuzzDelegation, executeFuzzFlexFields } from "./FuzzInstantLayerFeatures.js"
+import { executeFuzzInstantTrading } from "./FuzzInstantTradingCampaign.js"
+import { executeFuzzLayerLifecycle } from "./FuzzLayerCampaign.js"
+import { executeFuzzTimelocks } from "./FuzzTimelockCampaign.js"
+import { pick } from "./RandomUtils.js"
 import {
 	getDummyHighLowPriceSig,
 	getDummyPairUpnlAndPriceSig,
@@ -157,6 +163,12 @@ export class FuzzCornerCampaign {
 	}
 
 	private execute(operation: FuzzCornerOperation): Promise<OperationResult> {
+		const featureOptions = {
+			context: this.options.context,
+			manager: this.options.manager,
+			owner: this.options.reusableUser.signer,
+			route: "instant-layer" as const,
+		}
 		switch (operation) {
 			case "FUNDING_CHARGE":
 				return this.chargeFunding()
@@ -172,6 +184,35 @@ export class FuzzCornerCampaign {
 				return this.liquidatePartyA()
 			case "LIQUIDATE_PARTY_B":
 				return this.liquidatePartyB()
+			case "ACCOUNT_LAYER_LIFECYCLE":
+			case "INSTANT_LAYER_LIFECYCLE":
+				return executeFuzzLayerLifecycle({
+					context: this.options.context,
+					manager: this.options.manager,
+					owner: this.options.reusableUser.signer,
+					hedger: this.options.hedger,
+					route: operation === "ACCOUNT_LAYER_LIFECYCLE" ? "account-layer" : "instant-layer",
+				})
+			case "ACCOUNT_LAYER_SINGLE_VA":
+				return executeFuzzSingleVA({ ...featureOptions, route: pick(["account-layer", "instant-layer"] as const) })
+			case "ACCOUNT_LAYER_OWNERSHIP":
+				return executeFuzzOwnership({ ...featureOptions, route: pick(["account-layer", "instant-layer"] as const) })
+			case "ACCOUNT_LAYER_LEGACY_IMPORT":
+				return executeFuzzLegacyImport({ ...featureOptions, route: pick(["account-layer", "instant-layer"] as const) })
+			case "ACCOUNT_LAYER_MARGIN_RECOVERY":
+				return executeFuzzMarginRecovery({ ...featureOptions, route: pick(["account-layer", "instant-layer"] as const) })
+			case "ACCOUNT_LAYER_TIMELOCK":
+				return executeFuzzTimelocks({ ...featureOptions, route: "account-layer" })
+			case "INSTANT_LAYER_TIMELOCK":
+				return executeFuzzTimelocks(featureOptions)
+			case "INSTANT_LAYER_DELEGATION":
+				return executeFuzzDelegation(featureOptions)
+			case "INSTANT_LAYER_FLEX_FIELDS":
+				return executeFuzzFlexFields(featureOptions)
+			case "INSTANT_LAYER_TEMPLATE":
+				return executeFuzzInstantTrading({ ...featureOptions, execution: "template", instantOpen: true })
+			case "INSTANT_LAYER_PARTY_B_RELAYS":
+				return executeFuzzInstantTrading({ ...featureOptions, execution: "batch" })
 		}
 	}
 
