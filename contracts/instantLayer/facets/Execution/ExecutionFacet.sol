@@ -11,6 +11,7 @@ import { IExecutionFacet } from "./IExecutionFacet.sol";
 import { InstantLayerAccessibility } from "../../utils/InstantLayerAccessibility.sol";
 import { InstantLayerReentrancyGuard } from "../../utils/InstantLayerReentrancyGuard.sol";
 import { InstantLayerStorage } from "../../storages/InstantLayerStorage.sol";
+import { ExecutionStorage } from "../../storages/ExecutionStorage.sol";
 import { TemplateStorage } from "../../storages/TemplateStorage.sol";
 import { LibInstantLayerAccessibility } from "../../libraries/LibInstantLayerAccessibility.sol";
 import { LibInstantLayerEIP712 } from "../../libraries/LibInstantLayerEIP712.sol";
@@ -21,13 +22,12 @@ import { ISymmioPartyB } from "../../interfaces/ISymmioPartyB.sol";
 import { IDelegationFacet } from "../Delegation/IDelegationFacet.sol";
 import { IAccountLayerDiamond } from "../../../accountLayer/interfaces/IAccountLayerDiamond.sol";
 import { ICoreFacet } from "../../../accountLayer/facets/Core/ICoreFacet.sol";
-import { ITimelockFacet } from "../../../accountLayer/facets/Timelock/ITimelockFacet.sol";
 
 /// @notice Operator-gated execution facet for the InstantLayer diamond
 /// @dev executeBatch and executeTemplate are the diamond's only reentrancy-guarded entry points:
 ///      each opens a core authority scope for the whole call and must close it before returning,
 ///      so a reentrant call mid-batch could otherwise nest authority scopes or leave one open.
-///      Delegation reads and grant writes go through LibInstantLayerDelegation, shared with the
+///      Delegation checks and grant writes go through LibInstantLayerDelegation, shared with the
 ///      delegation and view facets.
 contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLayerReentrancyGuard {
 	/// @notice Execute a sequence of operations using a predefined template.
@@ -195,64 +195,24 @@ contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLa
 		}
 
 		// Replay protection: unified for all operations via maxUses
-		uint256 currentUsage = l.operationUsageCount[hash];
+		ExecutionStorage.Layout storage el = ExecutionStorage.layout();
+		uint256 currentUsage = el.operationUsageCount[hash];
 		if (signedOp.maxUses > 0 && currentUsage >= signedOp.maxUses) {
 			revert MaxUsesExceeded(hash, signedOp.maxUses);
 		}
-		l.operationUsageCount[hash] = currentUsage + 1;
+		el.operationUsageCount[hash] = currentUsage + 1;
 
 		// Handle nonce if enabled (non-zero)
 		if (signedOp.replayAttackHeader.nonce != 0) {
-			uint256 expectedNonce = l.nonces[signedOp.signerAccount.addr] + 1;
+			uint256 expectedNonce = el.nonces[signedOp.signerAccount.addr] + 1;
 			if (signedOp.replayAttackHeader.nonce != expectedNonce) {
 				revert InvalidNonce(signedOp.signerAccount.addr, expectedNonce, signedOp.replayAttackHeader.nonce);
 			}
-			l.nonces[signedOp.signerAccount.addr]++;
-			emit NonceIncremented(signedOp.signerAccount.addr, l.nonces[signedOp.signerAccount.addr]);
+			el.nonces[signedOp.signerAccount.addr]++;
+			emit NonceIncremented(signedOp.signerAccount.addr, el.nonces[signedOp.signerAccount.addr]);
 		}
 
 		return hash;
-	}
-
-	/// @dev Resolves delegation from the final calldata, after flex fills and template insertions. Nested timelock
-	///      wrappers carry approvals, so authorization follows their inner calldata rather than the wrapper selector.
-	function _delegatedSelector(address target, bytes memory callData) private view returns (bytes4 selector) {
-		address accountLayer = InstantLayerStorage.layout().accountLayer;
-		uint256 start;
-		uint256 length = callData.length;
-		if (length < 4) revert InvalidDelegation();
-		assembly ("memory-safe") {
-			selector := mload(add(callData, 32))
-		}
-		while (target == accountLayer && selector == ITimelockFacet.executeTimelockOp.selector) {
-			// Offsets are relative to this wrapper's arguments, including when it is nested.
-			if (length < 68) revert InvalidDelegation();
-			uint256 innerOffset;
-			assembly ("memory-safe") {
-				innerOffset := mload(add(callData, add(start, 68)))
-			}
-			if (innerOffset > length - 36) revert InvalidDelegation();
-			uint256 dataPos = start + 36 + innerOffset;
-			uint256 innerLength;
-			assembly ("memory-safe") {
-				innerLength := mload(add(callData, dataPos))
-			}
-			if (innerLength < 4 || innerLength > length - 36 - innerOffset) revert InvalidDelegation();
-			start = dataPos;
-			length = innerLength;
-			assembly ("memory-safe") {
-				selector := mload(add(callData, add(start, 32)))
-			}
-		}
-	}
-
-	/// @dev Signed-operation verification authenticates the signer; authorization must use the bytes about to execute.
-	function _verifyFinalDelegation(SignedOperation calldata signedOp, bytes memory callData) private view {
-		if (signedOp.signerAccount.isPartyB) return;
-		if (LibInstantLayerAccount.getAccountOwner(signedOp.signerAccount.addr) == signedOp.signer) return;
-		bytes4 selector = _delegatedSelector(signedOp.target, callData);
-		address delegator = LibInstantLayerAccount.canonicalDelegator(signedOp.signerAccount.addr);
-		if (!LibInstantLayerDelegation.isDelegationActive(delegator, signedOp.signer, selector)) revert InvalidDelegation();
 	}
 
 	/// @dev Validates the shape of a self-targeted delegation-grant operation.
@@ -311,7 +271,11 @@ contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLa
 			return _executeGrantOperation(signedOp);
 		}
 
-		_verifyFinalDelegation(signedOp, callData);
+		// Signed-operation verification authenticates the signer; authorization must use the bytes
+		// about to execute, after flex fills and template insertions.
+		if (!signedOp.signerAccount.isPartyB) {
+			LibInstantLayerDelegation.requireAuthorized(signedOp.signerAccount.addr, signedOp.signer, signedOp.target, callData);
+		}
 
 		bytes[] memory callDatas = new bytes[](1);
 		callDatas[0] = callData;

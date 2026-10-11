@@ -8,6 +8,7 @@ import { Operation, Template } from "../../InstantLayerTypes.sol";
 import { IControlFacet } from "./IControlFacet.sol";
 import { InstantLayerAccessibility } from "../../utils/InstantLayerAccessibility.sol";
 import { InstantLayerStorage } from "../../storages/InstantLayerStorage.sol";
+import { DelegationStorage } from "../../storages/DelegationStorage.sol";
 import { TemplateStorage } from "../../storages/TemplateStorage.sol";
 import { LibInstantLayerAccessibility } from "../../libraries/LibInstantLayerAccessibility.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
@@ -66,13 +67,6 @@ contract ControlFacet is IControlFacet, InstantLayerAccessibility {
 		if (account != msg.sender) revert CanOnlyRenounceForSelf();
 		LibInstantLayerAccessibility.revokeRole(account, role);
 		emit RoleRevoked(role, account, msg.sender);
-	}
-
-	/// @notice Reports whether an account holds a role
-	/// @param role The role identifier to check
-	/// @param account The address to check
-	function hasRole(bytes32 role, address account) external view returns (bool) {
-		return LibInstantLayerAccessibility.hasRole(account, role);
 	}
 
 	/// @notice Adds or removes an address as a role admin for a specific role
@@ -149,7 +143,7 @@ contract ControlFacet is IControlFacet, InstantLayerAccessibility {
 	function setRevocationCooldown(uint256 newCooldown) external onlyRole(LibInstantLayerAccessibility.SETTER_ROLE) {
 		// Zero is disallowed to keep the two-step invariant.
 		if (newCooldown < 5 minutes || newCooldown > 30 days) revert InvalidCallData();
-		InstantLayerStorage.Layout storage l = InstantLayerStorage.layout();
+		DelegationStorage.Layout storage l = DelegationStorage.layout();
 		uint256 oldCooldown = l.revocationCooldown;
 		l.revocationCooldown = newCooldown;
 		emit RevocationCooldownUpdated(oldCooldown, newCooldown);

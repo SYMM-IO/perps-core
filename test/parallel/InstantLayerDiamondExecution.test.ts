@@ -219,6 +219,32 @@ describe("InstantLayer diamond execution", function () {
 
 			await expect(diamond.connect(admin).executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(diamond, "MaxUsesExceeded")
 		})
+
+		// What would have to break for this to fail: operationUsageCount or nonces moving inside
+		// ExecutionStorage, or out of it. Both offsets are counted by hand from its Layout struct,
+		// and the operation hash comes from ethers rather than from the diamond.
+		it("keeps both replay counters in the execution storage slot", async function () {
+			const op = createSignedOperation({
+				signer: partyAAddress,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 1n,
+				deadline,
+			})
+			const sig = await partyA.signTypedData(domain, cloneTypes(), op)
+			await diamond.connect(admin).executeBatch([op], [sig], [[]], [[]])
+
+			const execution = BigInt(ethers.id("diamond.standard.storage.instantlayer.execution"))
+			const entry = (keyType: string, key: string, slot: bigint) =>
+				ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode([keyType, "uint256"], [key, slot]))
+			const opHash = ethers.TypedDataEncoder.hash(domain, cloneTypes(), op)
+
+			const usageCount = await ethers.provider.getStorage(deployment.address, entry("bytes32", opHash, execution + 1n))
+			const nonce = await ethers.provider.getStorage(deployment.address, entry("address", accountAddress, execution + 2n))
+			expect(usageCount, "operationUsageCount").to.equal(ethers.toBeHex(1n, 32))
+			expect(nonce, "nonces").to.equal(ethers.toBeHex(1n, 32))
+		})
 	})
 
 	describe("executeTemplate", function () {
@@ -312,8 +338,8 @@ describe("InstantLayer diamond execution", function () {
 			delegateAddress = await delegate.getAddress()
 		})
 
-		// What would have to break for this to fail: _verifyFinalDelegation never consulting
-		// LibInstantLayerDelegation.isDelegationActive for a non-owner signer, or grantDelegation never
+		// What would have to break for this to fail: LibInstantLayerDelegation.requireAuthorized never
+		// consulting isDelegationActive for a non-owner signer, or grantDelegation never
 		// actually writing the grant. Every other operation in this suite is signed by the account
 		// owner directly, so this is the only place execution — as opposed to DelegationFacet's own
 		// grant/revoke suite, which never calls executeBatch — consults an active delegation to

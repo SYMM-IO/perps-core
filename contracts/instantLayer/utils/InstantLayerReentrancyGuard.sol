@@ -4,13 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { InstantLayerStorage } from "../storages/InstantLayerStorage.sol";
+import { ExecutionStorage } from "../storages/ExecutionStorage.sol";
 import { IInstantLayerErrors } from "../interfaces/IInstantLayerErrors.sol";
 
 /// @notice Reentrancy protection for the InstantLayer diamond's execution entry points
 /// @dev Modelled on AccountLayerReentrancyGuard: reads and writes
-///      InstantLayerStorage.layout().reentrancyStatus directly rather than a dedicated storage
-///      slot constant, since InstantLayerStorage.Layout already reserves that field for this
+///      ExecutionStorage.layout().reentrancyStatus directly rather than a dedicated storage
+///      slot constant, since ExecutionStorage.Layout already reserves that field for this
 ///      guard, but keeps the same 1 (not entered) / 2 (entered) value scheme AccountLayerReentrancyGuard
 ///      and OZ's ReentrancyGuard use. This is a gas choice, not a correctness one: 0/1 would pay a
 ///      20,000-gas SSTORE-from-zero on every executeBatch/executeTemplate call; 1/2 pays roughly
@@ -26,7 +26,7 @@ abstract contract InstantLayerReentrancyGuard is IInstantLayerErrors {
 
 	/// @notice Prevents reentrant calls to protected functions
 	modifier nonReentrant() {
-		InstantLayerStorage.Layout storage l = InstantLayerStorage.layout();
+		ExecutionStorage.Layout storage l = ExecutionStorage.layout();
 		if (l.reentrancyStatus == _ENTERED) revert ReentrancyGuardReentrantCall();
 		l.reentrancyStatus = _ENTERED;
 		_;

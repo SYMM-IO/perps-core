@@ -34,7 +34,8 @@ describe("InstantLayer diamond control", async function () {
 		// Nothing in this layer calls into symmio, so an EOA stands in for the core diamond.
 		symmio = await signers[3].getAddress()
 
-		deployment = await deployInstantLayerDiamondForTest(ethers, admin, symmio, ["ControlFacet"])
+		// ViewFacet is cut alongside for hasRole, the read every role assertion below relies on.
+		deployment = await deployInstantLayerDiamondForTest(ethers, admin, symmio, ["ControlFacet", "ViewFacet"])
 		diamond = deployment.diamond
 	})
 

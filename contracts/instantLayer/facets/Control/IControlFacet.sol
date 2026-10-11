@@ -43,11 +43,6 @@ interface IControlFacet is IInstantLayerEvents, IInstantLayerErrors {
 	/// @param account The role holder, which must be the caller
 	function renounceRole(bytes32 role, address account) external;
 
-	/// @notice Reports whether an account holds a role
-	/// @param role The role identifier to check
-	/// @param account The address to check
-	function hasRole(bytes32 role, address account) external view returns (bool);
-
 	/// @notice Adds or removes an address as a role admin for a specific role
 	/// @param user The address to set as role admin
 	/// @param role The role identifier to manage
