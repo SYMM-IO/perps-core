@@ -1,8 +1,8 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 import { BaseContract, BigNumberish, ContractTransactionReceipt, ethers } from "ethers"
 
-import type { InstantLayer } from "../../src/types/index.js"
 import { cloneTypes } from "../helpers/instantLayerEIP712Types.js"
+import type { InstantLayer } from "../helpers/instantLayerTypes.js"
 import { getBlockTimestamp } from "../utils/Common.js"
 import { runTx } from "../utils/TxUtils.js"
 import type { RunContext } from "./RunContext.js"

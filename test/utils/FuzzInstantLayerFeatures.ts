@@ -1,8 +1,8 @@
 import { expect } from "chai"
 import { ethers } from "ethers"
 
-import type { InstantLayer } from "../../src/types/index.js"
 import { DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "../helpers/instantLayerEIP712Types.js"
+import type { InstantLayer } from "../helpers/instantLayerTypes.js"
 import { QuoteStatus } from "../models/Enums.js"
 import { limitQuoteRequestBuilder } from "../models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./Common.js"
