@@ -1028,12 +1028,20 @@ async function prepareHyperEvmSigner({ ui }, action) {
 	return confirmed ? { network: "hyperevm", chainId: 999 } : null;
 }
 
+/** The core address a record carries. Only the monolith's record held it; a Diamond record's first argument is its deployer. */
+export function instantLayerRecordSymmio(record) {
+	return record?.name === "InstantLayer" ? record.constructorArguments?.[0] : undefined;
+}
+
 function instantLayerDeploymentRecord(chainId) {
 	const file = path.join(PROJECT_ROOT, "tasks", "data", String(chainId), "instantlayer.json");
 	if (!fs.existsSync(file)) return null;
 	try {
 		const entries = JSON.parse(fs.readFileSync(file, "utf8"));
-		const entry = Array.isArray(entries) ? entries.find(value => value?.name === "InstantLayer") : null;
+		// A diamond deployment records its address under "Diamond"; older files hold one "InstantLayer" entry.
+		const entry = Array.isArray(entries)
+			? entries.find(value => value?.name === "Diamond") || entries.find(value => value?.name === "InstantLayer")
+			: null;
 		if (!entry || !isAddress(entry.address) || /^0x0{40}$/i.test(entry.address)) return null;
 		return entry;
 	} catch {
@@ -1067,7 +1075,7 @@ async function prepareSettlementTemplateRepair({ ui }) {
 	return {
 		...base,
 		instantLayer,
-		symmio: record?.constructorArguments?.[0],
+		symmio: instantLayerRecordSymmio(record),
 		deactivateOriginals,
 	};
 }

@@ -318,3 +318,12 @@ test("a deployment section is shown beside the phase instead of replacing the st
 	assert.match(summary, /Phase\s+execution › Diamond Deployment/);
 	assert.match(summary, /Current\s+Execute and reconcile deployment/);
 });
+
+test("template repair takes the core address only from a legacy InstantLayer record", async () => {
+	const { instantLayerRecordSymmio } = await import("../tasks/registry.js");
+	const core = "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A";
+	assert.equal(instantLayerRecordSymmio({ name: "InstantLayer", address: "0x1", constructorArguments: [core, "0x2"] }), core);
+	// A Diamond record's first constructor argument is the deployer, not the core.
+	assert.equal(instantLayerRecordSymmio({ name: "Diamond", address: "0x1", constructorArguments: ["0x3", "0x4"] }), undefined);
+	assert.equal(instantLayerRecordSymmio(null), undefined);
+});

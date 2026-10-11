@@ -67,11 +67,17 @@ export interface SafeAction {
 	description: string
 }
 
-// Values the InstantLayer constructor already establishes; replaying them would be a no-op.
-const CONSTRUCTOR_REVOCATION_COOLDOWN = 600n
-const CONSTRUCTOR_TRANSIENT_CONTEXT_ENABLED = true
+// Values Init already establishes on a new layer; replaying them would be a no-op.
+const INIT_REVOCATION_COOLDOWN = 600n
+const INIT_TRANSIENT_CONTEXT_ENABLED = true
 
 export const roleHash = (name: string): string => (name === "DEFAULT_ADMIN_ROLE" ? ZeroHash : keccak256(toUtf8Bytes(name)))
+
+export type InstantLayerKind = "legacy" | "diamond"
+
+/** Role id on an InstantLayer. The legacy monolith uses OpenZeppelin's zero admin role; the diamond hashes the name. */
+export const instantLayerRoleHash = (name: string, kind: InstantLayerKind): string =>
+	name === "DEFAULT_ADMIN_ROLE" && kind === "legacy" ? ZeroHash : keccak256(toUtf8Bytes(name))
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
@@ -96,7 +102,7 @@ export function buildInstantLayerReplayPlan(snapshot: InstantLayerSnapshot, cont
 		plan.push({ kind: "setAccountLayer", args: [getAddress(snapshot.accountLayer)], description: `setAccountLayer(${snapshot.accountLayer})` })
 	}
 	for (const target of snapshot.whitelistedTargets) {
-		if (same(target, snapshot.symmio)) continue // whitelisted by the constructor
+		if (same(target, snapshot.symmio)) continue // whitelisted by Init
 		plan.push({ kind: "setTargetWhitelist", args: [getAddress(target), true], description: `setTargetWhitelist(${target}, true)` })
 	}
 	if (snapshot.registeredPartyBs.length > 0) {
@@ -114,14 +120,14 @@ export function buildInstantLayerReplayPlan(snapshot: InstantLayerSnapshot, cont
 			plan.push({ kind: "setTemplateActive", args: [template.id, false], description: `setTemplateActive(${template.id}, false)` })
 		}
 	})
-	if (snapshot.revocationCooldown !== CONSTRUCTOR_REVOCATION_COOLDOWN) {
+	if (snapshot.revocationCooldown !== INIT_REVOCATION_COOLDOWN) {
 		plan.push({
 			kind: "setRevocationCooldown",
 			args: [snapshot.revocationCooldown],
 			description: `setRevocationCooldown(${snapshot.revocationCooldown})`,
 		})
 	}
-	if (snapshot.transientContextEnabled !== CONSTRUCTOR_TRANSIENT_CONTEXT_ENABLED) {
+	if (snapshot.transientContextEnabled !== INIT_TRANSIENT_CONTEXT_ENABLED) {
 		plan.push({
 			kind: "setTransientContextEnabled",
 			args: [snapshot.transientContextEnabled],
@@ -134,7 +140,7 @@ export function buildInstantLayerReplayPlan(snapshot: InstantLayerSnapshot, cont
 			const account = getAddress(holder)
 			if (same(account, safe) || same(account, deployer)) continue
 			if (name === "OPERATOR_ROLE" && partyBs.some(p => same(p, account))) continue
-			plan.push({ kind: "grantRole", args: [roleHash(name), account], description: `grantRole(${name}, ${account})` })
+			plan.push({ kind: "grantRole", args: [instantLayerRoleHash(name, "diamond"), account], description: `grantRole(${name}, ${account})` })
 		}
 	}
 	return plan
@@ -147,6 +153,7 @@ const PARTY_B = new Interface([
 	"function setMulticastWhitelist(address addr, bool state)",
 ])
 const GASLESS = new Interface(["function upgradeToAndCall(address newImplementation, bytes data)", "function setInstantLayer(address instantLayer_)"])
+const INSTANT_LAYER_OWNERSHIP = new Interface(["function acceptOwnership()"])
 
 export interface CutoverTargets {
 	core: string
@@ -155,12 +162,24 @@ export interface CutoverTargets {
 	gaslessLayer: string
 	newGaslessImplementation: string
 	newInstantLayer: string
+	/** False once the Safe already owns the new layer, so a re-planned batch stays executable. Defaults to true. */
+	acceptInstantLayerOwnership?: boolean
 }
 
 /** Safe-side actions that make the new InstantLayer live. The old layer keeps its bindings. */
 export function buildCutoverSafeActions(t: CutoverTargets): SafeAction[] {
 	const il = getAddress(t.newInstantLayer)
-	const actions: SafeAction[] = [
+	const actions: SafeAction[] = []
+	// The Safe takes ownership of the new diamond before anything is bound to it.
+	if (t.acceptInstantLayerOwnership ?? true) {
+		actions.push({
+			to: il,
+			value: "0",
+			data: INSTANT_LAYER_OWNERSHIP.encodeFunctionData("acceptOwnership", []),
+			description: `InstantLayer: accept ownership of the new layer ${il}`,
+		})
+	}
+	actions.push(
 		{
 			to: getAddress(t.core),
 			value: "0",
@@ -173,7 +192,7 @@ export function buildCutoverSafeActions(t: CutoverTargets): SafeAction[] {
 			data: DIAMOND_ROLES.encodeFunctionData("grantRole", [il, roleHash("SIGNER_SETTER_ROLE")]),
 			description: `AccountLayer: grant SIGNER_SETTER_ROLE to new InstantLayer ${il}`,
 		},
-	]
+	)
 	for (const partyB of t.partyBs.map(getAddress)) {
 		actions.push(
 			{

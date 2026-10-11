@@ -10,7 +10,7 @@
  *     npx hardhat run --no-compile scripts/migrateInstantLayer.ts --network arbitrum
  *
  * Phases (PHASE=all by default):
- *   deploy       deploy + configure + hand over the new layer, deploy the GaslessLayer implementation,
+ *   deploy       deploy + configure + hand over the new layer (a diamond; the Safe accepts its ownership in the cutover batch), deploy the GaslessLayer implementation,
  *                verify the replacement against the old snapshot, write the admin batches.
  *   bind         execute the cutover batch as the admin (needs the admin key), then check wiring.
  *   decommission execute the decommission batch as the admin, after the transition window.
@@ -218,7 +218,7 @@ function printOffChainChecklist(newInstantLayer: string): void {
 	console.log("  - Subgraphs / analytics: index the new InstantLayer address if they consume its events.")
 	console.log("  - Address registry / docs: publish the new address next to the old one for the transition window.")
 	console.log(
-		"  - Repo records once batch 1 is confirmed: set addresses.instantLayer in tasks/data/<chainId>/deployment-report.json and append the new entry to tasks/data/<chainId>/instantlayer.json, so check:deployment and verify:all follow the new layer.",
+		"  - Repo records once batch 1 is confirmed: set addresses.instantLayer in tasks/data/<chainId>/deployment-report.json and replace the entries in tasks/data/<chainId>/instantlayer.json with the new diamond's Diamond, DiamondCutFacet, Init and facet entries, so check:deployment and verify:all follow the new layer.",
 	)
 }
 
@@ -266,6 +266,8 @@ async function main(): Promise<void> {
 				gaslessLayer: defaults.gaslessLayer,
 				newGaslessImplementation: state.newGaslessImplementation,
 				newInstantLayer: checkTarget,
+				acceptInstantLayerOwnership:
+					(await (await ethers.getContractAt("IInstantLayerDiamond", checkTarget)).pendingOwner()).toLowerCase() === defaults.safe.toLowerCase(),
 			})
 			printSimulation("pending cutover batch", await simulateSafeActions(ethers, defaults.safe, actions))
 		}
@@ -375,10 +377,12 @@ async function main(): Promise<void> {
 	const plan = buildInstantLayerReplayPlan(expected, { deployer: deployerAddress, safe: defaults.safe })
 	if (phase !== "bind") {
 		console.log(`\nDeployer phase (${plan.length + 2} contract actions plus the handover)`)
-		console.log("  1. deploy InstantLayer(core, deployer)")
+		console.log("  1. deploy the InstantLayer diamond (core, deployer as temporary admin and owner)")
 		plan.forEach((action, index) => console.log(`  ${index + 2}. ${action.description}`))
 		console.log(`  ${plan.length + 2}. deploy GaslessLayer implementation (linked to the existing libraries)`)
-		console.log("  then: grant DEFAULT_ADMIN/SETTER/OPERATOR/REVOKER to the admin and renounce the deployer")
+		console.log(
+			"  then: grant DEFAULT_ADMIN/SETTER/TEMPLATE_MANAGER/OPERATOR/REVOKER to the admin, renounce the deployer, and transfer ownership to the admin",
+		)
 	}
 
 	// The admin must be able to execute every binding action. The GaslessLayer upgrade needs the new
@@ -391,6 +395,8 @@ async function main(): Promise<void> {
 		gaslessLayer: defaults.gaslessLayer,
 		newGaslessImplementation: PLACEHOLDER,
 		newInstantLayer: PLACEHOLDER,
+		// Ownership can only be accepted once the new layer exists; it is simulated after deployment.
+		acceptInstantLayerOwnership: false,
 	}).filter(action => action.to.toLowerCase() !== defaults.gaslessLayer.toLowerCase())
 	const decommissionPreview = buildDecommissionSafeActions({
 		core: snapshot.symmio,
@@ -539,7 +545,7 @@ async function main(): Promise<void> {
 
 	console.log("\nVerify on the explorer:")
 	console.log(
-		`  npx hardhat verify ${networkFlag} --contract contracts/instantLayer/InstantLayer.sol:InstantLayer ${newInstantLayer} ${snapshot.symmio} ${deployerAddress}`,
+		`  the new InstantLayer ${newInstantLayer} is a diamond: verify contracts/diamond/Diamond.sol:Diamond there, then each facet address IDiamondLoupe.facets() reports and the Init contract`,
 	)
 	console.log(
 		`  npx hardhat verify ${networkFlag} --contract contracts/gaslessLayer/GaslessLayer.sol:GaslessLayer --libraries-path ${path.relative(process.cwd(), librariesFile)} ${newGaslessImplementation}`,
