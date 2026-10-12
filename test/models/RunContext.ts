@@ -3,6 +3,7 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
 // Import the core diamond's compatibility control ABI. Its implementation spans
 // ControlFacet and the transient selectors routed through ExecutionContextFacet.
 import type { IControlFacet } from "../../src/types/core/facets/Control/IControlFacet.sol/IControlFacet.js"
+import type { MigrationFacet } from "../../src/types/core/facets/Migration/MigrationFacet.js"
 import type { ViewFacet } from "../../src/types/facets/ViewFacet/ViewFacet.js"
 import type {
 	AccountFacet,
@@ -38,7 +39,6 @@ import type {
 	FakeStablecoin,
 	SymmioPartyA,
 	WithdrawFacet,
-	MigrationFacet,
 	// AccountLayer facets
 	CoreFacet as ALCoreFacet,
 	MarginFacet as ALMarginFacet,
@@ -173,7 +173,7 @@ export async function createRunContext(diamond: string, collateral: string, only
 	context.forceCloseStepsFacet = await ethers.getContractAt("ForceCloseStepsFacet", diamond)
 	context.clearingHouseFacet = await ethers.getContractAt("ClearingHouseFacet", diamond)
 	context.withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamond)
-	context.migrationFacet = await ethers.getContractAt("MigrationFacet", diamond)
+	context.migrationFacet = await ethers.getContractAt("contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet", diamond)
 
 	context.manager = new TestManager(context, onlyInitialize)
 	if (!onlyInitialize) await context.manager.start()

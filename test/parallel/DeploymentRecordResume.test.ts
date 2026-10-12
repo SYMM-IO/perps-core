@@ -65,6 +65,7 @@ describe("checkpoint deployment-record recovery", function () {
 			"contracts/instantLayer/facets/View/ViewFacet.sol:ViewFacet",
 			"contracts/instantLayer/facets/Delegation/DelegationFacet.sol:DelegationFacet",
 			"contracts/instantLayer/facets/Execution/ExecutionFacet.sol:ExecutionFacet",
+			"contracts/instantLayer/facets/Migration/MigrationFacet.sol:MigrationFacet",
 			"contracts/diamond/facets/DiamondLoup/DiamondLoupeFacet.sol:DiamondLoupeFacet",
 		])
 		expect(readData(SYMBOLMANAGER_DEPLOYMENT_FILE)).to.deep.equal([

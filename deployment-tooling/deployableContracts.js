@@ -64,7 +64,15 @@ const ACCOUNT_LAYER_FACETS = [
 
 const EXPRESS_FACETS = ["DiamondCutFacet", "DiamondLoupeFacet", "ControlFacet", "SymmioHookFacet", "OperatorFacet", "AccelerateFacet", "ViewFacet"];
 
-const INSTANT_LAYER_FACETS = ["DiamondCutFacet", "DiamondLoupeFacet", "ControlFacet", "ExecutionFacet", "DelegationFacet", "ViewFacet"];
+const INSTANT_LAYER_FACETS = [
+	"DiamondCutFacet",
+	"DiamondLoupeFacet",
+	"ControlFacet",
+	"ExecutionFacet",
+	"DelegationFacet",
+	"ViewFacet",
+	"MigrationFacet",
+];
 
 const PERIPHERALS = ["MultiAccount", "SymmioPartyB", "SymbolManager", "FeeDistributor", "MuonSignatureVerifier", "SymmioLiquidator"];
 

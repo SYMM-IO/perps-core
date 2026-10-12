@@ -46,6 +46,7 @@
 				<a class="toc-link level-2" href="#usage">Usage</a>
 				<a class="toc-link level-2" href="#onboarding-scenario">Scenario: one-signature onboarding</a>
 				<a class="toc-link level-2" href="#existing-grant-paths">Existing grant paths</a>
+				<a class="toc-link level-2" href="#migrate-delegations">Copy delegations from an older layer</a>
 			</div>
 
 			<main class="reader-main">
@@ -256,6 +257,39 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 						every path shares the same validation and writes the same delegation storage. For new integrations the operation form is
 						preferred, since it composes with other operations in a batch and rides the standard operation replay machinery instead of a
 						separate nonce track.
+					</p>
+					<h2 id="migrate-delegations">Copy delegations from an older layer</h2>
+					<p>
+						The diamond&rsquo;s <code>MigrationFacet</code> can import selected permissions from an older InstantLayer monolith or
+						diamond. An admin must explicitly grant <code>MIGRATOR_ROLE</code>; deployment does not grant it automatically. Each entry
+						names an account, a delegate signer and its selectors. These permissions are keyed by selector, not by execution target.
+					</p>
+					<pre><code class="language-typescript">const role = await newLayer.MIGRATOR_ROLE()
+await (await newLayer.connect(admin).grantRole(role, migrator.address)).wait()
+
+const entries = [
+  { account: accountAddress, delegate: sessionKey.address, selectors: [openSelector, closeSelector] },
+]
+const copied = await newLayer.connect(migrator).migrateDelegations.staticCall(oldLayerAddress, entries)
+await (await newLayer.connect(migrator).migrateDelegations(oldLayerAddress, entries)).wait()
+
+await (await newLayer.connect(admin).revokeRole(role, migrator.address)).wait()</code></pre>
+					<p>
+						The source must use the same Symmio core and AccountLayer as the destination. The migrator is trusted to select the genuine
+						older instance: matching getters do not establish its authenticity. Virtual accounts resolve to their parent sub-account. Each
+						copied selector keeps its exact expiry and any pending revocation ETA, and emits
+						<code>DelegationMigrated</code> alongside the usual grant and revocation-scheduling events.
+					</p>
+					<p>
+						Missing, expired and already effective revocations are skipped without changing the destination. Active source entries
+						overwrite the destination expiry and revocation ETA. The trusted migrator may import from several older instances or repeat a
+						batch; the last active entry copied for an account, delegate and selector wins. Identical imports leave the same stored
+						permission, while a different source or an updated grant can replace a local grant or revocation.
+					</p>
+					<p>
+						There is no migration tracking storage. The return value counts active selector entries copied, including repeated entries and
+						duplicate selectors, and each copy emits its events. Nonces and signed-hash replay state stay independent. Imports copy a
+						snapshot and do not follow later source changes. Use batches that fit the chain&rsquo;s gas limit.
 					</p>
 				</article>
 			</main>

@@ -16,6 +16,7 @@ library LibInstantLayerAccessibility {
 	bytes32 public constant TEMPLATE_MANAGER_ROLE = keccak256("TEMPLATE_MANAGER_ROLE");
 	bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 	bytes32 public constant REVOKER_ROLE = keccak256("REVOKER_ROLE");
+	bytes32 public constant MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
 
 	/// @notice Checks whether a user has been granted a specific role
 	function hasRole(address user, bytes32 role) internal view returns (bool) {

@@ -10,7 +10,7 @@ import { getBlockTimestamp } from "../utils/Common.js"
 import { InstantLayerDiamondDeployment, deployInstantLayerDiamondForTest } from "../utils/InstantLayerDiamond.js"
 
 const role = (name: string) => ethers.keccak256(ethers.toUtf8Bytes(name))
-const ALL_FACETS = ["ControlFacet", "ViewFacet", "DelegationFacet", "ExecutionFacet"]
+const ALL_FACETS = ["ControlFacet", "ViewFacet", "DelegationFacet", "ExecutionFacet", "MigrationFacet"]
 const EMPTY_OP = { insertionPoints: [], sourceIndices: [], sourceOffsets: [] }
 
 describe("InstantLayer diamond parity with the monolith", function () {
@@ -153,6 +153,7 @@ describe("InstantLayer diamond parity with the monolith", function () {
 
 		const REMOVED_FUNCTIONS = ["getRoleAdmin(bytes32)", "getRoleMember(bytes32,uint256)", "getRoleMemberCount(bytes32)", "getRoleMembers(bytes32)"]
 		const ADDED_FUNCTIONS = [
+			"MIGRATOR_ROLE()",
 			"acceptOwnership()",
 			"cancelOwnershipTransfer()",
 			"diamondCut((address,uint8,bytes4[])[],address,bytes)",
@@ -162,6 +163,7 @@ describe("InstantLayer diamond parity with the monolith", function () {
 			"facets()",
 			"getOwner()",
 			"isRoleAdmin(address,bytes32)",
+			"migrateDelegations(address,(address,address,bytes4[])[])",
 			"pendingOwner()",
 			"setRoleAdmin(address,bytes32,bool)",
 			"transferOwnership(address)",
@@ -191,10 +193,10 @@ describe("InstantLayer diamond parity with the monolith", function () {
 			}
 		})
 
-		it("adds only ownership, role-admin and diamond functions", function () {
+		it("adds only ownership, role-admin, diamond and delegation-migration functions", function () {
 			const legacy = functions(legacyAbi())
 			const added = [...functions(diamondAbi()).keys()].filter(signature => !legacy.has(signature)).sort()
-			expect(added).to.deep.equal(ADDED_FUNCTIONS)
+			expect(added).to.deep.equal([...ADDED_FUNCTIONS].sort())
 		})
 
 		it("keeps every monolith event with the same topic and indexing", function () {
