@@ -6,6 +6,9 @@ pragma solidity >=0.8.18;
 
 /// @notice Custom errors used across the InstantLayer diamond
 interface IInstantLayerErrors {
+	/// @notice Migration source is self, has no code, or uses a different core or AccountLayer.
+	error InvalidMigrationSource(address source);
+
 	/// @notice Caller does not hold the required role
 	error MustHaveRole();
 

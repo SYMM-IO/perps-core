@@ -37,8 +37,7 @@ describe("InstantLayer diamond production deployment", function () {
 			logData: false,
 		})
 
-		// Loupe: exactly DiamondCutFacet plus the five InstantLayer facets (Control, View,
-		// Delegation, Execution, DiamondLoupe) are cut in — no facet dropped, none duplicated.
+		// Loupe: exactly DiamondCutFacet plus the configured InstantLayer facets are cut in.
 		const loupe = await ethers.getContractAt("IDiamondLoupe", await diamond.getAddress())
 		const facetList = await loupe.facets()
 		expect(facetList.length).to.equal(1 + InstantLayerFacetNames.length)
@@ -48,10 +47,14 @@ describe("InstantLayer diamond production deployment", function () {
 		const grantRoleSelector = diamond.interface.getFunction("grantRole")!.selector
 		const executeBatchSelector = diamond.interface.getFunction("executeBatch")!.selector
 		const grantDelegationSelector = diamond.interface.getFunction("grantDelegation")!.selector
+		const migrateDelegationsSelector = diamond.interface.getFunction("migrateDelegations")!.selector
 		const ownedBy = (selector: string) => facetList.find((f: any) => f.functionSelectors.includes(selector))?.facetAddress
 		expect(ownedBy(grantRoleSelector), "grantRole (ControlFacet) is not routed").to.not.equal(undefined)
 		expect(ownedBy(executeBatchSelector), "executeBatch (ExecutionFacet) is not routed").to.not.equal(undefined)
 		expect(ownedBy(grantDelegationSelector), "grantDelegation (DelegationFacet) is not routed").to.not.equal(undefined)
+		expect(ownedBy(migrateDelegationsSelector), "migrateDelegations (MigrationFacet) is not routed").to.not.equal(undefined)
+		expect(await diamond.MIGRATOR_ROLE()).to.equal(ethers.keccak256(ethers.toUtf8Bytes("MIGRATOR_ROLE")))
+		expect(await diamond.hasRole(await diamond.MIGRATOR_ROLE(), deployer.address)).to.equal(false)
 
 		// Init actually ran: roles granted, symmio recorded, and the documented defaults applied
 		// (mirrors what the monolith's constructor used to do — see Init.sol's own doc comment).

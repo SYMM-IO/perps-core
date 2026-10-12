@@ -34,7 +34,7 @@ export async function deployInstantLayer(hre: any, args: DeployInstantLayerArgs)
 
 /**
  * Deploys the InstantLayer diamond with an explicit signer: DiamondCutFacet, Diamond, Init, the
- * four InstantLayer facets and DiamondLoupeFacet, then a diamondCut that runs Init.init.
+ * five InstantLayer facets and DiamondLoupeFacet, then a diamondCut that runs Init.init.
  *
  * The deployer owns the diamond while it cuts. Init grants the roles to `admin`. When `admin`
  * is another address it becomes pending owner and accepts ownership later.

@@ -8,6 +8,16 @@ pragma solidity >=0.8.18;
 /// @dev Init and ControlFacet both write the same state, so both inherit these declarations
 ///      rather than each carrying its own copy.
 interface IInstantLayerEvents {
+	/// @notice A selector delegation was imported with its original expiry and revocation ETA.
+	event DelegationMigrated(
+		address indexed source,
+		address indexed delegator,
+		address indexed delegate,
+		bytes4 selector,
+		uint256 expiryTimestamp,
+		uint256 revocationEta
+	);
+
 	/// @notice Emitted when a role is granted to an account
 	/// @dev Shape matches OpenZeppelin AccessControl so existing indexers keep decoding it.
 	///      With getRoleMember and getRoleMemberCount absent from this diamond, these logs are

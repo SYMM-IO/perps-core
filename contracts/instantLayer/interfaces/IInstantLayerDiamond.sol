@@ -8,9 +8,19 @@ import { IControlFacet } from "../facets/Control/IControlFacet.sol";
 import { IExecutionFacet } from "../facets/Execution/IExecutionFacet.sol";
 import { IDelegationFacet } from "../facets/Delegation/IDelegationFacet.sol";
 import { IInstantLayerViewFacet } from "../facets/View/IViewFacet.sol";
+import { IInstantLayerMigrationFacet } from "../facets/Migration/IMigrationFacet.sol";
 import { IDiamondCut } from "../../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IDiamondLoupe } from "../../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IERC165 } from "../../diamond/interfaces/IERC165.sol";
 
 /// @notice Every function, event and error the InstantLayer diamond exposes at its one address
-interface IInstantLayerDiamond is IControlFacet, IExecutionFacet, IDelegationFacet, IInstantLayerViewFacet, IDiamondCut, IDiamondLoupe, IERC165 {}
+interface IInstantLayerDiamond is
+	IControlFacet,
+	IExecutionFacet,
+	IDelegationFacet,
+	IInstantLayerViewFacet,
+	IInstantLayerMigrationFacet,
+	IDiamondCut,
+	IDiamondLoupe,
+	IERC165
+{}

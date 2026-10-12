@@ -154,13 +154,21 @@ const ACCOUNT_LAYER_FACET_ARTIFACTS: Record<(typeof AccountLayerFacetNames)[numb
 // Facets deployed onto the InstantLayer diamond, in the order the diamond cut installs them.
 // DiamondCutFacet is not listed here: it is bootstrapped before the Diamond exists (its address
 // is the Diamond constructor's _diamondCutFacet argument), the same split AccountLayer uses.
-export const InstantLayerFacetNames = ["ControlFacet", "ViewFacet", "DelegationFacet", "ExecutionFacet", "DiamondLoupeFacet"] as const
+export const InstantLayerFacetNames = [
+	"ControlFacet",
+	"ViewFacet",
+	"DelegationFacet",
+	"ExecutionFacet",
+	"MigrationFacet",
+	"DiamondLoupeFacet",
+] as const
 
 const INSTANT_LAYER_FACET_ARTIFACTS: Record<(typeof InstantLayerFacetNames)[number], string> = {
 	ControlFacet: "contracts/instantLayer/facets/Control/ControlFacet.sol:ControlFacet",
 	ViewFacet: "contracts/instantLayer/facets/View/ViewFacet.sol:ViewFacet",
 	DelegationFacet: "contracts/instantLayer/facets/Delegation/DelegationFacet.sol:DelegationFacet",
 	ExecutionFacet: "contracts/instantLayer/facets/Execution/ExecutionFacet.sol:ExecutionFacet",
+	MigrationFacet: "contracts/instantLayer/facets/Migration/MigrationFacet.sol:MigrationFacet",
 	// Fully qualified so verify.ts (name.includes(":")) passes it through to Etherscan instead of
 	// falling back to auto-detect, matching accountLayerDiamond.ts's own DiamondLoupeFacet entry.
 	DiamondLoupeFacet: "contracts/diamond/facets/DiamondLoup/DiamondLoupeFacet.sol:DiamondLoupeFacet",
