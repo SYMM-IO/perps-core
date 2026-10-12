@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="InstantLayer becomes upgradeable to preserve TP/SL and session-key delegations across future upgrades, with a migration facet for the initial redeployment."
+		/>
+		<title>Upgradeable InstantLayer and Delegation Migration - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div><h1>Upgradeable InstantLayer and Delegation Migration</h1></div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						InstantLayer is now an upgradeable EIP-2535 diamond so future code updates can keep the same address and existing delegations.
+						Previously, every code update required deploying a new instance, leaving users&rsquo; delegations on the old contract and
+						requiring them to grant permissions again. That would interrupt our take-profit and stop-loss (TP/SL) services, which rely on
+						InstantLayer delegations, and leave users&rsquo; session keys without permissions on the replacement. Moving to the diamond
+						still requires a one-time redeployment, so we added a <code>MigrationFacet</code> with
+						<a href="instant-layer-batch-delegation-grant.html#migrate-delegations"><code>migrateDelegations</code></a> to let an
+						authorized migrator copy selected active delegations from the old layer, preserving their expiry and any pending revocation
+						ETA.
+					</p>
+				</article>
+			</main>
+		</div>
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>
