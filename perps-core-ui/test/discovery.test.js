@@ -15,9 +15,9 @@ import test from "node:test";
 const address = i => `0x${i.toString(16).padStart(40, "0")}`;
 const node = (key, kind, i) => ({ id: key, kind, name: key, address: address(i), status: "observed", state: {}, errors: [] });
 
-test("all 27 deployments load with a distinct id and their chain", () => {
-	assert.equal(defaultProfiles.length, 27);
-	assert.equal(new Set(defaultProfiles.map(p => p.id)).size, 27);
+test("all 26 deployments load with a distinct id and their chain", () => {
+	assert.equal(defaultProfiles.length, 26);
+	assert.equal(new Set(defaultProfiles.map(p => p.id)).size, 26);
 	for (const p of defaultProfiles) {
 		// A deployment from the address book says which entry it is and when the file was last checked, with no link.
 		assert.deepEqual(Object.keys(p.source).sort(), ["checked", "entry"]);

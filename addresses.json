@@ -1045,18 +1045,6 @@
 			}
 		},
 		{
-			"id": "polygon-simba-test",
-			"name": "Polygon Simba",
-			"chain": "polygon",
-			"environment": "Test / development",
-			"version": "0.8.4",
-			"contracts": {
-				"core": "0x5da06138507162db04979EEA7F55d30400cA13Fe",
-				"partyB": [{ "owner": "Rasa", "address": "0x7afA216C2BA5cd4D749fEA61Db6fe4B596EC9BEE" }],
-				"multiAccount": [{ "owner": "Vibe", "address": "0xc362b32aF10B28eF775C429D26F6143D143A6e60" }]
-			}
-		},
-		{
 			"id": "blast-deprecated",
 			"name": "Blast",
 			"chain": "blast",
