@@ -1,0 +1,1439 @@
+@import '@mantine/core/styles.css';
+
+@font-face {
+  font-family: Manrope;
+  src: url('/docs/assets/fonts/manrope-latin.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: Inter;
+  src: url('/docs/assets/fonts/inter-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/docs/assets/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  font-weight: 100 800;
+  font-display: swap;
+}
+:root {
+  /* Material-style tonal roles. Depth comes from the step between two fills, never from blur, glow or shadow.
+     Surfaces are neutral grey; coral appears only where it means something (primary action, brand, Core). */
+  --r-card: 24px;
+  --r-inner: 16px;
+  --r-pill: 999px;
+  --panel: #f1f1f2;
+  --panel-soft: #e7e7e9;
+  --raise: #dbdbde;
+  --line: #d2d2d6;
+  --canvas: #fafafa;
+  --primary: #b3392b;
+  --on-primary: #ffffff;
+  --primary-container: #ffdad4;
+  --on-primary-container: #410503;
+  --secondary-container: #dbdbde;
+  --on-secondary-container: #1b1b1d;
+  --error-container: #ffdad6;
+  --on-error-container: #410002;
+  --ok: #1b7a4f;
+  --bad: #ba1a1a;
+  --warn: #8a6100;
+  --idle: #8a8a90;
+}
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-body: #121212;
+  --mantine-color-text: #e6e6e8;
+  --mantine-color-dimmed: #a9a9af;
+  --panel: #1c1c1d;
+  --panel-soft: #272729;
+  --raise: #333336;
+  --line: #404044;
+  --canvas: #121212;
+  --primary: #ffb4a8;
+  --on-primary: #561e16;
+  --primary-container: #73342a;
+  --on-primary-container: #ffdad4;
+  --secondary-container: #3d3d41;
+  --on-secondary-container: #f2f2f4;
+  --error-container: #6b2020;
+  --on-error-container: #ffdad6;
+  --ok: #86d9a8;
+  --bad: #ffb4ab;
+  --warn: #e9c46a;
+  --idle: #8e8e94;
+}
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-body: #fafafa;
+  --mantine-color-text: #1b1b1d;
+  --mantine-color-dimmed: #5e5e64;
+}
+/* Mantine scopes these to the scheme attribute, so the override has to match that specificity. */
+:root[data-mantine-color-scheme] {
+  /* Mantine's neutral button and input take the tonal fills, so no component needs a border. */
+  --mantine-color-default: var(--raise);
+  --mantine-color-default-hover: color-mix(in srgb, var(--raise) 86%, var(--mantine-color-text));
+  --mantine-color-default-border: transparent;
+  --mantine-color-default-color: var(--mantine-color-text);
+}
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--raise) transparent;
+}
+::selection {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+body {
+  /* Its own formatting context: the header's top margin stays inside the page instead of pushing the
+     whole page down, which made every view a few pixels taller than the window. */
+  display: flow-root;
+  margin: 0;
+  min-height: 100vh;
+  font-size: 14px;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+a {
+  color: var(--primary);
+}
+h1,
+h2,
+h3 {
+  letter-spacing: -0.015em;
+}
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 60px;
+  margin: 12px 24px 0;
+  padding: 8px 10px 8px 14px;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+}
+.brand,
+.header-tools {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.brand {
+  gap: 10px;
+}
+.header-tools {
+  justify-content: flex-end;
+  gap: 8px;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  background: var(--primary-container);
+}
+.brand-name {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.brand-product,
+.checkout-label,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: var(--panel-soft);
+  color: var(--mantine-color-dimmed);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chip b {
+  color: var(--mantine-color-text);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+}
+.chip-button {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.chip-button:hover {
+  background: var(--raise);
+  color: var(--mantine-color-text);
+}
+.chip-button:focus-visible,
+.chip[tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.checkout-label {
+  overflow: hidden;
+  height: 30px;
+  font-family: 'JetBrains Mono', monospace;
+  text-overflow: ellipsis;
+}
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.dot[data-state='live'] {
+  background: var(--ok);
+}
+.dot[data-state='saved'] {
+  background: var(--warn);
+}
+/* Navigation and tabs share one pattern: plain labels, and a tonal pill behind the current one. */
+.app-nav,
+.seg-tabs .mantine-Tabs-list {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.seg-tabs .mantine-Tabs-list {
+  padding: 4px;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+}
+.seg-tabs .mantine-Tabs-list::before {
+  display: none;
+}
+.app-nav button,
+.seg-tabs .mantine-Tabs-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+.seg-tabs .mantine-Tabs-tab {
+  height: 36px;
+}
+.app-nav button:hover,
+.seg-tabs .mantine-Tabs-tab:hover {
+  background: var(--panel-soft);
+  color: var(--mantine-color-text);
+}
+.app-nav button.current,
+.seg-tabs .mantine-Tabs-tab[data-active] {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+.app-nav button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* Every view uses the full width and shares one left edge. */
+main {
+  padding: 16px 24px 28px;
+  outline: none;
+  min-height: calc(100vh - 124px);
+}
+footer {
+  padding: 4px 24px 20px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  text-align: center;
+}
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 12px;
+  z-index: 1000;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  padding: 10px 14px;
+  border-radius: var(--r-inner);
+}
+.skip-link:focus {
+  top: 8px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Scroll containers must contain their visually hidden labels, or those labels extend the page. */
+.graph-inspector,
+.contracts-table-wrap,
+.table-scroll,
+.bounded-list {
+  position: relative;
+}
+.panel,
+.history-view .table-scroll {
+  border-radius: var(--r-card);
+  background: var(--panel);
+}
+.panel {
+  padding: 24px;
+}
+/* A card inside a card steps one tone up instead of drawing a line around itself. */
+.panel .panel {
+  background: var(--panel-soft);
+}
+.history-view .table-scroll {
+  padding: 8px 12px;
+}
+.auth-panel {
+  max-width: 560px;
+  margin: 60px auto;
+  width: 100%;
+  padding: 32px;
+}
+/* The deployment card: identity on the left, the numbers that describe it, then what you can do. */
+.hero {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  padding: 18px 22px;
+  border-radius: 28px;
+  background: var(--panel);
+}
+.hero-main {
+  display: grid;
+  flex: 1 1 340px;
+  gap: 6px;
+  min-width: 260px;
+}
+.eyebrow {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.hero-select {
+  max-width: 440px;
+}
+.hero-select .mantine-Select-input {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 30px 0 0;
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+}
+.deployment-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.hero-stats {
+  display: flex;
+  gap: 8px;
+}
+.stat {
+  display: grid;
+  gap: 1px;
+  min-width: 100px;
+  padding: 10px 16px 9px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--panel-soft);
+  color: inherit;
+  text-align: left;
+}
+.stat b {
+  font-size: 23px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.stat span {
+  color: var(--mantine-color-dimmed);
+  font-size: 11.5px;
+}
+button.stat:not(:disabled) {
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+.stat[data-tone='bad'] {
+  background: var(--error-container);
+  color: var(--on-error-container);
+}
+.stat[data-tone='bad'] span {
+  color: inherit;
+}
+button.stat[data-tone='bad']:hover {
+  background: color-mix(in srgb, var(--error-container) 88%, var(--on-error-container));
+}
+.workspace-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.issue-strip {
+  display: flex;
+  align-items: center;
+  flex: 1 1 480px;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 5px 6px 5px 18px;
+  border-radius: var(--r-pill);
+  background: var(--error-container);
+  color: var(--on-error-container);
+}
+.issue-count {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.issue-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 12px 5px 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+/* One row: the pair stays whole and the description gives way first. */
+.issue-chip b {
+  flex: none;
+  font-weight: 700;
+}
+.issue-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.issue-chip svg {
+  flex: none;
+  color: var(--mantine-color-dimmed);
+}
+.issue-chip:hover {
+  background: var(--panel-soft);
+}
+.issue-strip > .mantine-Button-root {
+  flex: none;
+  --button-color: var(--on-error-container);
+}
+.issue-chip:focus-visible,
+.issue-row:focus-visible,
+.link-row:focus-visible,
+.upgrade-choice:focus-visible,
+button.stat:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* Three flat discs instead of a blank box: nothing here yet, and that is fine. */
+.empty-state::before {
+  content: '';
+  width: 72px;
+  height: 72px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--primary) 0 6px, transparent 6.5px), radial-gradient(circle, var(--raise) 0 19px, transparent 19.5px),
+    var(--panel-soft);
+}
+.source-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-inner);
+  background: var(--panel-soft);
+}
+.source-row .dot {
+  margin-top: 7px;
+}
+.source-row > div {
+  display: grid;
+  gap: 3px;
+}
+.tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  background: var(--panel-soft);
+  color: var(--mantine-color-dimmed);
+}
+.tile[data-kind='core'] {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+.empty-state {
+  padding: 56px 20px;
+}
+.two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.address {
+  white-space: normal;
+  word-break: break-all;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  min-width: 0;
+}
+.break {
+  overflow-wrap: anywhere;
+}
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.table-scroll table {
+  min-width: 650px;
+}
+.table-scroll td {
+  vertical-align: middle;
+}
+.table-scroll .address,
+.contracts-table .address {
+  white-space: nowrap;
+}
+.json-code {
+  border-radius: var(--r-inner);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+}
+.bounded-list {
+  max-height: 500px;
+  overflow: auto;
+}
+.facet-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.facet-item > .mantine-Text-root {
+  margin: 6px 0 0 30px;
+}
+.target-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+.diff-row {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.diff-row code {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.graph-panel {
+  /* Canvas and legend end at the bottom of the viewport, so the map needs no page scroll. The map measures
+     the room it has and reports it as --graph-fit; the estimate only stands in until it has. */
+  --graph-height: max(280px, var(--graph-fit, calc(100dvh - 436px)));
+  border-radius: var(--r-card);
+  overflow: hidden;
+  background: var(--panel);
+}
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+/* A small two-way switch, in the same pattern as the navigation: the chosen side gets the tonal pill. */
+.seg {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--panel-soft);
+}
+.seg button {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.seg button:hover {
+  color: var(--mantine-color-text);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+.seg button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.graph-focus {
+  width: 270px;
+  max-width: 100%;
+}
+.graph-focus-label {
+  padding-left: 6px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12.5px;
+}
+.graph-focus .mantine-Input-input {
+  font-weight: 600;
+}
+.contract-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+.contract-option code {
+  flex: none;
+  color: var(--mantine-color-dimmed);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+}
+.graph-query {
+  width: 230px;
+}
+/* Scope, search and view tools share the first row; the chips get the second to themselves. */
+.graph-filters {
+  display: flex;
+  align-items: center;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  order: 3;
+  gap: 6px;
+}
+/* Material filter chip: outlined while off, filled with a tick while on. */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease;
+}
+.filter-chip b {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.filter-chip:hover:not(:disabled) {
+  background: var(--panel-soft);
+  color: var(--mantine-color-text);
+}
+.filter-chip[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+.filter-chip[aria-pressed='true'][data-tone='bad'] {
+  background: var(--error-container);
+  color: var(--on-error-container);
+}
+.filter-chip[aria-pressed='true'][data-tone='warn'] {
+  background: color-mix(in srgb, var(--warn) 26%, var(--panel-soft));
+  color: var(--mantine-color-text);
+}
+.filter-chip:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.filter-chip:focus-visible,
+.graph-scope button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.filter-sep {
+  width: 1px;
+  height: 20px;
+  margin-inline: 4px;
+  background: var(--line);
+}
+/* What the map is narrowed to, pinned to its corner with the way back out. */
+.graph-scope {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+  padding: 4px 4px 4px 14px;
+  border-radius: var(--r-pill);
+  background: var(--panel-soft);
+  font-size: 12.5px;
+}
+.graph-scope span {
+  overflow: hidden;
+  margin-right: 6px;
+  color: var(--mantine-color-dimmed);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-scope b {
+  color: var(--mantine-color-text);
+  font-weight: 700;
+}
+.graph-scope button {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--raise);
+  color: var(--mantine-color-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.graph-scope button:hover {
+  background: color-mix(in srgb, var(--raise) 86%, var(--mantine-color-text));
+}
+.graph-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8px var(--sidebar-width, 300px);
+}
+.sidebar-resizer {
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  background: var(--panel);
+  border-inline: 1px solid var(--line);
+}
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 2px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--mantine-color-dimmed);
+}
+.sidebar-resizer:hover,
+.sidebar-resizer:focus-visible,
+.is-resizing > .sidebar-resizer {
+  background: var(--mantine-primary-color-light);
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+.is-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+.graph-main {
+  min-width: 0;
+}
+.graph-canvas-wrap {
+  position: relative;
+  background: var(--canvas);
+  background-image: radial-gradient(var(--line) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.graph-canvas {
+  height: var(--graph-height);
+  width: 100%;
+  /* A press anywhere drags the map; Cytoscape changes the pointer over a contract or a connection. */
+  cursor: grab;
+}
+.graph-canvas-wrap[data-pressed] .graph-canvas {
+  cursor: grabbing !important;
+}
+/* How to get around, said once in the bar under the map. */
+.graph-tip {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The key sits on the map's corner, as on any map, so it costs the canvas no height. */
+.graph-key {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: calc(100% - 262px);
+  padding: 3px;
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+.graph-scroll {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--raise);
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.graph-scroll:hover {
+  background: color-mix(in srgb, var(--raise) 86%, var(--mantine-color-text));
+}
+.graph-scroll:focus-visible,
+.legend-node:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.graph-canvas:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -3px;
+}
+.graph-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: var(--panel-soft);
+  border-radius: var(--r-pill);
+  padding: 5px 12px;
+}
+.graph-inspector {
+  max-height: calc(var(--graph-height) + 38px);
+  overflow: auto;
+  min-width: 0;
+}
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 18px;
+  min-height: 38px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+}
+.legend-lines {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+}
+.legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+}
+/* One key per kind of contract drawn, in that kind's own tone and outline. Choosing one lights it on the map. */
+.legend-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.legend-node:hover {
+  background: var(--raise);
+  color: var(--mantine-color-text);
+}
+.legend-node[aria-pressed='true'] {
+  background: var(--secondary-container);
+  color: var(--mantine-color-text);
+  font-weight: 600;
+}
+.legend-node b {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+.legend-node i {
+  width: 20px;
+  height: 12px;
+  border-radius: 4px;
+}
+.legend-node i[data-shape='pill'] {
+  border-radius: 6px;
+}
+.legend-node i[data-shape='cut'] {
+  border-radius: 0;
+  clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
+}
+.legend-key i {
+  width: 18px;
+  border-top: 2px solid var(--ok);
+  border-radius: 2px;
+}
+.legend-key[data-state='missing'] i {
+  border-top: 2px dashed var(--bad);
+}
+.legend-key[data-state='unknown'] i {
+  border-top: 2px dotted var(--idle);
+}
+.legend-key[data-state='added'] i {
+  border-top: 2px solid var(--warn);
+}
+.legend-key[data-state='changed'] i {
+  border-top: 2px dashed var(--warn);
+}
+.legend-key[data-state='removed'] i {
+  border-top: 2px dashed var(--idle);
+}
+/* One role: its name, who holds it, and who can hand it out. */
+.role-row code {
+  display: block;
+  margin-bottom: 3px;
+  background: none;
+  color: var(--mantine-color-text);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.role-holder {
+  margin: 0 6px 4px 0;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  background: var(--panel-soft);
+  font-size: 12px;
+}
+.role-holder:hover {
+  background: var(--raise);
+}
+.role-holder[data-missing] {
+  background: var(--error-container);
+  color: var(--on-error-container);
+}
+.seg-small button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+/* How an address has a say over a contract, said in a word or two at the end of its row. */
+.power-tags {
+  display: inline-flex;
+  flex: none;
+  gap: 8px;
+  color: var(--mantine-color-dimmed);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.power-tags b {
+  color: var(--mantine-color-text);
+  font-weight: 700;
+}
+.graph-empty {
+  position: absolute;
+  top: 35%;
+  left: 10%;
+  right: 10%;
+  text-align: center;
+  pointer-events: none;
+}
+.graph-empty button {
+  pointer-events: auto;
+}
+.connection-detail {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: var(--r-inner);
+  background: var(--panel-soft);
+}
+.connection-detail + .connection-detail {
+  margin-top: 6px;
+}
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  transition: background-color 0.14s ease;
+}
+.link-row:hover {
+  background: var(--panel-soft);
+}
+.link-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.link-row[data-state='missing'] .link-dot {
+  background: var(--bad);
+}
+.link-row[data-state='unknown'] .link-dot {
+  background: var(--idle);
+}
+.link-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.link-name small {
+  color: var(--mantine-color-dimmed);
+  font-size: 11px;
+}
+.link-count {
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+}
+.issue-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-inner);
+  background: var(--error-container);
+  color: var(--on-error-container);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.issue-row svg {
+  flex: none;
+  margin-top: 3px;
+}
+.issue-row small {
+  display: block;
+  font-size: 11.5px;
+  opacity: 0.85;
+}
+.inspector-accordion .mantine-Accordion-content {
+  padding-inline: 0;
+}
+.inspector-accordion .mantine-Accordion-control {
+  padding-inline: 0;
+}
+.inspector-heading:focus {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+.graph-fullscreen {
+  --graph-height: calc(100dvh - 142px);
+  border: 0;
+  border-radius: 0;
+}
+.upgrade-view {
+  width: 100%;
+}
+/* Steps down the side, the work in the rest of the width. */
+.upgrade-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+.upgrade-rail {
+  position: sticky;
+  top: 16px;
+}
+.history-view,
+.contracts-view {
+  width: 100%;
+  min-width: 0;
+}
+.upgrade-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+  gap: 10px;
+}
+.upgrade-choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--panel);
+  transition: background-color 0.16s ease;
+}
+.upgrade-choice:hover {
+  background: var(--panel-soft);
+}
+.upgrade-choice:hover .tile:not([data-kind='core']) {
+  background: var(--raise);
+}
+.upgrade-choice-text {
+  flex: 1;
+  min-width: 0;
+}
+.upgrade-choice-go {
+  flex: none;
+  color: var(--mantine-color-dimmed);
+  transition: translate 0.16s ease;
+}
+.upgrade-choice:hover .upgrade-choice-go {
+  color: var(--primary);
+  translate: 3px 0;
+}
+.upgrade-choice b {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+}
+.upgrade-choice small,
+.upgrade-choice code {
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+}
+.upgrade-choice code {
+  font-family: 'JetBrains Mono', monospace;
+}
+.contracts-toolbar > .mantine-TextInput-root {
+  width: 320px;
+  max-width: 100%;
+}
+.contracts-table-wrap {
+  max-height: calc(100dvh - 250px);
+  min-height: 280px;
+  overflow: auto;
+  border-radius: var(--r-card);
+  background: var(--panel);
+}
+.contracts-table th,
+.contracts-table td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.contracts-table th {
+  background: var(--panel);
+}
+.contracts-table td:first-child {
+  white-space: normal;
+}
+.contracts-action {
+  width: 1%;
+  text-align: right;
+}
+.contract-name {
+  height: auto;
+  min-height: 26px;
+  max-width: 100%;
+  margin-left: -8px;
+  color: var(--mantine-color-text);
+  font-weight: 600;
+}
+.contract-name .mantine-Button-label {
+  /* Mantine clips the label box, which cuts descenders at this compact height. */
+  overflow: visible;
+  height: auto;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.contracts-view .mantine-ActionIcon-root {
+  flex-shrink: 0;
+}
+.contract-cards {
+  display: none;
+}
+main h1.mantine-Title-root {
+  font-size: 26px;
+}
+.mantine-Table-th {
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* Mantine pieces follow the same tonal roles. */
+.mantine-Table-table {
+  --table-border-color: var(--line);
+  --table-hover-color: var(--panel-soft);
+}
+.mantine-Accordion-item {
+  border-color: var(--line);
+}
+/* Mantine sets a filled button's text colour inline (and omits data-variant for the default), so the role goes on the property.
+   A button given its own colour carries --button-bg inline and keeps Mantine's text colour. */
+.mantine-Button-root:is(:not([data-variant]), [data-variant='filled']):not([data-disabled], [style*='--button-bg']) {
+  color: var(--on-primary);
+}
+/* Filled text fields: a tonal fill, and a ring only while focused. */
+.mantine-Input-input:not([data-variant='unstyled']) {
+  --input-bg: var(--panel-soft);
+  --input-bd: transparent;
+  --input-bd-focus: var(--primary);
+}
+.panel .mantine-Input-input:not([data-variant='unstyled']),
+.graph-toolbar .mantine-Input-input,
+.contracts-toolbar .mantine-Input-input {
+  --input-bg: var(--raise);
+}
+.contracts-toolbar .mantine-Input-input,
+.graph-toolbar .mantine-Input-input {
+  border-radius: var(--r-pill);
+}
+.mantine-Modal-content,
+.mantine-Popover-dropdown,
+.mantine-Select-dropdown,
+.mantine-Menu-dropdown,
+.mantine-Tooltip-tooltip {
+  border: 0;
+  background: var(--raise);
+  color: var(--mantine-color-text);
+  box-shadow: none;
+}
+.mantine-Modal-header {
+  background: var(--raise);
+}
+.mantine-Select-option {
+  border-radius: 12px;
+}
+.mantine-Stepper-root {
+  padding: 18px 20px;
+  border-radius: var(--r-card);
+  background: var(--panel);
+}
+.mantine-Alert-root {
+  border: 0;
+}
+@media (max-width: 1500px) {
+  /* The block number already dates the snapshot; the clock time is the first thing to go. */
+  .chip-date {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .graph-tip {
+    visibility: hidden;
+  }
+}
+@media (max-width: 900px) {
+  .graph-panel {
+    --graph-height: 440px;
+  }
+  .upgrade-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .upgrade-rail {
+    position: static;
+  }
+  .issue-strip {
+    flex-wrap: wrap;
+    padding-block: 8px;
+  }
+  .issue-chip {
+    white-space: normal;
+  }
+  .hero-stats {
+    flex: 1 1 100%;
+  }
+  .stat {
+    flex: 1;
+    min-width: 0;
+  }
+  .sidebar-resizer {
+    display: none;
+  }
+  .graph-workspace {
+    grid-template-columns: 1fr;
+  }
+  .graph-inspector {
+    border-top: 1px solid var(--line);
+    max-height: 420px;
+  }
+  .graph-fullscreen {
+    --graph-height: 50dvh;
+  }
+  .graph-fullscreen .graph-inspector {
+    max-height: 40dvh;
+  }
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+  .checkout-label {
+    display: none;
+  }
+  .contracts-table-wrap {
+    display: none;
+  }
+  .contract-cards {
+    display: grid;
+    gap: 10px;
+  }
+  .contract-card {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: var(--panel);
+  }
+}
+@media (max-width: 600px) {
+  .app-header {
+    margin: 10px 12px 0;
+    padding: 8px;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-radius: 24px;
+  }
+  .brand-product {
+    display: none;
+  }
+  /* The nav takes its own row so its labels are never squeezed by the wallet button. */
+  .app-nav {
+    order: 3;
+    flex: 0 0 100%;
+    justify-content: space-between;
+  }
+  /* Four sections fit a phone once the icons step aside; one more and the row has to scroll. */
+  .app-nav button {
+    flex: 1;
+    justify-content: center;
+    height: 36px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+  .app-nav button svg {
+    display: none;
+  }
+  main {
+    padding: 12px;
+  }
+  .panel,
+  .hero {
+    padding: 16px;
+  }
+  .hero-select .mantine-Select-input {
+    font-size: 20px;
+  }
+  .hero-actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  /* The wallet button keeps its label; the brand gives up the space instead. */
+  .brand {
+    flex: 0 1 auto;
+  }
+  .contracts-toolbar > .mantine-TextInput-root,
+  .graph-focus,
+  .graph-query {
+    width: 100%;
+  }
+  .graph-panel {
+    --graph-height: 400px;
+  }
+  .graph-fullscreen {
+    --graph-height: 45dvh;
+  }
+  .mantine-Input-input {
+    font-size: 16px !important;
+  }
+  .mantine-Stepper-stepDescription {
+    display: none;
+  }
+  .mantine-Stepper-stepLabel {
+    font-size: 12px;
+  }
+  .mantine-Stepper-stepIcon {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    font-size: 12px;
+  }
+  .mantine-Stepper-step {
+    gap: 5px;
+  }
+  .mantine-Stepper-separator {
+    margin-inline: 7px;
+  }
+  .table-scroll table {
+    min-width: 560px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}

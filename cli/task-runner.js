@@ -127,6 +127,7 @@ function hashSourceTree(root) {
 		"scripts",
 		"tasks",
 		"utils",
+		"perps-core-ui",
 		"hardhat.config.ts",
 		"package.json",
 		"package-lock.json",
@@ -384,6 +385,11 @@ export function createTaskRunner(options = {}) {
 
 		const emit = (type, detail = {}) => {
 			const event = appendEvent(state, { type, ...detail });
+			if (type === "tx.intent") {
+				state.pendingIntents ||= [];
+				if (!state.pendingIntents.includes(detail.id)) state.pendingIntents.push(detail.id);
+			}
+			if (type === "tx.intent.resolved") state.pendingIntents = (state.pendingIntents || []).filter(id => id !== detail.id);
 			if (type === "warning") state.warnings.push({ at: event.at, message: detail.message });
 			if (type === "tx.submitted") {
 				state.transactions.push({ ...detail.transaction });
@@ -775,6 +781,7 @@ export function createTaskRunner(options = {}) {
 			runtime.onEvent?.(event, state);
 			const cancellationEmit = (type, detail = {}) => {
 				const next = appendEvent(state, { type, ...detail });
+				if (type === "tx.intent.resolved") state.pendingIntents = (state.pendingIntents || []).filter(id => id !== detail.id);
 				if (type === "warning") state.warnings.push({ at: next.at, message: detail.message });
 				if (type === "tx.confirmed" || type === "tx.failed") {
 					const transaction = state.transactions.find(
@@ -874,7 +881,11 @@ export function createTaskRunner(options = {}) {
 				}
 			}
 			const journalUnresolved = (state.transactions || []).filter(transaction => UNCERTAIN_TX_STATUSES.has(transaction.status));
-			const unresolved = [...(reconciliation.unresolved || []), ...journalUnresolved.map(transaction => transaction.hash)];
+			const unresolved = [
+				...(reconciliation.unresolved || []),
+				...journalUnresolved.map(transaction => transaction.hash),
+				...(state.pendingIntents || []).map(id => `wallet-intent:${id}`),
+			];
 			if (unresolved.length > 0) {
 				state.cancelBlockedBy = [...new Set(unresolved)];
 				// The operator cannot act on a bare count. Name the hashes and the exact recovery

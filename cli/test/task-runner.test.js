@@ -646,3 +646,19 @@ test("a blocked cancellation names the hashes and the exact recovery path", asyn
 	assert.match(cancelled.lastError, /DEPLOY_TX_REPLACEMENTS/);
 	assert.match(cancelled.lastError, /CONFIRM_DROPPED_TX_HASHES/);
 });
+
+test("a wallet intent without a returned hash blocks cancellation even when its task adapter is unavailable", async () => {
+	const task = mutating({
+		run: async ctx => {
+			ctx.emit("tx.intent", { id: "deploy.facet" });
+			throw new Error("Wallet response lost");
+		},
+	});
+	const { root, runner } = runnerFor(task);
+	await runner.start(task.id, { input: {} });
+	const fallback = createTaskRunner({ root, definitions: [] });
+	const cancelled = await fallback.cancelActive();
+	assert.equal(cancelled.status, "cancel_pending");
+	assert.ok(cancelled.cancelBlockedBy.includes("wallet-intent:deploy.facet"));
+	assert.ok(fallback.getActive());
+});
