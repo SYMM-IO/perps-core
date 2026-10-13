@@ -31,6 +31,18 @@ export function shouldBehaveLikeFuzzOperationCoverage(): void {
 				EXPIRE_QUOTE: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
 				LIQUIDATE_PARTY_A: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
 				LIQUIDATE_PARTY_B: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				ACCOUNT_LAYER_LIFECYCLE: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				INSTANT_LAYER_LIFECYCLE: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				ACCOUNT_LAYER_SINGLE_VA: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				ACCOUNT_LAYER_OWNERSHIP: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				ACCOUNT_LAYER_LEGACY_IMPORT: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				ACCOUNT_LAYER_MARGIN_RECOVERY: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				ACCOUNT_LAYER_TIMELOCK: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				INSTANT_LAYER_TIMELOCK: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				INSTANT_LAYER_DELEGATION: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				INSTANT_LAYER_FLEX_FIELDS: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				INSTANT_LAYER_TEMPLATE: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
+				INSTANT_LAYER_PARTY_B_RELAYS: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
 			},
 		})
 	})

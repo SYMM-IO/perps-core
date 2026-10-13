@@ -1,10 +1,10 @@
 import { expect } from "chai"
 import { keccak256, toUtf8Bytes } from "ethers"
 
-import type { InstantLayer } from "../../src/types/index.js"
 import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { cloneTypes } from "../helpers/instantLayerEIP712Types.js"
+import type { InstantLayer } from "../helpers/instantLayerTypes.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 
 const role = (name: string) => keccak256(toUtf8Bytes(name))

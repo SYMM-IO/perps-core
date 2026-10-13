@@ -86,6 +86,18 @@ npm run docs:check
 
 Tests use `MockMuonSignatureVerifier`, which accepts test signatures without performing real Muon verification.
 
+The fuzz runner uses direct core users, AccountLayer sub-accounts, and signed InstantLayer batches in the same quote lifecycle. Its seeded corner campaigns cover POSITION, MARKET, MARKET_DIRECTION, and CUSTOM isolation, partial fills/closes, margin transfers, cleanup, and address reuse. Additional campaigns exercise single-VA mode and isolation keys, live ownership transfer/deletion, funded legacy imports, safe margin removal and orphan recovery, and selector timelocks through both layers. InstantLayer campaigns cover direct/by-signature/in-batch delegation grants, revocation and expiry, authenticated flex fills, result-chained instant-open templates, contract PartyB relays, and atomic rollback across accounts.
+
+```bash
+# Run a bounded campaign with full validation and all nineteen campaign families
+FUZZ_SEED=layer-features FUZZ_ROOT_ACTIONS=38 npm run test:fuzz:ci
+
+# Keep generating flows until Ctrl+C
+npm run test:fuzz
+```
+
+The default three users exercise all three routes. `FUZZ_USER_COUNT=1` keeps only the direct actor; `2` also includes AccountLayer. Layer campaigns remain in the corner-operation bag regardless of actor count. `FUZZ_CORNER_EVERY=0` disables that bag. Bounded runs that schedule at least nineteen corner campaigns require every family to succeed; operation counters appear in the fuzz logs and dashboard. The seed varies routes, amounts, directions, delays and isolation keys. Focused integration tests cover both template accounting modes and both execution-context protocols; a campaign counter records its family, not every parameter combination.
+
 ## Deployment and operations
 
 Deployment is handled through the interactive operator application:

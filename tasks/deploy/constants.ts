@@ -4,7 +4,7 @@ export const FacetNames = [
 	"ExternalTransferFacet",
 	"BindingFacet",
 	"PledgeFacet",
-	"MigrationFacet",
+	"contracts/core/facets/Migration/MigrationFacet.sol:MigrationFacet",
 	"contracts/core/facets/Control/ControlFacet.sol:ControlFacet",
 	"ExecutionContextFacet",
 	"SymbolControlFacet",

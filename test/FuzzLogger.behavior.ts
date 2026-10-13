@@ -196,7 +196,7 @@ export function shouldBehaveLikeFuzzLogger(): void {
 			"│ sampling   no eligible decisions observed yet · 75% target",
 			"│ confirmed  waiting for observable changed transitions · 0/10 action types confirmed",
 			"│ lifecycle  0/11 quote states observed · 11 unseen",
-			"│ corners    0/7 rare paths verified · 0 passed · 0 skipped · 0 failed",
+			"│ corners    0/19 rare paths verified · 0 passed · 0 skipped · 0 failed",
 			"│ operation  rare path                 attempted  passed  skipped  failed",
 			"│            funding charge                    0       0        0       0",
 			"│            settle unrealized PnL             0       0        0       0",
@@ -205,6 +205,18 @@ export function shouldBehaveLikeFuzzLogger(): void {
 			"│            quote expiry                      0       0        0       0",
 			"│            Party A liquidation               0       0        0       0",
 			"│            Party B liquidation               0       0        0       0",
+			"│            AccountLayer lifecycle            0       0        0       0",
+			"│            InstantLayer lifecycle            0       0        0       0",
+			"│            Single VA routing                 0       0        0       0",
+			"│            Account ownership                 0       0        0       0",
+			"│            Legacy account import             0       0        0       0",
+			"│            Safe margin and recovery          0       0        0       0",
+			"│            AccountLayer timelocks            0       0        0       0",
+			"│            InstantLayer timelocks            0       0        0       0",
+			"│            Delegation lifecycle              0       0        0       0",
+			"│            Flex field fills                  0       0        0       0",
+			"│            Instant-open template             0       0        0       0",
+			"│            PartyB signed relays              0       0        0       0",
 			"├─ DIAGNOSTICS",
 			"│ discards   invalid quote ×1",
 			"│ trace      <hash>",
@@ -294,9 +306,13 @@ export function shouldBehaveLikeFuzzLogger(): void {
 			"│ sampling   no eligible decisions observed yet · 75% target",
 			"│ confirmed  waiting for observable changed transitions · 0/10 action types confirmed",
 			"│ lifecycle  0/11 quote states observed · 11 unseen",
-			"│ corners    0/7 rare paths verified · 0 passed · 0 skipped · 0 failed",
+			"│ corners    0/19 rare paths verified · 0 passed · 0 skipped · 0 failed",
 			"│ rare paths ○ funding charge · ○ settle unrealized PnL · ○ force close · ○ emergency close",
 			"│            ○ quote expiry · ○ Party A liquidation · ○ Party B liquidation",
+			"│            ○ AccountLayer lifecycle · ○ InstantLayer lifecycle · ○ Single VA routing",
+			"│            ○ Account ownership · ○ Legacy account import · ○ Safe margin and recovery",
+			"│            ○ AccountLayer timelocks · ○ InstantLayer timelocks · ○ Delegation lifecycle",
+			"│            ○ Flex field fills · ○ Instant-open template · ○ PartyB signed relays",
 			"├─ ENGINE",
 			"│ queue      waiting for first action",
 			"╰─ Ctrl+C drains safely · press again to force",
@@ -561,7 +577,7 @@ export function shouldBehaveLikeFuzzLogger(): void {
 		}
 
 		const live = harness.frames.at(-1)!.join("\n")
-		expect(live).to.include("│ corners    2/7 rare paths verified · 2 passed · 1 skipped · 1 failed · 1 running")
+		expect(live).to.include("│ corners    2/19 rare paths verified · 2 passed · 1 skipped · 1 failed · 1 running")
 		expect(live).to.include("✓ funding charge ×1")
 		expect(live).to.include("! settle unrealized PnL · 1 skipped")
 		expect(live).to.include("✗ force close · 0 passed · 1 failed")
@@ -571,7 +587,7 @@ export function shouldBehaveLikeFuzzLogger(): void {
 		expect(live).to.include("✓ Party B liquidation ×1")
 
 		logger.pass(result())
-		expect(lines).to.include("│ corners    2/7 rare paths verified · 2 passed · 1 skipped · 1 failed · 1 running")
+		expect(lines).to.include("│ corners    2/19 rare paths verified · 2 passed · 1 skipped · 1 failed · 1 running")
 		const summary = lines.join("\n")
 		expect(summary).to.match(/funding charge\s+1\s+1\s+0\s+0/)
 		expect(summary).to.match(/settle unrealized PnL\s+1\s+0\s+1\s+0/)

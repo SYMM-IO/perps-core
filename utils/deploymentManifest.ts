@@ -1,6 +1,6 @@
 import { FacetNames } from "../tasks/deploy/constants.js"
 
-export type DiamondScope = "core" | "accountLayer"
+export type DiamondScope = "core" | "accountLayer" | "instantLayer"
 
 export type DeploymentSpec = {
 	name: string
@@ -90,6 +90,10 @@ const ACCOUNT_LAYER_LIBRARY_SPECS: Record<string, DeploymentSpec> = {
 	},
 }
 
+// InstantLayer facets hold their logic directly and share only internal libraries, which the
+// compiler inlines. None of them are linked external libraries, so this scope has no entries.
+const INSTANT_LAYER_LIBRARY_SPECS: Record<string, DeploymentSpec> = {}
+
 const CORE_FACET_LIBRARIES: Record<string, string[]> = {
 	PartyAFacet: ["LibQuoteClose"],
 	PartyBExecutionFacet: ["LibQuoteClose"],
@@ -147,6 +151,29 @@ const ACCOUNT_LAYER_FACET_ARTIFACTS: Record<(typeof AccountLayerFacetNames)[numb
 	DiamondLoupeFacet: "DiamondLoupeFacet",
 }
 
+// Facets deployed onto the InstantLayer diamond, in the order the diamond cut installs them.
+// DiamondCutFacet is not listed here: it is bootstrapped before the Diamond exists (its address
+// is the Diamond constructor's _diamondCutFacet argument), the same split AccountLayer uses.
+export const InstantLayerFacetNames = [
+	"ControlFacet",
+	"ViewFacet",
+	"DelegationFacet",
+	"ExecutionFacet",
+	"MigrationFacet",
+	"DiamondLoupeFacet",
+] as const
+
+const INSTANT_LAYER_FACET_ARTIFACTS: Record<(typeof InstantLayerFacetNames)[number], string> = {
+	ControlFacet: "contracts/instantLayer/facets/Control/ControlFacet.sol:ControlFacet",
+	ViewFacet: "contracts/instantLayer/facets/View/ViewFacet.sol:ViewFacet",
+	DelegationFacet: "contracts/instantLayer/facets/Delegation/DelegationFacet.sol:DelegationFacet",
+	ExecutionFacet: "contracts/instantLayer/facets/Execution/ExecutionFacet.sol:ExecutionFacet",
+	MigrationFacet: "contracts/instantLayer/facets/Migration/MigrationFacet.sol:MigrationFacet",
+	// Fully qualified so verify.ts (name.includes(":")) passes it through to Etherscan instead of
+	// falling back to auto-detect, matching accountLayerDiamond.ts's own DiamondLoupeFacet entry.
+	DiamondLoupeFacet: "contracts/diamond/facets/DiamondLoup/DiamondLoupeFacet.sol:DiamondLoupeFacet",
+}
+
 function shortName(artifact: string): string {
 	return artifact.includes(":") ? artifact.split(":").pop()! : artifact
 }
@@ -169,14 +196,20 @@ export const AccountLayerFacetSpecs: Record<string, DeploymentSpec> = Object.fro
 	]),
 )
 
+export const InstantLayerFacetSpecs: Record<string, DeploymentSpec> = Object.fromEntries(
+	InstantLayerFacetNames.map(name => [name, { name, artifact: INSTANT_LAYER_FACET_ARTIFACTS[name], libraries: [] }]),
+)
+
 export const LibrarySpecs: Record<DiamondScope, Record<string, DeploymentSpec>> = {
 	core: CORE_LIBRARY_SPECS,
 	accountLayer: ACCOUNT_LAYER_LIBRARY_SPECS,
+	instantLayer: INSTANT_LAYER_LIBRARY_SPECS,
 }
 
 export const FacetSpecs: Record<DiamondScope, Record<string, DeploymentSpec>> = {
 	core: CoreFacetSpecs,
 	accountLayer: AccountLayerFacetSpecs,
+	instantLayer: InstantLayerFacetSpecs,
 }
 
 export function getFacetSpec(scope: DiamondScope, name: string): DeploymentSpec {

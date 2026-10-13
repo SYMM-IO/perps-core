@@ -115,6 +115,7 @@ export async function completeLocalHandover(hre: any, recipePath?: string): Prom
 
 	const core = requireAddress(ethers, report.addresses?.diamond, "Core Diamond")
 	const accountLayer = requireAddress(ethers, report.addresses?.accountLayerDiamond, "AccountLayer Diamond")
+	const instantLayer = requireAddress(ethers, report.addresses?.instantLayer, "InstantLayer")
 	const expressProvider =
 		active.recipe.expressProvider.mode === "skip" ? undefined : requireAddress(ethers, report.addresses?.expressProvider, "ExpressProvider")
 	const symbolManager =
@@ -136,6 +137,11 @@ export async function completeLocalHandover(hre: any, recipePath?: string): Prom
 				label: "AccountLayer Diamond",
 				contract: await ethers.getContractAt("contracts/accountLayer/facets/Control/ControlFacet.sol:ControlFacet", accountLayer),
 				reader: await ethers.getContractAt("contracts/accountLayer/facets/View/ViewFacet.sol:ViewFacet", accountLayer),
+			},
+			{
+				label: "InstantLayer",
+				contract: await ethers.getContractAt("IInstantLayerDiamond", instantLayer),
+				reader: await ethers.getContractAt("IInstantLayerDiamond", instantLayer),
 			},
 		]
 		if (expressProvider) {

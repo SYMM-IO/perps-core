@@ -64,7 +64,17 @@ const ACCOUNT_LAYER_FACETS = [
 
 const EXPRESS_FACETS = ["DiamondCutFacet", "DiamondLoupeFacet", "ControlFacet", "SymmioHookFacet", "OperatorFacet", "AccelerateFacet", "ViewFacet"];
 
-const PERIPHERALS = ["MultiAccount", "SymmioPartyB", "InstantLayer", "SymbolManager", "FeeDistributor", "MuonSignatureVerifier", "SymmioLiquidator"];
+const INSTANT_LAYER_FACETS = [
+	"DiamondCutFacet",
+	"DiamondLoupeFacet",
+	"ControlFacet",
+	"ExecutionFacet",
+	"DelegationFacet",
+	"ViewFacet",
+	"MigrationFacet",
+];
+
+const PERIPHERALS = ["MultiAccount", "SymmioPartyB", "SymbolManager", "FeeDistributor", "MuonSignatureVerifier", "SymmioLiquidator"];
 
 function entries() {
 	const map = {};
@@ -80,11 +90,14 @@ function entries() {
 	map["gaslessLayer/GaslessWalletDeployerLib"] = "libraries";
 	map["gaslessLayer/GaslessWalletExecutionLib"] = "libraries";
 	map["gaslessLayer/GaslessFeeQuoteLib"] = "libraries";
+	map["instantLayer/Diamond"] = "diamonds";
+	map["instantLayer/Init"] = "peripherals";
 	for (const name of CORE_FACETS) map[`core/${name}`] = "facets";
 	for (const name of CORE_LIBRARIES) map[`core/${name}`] = "libraries";
 	for (const name of ACCOUNT_LAYER_FACETS) map[`accountLayer/${name}`] = "facets";
 	for (const name of ACCOUNT_LAYER_LIBRARIES) map[`accountLayer/${name}`] = "libraries";
 	for (const name of EXPRESS_FACETS) map[`expressProvider/${name}`] = "facets";
+	for (const name of INSTANT_LAYER_FACETS) map[`instantLayer/${name}`] = "facets";
 	for (const name of PERIPHERALS) map[`peripherals/${name}`] = "peripherals";
 	return Object.freeze(map);
 }

@@ -56,7 +56,7 @@ function expectedLinks(scope: DiamondScope, spec: DeploymentSpec): string[] {
 describe("deployment manifest", function () {
 	const artifacts = collectArtifacts(path.resolve("artifacts/contracts"))
 
-	for (const scope of ["core", "accountLayer"] as const) {
+	for (const scope of ["core", "accountLayer", "instantLayer"] as const) {
 		it(`matches compiled direct link references for every ${scope} deployment`, function () {
 			for (const spec of [...Object.values(LibrarySpecs[scope]), ...Object.values(FacetSpecs[scope])]) {
 				const artifact = resolveArtifact(spec, artifacts)
