@@ -323,6 +323,22 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		return (adjustment.restating, adjustment.restatementEpoch);
 	}
 
+	/// @notice Returns restatement flags and epochs in the same order as the supplied symbol IDs.
+	/// @dev Unset symbols return false and epoch 0, matching getRestatementState.
+	function getRestatementStates(uint256[] calldata symbolIds) external view returns (bool[] memory restating, uint256[] memory epochs) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		restating = new bool[](symbolIds.length);
+		epochs = new uint256[](symbolIds.length);
+		for (uint256 i = 0; i < symbolIds.length;) {
+			SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolIds[i]];
+			restating[i] = adjustment.restating;
+			epochs[i] = adjustment.restatementEpoch;
+			unchecked {
+				++i;
+			}
+		}
+	}
+
 	function getRestatementFundingProgress(
 		uint256 symbolId
 	)

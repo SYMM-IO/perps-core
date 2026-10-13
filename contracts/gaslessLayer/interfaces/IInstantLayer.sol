@@ -6,7 +6,7 @@ pragma solidity 0.8.36;
 /// @dev The InstantLayer admin must grant the gateway OPERATOR_ROLE to call `executeBatch`.
 ///      `executeBatch` requires `onlyRole(OPERATOR_ROLE)` on InstantLayer.
 /// @dev Structs copied verbatim from perps-core
-///      contracts/instantLayer/InstantLayer.sol so calldata encoding matches exactly.
+///      contracts/instantLayer/InstantLayerTypes.sol so calldata encoding matches exactly.
 interface IInstantLayer {
 	struct Account {
 		address addr;

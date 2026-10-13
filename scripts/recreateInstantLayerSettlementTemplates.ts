@@ -138,7 +138,7 @@ async function main(): Promise<void> {
 	if ((await ethers.provider.getCode(instantLayerAddress)) === "0x") throw new Error(`No contract code at ${instantLayerAddress}`)
 
 	const authority = await authorityForMode(execute)
-	const readOnlyInstantLayer: any = await ethers.getContractAt("InstantLayer", instantLayerAddress)
+	const readOnlyInstantLayer: any = await ethers.getContractAt("IInstantLayerDiamond", instantLayerAddress)
 	const instantLayer: any = authority.signer ? readOnlyInstantLayer.connect(authority.signer) : readOnlyInstantLayer
 	const configuredSymmio = ethers.getAddress(await readOnlyInstantLayer.symmio())
 	if (expectedSymmio && configuredSymmio !== expectedSymmio) {

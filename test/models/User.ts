@@ -1,5 +1,5 @@
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/types"
-import { BigNumberish, ethers, EventLog } from "ethers"
+import { BaseContract, BigNumberish, ContractTransactionReceipt, ethers } from "ethers"
 
 import type { HighLowPriceSigStruct } from "../../src/types/facets/ForceActions/ForceActionsFacet.js"
 import type { LiquidationSigStruct } from "../../src/types/facets/PartyALiquidation/PartyALiquidationFacet.js"
@@ -39,6 +39,40 @@ export class User extends PartyEntity {
 		await setBalance(this.signer.address, amount)
 	}
 
+	protected async executeCoreCall(contract: BaseContract, method: string, args: readonly unknown[]): Promise<ContractTransactionReceipt> {
+		return runTx(contract.connect(this.signer).getFunction(method)(...args))
+	}
+
+	protected quoteIdFromReceipt(receipt: ContractTransactionReceipt): bigint {
+		for (const log of receipt.logs) {
+			if (log.address.toLowerCase() !== this.context.diamond.toLowerCase()) continue
+			const event = this.context.partyAFacet.interface.parseLog(log)
+			if (event?.name === "SendQuote") return BigInt(event.args.quoteId)
+		}
+		throw new Error("SendQuote event not found in transaction receipt")
+	}
+
+	protected async sendQuoteArguments(request: QuoteRequest): Promise<unknown[]> {
+		const affiliate =
+			request.affiliate && request.affiliate !== ethers.ZeroAddress ? request.affiliate : await this.context.accountManager.getAddress()
+		return [
+			request.partyBWhiteList,
+			request.symbolId,
+			request.positionType,
+			request.orderType,
+			request.price,
+			request.quantity,
+			request.cva,
+			request.lf,
+			request.partyAmm,
+			request.partyBmm,
+			request.maxFundingRate,
+			await request.deadline,
+			affiliate,
+			await request.upnlSig,
+		]
+	}
+
 	public async sendQuote(request: QuoteRequest = limitQuoteRequestBuilder().build()): Promise<bigint> {
 		await logDetailedDebug(async () =>
 			serializeToJson({
@@ -47,40 +81,9 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		// Use request.affiliate if explicitly set (non-zero), otherwise fall back to accountManager
-		const affiliate =
-			request.affiliate && request.affiliate !== "0x0000000000000000000000000000000000000000" ? request.affiliate : this.context.accountManager
-		let tx = await this.context.partyAFacet
-			.connect(this.signer)
-			.sendQuoteWithAffiliate(
-				request.partyBWhiteList,
-				request.symbolId,
-				request.positionType,
-				request.orderType,
-				request.price,
-				request.quantity,
-				request.cva,
-				request.lf,
-				request.partyAmm,
-				request.partyBmm,
-				request.maxFundingRate,
-				await request.deadline,
-				affiliate,
-				await request.upnlSig,
-			)
-		const receipt = await tx.wait()
-
-		if (receipt && receipt.logs) {
-			const sendQuoteEvent = receipt.logs.find((log): log is EventLog => {
-				return (log as EventLog).eventName === "SendQuote"
-			})
-
-			if (sendQuoteEvent && sendQuoteEvent.args) {
-				const id = sendQuoteEvent.args.quoteId
-				return BigInt(id)
-			}
-		}
-		throw new Error("SendQuote event not found in transaction receipt")
+		return this.quoteIdFromReceipt(
+			await this.executeCoreCall(this.context.partyAFacet, "sendQuoteWithAffiliate", await this.sendQuoteArguments(request)),
+		)
 	}
 
 	public async sendQuoteWithData(request: QuoteRequestWithData = limitQuoteRequestWithDataBuilder().build()): Promise<bigint> {
@@ -91,37 +94,23 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		let tx = await this.context.partyAFacet
-			.connect(this.signer)
-			.sendQuoteWithAffiliateAndData(
-				request.partyBWhiteList,
-				request.symbolId,
-				request.positionType,
-				request.orderType,
-				request.price,
-				request.quantity,
-				request.cva,
-				request.lf,
-				request.partyAmm,
-				request.partyBmm,
-				await request.deadline,
-				this.context.accountManager,
-				await request.upnlSig,
-				request.data,
-			)
-		const receipt = await tx.wait()
-
-		if (receipt && receipt.logs) {
-			const sendQuoteEvent = receipt.logs.find((log): log is EventLog => {
-				return (log as EventLog).eventName === "SendQuote"
-			})
-
-			if (sendQuoteEvent && sendQuoteEvent.args) {
-				const id = sendQuoteEvent.args.quoteId
-				return BigInt(id)
-			}
-		}
-		throw new Error("SendQuote event not found in transaction receipt")
+		const receipt = await this.executeCoreCall(this.context.partyAFacet, "sendQuoteWithAffiliateAndData", [
+			request.partyBWhiteList,
+			request.symbolId,
+			request.positionType,
+			request.orderType,
+			request.price,
+			request.quantity,
+			request.cva,
+			request.lf,
+			request.partyAmm,
+			request.partyBmm,
+			await request.deadline,
+			await this.context.accountManager.getAddress(),
+			await request.upnlSig,
+			request.data,
+		])
+		return this.quoteIdFromReceipt(receipt)
 	}
 
 	public async requestToCancelQuote(id: BigNumberish) {
@@ -132,7 +121,7 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(this.context.partyAFacet.connect(this.signer).requestToCancelQuote(id))
+		await this.executeCoreCall(this.context.partyAFacet, "requestToCancelQuote", [id])
 	}
 
 	public async forceCancelQuote(id: BigNumberish) {
@@ -143,7 +132,7 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(this.context.forceActionsFacet.connect(this.signer).forceCancelQuote(id))
+		await this.executeCoreCall(this.context.forceActionsFacet, "forceCancelQuote", [id])
 	}
 
 	public async forceCancelCloseRequest(id: BigNumberish) {
@@ -154,7 +143,7 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(this.context.forceActionsFacet.connect(this.signer).forceCancelCloseRequest(id))
+		await this.executeCoreCall(this.context.forceActionsFacet, "forceCancelCloseRequest", [id])
 	}
 
 	public async getBalanceInfo(): Promise<BalanceInfo> {
@@ -184,11 +173,13 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(
-			this.context.partyAFacet
-				.connect(this.signer)
-				.requestToClosePosition(id, request.closePrice, request.quantityToClose, request.orderType, await request.deadline),
-		)
+		await this.executeCoreCall(this.context.partyAFacet, "requestToClosePosition", [
+			id,
+			request.closePrice,
+			request.quantityToClose,
+			request.orderType,
+			await request.deadline,
+		])
 	}
 
 	public async forceClosePosition(id: BigNumberish, signature: HighLowPriceSigStruct) {
@@ -199,7 +190,7 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(this.context.forceActionsFacet.connect(this.signer).forceClosePosition(id, signature))
+		await this.executeCoreCall(this.context.forceActionsFacet, "forceClosePosition", [id, signature])
 	}
 
 	public async settleAndForceClosePosition(
@@ -217,7 +208,7 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(this.context.forceActionsFacet.connect(this.signer).settleAndForceClosePosition(id, highLowPriceSigStruct, settleSig, updatedPrices))
+		await this.executeCoreCall(this.context.forceActionsFacet, "settleAndForceClosePosition", [id, highLowPriceSigStruct, settleSig, updatedPrices])
 	}
 
 	public async requestToCancelCloseRequest(id: BigNumberish) {
@@ -228,7 +219,7 @@ export class User extends PartyEntity {
 				userUpnl: await this.getUpnl(),
 			}),
 		)
-		await runTx(this.context.partyAFacet.connect(this.signer).requestToCancelCloseRequest(id))
+		await this.executeCoreCall(this.context.partyAFacet, "requestToCancelCloseRequest", [id])
 	}
 
 	public getAddress() {

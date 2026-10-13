@@ -42,8 +42,8 @@ export function validateAddress(label: string, value: string | undefined): strin
 
 export function parseDiamondScope(value: string | undefined): DiamondScope {
 	const scope = value ?? "core"
-	if (scope !== "core" && scope !== "accountLayer") {
-		throw new Error(`DIAMOND_SCOPE must be "core" or "accountLayer", received: ${scope}`)
+	if (scope !== "core" && scope !== "accountLayer" && scope !== "instantLayer") {
+		throw new Error(`DIAMOND_SCOPE must be "core", "accountLayer" or "instantLayer", received: ${scope}`)
 	}
 	return scope
 }

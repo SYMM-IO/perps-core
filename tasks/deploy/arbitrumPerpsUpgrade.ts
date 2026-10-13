@@ -298,7 +298,7 @@ async function contractsFor(ethers: any, input: ArbitrumPerpsUpgradeInput) {
 		"contracts/expressWithdrawLayer/facets/Control/ControlFacet.sol:ControlFacet",
 		input.contracts.expressProvider,
 	)
-	const currentInstant = await ethers.getContractAt("InstantLayer", input.contracts.currentInstantLayer)
+	const currentInstant = await ethers.getContractAt("IInstantLayerDiamond", input.contracts.currentInstantLayer)
 	return { coreView, coreControl, accountView, accountControl, expressControl, currentInstant }
 }
 
@@ -480,6 +480,28 @@ async function deployFacetScope(
 	updateStage(report, batchId, actions.length ? "required" : "complete", { actionCount: actions.length })
 }
 
+/** Explorer verification records for the InstantLayer diamond a checkpoint describes. */
+function instantLayerVerificationRecords(
+	checkpoint: DeploymentCheckpoint,
+): Array<{ name: string; address: string; constructorArguments: unknown[] }> {
+	const il = checkpoint.contracts.instantLayerDiamond
+	if (!il?.diamond || !il.diamondCutFacet || !il.init || !il.facets) throw new Error("InstantLayer diamond checkpoint is incomplete")
+	return [
+		{
+			name: "contracts/diamond/facets/DiamondCut/DiamondCutFacet.sol:DiamondCutFacet",
+			address: il.diamondCutFacet.address,
+			constructorArguments: [],
+		},
+		{ name: "contracts/diamond/Diamond.sol:Diamond", address: il.diamond.address, constructorArguments: il.diamond.constructorArgs || [] },
+		{ name: "contracts/instantLayer/Init.sol:Init", address: il.init.address, constructorArguments: [] },
+		...Object.entries(il.facets).map(([name, facet]) => ({
+			name: FacetSpecs.instantLayer[name].artifact,
+			address: facet.address,
+			constructorArguments: [],
+		})),
+	]
+}
+
 async function deployNewInstantLayer(
 	hre: any,
 	ethers: any,
@@ -499,7 +521,8 @@ async function deployNewInstantLayer(
 	report.addresses.newInstantLayer = address
 	updateStage(report, "instantLayerDeployment", "complete", {
 		address,
-		constructorArguments: [input.contracts.core, input.governance.safe],
+		initArguments: [input.contracts.core, input.governance.safe],
+		verificationRecords: instantLayerVerificationRecords(checkpoint),
 	})
 }
 
@@ -614,7 +637,7 @@ async function captureLegacyStateSnapshot(
 	const blockNumber = await ethers.provider.getBlockNumber()
 	const block = await ethers.provider.getBlock(blockNumber)
 	if (!block?.hash) throw new Error(`Cannot bind the legacy-state snapshot to Arbitrum block ${blockNumber}`)
-	const currentInstant = await ethers.getContractAt("InstantLayer", input.contracts.currentInstantLayer)
+	const currentInstant = await ethers.getContractAt("IInstantLayerDiamond", input.contracts.currentInstantLayer)
 	const currentGasless = await ethers.getContractAt("GaslessLayer", input.contracts.currentGaslessLayer)
 	const liquidator = await ethers.getContractAt("SymmioLiquidator", input.contracts.liquidatorProxy)
 	const coreView = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", input.contracts.core)
@@ -754,7 +777,7 @@ async function planLegacyInstantStateActions(
 ): Promise<UpgradeAction[]> {
 	const address = report.addresses.newInstantLayer
 	if (!address) throw new Error("New InstantLayer deployment is missing")
-	const instant = await ethers.getContractAt("InstantLayer", address)
+	const instant = await ethers.getContractAt("IInstantLayerDiamond", address)
 	const nextTemplateId = Number(await instant.getNextTemplateId())
 	if (nextTemplateId > snapshot.templates.length) {
 		throw new Error(`New InstantLayer has ${nextTemplateId} templates, more than the pinned legacy count ${snapshot.templates.length}`)
@@ -867,7 +890,7 @@ async function ensurePeripheralReplacementState(
 	if (!report.addresses.newInstantLayer || !report.addresses.newGaslessLayer) {
 		throw new Error("The original peripheral deployment must be recorded before replacement recovery can run")
 	}
-	const current = await ethers.getContractAt("InstantLayer", report.addresses.newInstantLayer)
+	const current = await ethers.getContractAt("IInstantLayerDiamond", report.addresses.newInstantLayer)
 	const mismatch = await instantTemplateContaminationError(current, snapshot)
 	if (!mismatch) {
 		updateStage(report, "peripheralReplacement", "complete", {
@@ -899,9 +922,10 @@ async function seedReplacementInstantLayer(
 	const address = await instant.getAddress()
 	const deployerAddress = ethers.getAddress(deployer.address)
 	const safe = ethers.getAddress(input.governance.safe)
-	const [defaultAdminRole, setterRole, operatorRole, revokerRole] = await Promise.all([
+	const [defaultAdminRole, setterRole, templateManagerRole, operatorRole, revokerRole] = await Promise.all([
 		instant.DEFAULT_ADMIN_ROLE(),
 		instant.SETTER_ROLE(),
+		instant.TEMPLATE_MANAGER_ROLE(),
 		instant.OPERATOR_ROLE(),
 		instant.REVOKER_ROLE(),
 	])
@@ -952,6 +976,7 @@ async function seedReplacementInstantLayer(
 	for (const [name, roleHash] of [
 		["DEFAULT_ADMIN_ROLE", defaultAdminRole],
 		["SETTER_ROLE", setterRole],
+		["TEMPLATE_MANAGER_ROLE", templateManagerRole],
 		["OPERATOR_ROLE", operatorRole],
 		["REVOKER_ROLE", revokerRole],
 	] as const) {
@@ -964,6 +989,7 @@ async function seedReplacementInstantLayer(
 		for (const [name, roleHash] of [
 			["OPERATOR_ROLE", operatorRole],
 			["SETTER_ROLE", setterRole],
+			["TEMPLATE_MANAGER_ROLE", templateManagerRole],
 			["DEFAULT_ADMIN_ROLE", defaultAdminRole],
 		] as const) {
 			if (await instant.hasRole(roleHash, deployerAddress)) {
@@ -972,11 +998,20 @@ async function seedReplacementInstantLayer(
 		}
 	}
 
+	// The deployer owns a replacement diamond it deployed. The Safe becomes pending owner here
+	// and accepts in its governance batch.
+	if (deployerAddress !== safe && ethers.getAddress(await instant.getOwner()) === deployerAddress) {
+		if (ethers.getAddress(await instant.pendingOwner()) !== safe) {
+			await send(connected.transferOwnership(safe), "transfer replacement InstantLayer ownership to Safe")
+		}
+	}
+
 	const mismatch = await instantTemplateParityError(instant, snapshot)
 	if (mismatch) throw new Error(`Replacement InstantLayer parity verification failed: ${mismatch}`)
 	for (const [name, roleHash] of [
 		["DEFAULT_ADMIN_ROLE", defaultAdminRole],
 		["SETTER_ROLE", setterRole],
+		["TEMPLATE_MANAGER_ROLE", templateManagerRole],
 		["OPERATOR_ROLE", operatorRole],
 		["REVOKER_ROLE", revokerRole],
 	] as const) {
@@ -986,12 +1021,21 @@ async function seedReplacementInstantLayer(
 		for (const [name, roleHash] of [
 			["DEFAULT_ADMIN_ROLE", defaultAdminRole],
 			["SETTER_ROLE", setterRole],
+			["TEMPLATE_MANAGER_ROLE", templateManagerRole],
 			["OPERATOR_ROLE", operatorRole],
 		] as const) {
 			if (await instant.hasRole(roleHash, deployerAddress)) {
 				throw new Error(`Deployer still holds replacement InstantLayer ${name} after handover`)
 			}
+			if (await instant.isRoleAdmin(deployerAddress, roleHash)) {
+				throw new Error(`Deployer is still a role admin of replacement InstantLayer ${name} after handover`)
+			}
 		}
+	}
+	const replacementOwner = ethers.getAddress(await instant.getOwner())
+	const replacementPendingOwner = ethers.getAddress(await instant.pendingOwner())
+	if (replacementOwner !== safe && replacementPendingOwner !== safe) {
+		throw new Error(`Safe is neither owner nor pending owner of the replacement InstantLayer (owner ${replacementOwner})`)
 	}
 }
 
@@ -1018,7 +1062,8 @@ async function repairInstantLayer(
 	await seedReplacementInstantLayer(ethers, instant, deployer, input, snapshot)
 	updateStage(report, "instantLayerReplacement", "complete", {
 		address,
-		constructorArguments: [input.contracts.core, deployer.address],
+		initArguments: [input.contracts.core, deployer.address],
+		verificationRecords: instantLayerVerificationRecords(checkpoint),
 		templateCount: snapshot.templates.length,
 		templateSource: input.contracts.currentInstantLayer,
 		snapshotBlockNumber: snapshot.blockNumber,
@@ -1298,8 +1343,22 @@ async function planReusedLiquidatorStateActions(
 async function planInstantLayerActions(ethers: any, input: ArbitrumPerpsUpgradeInput, report: ArbitrumPerpsUpgradeReport): Promise<UpgradeAction[]> {
 	const address = report.addresses.newInstantLayer
 	if (!address) throw new Error("New InstantLayer deployment is missing")
-	const instant = await ethers.getContractAt("InstantLayer", address)
+	const instant = await ethers.getContractAt("IInstantLayerDiamond", address)
 	const actions: UpgradeAction[] = []
+	const instantOwner = ethers.getAddress(await instant.getOwner())
+	const instantPendingOwner = ethers.getAddress(await instant.pendingOwner())
+	if (instantOwner !== ethers.getAddress(input.governance.safe) && instantPendingOwner !== ethers.getAddress(input.governance.safe)) {
+		throw new Error(`Safe ${input.governance.safe} is neither owner nor pending owner of new InstantLayer ${address} (owner ${instantOwner})`)
+	}
+	if (instantPendingOwner === ethers.getAddress(input.governance.safe)) {
+		actions.push(
+			action(
+				address,
+				instant.interface.encodeFunctionData("acceptOwnership", []),
+				`Accept ownership of new InstantLayer ${address} as Safe ${input.governance.safe}`,
+			),
+		)
+	}
 	const revokerRole = role(ethers, ROLE.REVOKER_ROLE)
 	if (!(await instant.hasRole(revokerRole, input.governance.safe))) {
 		actions.push(
@@ -1467,7 +1526,7 @@ async function planPartyBWiring(ethers: any, input: ArbitrumPerpsUpgradeInput, r
 	if (!newInstant) throw new Error("New InstantLayer deployment is missing; PartyB wiring cannot be planned")
 	const configured = resolvedInstantLayerPartyBs(ethers, input)
 	const safe = ethers.getAddress(input.governance.safe)
-	const instant = await ethers.getContractAt("InstantLayer", newInstant)
+	const instant = await ethers.getContractAt("IInstantLayerDiamond", newInstant)
 	const { accountView, accountControl } = await contractsFor(ethers, input)
 	const operatorRole = role(ethers, ROLE.OPERATOR_ROLE)
 	const accountInstantRole = role(ethers, ROLE.INSTANT_LAYER_ROLE)
@@ -1663,7 +1722,7 @@ async function planGovernance(ethers: any, input: ArbitrumPerpsUpgradeInput, rep
 				),
 			)
 		}
-		const discardedInstantContract = await ethers.getContractAt("InstantLayer", discardedInstant)
+		const discardedInstantContract = await ethers.getContractAt("IInstantLayerDiamond", discardedInstant)
 		const discardedOperatorRole = await discardedInstantContract.OPERATOR_ROLE()
 		if (await discardedInstantContract.hasRole(discardedOperatorRole, discardedGasless)) {
 			quarantine.push(
@@ -1798,11 +1857,7 @@ async function publishDeployments(hre: any, input: ArbitrumPerpsUpgradeInput, re
 		}
 	}
 	if (!report.addresses.newInstantLayer) throw new Error("New InstantLayer address is missing")
-	records.push({
-		name: "contracts/instantLayer/InstantLayer.sol:InstantLayer",
-		address: report.addresses.newInstantLayer,
-		constructorArguments: [input.contracts.core, input.governance.safe],
-	})
+	records.push(...(((report.stages.instantLayerDeployment as any)?.verificationRecords || []) as any[]))
 	records.push(...(((report.stages.gaslessLayerDeployment as any)?.verificationRecords || []) as any[]))
 	const publicationRecords: typeof records = []
 	for (const record of records) {
@@ -1842,11 +1897,7 @@ async function publishReplacementPeripherals(hre: any, input: ArbitrumPerpsUpgra
 		throw new Error("Replacement peripherals must be deployed and verified before explorer publication")
 	}
 	const records: Array<{ name: string; address: string; constructorArguments: unknown[]; libraries?: Record<string, string> }> = [
-		{
-			name: "contracts/instantLayer/InstantLayer.sol:InstantLayer",
-			address: report.addresses.newInstantLayer,
-			constructorArguments: instantStage.constructorArguments,
-		},
+		...((instantStage.verificationRecords || []) as any[]),
 		...((gaslessStage.verificationRecords || []) as any[]),
 	]
 	const publicationRecords: typeof records = []

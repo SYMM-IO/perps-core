@@ -480,6 +480,18 @@ const CORNER_LABELS: Readonly<Record<FuzzCornerOperation, string>> = {
 	EXPIRE_QUOTE: "quote expiry",
 	LIQUIDATE_PARTY_A: "Party A liquidation",
 	LIQUIDATE_PARTY_B: "Party B liquidation",
+	ACCOUNT_LAYER_LIFECYCLE: "AccountLayer lifecycle",
+	INSTANT_LAYER_LIFECYCLE: "InstantLayer lifecycle",
+	ACCOUNT_LAYER_SINGLE_VA: "Single VA routing",
+	ACCOUNT_LAYER_OWNERSHIP: "Account ownership",
+	ACCOUNT_LAYER_LEGACY_IMPORT: "Legacy account import",
+	ACCOUNT_LAYER_MARGIN_RECOVERY: "Safe margin and recovery",
+	ACCOUNT_LAYER_TIMELOCK: "AccountLayer timelocks",
+	INSTANT_LAYER_TIMELOCK: "InstantLayer timelocks",
+	INSTANT_LAYER_DELEGATION: "Delegation lifecycle",
+	INSTANT_LAYER_FLEX_FIELDS: "Flex field fills",
+	INSTANT_LAYER_TEMPLATE: "Instant-open template",
+	INSTANT_LAYER_PARTY_B_RELAYS: "PartyB signed relays",
 }
 
 function humanizeAction(action: string): string {

@@ -199,7 +199,7 @@ export class OpenPositionValidator implements TransactionValidator {
 		const reservedOpenFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, oldQuote.id!, arg.fillAmount)
 		const executedOpenFee = await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)
 		const openFeeDelta = executedOpenFee > reservedOpenFee ? executedOpenFee - reservedOpenFee : reservedOpenFee - executedOpenFee
-		if (oldQuote.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING)) {
+		if (oldQuote.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING) || arg.newQuoteTargetStatus === QuoteStatus.CANCELED) {
 			expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.be.equal(
 				(oldBalanceInfoPartyA.totalPendingLockedPartyA - oldLockedValuesPartyA).toString(),
 			)

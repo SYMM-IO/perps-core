@@ -3,6 +3,7 @@ import { expect } from "chai"
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 import { QuoteStatus } from "./models/Enums.js"
+import { configureFuzzLayers } from "./models/FuzzLayerUser.js"
 import { FUZZ_CORNER_OPERATIONS, type FuzzCornerOperation, type FuzzModelEvent } from "./models/FuzzLogTypes.js"
 import { Hedger } from "./models/Hedger.js"
 import { TestManager } from "./models/TestManager.js"
@@ -60,6 +61,7 @@ export function shouldBehaveLikeFuzzCornerCampaign(): void {
 		context.manager = manager
 		await manager.start()
 		await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(10_000_000n))
+		await configureFuzzLayers(context)
 
 		const reusableUser = new User(context, context.signers.user)
 		await reusableUser.setup()

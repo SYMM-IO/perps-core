@@ -1,5 +1,6 @@
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
+import { configureFuzzLayers, FuzzLayerUser } from "./models/FuzzLayerUser.js"
 import type {
 	FuzzActorInfo,
 	FuzzFailure,
@@ -225,11 +226,12 @@ async function createActors(context: RunContext, manager: TestManager, checkpoin
 
 	for (const [index, signer] of userSigners.entries()) {
 		if (stop.requested) break
-		const user = new User(context, signer)
+		const route = index === 0 ? "direct" : index === 1 ? "account-layer" : "instant-layer"
+		const user = route === "direct" ? new User(context, signer) : new FuzzLayerUser(context, signer, route)
 		await user.setup()
 		await user.setNativeBalance(100n * 10n ** 18n)
 		await user.setBalances(decimal(1_000_000n), decimal(1_000_000n), decimal(1_000_000n))
-		const info = { id: `user#${index + 1}`, address: await user.getAddress() }
+		const info = { id: `user#${index + 1}/${route}`, address: await user.getAddress() }
 		users.push({ info, user, controller: new UserController(manager, user, checkpoint, info.id, controllerOptions) })
 	}
 
@@ -332,6 +334,7 @@ export async function runFuzzSimulation(options: FuzzRunnerOptions = {}): Promis
 		context.manager = manager
 		await manager.start()
 		await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(10_000_000n))
+		await configureFuzzLayers(context)
 
 		const checkpoint = QuoteCheckpoint.getInstance()
 		checkpoint.reset()
@@ -368,7 +371,8 @@ export async function runFuzzSimulation(options: FuzzRunnerOptions = {}): Promis
 		boundary = "execution"
 
 		await runFuzzRootLoop({ mode: runMode, rootActions, stop }, async index => {
-			const user = pick(users)
+			// Every configured route participates before random actor selection resumes.
+			const user = index <= users.length ? users[index - 1] : pick(users)
 			const hedger = pick(hedgers)
 			const rootStartedAt = Date.now()
 			let rootResult: Omit<FuzzRootResult, "index" | "total" | "durationMs" | "queue" | "userId" | "hedgerId"> | undefined
