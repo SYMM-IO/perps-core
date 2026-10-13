@@ -18,19 +18,9 @@ export function compareRuntime(artifact, code) {
 		}
 	return expected === actual;
 }
-export async function preparePeripheral({
-	provider,
-	system,
-	nodeId,
-	deployer,
-	authority,
-	inventory = [],
-	inventoryReviewed = false,
-	baseline,
-	root = ROOT,
-}) {
+export async function preparePeripheral({ provider, system, nodeId, deployer, authority, baseline, root = ROOT }) {
 	const node = system.nodes.find(n => n.id === nodeId);
-	if (!["partyB", "instantLayer", "verifier"].includes(node?.kind)) throw new Error("Choose PartyB, InstantLayer, or the signature verifier");
+	if (!["partyB", "verifier"].includes(node?.kind)) throw new Error("Choose PartyB or the signature verifier");
 	if (node.status !== "observed") throw new Error("Inspect the selected contract successfully first");
 	deployer = getAddress(deployer);
 	authority = getAddress(authority);
@@ -82,11 +72,7 @@ export async function preparePeripheral({
 		});
 	};
 	const standard = new Interface(["function grantRole(bytes32,address)", "function revokeRole(bytes32,address)"]);
-	const coreI = new Interface([
-		"function grantRole(address,bytes32)",
-		"function revokeRole(address,bytes32)",
-		"function setSignatureVerifierAddress(address)",
-	]);
+	const coreI = new Interface(["function setSignatureVerifierAddress(address)"]);
 	const byId = Object.fromEntries(system.nodes.map(n => [n.id, n]));
 	const authorityCode = await pinCode(authority);
 	if (authorityCode !== "0x") {
@@ -102,7 +88,7 @@ export async function preparePeripheral({
 	const nonce = await provider.getTransactionCount(deployer, "pending"),
 		replacement = getCreateAddress({ from: deployer, nonce });
 	if ((await provider.getCode(replacement)) !== "0x") throw new Error("Predicted deployment address is occupied");
-	const constructorArgs = node.kind === "partyB" ? [] : node.kind === "instantLayer" ? [byId.core.address, authority] : [authority];
+	const constructorArgs = node.kind === "partyB" ? [] : [authority];
 	const creation = await new ContractFactory(artifact.abi, artifact.bytecode).getDeployTransaction(...constructorArgs);
 	actions.push({
 		id: "deploy",
@@ -131,11 +117,7 @@ export async function preparePeripheral({
 	};
 	const roles = {};
 	if (node.kind !== "partyB") {
-		for (const name of [
-			"DEFAULT_ADMIN_ROLE",
-			"SETTER_ROLE",
-			...(node.kind === "instantLayer" ? ["OPERATOR_ROLE", "TEMPLATE_MANAGER_ROLE", "REVOKER_ROLE"] : []),
-		]) {
+		for (const name of ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"]) {
 			const role = name === "DEFAULT_ADMIN_ROLE" ? ZeroHash : id(name);
 			if ((await source("getRoleAdmin", [role])) !== ZeroHash) throw new Error(`Custom role admin for ${name} requires a dedicated migration`);
 			const count = Number(await source("getRoleMemberCount", [role]));
@@ -166,7 +148,7 @@ export async function preparePeripheral({
 			before: [node.address, core, signer, paused],
 			after: [node.address, core, signer, paused],
 		});
-	} else if (node.kind === "verifier") {
+	} else {
 		await checkRole(byId.core.address, ZeroHash, true);
 		const actual = await read(byId.core.address, "function getSignatureVerifier() view returns(address)");
 		if (actual.toLowerCase() !== node.address.toLowerCase()) throw new Error("Core's active verifier differs from the selected source");
@@ -209,86 +191,9 @@ export async function preparePeripheral({
 			before: `${keys.length} keys / ${gateways.length} gateways / all 256 permission IDs`,
 			after: "Preserved",
 		});
-	} else {
-		if (!inventoryReviewed) blockers.push("Confirm the migration inventory and the need for users to reauthorize InstantLayer sessions");
-		warnings.push(
-			"InstantLayer's address and EIP-712 domain change. Existing user nonces, delegations and usage mappings are not migrated. Users must reauthorize; coordinate clients and operators before cutover.",
-		);
-		warnings.push(
-			"Whitelist and PartyB mappings are not enumerable. Only the reviewed address inventory is migrated; the workbench does not claim to discover all integrations.",
-		);
-		const core = await source("symmio");
-		if (core.toLowerCase() !== byId.core.address.toLowerCase()) throw new Error("InstantLayer's immutable Core differs from the profile");
-		const accountLayer = await source("accountLayer"),
-			cooldown = await source("revocationCooldown"),
-			transient = await source("transientContextEnabled");
-		add("Bind AccountLayer", replacement, iface, "setAccountLayer", [accountLayer]);
-		add("Preserve revocation cooldown", replacement, iface, "setRevocationCooldown", [cooldown]);
-		add("Preserve execution context mode", replacement, iface, "setTransientContextEnabled", [transient]);
-		const count = Number(await source("getNextTemplateId"));
-		if (count > 200) throw new Error("Template inventory exceeds interactive limit of 200");
-		for (let i = 0; i < count; i++) {
-			const t = await source("getTemplate", [i]),
-				ops = await source("getTemplateOperations", [i]),
-				open = await source("templateInstantOpenMode", [i]);
-			add(`Copy template ${i}: ${t.name}`, replacement, iface, "addTemplate", [t.name, ops]);
-			if (!t.active) add(`Keep template ${i} inactive`, replacement, iface, "setTemplateActive", [i, false]);
-			if (open) add(`Preserve template ${i} instant-open mode`, replacement, iface, "setTemplateInstantOpenMode", [i, true]);
-		}
-		const known = [...new Set([...system.nodes.map(n => n.address), ...Object.values(roles).flat(), ...inventory.map(v => getAddress(v))])];
-		const partyBs = [];
-		for (const target of known) {
-			if (await source("registeredPartyBs", [target])) partyBs.push(target);
-			const allowed = await source("whitelistedTargets", [target]);
-			if (allowed && target.toLowerCase() !== core.toLowerCase())
-				add(`Whitelist ${target}`, replacement, iface, "setTargetWhitelist", [target, true]);
-			if (!allowed && target.toLowerCase() === core.toLowerCase())
-				add("Preserve disabled Core target", replacement, iface, "setTargetWhitelist", [target, false]);
-		}
-		if (partyBs.length) add(`Register ${partyBs.length} PartyB contracts`, replacement, iface, "registerPartyBs", [partyBs]);
-		// Registration grants OPERATOR_ROLE; remove it if absent in the source.
-		for (const party of partyBs)
-			if (!roles.OPERATOR_ROLE.includes(party))
-				add("Preserve PartyB operator restriction", replacement, standard, "revokeRole", [id("OPERATOR_ROLE"), party]);
-		await checkRole(byId.core.address, ZeroHash, true);
-		for (const party of partyBs) {
-			const trusted = await read(party, "function hasRole(bytes32,address) view returns(bool)", [id("TRUSTED_ROLE"), node.address]);
-			if (trusted) {
-				await checkRole(party, ZeroHash);
-				add("Authorize replacement in PartyB", party, standard, "grantRole", [id("TRUSTED_ROLE"), replacement], "cutover");
-			}
-		}
-		add("Authorize replacement in Core", byId.core.address, coreI, "grantRole", [replacement, id("INSTANT_LAYER_ROLE")], "cutover");
-		if (byId.gasless) {
-			await checkRole(byId.gasless.address, id("CONFIG_ADMIN_ROLE"));
-			const old = await read(byId.gasless.address, "function instantLayer() view returns(address)");
-			if (old.toLowerCase() !== node.address.toLowerCase()) throw new Error("GaslessLayer points to another InstantLayer; review its wiring");
-			add(
-				"Rewire GaslessLayer",
-				byId.gasless.address,
-				new Interface(["function setInstantLayer(address)"]),
-				"setInstantLayer",
-				[replacement],
-				"cutover",
-			);
-			changes.push({ contract: byId.gasless.name, field: "InstantLayer", before: old, after: replacement });
-		}
-		add("Revoke old Core authorization", byId.core.address, coreI, "revokeRole", [node.address, id("INSTANT_LAYER_ROLE")], "retire");
-		for (const party of partyBs)
-			if (await read(party, "function hasRole(bytes32,address) view returns(bool)", [id("TRUSTED_ROLE"), node.address]))
-				add("Revoke old PartyB trust", party, standard, "revokeRole", [id("TRUSTED_ROLE"), node.address], "retire");
-		changes.push({
-			contract: node.name,
-			field: "Configuration",
-			before: `${count} templates / ${partyBs.length} enrolled PartyBs`,
-			after: "Copied from the pinned source",
-		});
 	}
 	if (node.kind !== "partyB") {
-		const initial =
-			node.kind === "instantLayer"
-				? ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "TEMPLATE_MANAGER_ROLE", "OPERATOR_ROLE"]
-				: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"];
+		const initial = ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"];
 		for (const [name, members] of Object.entries(roles))
 			for (const member of members)
 				if (!(initial.includes(name) && member === authority))
@@ -300,8 +205,7 @@ export async function preparePeripheral({
 					name === "DEFAULT_ADMIN_ROLE" ? ZeroHash : id(name),
 					authority,
 				]);
-		if (node.kind === "verifier")
-			add("Switch Core signature verifier", byId.core.address, coreI, "setSignatureVerifierAddress", [replacement], "cutover");
+		add("Switch Core signature verifier", byId.core.address, coreI, "setSignatureVerifierAddress", [replacement], "cutover");
 	}
 	// Configuration must finish before wiring switches; retire obsolete authorization last.
 	const order = { deploy: 0, configure: 1, cutover: 2, retire: 3 };

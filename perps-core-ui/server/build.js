@@ -44,7 +44,7 @@ export async function loadBuild(root = ROOT, scope = "core") {
 		if (matches.length !== 1) throw new Error(`Compile first: expected one artifact for ${name}, found ${matches.length}`);
 		return matches[0];
 	};
-	const componentArtifacts = { instantLayer: "InstantLayer", partyB: "SymmioPartyB", verifier: "MuonSignatureVerifier" };
+	const componentArtifacts = { partyB: "SymmioPartyB", verifier: "MuonSignatureVerifier" };
 	if (!["core", "accountLayer", ...Object.keys(componentArtifacts)].includes(scope)) throw new Error("Unknown contract scope");
 	const specs = componentArtifacts[scope]
 		? { [componentArtifacts[scope]]: { artifact: componentArtifacts[scope], libraries: [] } }

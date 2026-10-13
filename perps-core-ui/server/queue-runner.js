@@ -53,10 +53,10 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 					if (i.encodeFunctionData("hasRole", a.args) === read.data)
 						read.result = i.encodeFunctionResult("hasRole", [a.method === "grantRole"]);
 				}
-				if (a.method === "setSignatureVerifierAddress" || a.method === "setInstantLayer") {
-					const f = a.method === "setInstantLayer" ? "instantLayer" : "getSignatureVerifier";
-					const i = new Interface([`function ${f}() view returns(address)`]);
-					if (read.data === i.encodeFunctionData(f)) read.result = i.encodeFunctionResult(f, [a.args[0]]);
+				if (a.method === "setSignatureVerifierAddress") {
+					const i = new Interface(["function getSignatureVerifier() view returns(address)"]);
+					if (read.data === i.encodeFunctionData("getSignatureVerifier"))
+						read.result = i.encodeFunctionResult("getSignatureVerifier", [a.args[0]]);
 				}
 			}
 		}

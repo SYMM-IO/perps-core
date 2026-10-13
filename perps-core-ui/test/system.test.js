@@ -19,7 +19,6 @@ const files = {
 	cut: "diamond/facets/DiamondCut/DiamondCutFacet.sol/DiamondCutFacet.json",
 	loupe: "diamond/facets/DiamondLoup/DiamondLoupeFacet.sol/DiamondLoupeFacet.json",
 	core: "mocks/WorkbenchFixtures.sol/WorkbenchSystemFacet.json",
-	instant: "instantLayer/InstantLayer.sol/InstantLayer.json",
 	verifier: "helpers/verification/SymmioSignatureVerifier.sol/MuonSignatureVerifier.json",
 	party: "helpers/accounts/SymmioPartyB.sol/SymmioPartyB.json",
 	proxy: "helpers/utils/LocalERC1967Proxy.sol/LocalERC1967Proxy.json",
@@ -64,23 +63,15 @@ async function harness() {
 	await (await verifier.setPublicKeyPermissions([123, 0], [0, 17, 255], true)).wait();
 	await (await verifier.setGatewaySignerPermissions(admin, [0, 255], true)).wait();
 	await (await core.setSignatureVerifierAddress(verifier.target)).wait();
-	const instant = await deploy("instant", [core.target, admin]);
-	await (await instant.setAccountLayer(admin)).wait();
-	await (await instant.addTemplate("Test", [[[], [], []]])).wait();
-	await (await instant.setTemplateInstantOpenMode(0, true)).wait();
-	await (await core.grantRole(instant.target, id("INSTANT_LAYER_ROLE"))).wait();
 	const implementation = await deploy("party"),
 		partyProxy = await deploy("proxy", [implementation.target, implementation.interface.encodeFunctionData("initialize", [admin, core.target])]),
 		party = new Contract(partyProxy.target, artifact(files.party).abi, signer);
-	await (await party.grantRole(id("TRUSTED_ROLE"), instant.target)).wait();
-	await (await instant.registerPartyBs([party.target])).wait();
 	const profile = {
 		id: "test",
 		name: "Local full system",
 		chainId: 31337,
 		nodes: [
 			{ id: "core", name: "Core", kind: "core", address: core.target },
-			{ id: "instantLayer", name: "InstantLayer", kind: "instantLayer", address: instant.target },
 			{ id: "partyB", name: "PartyB", kind: "partyB", address: party.target },
 			{ id: "verifier", name: "Verifier", kind: "verifier", address: verifier.target },
 		],
@@ -92,7 +83,6 @@ async function harness() {
 		url,
 		profile,
 		core,
-		instant,
 		party,
 		verifier,
 		close: async () => {
@@ -110,7 +100,7 @@ test("profile validation and state diffs never treat unavailable state as verifi
 	assert.ok(changes.some(c => c.field === "paused" && c.before === false && c.after === true));
 	assert.ok(changes.some(c => c.field === "status"));
 });
-for (const scope of ["verifier", "instantLayer", "partyB"])
+for (const scope of ["verifier", "partyB"])
 	test(`${scope}: prepares, rehearses and verifies a full upgrade with real contracts`, { timeout: 120000 }, async () => {
 		const h = await harness();
 		const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workbench-system-test-"));
@@ -119,17 +109,13 @@ for (const scope of ["verifier", "instantLayer", "partyB"])
 			const snapshot = await workspace.scan(h.url, h.profile);
 			assert.equal(snapshot.edges.find(e => e.label === "getSignatureVerifier").status, "verified");
 			const nonce = await h.provider.getTransactionCount(h.admin);
-			const record = await workspace.prepare({ nodeId: scope, deployer: h.admin, authority: h.admin, inventoryReviewed: true });
+			const record = await workspace.prepare({ nodeId: scope, deployer: h.admin, authority: h.admin });
 			assert.deepEqual(record.plan.blockers, []);
 			const saved = workspace.status().history.find(item => item.id === record.plan.id);
 			assert.equal(saved.scope, scope);
 			assert.equal(saved.chainId, record.plan.chainId);
 			assert.equal(saved.target, record.plan.sourceAddress);
 			if (scope === "verifier") assert.ok(record.plan.actions.some(a => a.method === "setPublicKeyPermissions" && a.args[1].includes(255)));
-			if (scope === "instantLayer") {
-				assert.ok(record.plan.actions.some(a => a.method === "addTemplate"));
-				assert.ok(record.plan.actions.some(a => a.phase === "retire"));
-			}
 			const rehearsed = await workspace.rehearse(record.plan.id);
 			assert.equal(rehearsed.rehearsal.status, "passed");
 			assert.equal(await h.provider.getTransactionCount(h.admin), nonce, "rehearsal must not send live transactions");
@@ -150,25 +136,18 @@ for (const scope of ["verifier", "instantLayer", "partyB"])
 			await h.close();
 		}
 	});
-test(
-	"peripheral plans bind deployment nonce and source configuration, and require an InstantLayer inventory review",
-	{ timeout: 120000 },
-	async () => {
-		const h = await harness();
-		try {
-			const system = await inspectSystem(h.provider, h.profile);
-			const input = { provider: h.provider, system, nodeId: "instantLayer", deployer: h.admin, authority: h.admin };
-			const blocked = await preparePeripheral(input);
-			assert.match(blocked.blockers.join(" "), /inventory/);
-			const p = await preparePeripheral({ ...input, inventoryReviewed: true });
-			await assertPeripheralInputs(h.provider, p);
-			await (await h.instant.setRevocationCooldown(900)).wait();
-			await assert.rejects(assertPeripheralInputs(h.provider, p), /configuration changed|nonce changed/);
-		} finally {
-			await h.close();
-		}
-	},
-);
+test("peripheral plans bind the deployment nonce and the source configuration they were prepared from", { timeout: 120000 }, async () => {
+	const h = await harness();
+	try {
+		const system = await inspectSystem(h.provider, h.profile);
+		const p = await preparePeripheral({ provider: h.provider, system, nodeId: "verifier", deployer: h.admin, authority: h.admin });
+		await assertPeripheralInputs(h.provider, p);
+		await (await h.verifier.setGatewaySignerPermissions(h.admin, [7], true)).wait();
+		await assert.rejects(assertPeripheralInputs(h.provider, p), /configuration changed|nonce changed/);
+	} finally {
+		await h.close();
+	}
+});
 test("AccountLayer catalog deploys and produces an exact no-op Diamond plan", { timeout: 120000 }, async () => {
 	const h = await harness();
 	try {

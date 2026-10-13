@@ -124,11 +124,7 @@ export function createWorkspace({ onChange = () => {}, root = ROOT, stateRoot, t
 								throw new Error(`Replacement configuration mismatch for ${r.data.slice(0, 10)}`);
 						}),
 				);
-			const names =
-				plan.scope === "instantLayer"
-					? ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE", "OPERATOR_ROLE", "TEMPLATE_MANAGER_ROLE", "REVOKER_ROLE"]
-					: ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"];
-			for (const name of names) {
+			for (const name of ["DEFAULT_ADMIN_ROLE", "SETTER_ROLE"]) {
 				const { id } = await import("ethers");
 				const role = name === "DEFAULT_ADMIN_ROLE" ? ZeroHash : id(name);
 				const members = async target => {
@@ -150,22 +146,6 @@ export function createWorkspace({ onChange = () => {}, root = ROOT, stateRoot, t
 					plan.replacement.toLowerCase()
 			)
 				throw new Error("Core verifier pointer differs from the plan");
-			if (plan.scope === "instantLayer") {
-				const gasless = plan.profile.nodes.find(n => n.id === "gasless");
-				if (gasless && (await readCall(provider, gasless.address, "function instantLayer() view returns(address)")) !== plan.replacement)
-					throw new Error("GaslessLayer wiring differs from the plan");
-				for (const a of plan.actions.filter(a => a.phase === "cutover" || a.phase === "retire")) {
-					if (a.method !== "grantRole" && a.method !== "revokeRole") continue;
-					const coreRole = a.to.toLowerCase() === core.toLowerCase();
-					const actual = await readCall(
-						provider,
-						a.to,
-						coreRole ? "function hasRole(address,bytes32) view returns(bool)" : "function hasRole(bytes32,address) view returns(bool)",
-						a.args,
-					);
-					if (actual !== (a.method === "grantRole")) throw new Error(`Wiring role verification failed: ${a.label}`);
-				}
-			}
 		}
 		return { at: new Date().toISOString(), blockNumber: await provider.getBlockNumber(), runtimeHash: expectedRuntime };
 	}
@@ -337,7 +317,7 @@ export function createWorkspace({ onChange = () => {}, root = ROOT, stateRoot, t
 		prepare: input =>
 			job("Preparing ordered deployments, configuration, and cutover calls", async () => {
 				if (!snapshot || !provider) throw new Error("Inspect a deployment first");
-				const { nodeId, deployer, authority, inventory, inventoryReviewed } = input;
+				const { nodeId, deployer, authority } = input;
 				const plan = await preparePeripheral({
 					provider,
 					system: snapshot,
@@ -346,8 +326,6 @@ export function createWorkspace({ onChange = () => {}, root = ROOT, stateRoot, t
 					nodeId,
 					deployer,
 					authority,
-					inventory,
-					inventoryReviewed,
 				});
 				const record = { plan, status: "prepared" };
 				save(record);

@@ -17,7 +17,6 @@ import {
   Stepper,
   Table,
   Text,
-  Textarea,
   TextInput,
   Title,
   UnstyledButton,
@@ -541,14 +540,12 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
           JSON.parse(sessionStorage.getItem(storageKey) || 'null') || {
             deployer: '',
             authority: node?.state.roles?.DEFAULT_ADMIN_ROLE?.[0] || system?.snapshot?.nodes.find((n) => n.kind === 'core')?.state.owner || '',
-            inventory: '',
           }
         )
       } catch {
-        return { deployer: '', authority: '', inventory: '' }
+        return { deployer: '', authority: '' }
       }
     }),
-    [reviewed, setReviewed] = useState(false),
     [baseline, setBaseline] = useState('')
   const update = (patch: Record<string, string>) => {
     const next = { ...draft, ...patch }
@@ -597,23 +594,6 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
           Use wallet address
         </Button>
       </section>
-      {scope === 'instantLayer' && (
-        <section className="panel">
-          <Textarea
-            label="Additional migration addresses"
-            description="PartyBs and whitelisted targets that could not be discovered. One address per line."
-            value={draft.inventory}
-            onChange={(e) => update({ inventory: e.currentTarget.value })}
-            minRows={3}
-          />
-          <Checkbox
-            mt="md"
-            label="I reviewed the migration inventory and client/operator cutover. Users will reauthorize sessions on the replacement InstantLayer."
-            checked={reviewed}
-            onChange={(e) => setReviewed(e.currentTarget.checked)}
-          />
-        </section>
-      )}
       <Group>
         <FileButton
           accept="application/json,.json"
@@ -652,13 +632,7 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
         )}
       </Group>
       <Button
-        disabled={
-          busy ||
-          !isAddress(draft.deployer) ||
-          !isAddress(draft.authority) ||
-          (scope === 'instantLayer' && !reviewed) ||
-          (system as any)?.connected === false
-        }
+        disabled={busy || !isAddress(draft.deployer) || !isAddress(draft.authority) || (system as any)?.connected === false}
         onClick={() =>
           run('Compiling and preparing component upgrade', async () => {
             await job('compile', { scope })
@@ -668,8 +642,6 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
                 nodeId,
                 deployer: draft.deployer.trim(),
                 authority: draft.authority.trim(),
-                inventory: draft.inventory.split(/[\s,]+/).filter(Boolean),
-                inventoryReviewed: reviewed,
               },
               true,
             )

@@ -6,7 +6,7 @@ export const familyName = (kind?: string) =>
   ] ||
   kind ||
   'Contract'
-export const UPGRADEABLE = ['core', 'accountLayer', 'instantLayer', 'partyB', 'verifier']
+export const UPGRADEABLE = ['core', 'accountLayer', 'partyB', 'verifier']
 const KINDS: Record<string, string> = {
   authority: 'Authority',
   safe: 'Safe',
