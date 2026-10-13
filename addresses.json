@@ -1,0 +1,1085 @@
+{
+	"about": "Every SYMMIO deployment perps-core-ui knows. Each thing is written once: chains, role candidates and frontends at the top, then one entry per deployment. The fields are explained in perps-core-ui/README.md under “The address book”.",
+	"checked": "2026-10-13",
+	"chains": {
+		"base": { "chainId": 8453, "rpc": "https://mainnet.base.org", "explorer": "https://basescan.org" },
+		"arbitrum": { "chainId": 42161, "rpc": "https://arb1.arbitrum.io/rpc", "explorer": "https://arbiscan.io" },
+		"polygon": { "chainId": 137, "rpc": "https://polygon.drpc.org", "explorer": "https://polygonscan.com" },
+		"hyperevm": { "chainId": 999, "rpc": "https://rpc.hyperliquid.xyz/evm", "explorer": "https://hyperevmscan.io" },
+		"bnb": { "chainId": 56, "rpc": "https://56.rpc.thirdweb.com", "explorer": "https://bscscan.com" },
+		"coti": { "chainId": 2632500, "rpc": "https://mainnet.coti.io/rpc", "explorer": "https://mainnet.cotiscan.io" },
+		"sonic": { "chainId": 146, "rpc": "https://rpc.soniclabs.com", "explorer": "https://sonicscan.org" },
+		"mantle": { "chainId": 5000, "rpc": "https://rpc.mantle.xyz", "explorer": "https://mantlescan.xyz/" },
+		"plasma": { "chainId": 9745, "rpc": "https://rpc.plasma.to", "explorer": "https://plasmascan.to" },
+		"tac": { "chainId": 239, "rpc": "https://rpc.ankr.com/tac", "explorer": "https://tac.blockscout.com" },
+		"monad": { "chainId": 143, "rpc": "https://rpc.monad.xyz", "explorer": "https://monadscan.com" },
+		"sei": { "chainId": 1329, "rpc": "https://evm-rpc.sei-apis.com/", "explorer": "https://seiscan.io" },
+		"bera": { "chainId": 80094, "rpc": "https://rpc.berachain.com", "explorer": "https://berascan.com" },
+		"mode": { "chainId": 34443, "rpc": "https://mainnet.mode.network", "explorer": "https://explorer.mode.network" },
+		"iota": { "chainId": 8822, "rpc": "https://json-rpc.evm.iotaledger.net", "explorer": "https://explorer.evm.iota.org" },
+		"blast": { "chainId": 81457, "rpc": "https://rpc.blast.io", "explorer": "https://blastscan.io" }
+	},
+	"frontends": {
+		"Befi": "https://perps.befilabs.com",
+		"BMX": "https://freestyle.bmx.trade",
+		"IntentX": "https://app.intentx.io",
+		"Based": "https://trade.based.markets",
+		"Vibe": "https://app.vibe.trading",
+		"Cloverfield": "https://cloverfield.exchange",
+		"Privex": "https://app.prvx.io",
+		"Peppy": "https://cybar.finance",
+		"ZkLink": "https://agx.xyz",
+		"Xpanse": "https://xpanse.trade",
+		"Pear": "https://symm.pear.garden",
+		"Horizon": "https://xpanse.trade",
+		"Alpha Thena": "https://alpha.thena.fi",
+		"IVX": "https://levo.ivx.fi",
+		"Core": "https://app.core.markets"
+	},
+	"olderCoreRoles": [
+		"WITHDRAW_FORCE_CANCEL_ROLE",
+		"PAUSER_ROLE",
+		"SETTER_ROLE",
+		"DEALLOCATE_COOLDOWN_SETTER_ROLE",
+		"INTERNAL_TRANSFER_TO_BALANCE_ROLE"
+	],
+	"roleCandidates": [
+		{ "label": "Admin", "deployments": ["base", "coti", "polygon-test"], "wallets": ["0x9BC9CA7e6A8F013f40617c4585508A988DB7C1c7"] },
+		{ "label": "Admin", "deployments": ["vibe-arbitrum-stage", "hyperevm", "coti"], "wallets": ["0x77A955776Ee1dd3E9C800c3214ed489441d74b94"] },
+		{ "label": "Admin", "deployments": ["polygon", "hyperevm", "base-lc", "plasma"], "wallets": ["0xf12239317e985f6772F86407608B166EfA3E2f05"] },
+		{
+			"label": "Admin",
+			"deployments": ["hyperevm-stage"],
+			"wallets": [
+				"0x00c2796b3AD3369D604E009D75204D7a15Cc584b",
+				"0xF2Fa40b8A69e6B3D6E6c178dF0b72C1Ec3A3F2f7",
+				"0x7B92448DD0d9EaDd63cDE0a8A106C5E21559Dff5",
+				"0x869F082218E13E90d123e9faad9AC5E2A17eA1a3"
+			]
+		},
+		{ "label": "Buyback operator", "deployments": ["base", "base-lc"], "wallets": ["0x02a4c5ab8425BDFF3EfbaD73b493f31D4b645366"] },
+		{
+			"label": "Symbol Manager operator",
+			"deployments": ["base", "arbitrum", "coti", "base-lc", "arbitrum-test"],
+			"wallets": ["0xA4955Efa9AAA633396c2805Ac1D4ebaf48547A01"]
+		},
+		{
+			"label": "Symbol Manager operator",
+			"deployments": ["base", "arbitrum", "coti", "arbitrum-test"],
+			"wallets": ["0xD24E9ec53bb9227Eb84B4B3958Bb90214AD1dB6b"]
+		},
+		{
+			"label": "Gasless Layer operator",
+			"deployments": ["arbitrum-vibe"],
+			"wallets": [
+				"0x999DA1bB819b50cc85de02D088E449351FDa8B78",
+				"0x66e632490F0544D92E673f5F624537589BbC0C28",
+				"0xaF0f615E7168BE3cDE11CfC384E5700EB55Ab855",
+				"0xE15e5502D14579dB9C68fa55964fB702F15c0C21",
+				"0xa190DD1e13D5385e3C0E7871BA9aa7adeaDfBeB0"
+			]
+		},
+		{
+			"label": "Gasless Layer operator",
+			"deployments": ["vibe-arbitrum-stage", "hyperevm-stage"],
+			"wallets": ["0xe13f5af2D489597a86Cf7618668C6112580b67a0"]
+		},
+		{
+			"label": "Gasless Layer operator",
+			"deployments": ["hyperevm"],
+			"wallets": ["0xB23C376EC8de7A4f623E4f220F6978cD7d590E4f", "0x6300d3d36c0f8c410A52E82E8a05ef6326F4AD62"]
+		},
+		{
+			"label": "Instant withdraw operator",
+			"deployments": ["arbitrum"],
+			"wallets": [
+				"0x0DE8DD358609C4A967FdDA9915EE646B0F6d808B",
+				"0x195F4F2df5802d9ED5d9595970014569aC684bd7",
+				"0x4437496aAe7a6D2252e0311d99860F8cb7D740cA",
+				"0xf372615eE3663A9bdEDB6fcF85E9F9ec30749614"
+			]
+		},
+		{ "label": "Express withdraw operator", "deployments": ["vibe-arbitrum-stage"], "wallets": ["0x02e598f10B34FE5Bb7baf8f39Ea8A20D485EDaA4"] },
+		{
+			"label": "Liquidator operator",
+			"deployments": ["base"],
+			"wallets": [
+				"0xB2679343c6068Cc566d32A6D52F0573723b1DE1d",
+				"0xCf8739AF3FD1F2A4a3b6bF68C44dBeFd0da5712c",
+				"0x75C221D2B768Bfd56008995e2f496c49Cb7ADc7A",
+				"0xd130f10Cf0182C32D011a498AcA7bB33dd05AC77",
+				"0x153A3c4E079772EDA818b9966f9830C68eDeA6D1",
+				"0x31e4e68bAd414547Ad5C7Bf2997A8d90c986875E",
+				"0x1Fdc2223D812F136D86FD6B8426f890bD1531050",
+				"0x6F2f120Bd82CA911A3221F228E768248BF93e8F4",
+				"0x885277C30b25632Fd966684581578211513866D4"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["arbitrum"],
+			"wallets": [
+				"0x593A40f44638F57cF77571bfdcB3B74d10bd4862",
+				"0x5Df743F2a8d6155d0497D434D1BB59f6F09E112a",
+				"0x18Ad5aA8948F2B5a571A6f7096a41df68F1301ef",
+				"0xE7f100009A7F06AA08A9D956e9607B5D9481faC1",
+				"0x7ECBEB26Cf76ca8680c851336B97D4BE8521918C",
+				"0x5653910E67e584bAA926ABdf1f83D7FCA6471d04"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["arbitrum-vibe"],
+			"wallets": [
+				"0xC72C972ee28c17343ebc891520b09a8E35599283",
+				"0x313132469d487A63DfeD39D3437a331A41304645",
+				"0xBe6a41cd62dEA963312dea4583c560895094E41c",
+				"0xB02c08BE5C7E58711Da5A567beeC7CE236b24103",
+				"0xFd7d45dd5699B7CFaBA0355a3C637b446b18A2f9"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["vibe-arbitrum-stage"],
+			"wallets": ["0x09646b87aCd77c7866714f7Db4790B38f4294dCd", "0x81b90b83F5C95fB82529587E21e94F33E7Ac4dCC"]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["hyperevm"],
+			"wallets": [
+				"0x97EDFA4Be38Bfd934E08D4D1222c2Cf976b2969a",
+				"0xB79638691027555e816De0E2E571b016f031afe0",
+				"0x642F6988651F87cFfC6EC97Cf448Ba52d4D7A520",
+				"0x29c10A6edE0fDd3dCb78D63F0c9094eD539E658F",
+				"0x1fcB0B594424330f06e011cF405b46C1C12f0fD8",
+				"0x428ca0727a63f1D2089B0AAC1F9d2ed0F89bc356",
+				"0x4828d165d930e3e887c57409d5ad2D822f75CEfa",
+				"0x637D6C9eAE1771ac89CB9aa1B60E3CACb42C4aA5",
+				"0x845C0192Ab985b7eB1712a774615870563E67C5d",
+				"0xCCA77CFa0dfE25080CF3F7dEEe85221a248FCB37"
+			]
+		},
+		{ "label": "Liquidator operator", "deployments": ["bnb", "mantle"], "wallets": ["0x9BC9CA7e6A8F013f40617c4585508A988DB7C1c7"] },
+		{
+			"label": "Liquidator operator",
+			"deployments": ["bnb"],
+			"wallets": [
+				"0xEeb70bFe8E879E9e8fBd9501199db82e5eEb697e",
+				"0x77E58CbC7f4aFd08E8e2c880AB38A98C42aBCE36",
+				"0xe8CF3B7ed0eb925943407A97BA904647ad6DFdc6",
+				"0x97c955604872F03ae7fED0fE47eBbeE715C5E8f1",
+				"0xE8cDEa1B566f506b9276585559896260b55Cb7E8"
+			]
+		},
+		{ "label": "Liquidator operator", "deployments": ["coti"], "wallets": ["0x614bB1F3e0Ae5A393979468ED89088F05277312c"] },
+		{
+			"label": "Liquidator operator",
+			"deployments": ["mantle"],
+			"wallets": [
+				"0xaCd9623cd291ee157Db752A2F599Ca7A0E3604E2",
+				"0xCfc8A928Bec0950F0c56c6Ff0b186D0d8AFcf89B",
+				"0xE795a9FcA009272Ae5115B335f3EAc5d50F7a80f",
+				"0x9c2DE6272DE9AB37AE4B7C5ED2819cb80c23f0E8",
+				"0xBeD72B856f56533E3e9a483535A7f46bf62855a1",
+				"0x801b2f9E59040bD86bB7eaC4b17d1F985774C150",
+				"0xEFAF1f4e73c1A0cE62892eeeb75e553a185f5a6d",
+				"0xa967618730Fb6Ff67427A32e5cEC2E3b23f1F9ef",
+				"0x82261Fcb908989dd418cEDCA35359B284D7D86d6"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["base-lc"],
+			"wallets": [
+				"0x3EA677457782cd5d8A0C71289e5565d1B8d5DA45",
+				"0x62337311e8910B245cf7E649FCc7937b83c3e3Fd",
+				"0x3FD98a477ab45Db8A8E8367eC7557Eb7F740Fde1"
+			]
+		},
+		{ "label": "Liquidator operator", "deployments": ["plasma"], "wallets": ["0x00c069d68bc7420740460DBC3cc3fFF9b3742421"] },
+		{
+			"label": "Liquidator operator",
+			"deployments": ["bera"],
+			"wallets": [
+				"0xaF3e73934137e0D749E349e3788D3ceA0348C52b",
+				"0x190D70E3EbE0F4051A4Dff8A4a5De1CF02Ee0091",
+				"0xB1B421e1e6EDf6f94E055080a7b78407fC4d158d",
+				"0xbA65A64EbA90E1D65f128F4586bc7ea8564a0d64",
+				"0x0E07b1C30cdd9099FeACac8132cdd0dc38914B86",
+				"0xDC59A81Fa1FC3da81a17c1B9A4F911f641fA5606"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["iota"],
+			"wallets": [
+				"0x848736ed248cCBFA2580E374b53B474ceDeD85C8",
+				"0xb7975d66B9cB1041B80a4390c0620Ec5D6Ba7985",
+				"0x01b84d0621183AB04791938D604b89F9FdA10D1a",
+				"0x3aF2cafCEA868BA3e6e2a6C60492d1E5F456cF47"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["hyperevm-stage"],
+			"wallets": [
+				"0x5130cceb74d6EA8563B2D579DC4027e1bBc1d68c",
+				"0x20bAEAb171d56e739855e997fc9fD0BA3a3973EF",
+				"0x5dca9531aD400D05eA0adc1E78f08050Bb0faE26",
+				"0xDDCfeD3B67B465812a073Eba588c459A76625D85",
+				"0xc6ebDda6D9FB5F400d7d8BDE00B9192f14a4e0D7",
+				"0x97CBae70c7d2DCfBe0d825Fd81A65E0a392597AA",
+				"0x16bBeDcb785bd9322B197aCb47DAe77E35BB1393"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["polygon-test"],
+			"wallets": [
+				"0xa8bfc0d3A496b018CE2C63C73e5bc06Ffd34A89d",
+				"0x285B9CBc5bbdDaCAA8f0d0eA6E8F9A6f3Fc72A6D",
+				"0x6E2D89A5caA4151b6aAe1FB616aCEccDDCE45ae3",
+				"0x9992Aa752995b1288940ab11833E859Bb77e0eFD"
+			]
+		},
+		{
+			"label": "Liquidator operator",
+			"deployments": ["blast-deprecated"],
+			"wallets": [
+				"0xA4F4687B6375d34990A31BA0FA2e57E0E9966462",
+				"0x88815411144855049dFD3Fb3Be88290576d5aD88",
+				"0x03B263078a47Cb20bEB46E2DB41e3bC639D71e4F",
+				"0xD5f626CA164D248B3320ab98db0DF8e1882f21Ee"
+			]
+		},
+		{ "deployments": ["base"], "wallets": ["0x02267Ece27004C104661B144B2654dE631c2e53D", "0xcb6645ad60249e5545396ba0F12181F2d9c720BC"] },
+		{ "deployments": ["vibe-arbitrum-stage"], "wallets": ["0xDBc6DAe3De0b10a10b6c4d1b33D4C79567E07F6d"] },
+		{ "deployments": ["polygon"], "wallets": ["0x77A955776Ee1dd3E9C800c3214ed489441d74b94"] },
+		{ "deployments": ["hyperevm"], "wallets": ["0xc75e50B47AD35900Cfbd75672D76BDD6D6c14CFA"] },
+		{ "deployments": ["bnb"], "wallets": ["0x9E453f0da3E69Ee20fCbF8Ee9513C5F54940bF17"] },
+		{ "deployments": ["coti"], "wallets": ["0xba3d3982dC12ACd61fE11ff08ba2164cd1c12C78", "0x9303E1783a99F1eE4dbF0F78cE4832b4d475802C"] },
+		{
+			"deployments": ["base-lc"],
+			"wallets": [
+				"0xe33775cff50fD6Bbd363db9BCEB209197ED81D82",
+				"0xc58CB1d2B799b09dAa5905a33212246FC91DcE27",
+				"0x9A51E128906bEcbA69201f1DA32f61b92eF8c6Cc"
+			]
+		},
+		{ "deployments": ["bera"], "wallets": ["0x48F9A626b012aD29Ad02Db3B8f0e47A23C72a2FE"] },
+		{
+			"deployments": ["hyperevm-stage"],
+			"wallets": ["0x1B78ab4b30A73395A539b67dA82b24eeD5d95eF2", "0x05d1989ECa89Da1f21D8BE532060fdeB8C0E5594"]
+		},
+		{
+			"deployments": ["polygon-test"],
+			"wallets": [
+				"0x31A01f4A5Ae9c1C9bfddA4ac64d3759C6FdB8b05",
+				"0x06f4FdB26B2Dc2AE256b441DB50aF5d556b9E0Ad",
+				"0x787FCe8e2Ee89C2015c02ae91D91bECC17e649A5"
+			]
+		}
+	],
+	"deployments": [
+		{
+			"id": "base",
+			"name": "Base",
+			"chain": "base",
+			"environment": "Production",
+			"version": "0.8.5",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/base_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/base_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x91Cf2D8Ed503EC52768999aA6D8DBeA6e52dbe43",
+				"token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+				"accountLayer": "0x56caf00c6C5cB5478570Bb23807B9d1D697863DC",
+				"instantLayer": "0x0825435285ac0E5c02c7a7c443F631f3e07fE375",
+				"verifier": "0x0Ae899A702b9a7E6fbAd661117F0b1B002eD18F1",
+				"symbolManager": "0x39E5d7c13d61d0D493ECc9B7A7f38905df2Db923",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0x12De0352dd4187AF5797F5147c4179F9624346E2" },
+					{ "owner": "PerpsHub", "address": "0x1EcAbF0Eba136920677C9575FAccee36f30592cf" },
+					{ "owner": "PerpsHub", "address": "0xFC4aC3aF357eBe6d556DCD72453E9B30F6dC6873" },
+					{ "owner": "PerpsHub", "address": "0xB6e3b44975f2966707a91747F89D2002ff8d62Db" },
+					{ "owner": "Rasa", "address": "0x9206D9d8F7F1B212A4183827D20De32AF3A23c59" },
+					{ "owner": "Zenith", "address": "0x5f3525db7589640dae87d6040a85c49Fa43feb2f" },
+					{ "owner": "Zenith", "address": "0x94D2c48821F7667923d7656ACc3529b953b40D09" },
+					{ "owner": "Rasa (No Hedge)", "address": "0xF49d008921De3cBE9eEfb6C2F781cB804D7945f7" },
+					{ "owner": "Enigma", "address": "0x15c544d6a630B88b45cB699522dA20B7FDA1Ea89" },
+					{ "owner": "Carbon", "address": "0xB49Cae38c96f6425Ce4A46e8220549C6a13362bE" },
+					{ "owner": "Carbon", "address": "0x9F20BaD77CCa97f2F96De88b146603Ca3F65baD5" },
+					{ "owner": "Rasa (Stage)", "address": "0x81631953E0C093e72935C1CAA4C7D519B2A0E407" },
+					{ "owner": "Archon", "address": "0x6015e7E006938911408345aFddE43B7a5F3fb55C" }
+				],
+				"multiAccount": [
+					{ "owner": "Befi", "address": "0xc6Ecf3AB3D09ba6f1565Ad6E139B5D3ba30bB774" },
+					{ "owner": "BMX", "address": "0x6D63921D8203044f6AbaD8F346d3AEa9A2719dDD" },
+					{ "owner": "IntentX", "address": "0x8Ab178C07184ffD44F0ADfF4eA2ce6cFc33F3b86" },
+					{ "owner": "Based", "address": "0x1c03B6480a4efC2d4123ba90d7857f0e1878B780" },
+					{ "owner": "Vibe", "address": "0x95605c64356572eb5C076Cb9c027c88b527A2059" },
+					{ "owner": "Cloverfield", "address": "0xF7F56d7E02D5c7bF33525AE2eecB049a17Ef4580" },
+					{ "owner": "Privex", "address": "0x921Dd892D67Aed3d492F9ad77b30b60160B53Fe1" },
+					{ "owner": "Peppy", "address": "0xdfC2a55a44aD3d3aAbFe8D1C498Ea923c6D39526" },
+					{ "owner": "ZkLink", "address": "0xf2215724516A564eFC5b3f1F77A7d5f8770A58EF" },
+					{ "owner": "Xpanse", "address": "0xDE6446197Cd1AE02E1C5B7191a626Fb0c1757377" },
+					{ "owner": "Carbon", "address": "0x39EcC772f6073242d6FD1646d81FA2D87fe95314" },
+					{ "owner": "Pear", "address": "0xE43166cE17d3511B09438a359dAa53513225101D" },
+					{ "owner": "QuickSwap", "address": "0x0B4779a37C5E6cD7060cc265105Ff44a03b47b26" },
+					{ "owner": "Treble", "address": "0x72b03E85B40A745B07f3a15e7A02E66F7f8352F3" },
+					{ "owner": "Echoes", "address": "0xA503Eb7714D4328f3D425F24954C6f5F00115E09" }
+				],
+				"feeDistributor": [
+					{ "owner": "Befi", "address": "0xDaa78e134665a277cFAD722F71ffBa0C58d55592" },
+					{ "owner": "BMX", "address": "0xc9577c97782F3cd1B61895A3ca2f9fEBd19505a4" },
+					{ "owner": "IntentX", "address": "0x1279655FEED886F44958733BBB6b26252D1D4F99" },
+					{ "owner": "Based", "address": "0x97F1dCeC1A4038F72a9a7A9EC2501D942F66e1B0" },
+					{ "owner": "Vibe", "address": "0xc2C7D07AE9Af9E758ED45268451c3e84E6629766" },
+					{ "owner": "Cloverfield", "address": "0xeBEc8d18358f117629DDf1D2049d2b0D21f9C38D" },
+					{ "owner": "Privex", "address": "0x68aEFE794b0CcC01BeCFbbcabd0c7B375B0A8AAf" },
+					{ "owner": "Peppy", "address": "0x65b19B57517Ba60e744F206deABA75F08607f60F" },
+					{ "owner": "ZkLink", "address": "0x4EE4a86759781FBAc4F7DF9B3b50C1A372c36bA1" },
+					{ "owner": "Xpanse", "address": "0xA234F375d1733994720547BB12D92a84122648E1" },
+					{ "owner": "Carbon", "address": "0x3c6EB71ffB66D3694eEd9FC63F2e5BeED1029270" },
+					{ "owner": "Pear", "address": "0x6332B2461AF9BF22733E6A2d88441dfde8c37403" },
+					{ "owner": "QuickSwap", "address": "0x86AAc363B8471206Eb5b52e121783027d7bc62E1" },
+					{ "owner": "Treble", "address": "0x76bc5889c0cfcC20960b0D81F541595d81a95122" },
+					{ "owner": "Echoes", "address": "0x239e30cDE7d4B5b6aF6d4Dc4A021f86784d981c8" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" },
+					{ "name": "Rebalancer to Multisig", "address": "0xBaA87905f72E07E826a7bB86A25A489323d2A018" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0x62d68CAD88fef03a68e461b476CbB3D9681cCf2C" },
+					{ "name": "3d Timelock", "address": "0x92E89Bb3cE2CeA34dF6168010BBEFce2997b014d" }
+				],
+				"authority": [
+					{ "owner": "PerpsHub", "name": "Instant Rebalancer", "address": "0x6106D70228d8b1802aa6b5ea92366e5be09E634F" },
+					{ "owner": "BMX", "name": "Accounts Admin", "address": "0x189A8F685646F2A1342d1433faB2df076C3d0E0D" },
+					{ "owner": "Based", "name": "Accounts Admin", "address": "0x14d7B2D56Aa226Ff68451D5AF181d8B51c93f018" },
+					{ "owner": "Carbon", "name": "Rebalancer", "address": "0x767e88D36Fd7879c35939E9622C9930A17F61e9D" }
+				],
+				"external": [
+					{ "name": "Pauser", "address": "0x4e6B0a4A8e3Dbf5F92369238D0226BF70515F594" },
+					{ "name": "Fees Manager", "address": "0xfFb5d13CE2888f86b0A02ac29B4e07B2f26B34Ac" },
+					{ "name": "Buyback Gateway", "address": "0x9EB845715461832eF9b063e47187dE9312dD6550" },
+					{ "name": "Instant Withdraw", "address": "0xE0650873D8DadB54a6AC7c666BC98ab45f827b6D" }
+				]
+			}
+		},
+		{
+			"id": "arbitrum",
+			"name": "Arbitrum",
+			"chain": "arbitrum",
+			"environment": "Production",
+			"version": "0.8.5",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x8F06459f184553e5d04F07F868720BDaCAB39395",
+				"token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+				"accountLayer": "0xA60AC54e18739f1C4681409383DCF881De3eFAbE",
+				"instantLayer": "0x4a6A866e62b38EEDFd4d99599F7E2baA35336d1c",
+				"verifier": "0x1423D1bB78fbeA2B0980611F6319844fa7063cAf",
+				"symbolManager": "0x5D1E5DD0463DcE32c6502E0fC98b2081cBa55c73",
+				"liquidator": "0xc587c76a41B9981977D170660C15c0aAbe56B4aA",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0x00c069d68bc7420740460DBC3cc3fFF9b3742421" },
+					{ "owner": "PerpsHub", "address": "0x7D387771f6E23f353a4afCE21af521875C0825D0" },
+					{ "owner": "PerpsHub", "address": "0xdB91D232E93969130272De309d3d914547604426" },
+					{ "owner": "Carbon", "address": "0xd600A4F314D3F1ee8869A340D298a69Ff070E574" },
+					{ "owner": "Carbon", "address": "0xE72284fc2D56bE2C1649742FD131BceA41A94a6a" }
+				],
+				"multiAccount": [
+					{ "owner": "Pear", "address": "0x6273242a7E88b3De90822b31648C212215caaFE4" },
+					{ "owner": "IntentX", "address": "0x141269E29a770644C34e05B127AB621511f20109" },
+					{ "owner": "Xpanse", "address": "0x263A8220e9351c5d0cC13567Db4d7BF58e7470c6" },
+					{ "owner": "Gryps", "address": "0xB27691603361C87aF0F02dBd88FF569207810346" },
+					{ "owner": "Carbon", "address": "0xbc029264eb164f36D7DfEfc46A607b66C2b4F379" }
+				],
+				"affiliate": [{ "owner": "Carbon (new)", "address": "0x5560266516865cD55460f3aB94C61D78E48d3d92" }],
+				"feeDistributor": [
+					{ "owner": "Pear", "address": "0x96AF9f2893F1fd79fa039ECb56c4B47425c8f74B" },
+					{ "owner": "IntentX", "address": "0x0532C5008A9214e669c41CE782C0E64095e6fb22" },
+					{ "owner": "Horizon", "address": "0x94054634E2F54C753187F204d7803B25FC2375b5" },
+					{ "owner": "Gryps", "address": "0xC6a7cc26fd84aE573b705423b7d1831139793025" },
+					{ "owner": "Carbon", "address": "0x5B5CB258Ba979823081cF1A4e3376B17951Cc668" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0xdf4188959bC1711e5B999fC527901DAAe1630C78" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0xffE2C25404525D2D4351D75177B92F18D9DaF4Af" },
+					{ "name": "3d Timelock", "address": "0x0CbF07176e67671C99222beBDB166EfC58dACD95" }
+				],
+				"authority": [
+					{ "owner": "Pear", "name": "Accounts Admin", "address": "0x94e31301da4502e63a0Ab590543418D5aFE187cc" },
+					{ "owner": "PerpsHub", "name": "Instant Rebalancer", "address": "0xCE932C61904a586c35ddff6E0403F848503bF2Fa" },
+					{ "owner": "Carbon", "name": "Instant Rebalancer", "address": "0x223F0EF212C86b3dcA3E8e6F9e85dE7e3BCd3646" }
+				],
+				"external": [
+					{ "name": "Pauser", "address": "0x3235B911Cb71791aD8380e1D86bC4a6252D5430E" },
+					{ "name": "Fees Manager", "address": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1" },
+					{ "name": "Instant Withdraw", "address": "0xC811D6BaE350B46D6d5a0347187ACF4c11683130" }
+				]
+			}
+		},
+		{
+			"id": "arbitrum-vibe",
+			"name": "Vibe Arbitrum",
+			"chain": "arbitrum",
+			"environment": "Production",
+			"version": "0.8.6.5",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-mainnet-analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-mainnet-events/stage/gn"
+			},
+			"contracts": {
+				"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+				"token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+				"accountLayer": "0x573310d1D6ec18cB21E1aB949414470D9bf5c24E",
+				"instantLayer": "0x54c27E4bf1125391aA76e1D6497B069d91e179f6",
+				"gasless": "0x8347953D80037b8d82827246f37EC7442AD188B4",
+				"express": "0x5733105ab392829E5e20FA1eF6E6e07A2c7E073A",
+				"verifier": "0x8c8D7561C33f296C958492FF7114e3212968BA03",
+				"symbolManager": "0x3FB153ee0a18B2726a54E132C173AC73D8c05e20",
+				"liquidator": "0xCfB0a84674229500836e662C229530a98bCE11Cc",
+				"partyB": [{ "owner": "Enigma", "address": "0x0420b24359d2DCccA53904042aa36A641162445c" }],
+				"affiliate": [{ "owner": "Vibe", "address": "0x58bB5Bdc279321507DfB7AB54B9e7EF3DdA6E24D" }],
+				"feeDistributor": [{ "owner": "Vibe", "address": "0xd4a61e8D4adD3382AFDCaC87ec4c98c6a6102B73" }],
+				"external": [
+					{ "owner": "Vibe", "name": "RFL", "address": "0x8C98c60116513D6F6C060450483a1ff44ec1c94b" },
+					{ "owner": "Vibe", "name": "Hook", "address": "0xb08e1F492597901626CF363140b2057DA6A758ca" },
+					{ "owner": "Vibe", "name": "Rakeback", "address": "0x08CB9B122524B31f5220099042A31393B862063c" },
+					{ "owner": "Vibe", "name": "Rakeback Hook", "address": "0xcEF3Ec6c81c1a1119f3a8E537Cf9D26fd9Ff14f3" },
+					{ "name": "Fees Manager", "address": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1" },
+					{ "name": "Create2 Factory", "address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975" },
+					{ "name": "Gasless Receiver", "address": "0xf023395d052b5247971aAb80791D05A16E6aCed8" }
+				]
+			}
+		},
+		{
+			"id": "vibe-arbitrum-stage",
+			"name": "Vibe Arbitrum",
+			"chain": "arbitrum",
+			"environment": "Staging",
+			"version": "0.8.6.3",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
+				"token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+				"accountLayer": "0x5733107211B2801Acd39933a54d482FE303c4907",
+				"instantLayer": "0x38AaBc7A73523Cd47c710FcdEb3b20ae02310180",
+				"gasless": "0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca",
+				"express": "0x573310D7b04fF21BB8628C69eE103dDF4922294A",
+				"verifier": "0xe8D2220Fd6D56C3f2fBDB3c7FF14FEAFA7573695",
+				"symbolManager": "0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c",
+				"liquidator": "0xC180F4C7c6c7C6a2247073Ca7bEaEBeb00D1D23F",
+				"partyB": [{ "owner": "Enigma", "address": "0x9be79D4977D86D440F9e1Ea0d468A58104B9b932" }],
+				"affiliate": [{ "owner": "Vibe", "address": "0xe99c18CF3C62B9229f9251fd2562077a33e7600a" }],
+				"feeDistributor": [{ "owner": "Vibe", "address": "0xB3FAceA2DF9391D95A948Aa4E9652cD34E766Efd" }],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0xdf4188959bC1711e5B999fC527901DAAe1630C78" },
+					{ "name": "Dev Multisig", "address": "0x89bE952790657297ac03f1954b22B668d819D3d9" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"external": [
+					{ "owner": "Vibe", "name": "RFL", "address": "0xFE646528aAc9e946501EDfF7A7b59423b35bBc85" },
+					{ "owner": "Vibe", "name": "Hook", "address": "0x8659737A6ee84043606242128661222708ddf3e0" },
+					{ "owner": "Vibe", "name": "Rakeback", "address": "0x4E1fD3c2AA5e396E55664d2Be794AA3E156B8e7e" },
+					{ "owner": "Vibe", "name": "Rakeback Hook", "address": "0x0944aCf01951671dD33FD4402dc0B6c41d939280" },
+					{ "name": "Fees Manager", "address": "0xc9B7E07E2Fce4FbFbf59D7d06b41Dc5e2Bd495e1" },
+					{ "name": "Create2 Factory", "address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975" },
+					{ "name": "Gasless Receiver", "address": "0xf023395d052b5247971aAb80791D05A16E6aCed8" }
+				]
+			}
+		},
+		{
+			"id": "polygon",
+			"name": "Polygon",
+			"chain": "polygon",
+			"environment": "Production",
+			"version": "0.8.5",
+			"contracts": {
+				"core": "0x5733103aA8cf26DAf49E87e9d24ca8AB66abe1e7",
+				"token": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+				"accountLayer": "0x41Cb713a367fd77309F2Fd6F10a3E2cA63c57040",
+				"instantLayer": "0x23f577EDc0D2239Ca0be11009De6cABB829Eab86",
+				"verifier": "0x5aDfb7a307DED826CB31da81BaEcF53c2157F760",
+				"symbolManager": "0x25995f8e106a43264658bd649e2C8323FA22317c",
+				"safe": [{ "name": "Main Multisig", "address": "0x3D32d5D543093F2C99aBf0ddAFF5647f56202BB1" }],
+				"external": [{ "name": "Create2 Factory", "address": "0x64F6bc5D09B58Acbcd3bAf914da2323543796842" }]
+			}
+		},
+		{
+			"id": "hyperevm",
+			"name": "HyperEVM",
+			"chain": "hyperevm",
+			"environment": "Production",
+			"version": "0.8.5",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_mainnet_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_mainnet_events/latest/gn",
+				"vibe": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/vibe-back-hyperevm-mainnet/latest/gn"
+			},
+			"contracts": {
+				"core": "0x57331038c21982116EE9b0906E4a5c5cB52dcE2e",
+				"token": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+				"accountLayer": "0x46493c376758Da47823D7E3Ae5d417eA6546eEB3",
+				"instantLayer": "0x72DBF07457b2712b160F67A85D338F860c1CA620",
+				"gasless": "0x9E8e015F0537c3C86c7103280F70bb42cb0f573f",
+				"verifier": "0xcFEedF3C16f59d19eEE5F18C708cf8e84A9340b0",
+				"symbolManager": "0xe877d634D5Fe44172B983cBd5900E30169a7A6Ce",
+				"liquidator": "0xa8983DfB2503E17e64Ec48092f0CA6A26a7012B2",
+				"partyB": [{ "owner": "Enigma", "address": "0x76bc5889c0cfcC20960b0D81F541595d81a95122" }],
+				"affiliate": [{ "owner": "Vibe", "address": "0xBcB033C9154401fA000a1Ae60843f79f45741b7c" }],
+				"safe": [{ "name": "Main Multisig", "address": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9" }],
+				"external": [
+					{ "owner": "Vibe", "name": "RFL", "address": "0xfa0b2c2E54d42EA7d02df7E7b757d791A118a567" },
+					{ "owner": "Vibe", "name": "Account Layer Hook", "address": "0xF24D9497dc43F53423Eb4778b4EB9984CbB38afb" },
+					{ "name": "Create2 Factory", "address": "0x93a457232a3376E1F94f368A85D0b8BC469ead00" },
+					{ "owner": "Vibe", "name": "LP Profit Distributor", "address": "0xeb806AE3b557D2be1d711Bc4A0af8cF353615F69" },
+					{ "owner": "Vibe", "name": "LP Profit Relayer", "address": "0xB613646c3d8AB1f5164872bC68c487F4E04BD959" },
+					{ "name": "Instant Withdraw", "address": "0xb1b12E91E456D02184E4B934Bd8dD0c443962015" }
+				]
+			}
+		},
+		{
+			"id": "bnb",
+			"name": "BNB",
+			"chain": "bnb",
+			"environment": "Production",
+			"version": "0.8.5",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x9A9F48888600FC9c05f11E03Eab575EBB2Fc2c8f",
+				"token": "0x55d398326f99059fF775485246999027B3197955",
+				"accountLayer": "0x920757b0a90bf9Ad612e16b10843FAE8B32664b5",
+				"instantLayer": "0x396f3Ebc46205B0C2446a191Dd0F56c51A2AFF93",
+				"verifier": "0x27b26291Dd1Ab2cB68C818d1cBC9b3C92AAdAc86",
+				"symbolManager": "0x657A15cdA334599954a743971A739264AFE6ff4b",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0xD5A075C88A4188d666FA1e4051913BE6782982DA" },
+					{ "owner": "PerpsHub", "address": "0xdF077F5f52bc41A9072F9d0e5fB281770bCD1142" },
+					{ "owner": "PerpsHub", "address": "0xdfeD11fE4af63B059EDBBDf53e9C633B331ed432" },
+					{ "owner": "Rasa", "address": "0x9fa01a45E245015fA685F21763e60C60832Ed2D6" },
+					{ "owner": "Zenith", "address": "0xd5e4b5928D99E7AFBea497a301cA5fA2E752B101" }
+				],
+				"multiAccount": [{ "owner": "Alpha Thena", "address": "0x650a2D6C263A93cFF5EdD41f836ce832F05A1cF3" }],
+				"feeDistributor": [{ "owner": "Alpha Thena", "address": "0xD889bf3Ca766038d54BC1129171fB76D62ea140f" }],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0xa85A4A81274a0db6ee873e3068fF76e8a3e27Ac2" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0x3Db312a1D419428DEAe205554274CeF95368B0f5" },
+					{ "name": "3d Timelock", "address": "0xCb850319Cb6B907c7A2ebAb71980147D19d6e3A1" }
+				],
+				"authority": [
+					{ "owner": "Alpha Thena", "name": "Accounts Admin", "address": "0xBb321f549C3D697Be19e9Dc39E32f769e21F214f" },
+					{ "owner": "PerpsHub", "name": "Instant Rebalancer", "address": "0x9Bf1beB57C4489C95Dac85120bebc4A200C95AA0" }
+				],
+				"external": [
+					{ "name": "Pauser", "address": "0x5C1901CEBbcaBfeF363bd506AAdB71d74ee7d0D4" },
+					{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }
+				]
+			}
+		},
+		{
+			"id": "coti",
+			"name": "Coti",
+			"chain": "coti",
+			"environment": "Production",
+			"version": "0.8.5",
+			"subgraphs": { "analytics": "https://graph-symmio.prvx.io/subgraphs/name/coti-perps-analytics" },
+			"contracts": {
+				"core": "0x2Ecc7da3Cc98d341F987C85c3D9FC198570838B5",
+				"token": "0xf1Feebc4376c68B7003450ae66343Ae59AB37D3C",
+				"accountLayer": "0xDbc5EbFb4E7cF72C15A4E35780d789b04eA52978",
+				"instantLayer": "0x65f1D2482B54F9c1b87391CEfc489665D01Ef96e",
+				"verifier": "0x18eCbfAb4F8772842BEe44B22FA035adbf4c4c4e",
+				"symbolManager": "0x722fb8e4a0226BB3F314BF320f4D2720F5744a72",
+				"partyB": [{ "owner": "AgentSolver", "address": "0x61109A6Eb070a860B1Da2A38f93ca2B884B54f90" }],
+				"multiAccount": [{ "owner": "Privex", "address": "0xbF318724218cED9A3ff7CfC642c71a0CA1952b0F" }],
+				"feeDistributor": [{ "owner": "Privex", "address": "0x80c98e1b606C96eeBEBC1E8e6458C368B155fE16" }],
+				"authority": [{ "owner": "Privex", "name": "Rebalancer", "address": "0xbC6823bF53fCa3ED2B22b2ba9eaD339946031334" }],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "sonic",
+			"name": "Sonic",
+			"chain": "sonic",
+			"environment": "Production",
+			"version": "0.8.4",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/sonic_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/sonic_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x803de354cbd853D9aE3BC58131A5D538DE7a72E3",
+				"token": "0x29219dd400f2Bf60E5a23d13Be72B486D4038894",
+				"symbolManager": "0x3cCE951445efe9B7F6f9c08119CA27e5919c2776",
+				"partyB": [{ "owner": "PerpsHub", "address": "0x7D387771f6E23f353a4afCE21af521875C0825D0" }],
+				"multiAccount": [
+					{ "owner": "Spooky", "address": "0xd90ACA50eE8Cb7C3dD1fEe84A722d574186cdd17" },
+					{ "owner": "Echoes", "address": "0xB0FB2aE3BaF577061CA28C1Ba47Dd1Db2f00F8c5" }
+				],
+				"feeDistributor": [
+					{ "owner": "Spooky", "address": "0x61662eA0EeecAf693538284d4332ec6F2828f5F4" },
+					{ "owner": "Echoes", "address": "0xE516F085D6Bb465FFe44855ce586dBbAa89FBf5a" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "mantle",
+			"name": "Mantle",
+			"chain": "mantle",
+			"environment": "Production",
+			"version": "0.8.5",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/mantle_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/mantle_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x2Ecc7da3Cc98d341F987C85c3D9FC198570838B5",
+				"token": "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+				"accountLayer": "0xba3d3982dC12ACd61fE11ff08ba2164cd1c12C78",
+				"instantLayer": "0xbf40BECa9Fb74FB67dF4a5C9C99eBAD35e616fFd",
+				"verifier": "0x1D6102C4fd0e18aE6C751aC2215e10D534B72689",
+				"symbolManager": "0x1a58B46A7857AC0F3f2421FCEB8c1bcACaa905B0",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0x12De0352dd4187AF5797F5147c4179F9624346E2" },
+					{ "owner": "PerpsHub", "address": "0x614bB1F3e0Ae5A393979468ED89088F05277312c" },
+					{ "owner": "PerpsHub", "address": "0xF9e39B4B30E26c18d2a725c0397Ed5A925efE46B" },
+					{ "owner": "Rasa", "address": "0x50E88C692B137B8a51b6017026Ef414651e0d5ba" },
+					{ "owner": "Zenith", "address": "0x8C6641E23143718419829e709F093EE6EC922537" }
+				],
+				"multiAccount": [{ "owner": "IntentX", "address": "0xECbd0788bB5a72f9dFDAc1FFeAAF9B7c2B26E456" }],
+				"feeDistributor": [{ "owner": "IntentX", "address": "0xA2C779F0950Aa771663cf1b0B8Ce64D5B3B29c19" }],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x0C83Ff10E8255Df41e71006eE6523A23024AAFC4" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0xA75FbAaE9D952913BCA5a21e96225E90A592cE63" },
+					{ "name": "3d Timelock", "address": "0xD02f2cc0C2bc1799ff0674b64620a351F986eBDe" }
+				],
+				"authority": [
+					{ "owner": "PerpsHub", "name": "Instant Rebalancer", "address": "0x2DEaF8E04c59a0Ec5ac9685999826F320E98a778" },
+					{ "owner": "Rasa", "name": "Rebalancer to Multisig", "address": "0x608735E8a42425743048cA0014567bf999b955a5" }
+				],
+				"external": [
+					{ "name": "Pauser", "address": "0xc2c2C65dD21F2fF3A5eB19811f1019847C417AB5" },
+					{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" },
+					{ "name": "Instant Withdraw", "address": "0xEfbf63dEf3D2273c88024AF638F9f9D762E623A7" }
+				]
+			}
+		},
+		{
+			"id": "base-lc",
+			"name": "Base (LC)",
+			"chain": "base",
+			"environment": "Production",
+			"version": "0.8.4",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/base_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/base_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0xC6a7cc26fd84aE573b705423b7d1831139793025",
+				"token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+				"symbolManager": "0xc51Efe31bC42f9CEDdc577206BB2fdc691d91332",
+				"partyB": [{ "owner": "Enigma", "address": "0xEcD1D9dC751316831D893B1ab3Ef0d36392b20dB" }],
+				"multiAccount": [{ "owner": "Vibe", "address": "0x95605c64356572eb5C076Cb9c027c88b527A2059" }],
+				"feeDistributor": [{ "owner": "Vibe", "address": "0xc72Fa761FBd9F1b718D968d3F4ed0181c569B638" }],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0x62d68CAD88fef03a68e461b476CbB3D9681cCf2C" },
+					{ "name": "3d Timelock", "address": "0x92E89Bb3cE2CeA34dF6168010BBEFce2997b014d" }
+				],
+				"external": [
+					{ "name": "Fees Manager", "address": "0xfFb5d13CE2888f86b0A02ac29B4e07B2f26B34Ac" },
+					{ "name": "Instant Withdraw", "address": "0x83155aA971f096193E3BE4a46418a631eE9681D1" }
+				]
+			}
+		},
+		{
+			"id": "plasma",
+			"name": "Plasma",
+			"chain": "plasma",
+			"environment": "Production",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0xC6a7cc26fd84aE573b705423b7d1831139793025",
+				"token": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
+				"symbolManager": "0xAfddADd99319615a77512a1AA87F23A2a233Fe5E",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0x78E76Ac7fEc050cA785c19fFADDF57137b890543" },
+					{ "owner": "PerpsHub", "address": "0xdB91D232E93969130272De309d3d914547604426" },
+					{ "owner": "PerpsHub", "address": "0x7D387771f6E23f353a4afCE21af521875C0825D0" }
+				],
+				"multiAccount": [{ "owner": "Lonex", "address": "0x78B1b8134A4236e69aE3728691e90B31f02C3001" }],
+				"feeDistributor": [{ "owner": "Lonex", "address": "0xB0aB50D9c82Bb2eB88B99e3FdD1Ab1C97B844396" }],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"authority": [{ "owner": "PerpsHub", "name": "Rebalancer", "address": "0x90C0DCAa8e8796904EA17633F58c9404378FbAa7" }],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "tac",
+			"name": "Tac",
+			"chain": "tac",
+			"environment": "Production",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0xC6a7cc26fd84aE573b705423b7d1831139793025",
+				"token": "0xAF988C3f7CB2AceAbB15f96b19388a259b6C438f",
+				"symbolManager": "0x023941C1ed3aa59587DaC2d4019830c4915239aa"
+			}
+		},
+		{
+			"id": "monad",
+			"name": "Monad",
+			"chain": "monad",
+			"environment": "Production",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0xC6a7cc26fd84aE573b705423b7d1831139793025",
+				"token": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+				"symbolManager": "0xbC6823bF53fCa3ED2B22b2ba9eaD339946031334",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0xAe11dB902D162168854cbB4B116dC4a2aEeE7286" },
+					{ "owner": "PerpsHub", "address": "0x6b44C878F869Cf742A6D4DD60180A19C3B09716e" }
+				],
+				"multiAccount": [
+					{ "owner": "Spooky", "address": "0xdfeD11fE4af63B059EDBBDf53e9C633B331ed432" },
+					{ "owner": "Atlantis", "address": "0xbB69A84BeEE560d29F46E27665087f3829921D47" }
+				],
+				"feeDistributor": [
+					{ "owner": "Spooky", "address": "0x943F3eDAA10b4EEeA6E99b28A58C4f8195c35f89" },
+					{ "owner": "Atlantis", "address": "0x154d81735Ca9419C33FD8003Edc2c8cf6A25F87D" }
+				],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "sei",
+			"name": "Sei",
+			"chain": "sei",
+			"environment": "Production",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0xC6a7cc26fd84aE573b705423b7d1831139793025",
+				"token": "0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392",
+				"symbolManager": "0xbC6823bF53fCa3ED2B22b2ba9eaD339946031334",
+				"multiAccount": [{ "owner": "Gryps", "address": "0x78B1b8134A4236e69aE3728691e90B31f02C3001" }],
+				"feeDistributor": [{ "owner": "Gryps", "address": "0xCF173C0a969359d3aDcd83E95f3ebF8B33b82c53" }],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "bera",
+			"name": "Bera",
+			"chain": "bera",
+			"environment": "Production",
+			"version": "0.8.4",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bera_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bera_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x3d17f073cCb9c3764F105550B0BCF9550477D266",
+				"token": "0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce",
+				"symbolManager": "0x152A8e045a30f350F8784a20B6D8f0F39353E6d6",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0xdfeD11fE4af63B059EDBBDf53e9C633B331ed432" },
+					{ "owner": "PerpsHub", "address": "0x78B1b8134A4236e69aE3728691e90B31f02C3001" },
+					{ "owner": "PerpsHub", "address": "0x8141c1840F7D190Cd24239C22b1e560e08999B12" }
+				],
+				"multiAccount": [
+					{ "owner": "IVX", "address": "0x5C9fc09b120B7333F1DCf644C7665cEdea3dc7e2" },
+					{ "owner": "Lode", "address": "0x703c4927945Aac2B5a76f4c1D85Bc85e6fAaddB6" },
+					{ "owner": "Bulla", "address": "0xBb1AD4e9430eB87516774E0079B1529E079A0596" }
+				],
+				"feeDistributor": [
+					{ "owner": "IVX", "address": "0xFa323f509F36919aF51c58d3E8593027C09f57a0" },
+					{ "owner": "Bulla", "address": "0xC6a7cc26fd84aE573b705423b7d1831139793025" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x5146C35725d9b8F11A84ebD4a3abe9845698Ada9" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0x3D05E073F466fc61730AdFFAea5FFA0323a9cd39" },
+					{ "name": "3d Timelock", "address": "0xCBc66026FE6a0310ADa98238465F139E5B739792" }
+				],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "mode",
+			"name": "Mode",
+			"chain": "mode",
+			"environment": "Production",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0x3d17f073cCb9c3764F105550B0BCF9550477D266",
+				"token": "0xd988097fb8612cc24eeC14542bC03424c656005f",
+				"symbolManager": "0xfD9b6B38046E63ebb3A66dE99e197aB366a027F3",
+				"partyB": [
+					{ "owner": "PerpsHub", "address": "0x78E76Ac7fEc050cA785c19fFADDF57137b890543" },
+					{ "owner": "PerpsHub", "address": "0x7D387771f6E23f353a4afCE21af521875C0825D0" },
+					{ "owner": "PerpsHub", "address": "0x87FC464fa528260F1eeaB94FA20F73FeD8536Eb7" }
+				],
+				"multiAccount": [
+					{ "owner": "Cloverfield", "address": "0x3adc81CC43d9e1636de9cbac764Afcb1F3ae6cde" },
+					{ "owner": "BMX", "address": "0xC0ff4B56f62f20bA45f4229CC6BAaD986FA2a904" },
+					{ "owner": "Horizon", "address": "0xDE6446197Cd1AE02E1C5B7191a626Fb0c1757377" }
+				],
+				"feeDistributor": [
+					{ "owner": "BMX", "address": "0x5d51a2d77111f6A0aa1e0144f8025752cb1CEbA4" },
+					{ "owner": "Horizon", "address": "0x46b7763dCBddb72b303675B623BA480B3c145F9B" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x3ec4cbF3b146ac9eE2df65EE97202957e032fFE1" },
+					{ "name": "Fees Multisig", "address": "0xa35D56876Bd4e22e0C7d5d3fbb49A34dD1942b2D" }
+				],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0x1Da7A300181E69582A0eb80bBDcE3bCB15Dcf68D" },
+					{ "name": "3d Timelock", "address": "0xeCcfBB250f7eC409ebC9F20277EC097578270fAB" }
+				],
+				"authority": [{ "owner": "PerpsHub", "name": "Instant Rebalancer", "address": "0x3e09dbFE0f6e82b8448A11FB082D44cD575849d3" }],
+				"external": [{ "name": "Fees Manager", "address": "0x10e9794f1D57512b1205F4a5394c384bE89942AF" }]
+			}
+		},
+		{
+			"id": "iota",
+			"name": "Iota",
+			"chain": "iota",
+			"environment": "Production",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0xc258535aaF6ad3cEd5D2E03e2B66C35262488309",
+				"token": "0xC1B8045A6ef2934Cf0f78B0dbD489969Fa9Be7E4",
+				"symbolManager": "0x6BaF37948369bde9366742412753c7e3F78CB809",
+				"partyB": [{ "owner": "Rasa", "address": "0x10b682bf5b380c900BF4507c07e7365873A2293C" }],
+				"multiAccount": [
+					{ "owner": "Cloverfield", "address": "0x5d51a2d77111f6A0aa1e0144f8025752cb1CEbA4" },
+					{ "owner": "Peppy", "address": "0xdfC2a55a44aD3d3aAbFe8D1C498Ea923c6D39526" },
+					{ "owner": "Peppy", "address": "0x6866d1975c27b7e3a288318CFb3Cab05A1127C61" }
+				],
+				"feeDistributor": [{ "owner": "Peppy", "address": "0x6268cb3855d71667280E4950427287fbC25B1E07" }],
+				"safe": [{ "name": "Main Multisig", "address": "0x9CF7EEe91E56180DF200c57E8e1fd910EC25DEF7" }],
+				"timelock": [
+					{ "name": "12h Timelock", "address": "0xa7989EC31875Da0579454EE20195140FeB75B562" },
+					{ "name": "3d Timelock", "address": "0xe639B85B77F5D31d37C52AD1F026C6508f48DC61" }
+				]
+			}
+		},
+		{
+			"id": "hyperevm-stage",
+			"name": "HyperEVM",
+			"chain": "hyperevm",
+			"environment": "Staging",
+			"version": "0.8.6",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_events/latest/gn",
+				"vibe": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/vibe-back-hyperevm/latest/gn"
+			},
+			"contracts": {
+				"core": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB",
+				"token": "0x6aA554A167864027A02051D3F5C553244439B7Fd",
+				"accountLayer": "0x812e98F31A4EfFC09dD82e6e87ff7456151a0dFB",
+				"instantLayer": "0xCeE28784EFE6EEaf6da977D3F1d0cf05E62717eB",
+				"gasless": "0xa9bf396A5E6c9C1b59E88f1393DD1BC24eB08650",
+				"symbolManager": "0x116dE0866f7FBCd70af20A7Ad9C5e01912450d94",
+				"liquidator": "0xb0B825bE589Ab3785f93DD62623191e84Bb063Fd",
+				"partyB": [{ "owner": "Superflow", "address": "0xf62a670cda28FfAE65eE2a42D6cf6CF05EC5E775" }],
+				"affiliate": [{ "owner": "Vibe", "address": "0x98490Efdd691ab58601302F98E1492DC28eCAA56" }],
+				"external": [
+					{ "owner": "Vibe", "name": "RFL", "address": "0x0F5F4611c622225Cba0caB0889B7C5D156B142f9" },
+					{ "owner": "Vibe", "name": "Rakeback", "address": "0xC3CD10BEba0f42dC40AE959c0e3e7De26c67a23A" },
+					{ "owner": "Vibe", "name": "Hook", "address": "0x5C6497c1BD9A0077c6fc9c2d5b9aF391b646201F" },
+					{ "owner": "Vibe", "name": "Rakeback Hook", "address": "0x41d6cA04826b089bf57EF4bD33b36C61C41E34dB" },
+					{ "owner": "Vibe", "name": "LP Profit Distributor", "address": "0xB2B7C4500eBE1Cbb95519B6eb669abF36dB823db" },
+					{ "owner": "Vibe", "name": "LP Profit Relayer", "address": "0xF101a85ca536112645f23B9F48bA825c17DB5DC9" }
+				]
+			}
+		},
+		{
+			"id": "base-lc-test-8-5",
+			"name": "Base (LC)",
+			"chain": "base",
+			"environment": "Test / development",
+			"version": "0.8.5",
+			"contracts": {
+				"core": "0x0f4352e4a88b5Dc0531a98B538F04893Fb22489C",
+				"token": "0xed56e682bF46dD2bA5137c3092486ff0bb2128b1",
+				"accountLayer": "0xE566bcdC59a644A6D71564f4E941CF93b6A37846",
+				"instantLayer": "0xDbC9f62e74CF8219f51fb7Ec610495DcD9f52b71",
+				"symbolManager": "0x57Fe305BB5358Fe2aD8Ebef7774a101d775F3350",
+				"partyB": [{ "owner": "Superflow", "address": "0x473468D6B25D1639Ba96A933556dB937283D803b" }],
+				"affiliate": [{ "owner": "Vibe", "address": "0x9193566Cc94fe9090FAf800d743A59a437Ef2842" }],
+				"external": [
+					{ "owner": "Vibe", "name": "RFL", "address": "0xFc08E176Eb9350f06bD2503b47a68ab38480d75E" },
+					{ "owner": "Vibe", "name": "Rakeback", "address": "0xA59d34A20905eF6a56f51E0Bb0769888a1d1E4C8" },
+					{ "owner": "Vibe", "name": "Hook", "address": "0x0ba397C69C7849E126B30aE3C3FA6134e64cdf83" },
+					{ "owner": "Vibe", "name": "Rakeback Hook", "address": "0x85b03299DfCeA21d96C8D8DD67C0a69ceC14E55e" },
+					{ "owner": "Vibe", "name": "LP Profit Distributor", "address": "0xA5D5D684389ae080c7418E3E1E078Ed8D8EE5E71" },
+					{ "owner": "Vibe", "name": "LP Profit Relayer", "address": "0x0fAAF0Cf9F1c44203A3898821AC048372E14e9BB" }
+				]
+			}
+		},
+		{
+			"id": "base-stage-8-5",
+			"name": "Base",
+			"chain": "base",
+			"environment": "Staging",
+			"version": "0.8.5",
+			"contracts": {
+				"core": "0xa805FE5baA301D4e72C789694F3967452c77D6fD",
+				"token": "0xed56e682bF46dD2bA5137c3092486ff0bb2128b1",
+				"accountLayer": "0xE566bcdC59a644A6D71564f4E941CF93b6A37846",
+				"instantLayer": "0x4de53CCDd8E07113A42b631C186006A77095880c",
+				"partyB": [{ "owner": "Rasa", "address": "0x60cADA3e17D1e0329ebd35e1dB1673eBB1ab5D98" }],
+				"affiliate": [{ "owner": "Vibe", "address": "0x9193566Cc94fe9090FAf800d743A59a437Ef2842" }],
+				"external": [
+					{ "owner": "Vibe", "name": "RFL", "address": "0xFc08E176Eb9350f06bD2503b47a68ab38480d75E" },
+					{ "owner": "Vibe", "name": "Rakeback", "address": "0xA59d34A20905eF6a56f51E0Bb0769888a1d1E4C8" },
+					{ "owner": "Vibe", "name": "Hook", "address": "0x0ba397C69C7849E126B30aE3C3FA6134e64cdf83" },
+					{ "owner": "Vibe", "name": "Rakeback Hook", "address": "0x85b03299DfCeA21d96C8D8DD67C0a69ceC14E55e" }
+				]
+			}
+		},
+		{
+			"id": "base-lc-test",
+			"name": "Base (LC)",
+			"chain": "base",
+			"environment": "Test / development",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0x6cfa75476ACB7778390Ce8ADCBa8264064c11f14",
+				"token": "0xf666e095bd3Dfe045D1eb9c6E0472BFBd96c7c8E",
+				"symbolManager": "0x4525AF0cBe6b8140B0122b48531272C5A8C3F4c9",
+				"partyB": [{ "owner": "Superflow", "address": "0x6651f6047e45a68b59aAC3B3eBE60A8D65B9c4d9" }],
+				"multiAccount": [{ "owner": "Vibe", "address": "0x96CB0251D67Ea2a3E6a1e5b7B41F7cD63d6c530f" }]
+			}
+		},
+		{
+			"id": "base-dev-majors",
+			"name": "Base (Majors)",
+			"chain": "base",
+			"environment": "Test / development",
+			"version": "0.8.5",
+			"contracts": {
+				"core": "0xD19Dc54cb8ed6b9088662a28DCbE7681EBbf3A03",
+				"token": "0xed56e682bF46dD2bA5137c3092486ff0bb2128b1",
+				"accountLayer": "0xD640fE44b77fA90035554785cb33798dca188371",
+				"instantLayer": "0x76974fed716D7D8d50ade13B469B136ec676DA19",
+				"partyB": [{ "owner": "Superflow", "address": "0xf3f2C7d007833Ad784F99726775139405c3268A4" }]
+			}
+		},
+		{
+			"id": "arbitrum-test",
+			"name": "Arbitrum",
+			"chain": "arbitrum",
+			"environment": "Test / development",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0x50998077BEFe097434B43Eb630d1301b62552b58",
+				"token": "0x5aee30C5a5649Cb8A46a43bf7978619B506DE896",
+				"symbolManager": "0xBA45A0299CfEB8e6F4aa87A1c530069eA532363c"
+			}
+		},
+		{
+			"id": "polygon-test",
+			"name": "Polygon",
+			"chain": "polygon",
+			"environment": "Test / development",
+			"version": "0.8.4",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/polygon_analytics/latest/gn"
+			},
+			"contracts": {
+				"core": "0x976c87Cd3eB2DE462Db249cCA711E4C89154537b",
+				"token": "0x50E88C692B137B8a51b6017026Ef414651e0d5ba",
+				"symbolManager": "0xD997785F3b7184335c967762184a9e34e3A559d7",
+				"partyB": [
+					{ "owner": "Rasa (No Hedge)", "address": "0xF339ac42C861Be13170Cf89998b7F62ED230069A" },
+					{ "owner": "Rasa", "address": "0x5044238ea045585C704dC2C6387D66d29eD56648" }
+				],
+				"multiAccount": [
+					{ "owner": "Cloverfield", "address": "0xffE2C25404525D2D4351D75177B92F18D9DaF4Af" },
+					{ "owner": "Vibe", "address": "0x53c3923Ef2E64A2a259b2ac6F140dEaa1AC59f64" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x3D32d5D543093F2C99aBf0ddAFF5647f56202BB1" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"external": [{ "name": "Instant Withdraw", "address": "0x4ab4724e548c46b4dff2e259da3bd9E742670bdc" }]
+			}
+		},
+		{
+			"id": "polygon-simba-test",
+			"name": "Polygon Simba",
+			"chain": "polygon",
+			"environment": "Test / development",
+			"version": "0.8.4",
+			"contracts": {
+				"core": "0x5da06138507162db04979EEA7F55d30400cA13Fe",
+				"partyB": [{ "owner": "Rasa", "address": "0x7afA216C2BA5cd4D749fEA61Db6fe4B596EC9BEE" }],
+				"multiAccount": [{ "owner": "Vibe", "address": "0xc362b32aF10B28eF775C429D26F6143D143A6e60" }]
+			}
+		},
+		{
+			"id": "blast-deprecated",
+			"name": "Blast",
+			"chain": "blast",
+			"environment": "Deprecated",
+			"version": "0.8.2",
+			"subgraphs": {
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/blast_analytics/latest/gn",
+				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/blast_events/latest/gn"
+			},
+			"contracts": {
+				"core": "0x3d17f073cCb9c3764F105550B0BCF9550477D266",
+				"token": "0x4300000000000000000000000000000000000003",
+				"partyB": [{ "owner": "Rasa", "address": "0xECbd0788bB5a72f9dFDAc1FFeAAF9B7c2B26E456" }],
+				"multiAccount": [
+					{ "owner": "IntentX", "address": "0x083267D20Dbe6C2b0A83Bd0E601dC2299eD99015" },
+					{ "owner": "Core", "address": "0xd6ee1fd75d11989e57B57AA6Fd75f558fBf02a5e" }
+				],
+				"safe": [
+					{ "name": "Main Multisig", "address": "0x629bCef8659a11f576eC0Aad0A8fB35a8356ffcf" },
+					{ "name": "Fees Multisig", "address": "0x273aC3be108982eeB2Bfe5F8180B57F5fdD010eb" }
+				],
+				"authority": [{ "owner": "Rasa", "name": "Rebalancer to Multisig", "address": "0x7Da6f2a5E32ED8A43cf439e71dd485c2B223dD92" }]
+			}
+		}
+	]
+}
