@@ -31,7 +31,9 @@ typechain-types
 # Dependency resolution is deployment-critical; the lockfile is tracked.
 !package-lock.json
 .idea
+# Deploy scripts write scratch files with this name; the one at the root is the tracked address book.
 addresses.json
+!/addresses.json
 /abi.json
 .vscode
 # Deployment reports, checkpoints, Safe exports, and transaction evidence are local operator data.
@@ -69,3 +71,6 @@ tasks/data/checkpoints/*.lock
 /tasks/data/
 /deployments/
 /deployment-recipes/
+
+# Compiled perps-core-ui assets.
+/perps-core-ui/dist/
