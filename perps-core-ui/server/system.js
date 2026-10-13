@@ -21,7 +21,6 @@ export const IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc
 export const COMPONENTS = {
 	core: { title: "Core Diamond", strategy: "Diamond cut" },
 	accountLayer: { title: "AccountLayer", strategy: "Diamond cut" },
-	instantLayer: { title: "InstantLayer", strategy: "Replace and rewire", artifact: "InstantLayer" },
 	partyB: { title: "PartyB", strategy: "UUPS implementation", artifact: "SymmioPartyB" },
 	verifier: { title: "Signature verifier", strategy: "Replace and migrate configuration", artifact: "MuonSignatureVerifier" },
 };

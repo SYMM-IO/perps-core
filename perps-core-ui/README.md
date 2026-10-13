@@ -107,15 +107,14 @@ Role inspection checks local and verified-ABI role catalogs, enumerable members,
 
 ### Supported upgrade paths
 
-| Contract           | Preparation and execution                                                                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SYMMIO Core        | Select facet changes, include linked libraries, rehearse an atomic Diamond cut, execute and verify complete routing/runtime.                                                                                        |
-| AccountLayer       | Same Diamond workflow using its own facet/library catalog and baseline scope.                                                                                                                                       |
-| PartyB             | Deploy a new implementation, call `upgradeToAndCall` with empty initializer data, verify implementation slot and preserved Core/signer/pause state.                                                                 |
-| InstantLayer       | Deploy replacement; copy templates, execution flags, cooldown, reviewed whitelist/PartyB inventory and roles; update Core permissions, PartyB trust and GaslessLayer pointer; retire old Core/PartyB authorization. |
-| Signature verifier | Deploy replacement; copy every public key, gateway signer, all 256 permission IDs and admin/setter roles; switch Core's verifier pointer; verify copied configuration.                                              |
+| Contract           | Preparation and execution                                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SYMMIO Core        | Select facet changes, include linked libraries, rehearse an atomic Diamond cut, execute and verify complete routing/runtime.                                           |
+| AccountLayer       | Same Diamond workflow using its own facet/library catalog and baseline scope.                                                                                          |
+| PartyB             | Deploy a new implementation, call `upgradeToAndCall` with empty initializer data, verify implementation slot and preserved Core/signer/pause state.                    |
+| Signature verifier | Deploy replacement; copy every public key, gateway signer, all 256 permission IDs and admin/setter roles; switch Core's verifier pointer; verify copied configuration. |
 
-Express Provider, hooks, managers, the liquidator and other supplied addresses provide deployment context. They do not have upgrade adapters in this workbench.
+InstantLayer, Express Provider, hooks, managers, the liquidator and other supplied addresses provide deployment context. They do not have upgrade adapters in this workbench. InstantLayer is an EIP-2535 diamond in this checkout while the deployed ones predate that, so it is inspected only: moving a deployment onto the diamond is done with `scripts/migrateInstantLayer.ts`.
 
 #### Diamond workflow
 
@@ -128,8 +127,6 @@ If the desired build no longer identifies every live facet/library, import the o
 Choose the contract, deployment EOA and configuration/upgrade authority. The authority can be an EOA or a Safe that holds the required roles. Review the before/after summary and ordered deployment, configuration, cutover and retirement transactions. Each call has decoded arguments, exact calldata, target and signer.
 
 The deployment address is derived from the deployment signer's pending nonce. A changed nonce invalidates the plan. The build must match current source. PartyB requires either an exact recognized implementation or a matching deployed baseline with unchanged storage definitions; a matching constructor-masked runtime alone never authorizes a transaction.
-
-For InstantLayer, review additional PartyBs/whitelisted targets and acknowledge the migration inventory and client cutover. The supplied contracts and enumerable role holders are checked automatically. Non-enumerable mappings cannot be exhaustively discovered this way. User nonces, delegations and operation-usage mappings are not migrated; the new contract has a different EIP-712 domain and users must reauthorize. External integrations beyond the reviewed inventory need separate cutover work.
 
 Run the complete fork rehearsal. It executes every action and checks the exact replacement runtime and post-state. Then either export the reviewed transaction bundle or use **Execute** → **Start upgrade**.
 
@@ -155,7 +152,7 @@ Plans, snapshots, receipts and review evidence live in ignored `.symmio/workbenc
 - Storage checking compares state declarations/inheritance and conservatively hashes sources containing structs, enums, assembly and explicit slots. It is not a general layout analyzer. Some harmless edits are blocked; storage-changing migrations and initializers need a dedicated reviewed adapter.
 - Safe detection uses interface checks, not an audited-code allowlist. Local checkout, compiler configuration and imported baseline files are trusted operator inputs.
 - One receipt confirmation is used. Explorer verification, finality tracking and automatic rollback are not implemented. Another operator can race an ordinary EOA or external Safe transaction after its last preflight; there is no on-chain snapshot guard.
-- Tests use real local Diamonds, InstantLayer, PartyB and verifier contracts, plus a Safe-shaped fixture and a local wallet adapter. Physical Ledger, real browser extensions and production Safe execution are not proven by these tests.
+- Tests use real local Diamonds, PartyB and verifier contracts, plus a Safe-shaped fixture and a local wallet adapter. Physical Ledger, real browser extensions and production Safe execution are not proven by these tests.
 
 ## Demo and checks
 

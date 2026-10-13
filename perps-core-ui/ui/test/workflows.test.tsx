@@ -140,20 +140,19 @@ it('isolates drafts by chain, target, family and source and migrates old removal
     expect(readDraft(sessionStorage, other, fallback)).toEqual(fallback)
 })
 
-it('requires a live connection and reviewed InstantLayer inventory before preparation', () => {
-  route = '/?view=upgrade&adapter=system&scope=instantLayer&upgradeNode=instant&target=' + address
+it('requires a deployment wallet and a live connection before preparation', () => {
+  route = '/?view=upgrade&adapter=system&scope=verifier&upgradeNode=verifier&target=' + address
   mock.api.system = {
     ...mock.api.system,
     connected: true,
     snapshot: {
-      nodes: [{ id: 'instant', address, kind: 'instantLayer', name: 'InstantLayer', state: { roles: { DEFAULT_ADMIN_ROLE: [address] } } }],
+      nodes: [{ id: 'verifier', address, kind: 'verifier', name: 'Verifier', state: { roles: { DEFAULT_ADMIN_ROLE: [address] } } }],
     },
   }
   const page = render(<Upgrade />, { wrapper })
-  fireEvent.change(screen.getByLabelText('Deployment wallet address'), { target: { value: address } })
   const button = screen.getByRole('button', { name: 'Prepare transactions' }) as HTMLButtonElement
   expect(button.disabled).toBe(true)
-  fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the migration inventory/ }))
+  fireEvent.change(screen.getByLabelText('Deployment wallet address'), { target: { value: address } })
   expect(button.disabled).toBe(false)
   mock.api.system = { ...mock.api.system, connected: false }
   page.rerender(<Upgrade />)

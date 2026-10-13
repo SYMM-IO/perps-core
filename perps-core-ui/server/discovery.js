@@ -13,7 +13,7 @@ export const ROLE_SOURCES = {
 	liquidator: "contracts/helpers/accounts/SymmioLiquidator.sol",
 	symbolManager: "contracts/helpers/symbolManager/SymmioSymbolManager.sol",
 	gasless: "contracts/gaslessLayer/GaslessLayer.sol",
-	instantLayer: "contracts/instantLayer/InstantLayer.sol",
+	instantLayer: "contracts/instantLayer/libraries/LibInstantLayerAccessibility.sol",
 	verifier: "contracts/helpers/verification/SymmioSignatureVerifier.sol",
 	multiAccount: "contracts/helpers/accounts/MultiAccount.sol",
 	feeDistributor: "contracts/helpers/governance/SymmioFeeDistributor.sol",
@@ -203,6 +203,7 @@ export async function discoverRoleHistoryFromSubgraph({ nodes, links = [], block
 const artifactRoots = {
 	core: "contracts/core/facets",
 	accountLayer: "contracts/accountLayer/facets",
+	instantLayer: "contracts/instantLayer/facets",
 	express: "contracts/expressWithdrawLayer/facets",
 };
 const abiCache = new Map();
