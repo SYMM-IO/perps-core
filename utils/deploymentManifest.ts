@@ -98,7 +98,7 @@ const CORE_FACET_LIBRARIES: Record<string, string[]> = {
 	PartyAFacet: ["LibQuoteClose"],
 	PartyBExecutionFacet: ["LibQuoteClose"],
 	PartyBPositionActionsFacet: ["PartyBPositionActionsFacetImpl", "LibQuoteClose"],
-	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
+	PartyBBatchActionsFacet: ["LibQuoteClose", "PartyBPositionActionsFacetImpl"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
 	PartyBQuoteActionsFacet: ["LibQuoteClose"],
 	ForceActionsFacet: ["LibForceActions", "LibSettlement"],

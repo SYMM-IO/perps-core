@@ -207,7 +207,7 @@ async function setupBench(opts: {
 async function buildOps(
 	env: BenchEnv,
 	includeAddMargin: boolean,
-	opts?: { data?: string; userSigner?: any; combinedLockOpen?: boolean; mergedMargin?: boolean },
+	opts?: { data?: string; userSigner?: any; viaMulticast?: boolean; combinedLockOpen?: boolean; mergedMargin?: boolean },
 ) {
 	const { context, subAccount, partyBAddress, requestSendQuote, requestOpenQuote } = env
 	const user = opts?.userSigner ?? context.signers.user
@@ -310,6 +310,9 @@ async function buildOps(
 
 	const sigs: string[] = []
 	for (let i = 0; i < ops.length; i++) {
+		if (ops[i].signerAccount.isPartyB) {
+			ops[i].flexFields = [{ offset: 0, length: 32, authorizedFlexFiller: opts?.viaMulticast ? partyBAddress : context.signers.admin.address }]
+		}
 		sigs.push(await signers[i].signTypedData(env.domain, env.types, ops[i]))
 	}
 
@@ -323,8 +326,8 @@ async function runFlow(
 	opts?: { data?: string; userSigner?: any; viaMulticast?: boolean; combinedLockOpen?: boolean; mergedMargin?: boolean },
 ) {
 	const { ops, sigs } = await buildOps(env, includeAddMargin, opts)
-	const fills = ops.map(() => [])
-	const flexSigs = ops.map(() => [])
+	const fills = ops.map(op => op.flexFields.map(() => "0x"))
+	const flexSigs = ops.map(op => op.flexFields.map(() => "0x"))
 	if (opts?.viaMulticast) {
 		// Production entry: bot → SymmioPartyB._multicastCall → InstantLayer.executeTemplate
 		const ilCd = env.context.instantLayer.interface.encodeFunctionData("executeTemplate", [templateId, ops, sigs, fills, flexSigs])

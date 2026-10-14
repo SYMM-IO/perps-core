@@ -66,6 +66,15 @@ describe("InstantLayer delegation migration", function () {
 		return diamond.connect(fixture.migrator).migrateDelegations(oldLayer, entries)
 	}
 
+	it("does not resurrect legacy grants after an account ownership transfer", async function () {
+		await grant()
+		await fixture.context.alCoreFacet.connect(fixture.owner).transferSubAccountOwnership(account, fixture.context.signers.hedger.address)
+		expect(await source.delegations(account, delegateAddress, SELECTOR)).to.equal(expiry)
+		expect(await diamond.connect(fixture.migrator).migrateDelegations.staticCall(sourceAddress, [entry(account, delegateAddress)])).to.equal(0n)
+		await migrate()
+		expect(await diamond.isDelegationActive(account, delegateAddress, SELECTOR)).to.equal(false)
+	})
+
 	it("requires an explicit MIGRATOR_ROLE grant, and revoking it removes access", async function () {
 		expect(await diamond.MIGRATOR_ROLE()).to.equal(MIGRATOR_ROLE)
 		expect(await diamond.hasRole(MIGRATOR_ROLE, fixture.admin.address)).to.equal(false)

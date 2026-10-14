@@ -96,8 +96,8 @@ library LibPartyBPositionsActions {
 		LibSymbolAdjustment.requirePendingQuoteCurrent(quote);
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 
-		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
-		if (_instantOpenMode) {
+		bool _instantOpenMode = LibExecutionContext.requireQuoteExecutionMode(quoteId);
+		if (LibExecutionContext.isInstantOpenMode()) {
 			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
 		}
 
@@ -255,6 +255,7 @@ library LibPartyBPositionsActions {
 		quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
 		quote.quoteStatus = QuoteStatus.OPENED;
 		LibQuote.addToOpenPositions(quoteId);
+		LibExecutionContext.completeInstantOpenQuote(quoteId);
 
 		if (!_instantOpenMode) {
 			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);

@@ -4,7 +4,7 @@ import { TypedDataDomain, ZeroAddress, ZeroHash, toUtf8Bytes } from "ethers"
 import { initializeFixture } from "../Initialize.fixture.js"
 import { createTimelockApprovalSigner, type TimelockApprovalSigner } from "../helpers/accountLayerTimelock.js"
 import { ethers } from "../helpers/hardhat-connection.js"
-import { cloneTypes } from "../helpers/instantLayerEIP712Types.js"
+import { authorizeTemplateFields, cloneTypes } from "../helpers/instantLayerEIP712Types.js"
 import type { InstantLayer } from "../helpers/instantLayerTypes.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 import { RunContext } from "../models/RunContext.js"
@@ -224,6 +224,7 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 		expect(markerIndex).to.be.greaterThan(-1)
 		expect(wrapperCd.slice(2).lastIndexOf(marker)).to.equal(markerIndex)
 		const insertionPoint = markerIndex / 2 - 4
+		authorizeTemplateFields(wrapperOperation, executor.address, [insertionPoint])
 
 		const sourceCd = mock.interface.encodeFunctionData("getTuple", [finalAmount, 0])
 		const templateId = await il.nextTemplateId()
@@ -240,6 +241,7 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 			return [
 				ethers.dataSlice(filledCd, 4 + APPROVAL_OFFSET, 4 + APPROVAL_OFFSET + APPROVAL_LENGTH),
 				signatureFill(signed.signature, ECDSA_SIGNATURE_LENGTH),
+				"0x",
 			]
 		}
 
@@ -247,7 +249,7 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 		const execute = (wrapperFills: string[]) =>
 			il
 				.connect(executor)
-				.executeTemplate(templateId, [sourceOp, wrapperOperation], [sourceSignature, wrapperSignature], [[], wrapperFills], [[], ["0x", "0x"]])
+				.executeTemplate(templateId, [sourceOp, wrapperOperation], [sourceSignature, wrapperSignature], [[], wrapperFills], [[], ["0x", "0x", "0x"]])
 		await expect(execute(fillsFor(wrong)))
 			.to.be.revertedWithCustomError(il, "OperationFailed")
 			.withArgs(1, (d: string) => d.startsWith(tl.interface.getError("TimelockOpNotApprovedOrScheduled")!.selector))
@@ -395,8 +397,10 @@ describe("AccountLayer Timelock via InstantLayer", function () {
 				{ insertionPoints, sourceIndices: insertionPoints.map(() => 0), sourceOffsets },
 			])
 			const ops = [signedOp(sourceCd, await mock.getAddress()), signedOp(wrapper, accountLayer, [], sessionKey)]
+			authorizeTemplateFields(ops[1], executor.address, insertionPoints)
 			const signatures = [await user.signTypedData(instantDomain, types, ops[0]), await sessionKey.signTypedData(instantDomain, types, ops[1])]
-			const execute = () => il.connect(executor).executeTemplate(templateId, ops, signatures, [[], []], [[], []])
+			const values = [[], insertionPoints.map(() => "0x")]
+			const execute = () => il.connect(executor).executeTemplate(templateId, ops, signatures, values, values)
 			await expect(execute()).to.be.revertedWithCustomError(il, "InvalidDelegation")
 			expect(await view.ownerOf(subAccount)).to.equal(user.address)
 			for (const op of ops) expect(await il.operationUsageCount(await il.getOperationHash(op))).to.equal(0n)

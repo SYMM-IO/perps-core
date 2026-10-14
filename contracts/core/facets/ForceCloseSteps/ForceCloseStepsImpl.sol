@@ -160,6 +160,11 @@ library ForceCloseStepsImpl {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage forceCloseQuote = quoteLayout.quotes[quoteId];
 		bool isSamePartyB = forceCloseQuote.partyB == sig.partyB;
+		// A different solver may fund this PartyA's force close, but the workflow must
+		// not grant cooldown-free settlement privileges over unrelated PartyAs.
+		if (!isSamePartyB) {
+			require(sig.partyAs.length == 1 && sig.partyAs[0] == forceCloseQuote.partyA, "ForceActionsFacet: Unrelated partyA");
+		}
 
 		// Verify signature using unified settlement verification
 		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];

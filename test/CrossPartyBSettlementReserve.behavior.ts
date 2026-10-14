@@ -378,6 +378,19 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(0n)
 		})
 
+		it("settles the original isolated bucket after a mode switch even when the cross bucket is empty", async function () {
+			const { scenarioContext: c, scenarioUserAddr: a, scenarioHedger: b, scenarioHedgerAddr: bAddress } = await setupIsolatedPositiveSettlement()
+			const before = await c.viewFacet.allocatedBalanceOfPartyB(bAddress, a)
+			const [state] = await c.viewFacet.getSettlementStates(a, [bAddress])
+			await c.controlFacet.setCrossPartyBModeActivated(true)
+			await c.partyBAccountFacet.connect(b.signer).activateCrossPartyB()
+			expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, ZeroAddress)).to.equal(0n)
+			await c.partyALiquidationFacet.settlePartyALiquidation(a, [bAddress])
+			expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, a)).to.equal(before + state.cva - state.actualAmount)
+			expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, ZeroAddress)).to.equal(0n)
+			expect(await c.viewFacet.getPartyBLiquidationSettlementReserve(bAddress)).to.equal(0n)
+		})
+
 		it("Should let takeover clear an isolated-created positive settlement after PartyB becomes cross-mode", async function () {
 			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
 

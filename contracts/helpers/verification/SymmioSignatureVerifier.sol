@@ -112,6 +112,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 	/// @notice Adds a new TSS public key for signature verification
 	/// @param pubKey The public key to add
 	function addPublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
+		require(pubKey.x > 0 && pubKey.x < LibMuonV04ClientBase.HALF_Q && pubKey.parity <= 1, "MuonSignatureVerifier: Invalid public key");
 		publicKeys.push(pubKey);
 		emit PublicKeyAdded(pubKey.x, pubKey.parity);
 	}

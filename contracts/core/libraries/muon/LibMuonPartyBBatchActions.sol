@@ -19,6 +19,7 @@ library LibMuonPartyBBatchActions {
 		uint256[] memory quoteIds,
 		MuonFunction func
 	) internal view {
+		require(upnlSig.prices.length == quoteIds.length, "LibMuon: Invalid prices length");
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);

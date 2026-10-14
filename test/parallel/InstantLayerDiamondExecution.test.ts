@@ -3,7 +3,7 @@ import { Contract, Signer, TypedDataDomain } from "ethers"
 
 import { initializeFixture } from "../Initialize.fixture.js"
 import { ethers } from "../helpers/hardhat-connection.js"
-import { cloneTypes } from "../helpers/instantLayerEIP712Types.js"
+import { FLEX_FILLER_AUTH_TYPES, cloneTypes } from "../helpers/instantLayerEIP712Types.js"
 import { loadFixture } from "../helpers/network-helpers.js"
 import { QuoteStatus } from "../models/Enums.js"
 import { RunContext } from "../models/RunContext.js"
@@ -54,7 +54,7 @@ function createSignedOperation({ signer, target, callData, signerAccount, nonce,
 		target,
 		callData,
 		signerAccount,
-		flexFields: [],
+		flexFields: [] as { offset: number; length: number; authorizedFlexFiller: string }[],
 		maxUses,
 		replayAttackHeader: { nonce, deadline, salt: generateSalt() },
 	}
@@ -248,6 +248,167 @@ describe("InstantLayer diamond execution", function () {
 	})
 
 	describe("executeTemplate", function () {
+		it("rejects recipient injection into a fixed signed operation and rolls back its usage", async function () {
+			await context.accountManager.connect(admin).addAccount("injectionSource")
+			const sourceAccount = findAccountByName(await context.accountManager.getAccounts(adminAddress, 0, 100), "injectionSource")
+			await context.accountFacet.connect(partyA).depositFor(accountAddress, decimal(100n))
+			await diamond.addTemplate("recipient rewrite", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
+			])
+			const id = (await diamond.getNextTemplateId()) - 1n
+			const source = createSignedOperation({
+				signer: adminAddress,
+				target: context.accountLayerDiamond,
+				callData: context.alViewFacet.interface.encodeFunctionData("ownerOf", [sourceAccount]),
+				signerAccount: { addr: sourceAccount, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			const victim = createSignedOperation({
+				signer: partyAAddress,
+				target: context.diamond,
+				callData: context.accountFacet.interface.encodeFunctionData("internalTransfer", [partyAAddress, decimal(100n)]),
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			const signature = await partyA.signTypedData(domain, cloneTypes(), victim)
+			await expect(diamond.executeTemplate(id, [source, victim], ["0x", signature], [[], []], [[], []]))
+				.to.be.revertedWithCustomError(diamond, "UnauthorizedTemplateInsertion")
+				.withArgs(0)
+			expect(await diamond.operationUsageCount(await diamond.getOperationHash(victim))).to.equal(0n)
+			expect(await context.viewFacet.balanceOf(accountAddress)).to.equal(decimal(100n))
+			await diamond.executeBatch([victim], [signature], [[]], [[]])
+			expect(await context.viewFacet.balanceOf(accountAddress)).to.equal(0n)
+		})
+
+		it("reverts the entire atomic-open template when a sent quote is never opened", async function () {
+			await diamond.addTemplate("orphan instant quote", [{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }])
+			const id = (await diamond.getNextTemplateId()) - 1n
+			await diamond.setTemplateInstantOpenMode(id, true)
+			const op = createSignedOperation({
+				signer: partyAAddress,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			const sig = await partyA.signTypedData(domain, cloneTypes(), op)
+			const before = await context.viewFacet.allocatedBalanceOfPartyA(accountAddress)
+			await expect(diamond.executeTemplate(id, [op], [sig], [[]], [[]]))
+				.to.be.revertedWithCustomError(await ethers.getContractAt("ExecutionContextFacet", context.diamond), "IncompleteInstantOpen")
+				.withArgs(1)
+			expect(await context.viewFacetQuote.getNextQuoteId()).to.equal(0n)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(accountAddress)).to.equal(before)
+			await diamond.executeBatch([op], [sig], [[]], [[]])
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
+
+		it("requires the designated filler to authorize the actual injected result", async function () {
+			const target = await (await ethers.getContractFactory("MockInstantTarget")).deploy()
+			await diamond.setTargetWhitelist(await target.getAddress(), true)
+			await diamond.addTemplate("signed pipeline word", [
+				{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+				{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] },
+			])
+			const id = (await diamond.getNextTemplateId()) - 1n
+			const source = createSignedOperation({
+				signer: partyAAddress,
+				target: context.accountLayerDiamond,
+				callData: context.alViewFacet.interface.encodeFunctionData("ownerOf", [accountAddress]),
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			const store = createSignedOperation({
+				signer: partyAAddress,
+				target: await target.getAddress(),
+				callData: target.interface.encodeFunctionData("store", [0]),
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			const filler = context.signers.hedger2
+			store.flexFields = [{ offset: 0, length: 32, authorizedFlexFiller: filler.address }]
+			const sigs = [await partyA.signTypedData(domain, cloneTypes(), source), await partyA.signTypedData(domain, cloneTypes(), store)]
+			const message = {
+				opHash: await diamond.getOperationHash(store),
+				fieldIndex: 0,
+				value: ethers.AbiCoder.defaultAbiCoder().encode(["address"], [partyAAddress]),
+			}
+			const wrong = await filler.signTypedData(domain, FLEX_FILLER_AUTH_TYPES, { ...message, value: ethers.toBeHex(7, 32) })
+			await expect(diamond.executeTemplate(id, [source, store], sigs, [[], ["0x"]], [[], [wrong]])).to.be.revertedWithCustomError(
+				diamond,
+				"UnauthorizedTemplateInsertion",
+			)
+			const approval = await filler.signTypedData(domain, FLEX_FILLER_AUTH_TYPES, message)
+			await diamond.executeTemplate(id, [source, store], sigs, [[], ["0x"]], [[], [approval]])
+			expect(await target.lastValue()).to.equal(BigInt(partyAAddress))
+		})
+
+		it("rejects an ordinary pending quote entering an atomic bookkeeping shortcut", async function () {
+			const send = createSignedOperation({
+				signer: partyAAddress,
+				target: context.diamond,
+				callData: quoteCallData,
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			await diamond.executeBatch([send], [await partyA.signTypedData(domain, cloneTypes(), send)], [[]], [[]])
+			await diamond.addTemplate("ordinary quote in atomic scope", [{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }])
+			const id = (await diamond.getNextTemplateId()) - 1n
+			await diamond.setTemplateInstantOpenMode(id, true)
+			const lock = createSignedOperation({
+				signer: partyBHelperAddress,
+				target: context.diamond,
+				callData: context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [1n, await getDummySingleUpnlSig(10n)]),
+				signerAccount: { addr: partyBHelperAddress, isPartyB: true },
+				nonce: 0n,
+				deadline,
+			})
+			const reason = new ethers.Interface(["error InvalidInstantOpenQuote(uint256 quoteId)"]).encodeErrorResult("InvalidInstantOpenQuote", [1n])
+			await expect(diamond.executeTemplate(id, [lock], [await partyB.signTypedData(domain, cloneTypes(), lock)], [[]], [[]]))
+				.to.be.revertedWithCustomError(diamond, "OperationFailed")
+				.withArgs(0n, reason)
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
+
+		it("invalidates old delegations on transfer, including when ownership later returns", async function () {
+			const delegate = context.signers.hedger2
+			const withdraw = context.accountFacet.interface.getFunction("withdrawTo")!.selector
+			await context.alTimelockFacet.connect(partyA).setupTimelocks(accountAddress, partyAAddress, 300, [withdraw])
+			const selector = context.viewFacet.interface.getFunction("balanceOf")!.selector
+			const grant = {
+				account: { addr: accountAddress, isPartyB: false },
+				delegatedSigner: delegate.address,
+				selectors: [selector],
+				expiryTimestamp: deadline,
+			}
+			await diamond.connect(partyA).grantDelegation(grant)
+			expect(await diamond.isDelegationActive(accountAddress, delegate.address, selector)).to.equal(true)
+			const op = createSignedOperation({
+				signer: delegate.address,
+				target: context.diamond,
+				callData: context.viewFacet.interface.encodeFunctionData("balanceOf", [accountAddress]),
+				signerAccount: { addr: accountAddress, isPartyB: false },
+				nonce: 0n,
+				deadline,
+			})
+			const sig = await delegate.signTypedData(domain, cloneTypes(), op)
+			await context.alCoreFacet.connect(partyA).transferSubAccountOwnership(accountAddress, context.signers.user2.address)
+			expect((await context.alViewFacet.getSelectorTimelock(accountAddress, withdraw)).unlocker).to.equal(partyAAddress)
+			expect(await context.alViewFacet.getAccountOwnershipEpoch(accountAddress)).to.equal(1n)
+			expect(await diamond.isDelegationActive(accountAddress, delegate.address, selector)).to.equal(false)
+			await expect(diamond.executeBatch([op], [sig], [[]], [[]])).to.be.revertedWithCustomError(diamond, "InvalidDelegation")
+			await context.alCoreFacet.connect(context.signers.user2).transferSubAccountOwnership(accountAddress, partyAAddress)
+			expect(await diamond.isDelegationActive(accountAddress, delegate.address, selector)).to.equal(false)
+			await diamond.connect(partyA).grantDelegation(grant)
+			expect(await diamond.isDelegationActive(accountAddress, delegate.address, selector)).to.equal(true)
+			await diamond.executeBatch([op], [sig], [[]], [[]])
+		})
 		// What would have to break for this to fail: _insertResults never writing the injected
 		// quote id into op2's calldata, or template gating (active flag / operation-count check)
 		// letting a mismatched op array through. The placeholder quote id below is deliberately
@@ -280,11 +441,12 @@ describe("InstantLayer diamond execution", function () {
 				nonce: 1n,
 				deadline,
 			})
+			op2.flexFields = [{ offset: 0, length: 32, authorizedFlexFiller: adminAddress }]
 
 			const sig1 = await partyA.signTypedData(domain, cloneTypes(), op1)
 			const sig2 = await partyB.signTypedData(domain, cloneTypes(), op2)
 
-			await expect(diamond.connect(admin).executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], []], [[], []])).to.not.be.reverted
+			await expect(diamond.connect(admin).executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], ["0x"]], [[], ["0x"]])).to.not.be.reverted
 
 			const quote = await context.viewFacetQuote.getQuote(1)
 			expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)

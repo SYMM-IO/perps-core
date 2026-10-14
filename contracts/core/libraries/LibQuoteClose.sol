@@ -64,7 +64,10 @@ library LibQuoteClose {
 			quote.lockedValues.partyBmm == 0 || (quote.lockedValues.partyBmm * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
 			"LibQuote: Low filled amount"
 		);
-		require((quote.lockedValues.lf * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0, "LibQuote: Low filled amount");
+		require(
+			quote.lockedValues.lf == 0 || (quote.lockedValues.lf * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
+			"LibQuote: Low filled amount"
+		);
 		LockedValues memory lockedValues = LockedValues(
 			quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / (LibQuote.quoteOpenAmount(quote))),
 			quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / (LibQuote.quoteOpenAmount(quote))),

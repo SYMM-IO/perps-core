@@ -20,6 +20,11 @@ import { LibAccount } from "../../libraries/LibAccount.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBPositionActionsFacetImpl {
+	/// @notice Shared open transition after a batch caller has authenticated the pair and will check aggregate solvency.
+	/// @dev Kept in the already-linked implementation library to keep the batch facet within its release size budget.
+	function openPositionState(uint256 quoteId, uint256 filledAmount, uint256 openedPrice) public returns (uint256) {
+		return LibPartyBPositionsActions.openPosition(quoteId, filledAmount, openedPrice);
+	}
 	using LockedValuesOps for LockedValues;
 
 	/// @notice Opens a position for a single quote with solvency verification and connection tracking

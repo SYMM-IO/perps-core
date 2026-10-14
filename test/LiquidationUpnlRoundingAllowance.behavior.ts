@@ -510,8 +510,7 @@ export function shouldBehaveLikeLiquidationUpnlRoundingAllowance(): void {
 					const detail = await user.getLiquidatedStateOfPartyA()
 					expect(detail.liquidationType).to.equal(BigInt(liquidationType))
 					const reduction = signedDifference > 0n ? signedDifference : 0n
-					const expectedActual =
-						liquidationType === LiquidationType.LATE ? quoteUpnl + reduction : quoteUpnl + (-quoteUpnl * detail.deficit) / -signedUpnl + reduction
+					const expectedActual = liquidationType === LiquidationType.LATE ? quoteUpnl + reduction : quoteUpnl + detail.deficit + reduction
 					const expectedCva = liquidationType === LiquidationType.LATE ? balance.lockedCva - detail.deficit : 0n
 					const partyBBefore = await hedger.getBalanceInfo(userAddr)
 					await facet.liquidatePositionsPartyAWithSnapshot(userAddr, [quoteId])

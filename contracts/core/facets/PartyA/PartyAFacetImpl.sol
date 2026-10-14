@@ -116,11 +116,12 @@ library PartyAFacetImpl {
 			);
 		}
 		// Add funds to pendingLockedBalances unless instantOpenMode writes them directly to lockedBalances.
-		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
+		bool _instantOpenMode = LibExecutionContext.isAtomicOpenMode();
 		if (!_instantOpenMode) {
 			accountLayout.pendingLockedBalances[signer].add(lockedValues);
 		}
 		uint256 currentId = ++quoteLayout.lastId;
+		LibExecutionContext.registerInstantOpenQuote(currentId);
 
 		// create quote.
 		// NOTE: maxFundingRate is set to 1 (effectively disabled) because funding rate caps

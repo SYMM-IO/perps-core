@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { PartyBPositionActionsFacetImpl } from "../PartyBPositionActions/PartyBPositionActionsFacetImpl.sol";
+
 import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBatchActions.sol";
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
 import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
@@ -90,7 +92,7 @@ library PartyBBatchActionsFacetImpl {
 			Quote storage quote = quoteLayout.quotes[quoteId];
 			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
 			require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
-			uint256 newId = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
+			uint256 newId = PartyBPositionActionsFacetImpl.openPositionState(quoteId, filledAmounts[i], openedPrices[i]);
 			if (quote.quoteStatus == QuoteStatus.OPENED) {
 				LibConnections.addConnection(quote.partyA, quote.partyB);
 			}

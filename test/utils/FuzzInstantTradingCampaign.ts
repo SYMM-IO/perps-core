@@ -70,11 +70,12 @@ export async function executeFuzzInstantTrading(
 			await runTx(il.setTemplateInstantOpenMode(templateId, instantOpen))
 		}
 		const partyBNonce = await il.nonces(partyB)
+		const flexFields = execution === "template" ? [{ offset: 0, length: 32, authorizedFlexFiller: context.signers.admin.address }] : []
 		async function signedOpen(amount: bigint): Promise<FuzzSignedOperation[]> {
 			return [
 				await executor.sign(owner, user.address, context.diamond, sendCd),
-				await executor.sign(context.signers.hedger, partyB, context.diamond, lockCd, { isPartyB: true, nonce: partyBNonce + 1n }),
-				await executor.sign(context.signers.hedger, partyB, context.diamond, openCd(amount), { isPartyB: true, nonce: partyBNonce + 2n }),
+				await executor.sign(context.signers.hedger, partyB, context.diamond, lockCd, { isPartyB: true, nonce: partyBNonce + 1n, flexFields }),
+				await executor.sign(context.signers.hedger, partyB, context.diamond, openCd(amount), { isPartyB: true, nonce: partyBNonce + 2n, flexFields }),
 			]
 		}
 		const failedOps = await signedOpen(quantity + decimal(1n))
@@ -84,8 +85,8 @@ export async function executeFuzzInstantTrading(
 		const failedArgs = [
 			failedOps.map(entry => entry.operation),
 			failedOps.map(entry => entry.signature),
-			failedOps.map(() => []),
-			failedOps.map(() => []),
+			failedOps.map(({ operation }) => operation.flexFields.map(() => "0x")),
+			failedOps.map(({ operation }) => operation.flexFields.map(() => "0x")),
 		] as const
 		await expect(
 			templateId === undefined ? il.executeBatch(...failedArgs) : il.executeTemplate(templateId, ...failedArgs),

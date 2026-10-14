@@ -1,4 +1,5 @@
-// test/helpers/eip712Types.ts
+import type { InstantLayer } from "./instantLayerTypes.js"
+
 export type TypedDataEntry = Readonly<{ name: string; type: string }>
 export type DelegateTypedDataTypes = Readonly<Record<string, readonly TypedDataEntry[]>>
 
@@ -67,4 +68,13 @@ export function cloneTypes(): TypedDataTypes {
 		FlexField: [...BASE_TYPES.FlexField],
 		SignedOperation: [...BASE_TYPES.SignedOperation],
 	}
+}
+
+/** Explicitly authorize each pipeline word before signing an operation used by a template. */
+export function authorizeTemplateFields(
+	operation: Pick<InstantLayer.SignedOperationStruct, "flexFields">,
+	authorizedFlexFiller: string,
+	offsets: number[],
+): void {
+	for (const offset of offsets) operation.flexFields.push({ offset, length: 32, authorizedFlexFiller })
 }

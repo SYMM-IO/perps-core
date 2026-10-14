@@ -281,7 +281,7 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 
 			it("Should allow settling a different partyB to fund partyA", async function () {
 				// sig.partyB == hedger2 (different from force close quote's partyB = hedger)
-				// isSamePartyB is false → no restriction, partyA is free to settle with other partyBs
+				// A foreign solver is allowed only when its settlement funds the force-close PartyA.
 				const sig = await getDummyUnifiedSettlementSig(
 					await hedger2.getAddress(),
 					0n,
@@ -299,6 +299,28 @@ export function shouldBehaveLikeSettleAndForceClosePosition(): void {
 				// Force close should still be in progress
 				const detail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
 				expect(detail.inProgress).to.equal(true)
+			})
+
+			it("rejects an unrelated PartyA/PartyB pair through a permissionless force-close workflow", async function () {
+				const id = await user2.sendQuote(
+					limitQuoteRequestBuilder()
+						.deadline(await getBlockTimestamp(1000n))
+						.build(),
+				)
+				await hedger2.lockQuote(id)
+				await hedger2.openPosition(id)
+				const sig = await getDummyUnifiedSettlementSig(
+					hedger2.address,
+					0n,
+					[0n],
+					[user2.address],
+					[0n],
+					[{ quoteId: id, currentPrice: decimal(12n, 17), partyAIndex: 0 } as any],
+				)
+				await expect(context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, sig, [decimal(11n, 17)])).to.be.revertedWith(
+					"ForceActionsFacet: Unrelated partyA",
+				)
+				expect((await context.viewFacetQuote.getQuote(id)).openedPrice).to.equal(decimal(1n))
 			})
 		})
 	})

@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { LiquidationSettlementStorage } from "../../storages/LiquidationSettlementStorage.sol";
+
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SignedMath } from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import { LibAccount } from "../LibAccount.sol";
@@ -114,6 +116,8 @@ library LibPartyALiquidationProcess {
 
 		_requireActivePartyALiquidationAndRecordAction(maLayout, partyA);
 		require(quoteIds.length > 0, "LiquidationFacet: Empty quote list");
+		require(!LiquidationSettlementStorage.layout().processing[partyA], "LiquidationFacet: Processing positions");
+		LiquidationSettlementStorage.layout().processing[partyA] = true;
 
 		for (uint256 index = 0; index < quoteIds.length; index++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[index]];
@@ -153,6 +157,13 @@ library LibPartyALiquidationProcess {
 			if (!settlementState.pending) {
 				settlementState.pending = true;
 				liquidationDetail.involvedPartyBCounts += 1;
+				LiquidationSettlementStorage.Layout storage metadata = LiquidationSettlementStorage.layout();
+				metadata.allocations[partyA][quote.partyB] = LiquidationSettlementStorage.Allocation({
+					key: LibAccount.partyBAllocationKey(quote.partyB, partyA),
+					isSet: true
+				});
+				delete metadata.overridden[partyA][quote.partyB];
+				if (metadata.netting[partyA].enabled) metadata.netting[partyA].partyBs.push(quote.partyB);
 			}
 			if (liquidationDetail.liquidationType == LiquidationType.NORMAL) {
 				settlementState.cva += quote.lockedValues.cva;
@@ -170,7 +181,15 @@ library LibPartyALiquidationProcess {
 				settlementState.actualAmount += pnlWithFunding;
 				settlementState.expectedAmount += pnlWithFunding;
 			} else if (liquidationDetail.liquidationType == LiquidationType.OVERDUE) {
-				if (pnlWithFunding >= 0) {
+				if (LiquidationSettlementStorage.layout().netting[partyA].enabled) {
+					LiquidationSettlementStorage.Netting storage netting = LiquidationSettlementStorage.layout().netting[partyA];
+					if (settlementState.expectedAmount < 0) netting.totalNetLoss -= uint256(-settlementState.expectedAmount);
+					settlementState.expectedAmount += pnlWithFunding;
+					if (settlementState.expectedAmount < 0) netting.totalNetLoss += uint256(-settlementState.expectedAmount);
+					if (!LiquidationSettlementStorage.layout().overridden[partyA][quote.partyB]) {
+						settlementState.actualAmount = settlementState.expectedAmount;
+					}
+				} else if (pnlWithFunding >= 0) {
 					settlementState.actualAmount += pnlWithFunding;
 					settlementState.expectedAmount += pnlWithFunding;
 				} else {
@@ -194,7 +213,8 @@ library LibPartyALiquidationProcess {
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
 				int256 partyAExpectedReceivableFromPartyB = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
-				address allocKey = LibAccount.partyBAllocationKey(quote.partyB, partyA);
+				LiquidationSettlementStorage.Allocation storage allocation = LiquidationSettlementStorage.layout().allocations[partyA][quote.partyB];
+				address allocKey = allocation.isSet ? allocation.key : LibAccount.partyBAllocationKey(quote.partyB, partyA);
 				if (partyAExpectedReceivableFromPartyB < 0) {
 					// Negative means PartyA lost against this PartyB; the loss can always be counted in full.
 					liquidationDetail.partyAAccumulatedUpnl += partyAExpectedReceivableFromPartyB;
@@ -226,6 +246,7 @@ library LibPartyALiquidationProcess {
 		// The bound assumes repaired funding aggregates and exact aggregate notional in the oracle.
 		// An accepted difference settles at the smaller amount supported by both calculations; larger differences dispute.
 		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
+			_finalizeOverdueNetting(accountLayout, partyA);
 			int256 signedUpnl = liquidationDetail.upnl;
 			int256 settledUpnl = liquidationDetail.partyAAccumulatedUpnl;
 			uint256 difference = LibUtils.absDiff(settledUpnl, signedUpnl);
@@ -235,12 +256,39 @@ library LibPartyALiquidationProcess {
 						accountLayout.liquidationStartPositionCounts[partyA];
 				if (difference > allowance) {
 					liquidationDetail.disputed = true;
+					LiquidationSettlementStorage.layout().processing[partyA] = false;
 					return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 				}
 				_prepareSettlementRounding(accountLayout, partyA, signedUpnl, settledUpnl);
 			}
 		}
+		LiquidationSettlementStorage.layout().processing[partyA] = false;
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
+	}
+
+	/// @dev Finalize once, after all quote batches, so both quote order and later settlement order
+	///      use the same net-loss denominator. Never haircut a net-flat or net-profitable solver.
+	function _finalizeOverdueNetting(AccountStorage.Layout storage accountLayout, address partyA) private {
+		LiquidationSettlementStorage.Layout storage metadata = LiquidationSettlementStorage.layout();
+		LiquidationSettlementStorage.Netting storage netting = metadata.netting[partyA];
+		if (!netting.enabled || netting.finalized) return;
+		netting.finalized = true;
+		uint256 deficit = accountLayout.liquidationDetails[partyA].deficit;
+		for (uint256 i = 0; i < netting.partyBs.length; i++) {
+			address partyB = netting.partyBs[i];
+			if (metadata.overridden[partyA][partyB]) continue;
+			LiquidationSettlementState storage state = accountLayout.settlementStates[partyA][partyB];
+			if (state.expectedAmount < 0) {
+				uint256 loss = uint256(-state.expectedAmount);
+				// Round payouts down so distributing across multiple losing solvers cannot
+				// create collateral claims greater than the net funds available.
+				uint256 payableLoss = netting.totalNetLoss - Math.min(deficit, netting.totalNetLoss);
+				state.actualAmount = -int256(Math.mulDiv(loss, payableLoss, netting.totalNetLoss));
+			} else {
+				state.actualAmount = state.expectedAmount;
+			}
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, state.actualAmount);
+		}
 	}
 
 	/// @dev Records the accepted cap once, without enumerating PartyBs. Their buckets are adjusted
@@ -304,6 +352,7 @@ library LibPartyALiquidationProcess {
 		// Override PartyB settlement buckets and keep settlement reserves in sync.
 		for (uint256 i = 0; i < partyBs.length; i++) {
 			accountLayout.settlementStates[partyA][partyBs[i]].actualAmount = amounts[i];
+			LiquidationSettlementStorage.layout().overridden[partyA][partyBs[i]] = true;
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyBs[i], amounts[i]);
 		}
 		return accountLayout.liquidationDetails[partyA].liquidationId;
@@ -329,6 +378,8 @@ library LibPartyALiquidationProcess {
 
 		// Validate active liquidation state and final settlement preconditions.
 		_requireActivePartyALiquidationAndRecordAction(maLayout, partyA);
+		// Close hooks run before netting, rounding and dispute checks have completed.
+		require(!LiquidationSettlementStorage.layout().processing[partyA], "LiquidationFacet: Processing positions");
 		require(
 			quoteLayout.partyAPositionsCount[partyA] == 0 && quoteLayout.partyAPendingQuotes[partyA].length == 0,
 			"LiquidationFacet: PartyA has still open positions"
@@ -358,7 +409,8 @@ library LibPartyALiquidationProcess {
 			cvaAmounts[i] = cva;
 
 			// Use correct allocation key based on cross mode
-			address allocKey = LibAccount.partyBAllocationKey(partyB, partyA);
+			LiquidationSettlementStorage.Allocation storage allocation = LiquidationSettlementStorage.layout().allocations[partyA][partyB];
+			address allocKey = allocation.isSet ? allocation.key : LibAccount.partyBAllocationKey(partyB, partyA);
 			allocationKeys[i] = allocKey;
 			uint256 partyBAllocatedBalance = LibAccount.increasePartyBAllocatedBalance(partyB, allocKey, cva, SharedEvents.BalanceChangeType.CVA_IN);
 
@@ -375,7 +427,7 @@ library LibPartyALiquidationProcess {
 					// Cross-mode PartyBs must settle uPNL first via settlePartyBUpnlForLiquidation
 					// to convert unrealized profit into allocated balance before settlement.
 					// The clearing house takeover flow handles cases where settlement is not possible.
-					require(!maLayout.crossModeEnabledForPartyB[partyB], "LiquidationFacet: Settle cross partyB uPNL first");
+					require(allocKey != address(0), "LiquidationFacet: Settle cross partyB uPNL first");
 					settleAmounts[i] = int256(partyBAllocatedBalance);
 				}
 			}
@@ -401,6 +453,8 @@ library LibPartyALiquidationProcess {
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, 0);
 			delete accountLayout.settlementStates[partyA][partyB];
 			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
+			delete LiquidationSettlementStorage.layout().allocations[partyA][partyB];
+			delete LiquidationSettlementStorage.layout().overridden[partyA][partyB];
 		}
 		accountLayout.partyALiquidationRoundingReduction[partyA] = remainingReduction;
 
@@ -507,6 +561,7 @@ library LibPartyALiquidationProcess {
 		delete accountLayout.liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId];
 		delete accountLayout.liquidationStartPositionCounts[partyA];
 		delete accountLayout.partyALiquidationRoundingReduction[partyA];
+		delete LiquidationSettlementStorage.layout().netting[partyA];
 		delete accountLayout.liquidationDetails[partyA].liquidationType;
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;

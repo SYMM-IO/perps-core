@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { LiquidationSettlementStorage } from "../../storages/LiquidationSettlementStorage.sol";
+
 import { LibAccount } from "../LibAccount.sol";
 import { SharedEvents } from "../SharedEvents.sol";
 import { AccountStorage, LiquidationDetail, LiquidationType } from "../../storages/AccountStorage.sol";
@@ -89,6 +91,10 @@ library LibPartyALiquidationShared {
 			detail.liquidationType = LiquidationType.OVERDUE;
 			detail.deficit = deficit;
 		}
+		// Existing in-flight liquidations retain their legacy payment plan. New OVERDUE
+		// liquidations net each solver before distributing the PartyA deficit.
+		delete LiquidationSettlementStorage.layout().netting[partyA];
+		LiquidationSettlementStorage.layout().netting[partyA].enabled = detail.liquidationType == LiquidationType.OVERDUE;
 	}
 
 	function validateLiquidationPriceSetup(address partyA, bytes memory liquidationId) internal view {

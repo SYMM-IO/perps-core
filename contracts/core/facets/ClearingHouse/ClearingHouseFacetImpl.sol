@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { LiquidationSettlementStorage } from "../../storages/LiquidationSettlementStorage.sol";
+
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
@@ -362,6 +364,8 @@ library ClearingHouseFacetImpl {
 			}
 			delete accountLayout.settlementStates[partyA][partyB];
 			delete accountLayout.partyALiquidationSettlementFundingFees[partyA][partyB];
+			delete LiquidationSettlementStorage.layout().allocations[partyA][partyB];
+			delete LiquidationSettlementStorage.layout().overridden[partyA][partyB];
 		}
 		// Every pending settlement created by the normal liquidation flow must be cleared here.
 		// Otherwise its settlement state and reserve contribution would be stranded once
@@ -401,6 +405,7 @@ library ClearingHouseFacetImpl {
 
 		// Delete takeover details
 		delete chLayout.partyATakeoverDetails[partyA];
+		delete LiquidationSettlementStorage.layout().netting[partyA];
 	}
 
 	/// @notice Settles the clearing house liquidation for a cross partyB

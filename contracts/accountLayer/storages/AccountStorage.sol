@@ -153,6 +153,8 @@ library AccountStorage {
 		///      virtual accounts resolve to their parent, so a scope covers a sub-account and its VAs --
 		///      exactly the family a delegation grant covers. Always cleared with the signer.
 		address scopedAccount;
+		/// @notice Monotonic authority epoch; ownership transfers invalidate all earlier InstantLayer grants.
+		mapping(address subAccount => uint256 epoch) ownershipEpochs;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

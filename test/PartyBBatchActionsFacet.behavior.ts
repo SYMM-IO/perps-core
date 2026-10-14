@@ -81,6 +81,18 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 		}
 	}
 
+	it("closes a zero-LF position when the symbol deliberately permits zero LF", async function () {
+		await context.symbolControlFacet.setSymbolAcceptableValues(1n, decimal(1n), 0n)
+		await context.symbolControlFacet.setSymbolMinAcceptableNotionalLFRate(1n, 0n)
+		const id = await user.sendQuote(limitQuoteRequestBuilder().lf(0n).build())
+		await hedger.lockQuote(id)
+		await hedger.openPosition(id)
+		await user.requestToClosePosition(id, limitCloseRequestBuilder().build())
+		const sig = await getDummyPairUpnlAndPricesSig([decimal(1n)], [id])
+		await context.partyBBatchActionsFacet.connect(hedger.signer).fillCloseRequests([id], [decimal(100n)], [decimal(1n)], sig)
+		expect((await context.viewFacetQuote.getQuote(id)).quoteStatus).to.equal(QuoteStatus.CLOSED)
+	})
+
 	describe("openPositions", async function () {
 		beforeEach(async function () {
 			await user.sendQuote(limitQuoteRequestBuilder().positionType(PositionType.LONG).build())
@@ -124,6 +136,15 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions(quoteIds, filledAmounts, openedPrices, upnlSig),
 			).to.be.revertedWith("PartyBFacet: Invalid length")
+		})
+
+		it("rejects a shifted quoteIds/prices boundary even when the operation arrays match", async function () {
+			const sig = await getDummyPairUpnlAndPricesSig([2n, decimal(1n), decimal(1n)], [1n])
+			await expect(
+				context.partyBBatchActionsFacet.connect(context.signers.hedger).openPositions([1n], [decimal(100n)], [decimal(1n)], sig),
+			).to.be.revertedWith("LibMuon: Invalid prices length")
+			const quote = await context.viewFacetQuote.getQuote(1n)
+			expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
 		})
 
 		it("Should fail when affiliate shutdown is scheduled", async function () {
@@ -286,6 +307,14 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await user.requestToClosePosition(1, limitCloseRequestBuilder().build())
 			await user.requestToClosePosition(2, limitCloseRequestBuilder().build())
+		})
+
+		it("rejects shifted quoteIds/prices before a batch close can realize PnL", async function () {
+			const sig = await getDummyPairUpnlAndPricesSig([2n, decimal(1n), decimal(1n)], [1n])
+			await expect(
+				context.partyBBatchActionsFacet.connect(hedger.signer).fillCloseRequests([1n], [decimal(100n)], [decimal(1n)], sig),
+			).to.be.revertedWith("LibMuon: Invalid prices length")
+			expect((await context.viewFacetQuote.getQuote(1n)).closedAmount).to.equal(0n)
 		})
 
 		it("Should fail when PartyB actions are paused", async function () {

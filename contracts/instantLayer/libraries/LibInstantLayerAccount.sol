@@ -30,4 +30,9 @@ library LibInstantLayerAccount {
 		if (accountLayer == address(0)) revert IInstantLayerErrors.AccountLayerNotSet();
 		return IAccountLayerViewFacet(accountLayer).ownerOf(account);
 	}
+
+	/// @notice Read the root authority epoch. Missing AccountLayer support fails closed.
+	function ownershipEpoch(address account) internal view returns (uint256) {
+		return IAccountLayerViewFacet(InstantLayerStorage.layout().accountLayer).getAccountOwnershipEpoch(account);
+	}
 }

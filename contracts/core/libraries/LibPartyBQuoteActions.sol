@@ -28,6 +28,7 @@ library LibPartyBQuoteActions {
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
+		LibExecutionContext.requireQuoteExecutionMode(quoteId);
 		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		LibSymbolAdjustment.requirePendingQuoteCurrent(quote);
 		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
@@ -61,7 +62,7 @@ library LibPartyBQuoteActions {
 		quote.partyB = signer;
 
 		// Lock funds for PartyB unless instantOpenMode writes them directly to lockedBalances.
-		if (!LibExecutionContext.isInstantOpenMode()) {
+		if (!LibExecutionContext.isAtomicOpenMode()) {
 			LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
 			quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
 		}
