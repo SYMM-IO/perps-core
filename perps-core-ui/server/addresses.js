@@ -130,6 +130,8 @@ export function loadAddresses(file = path.join(ROOT, ADDRESSES_FILE)) {
 			id: d.id,
 			name,
 			chainId: chain.chainId,
+			// The chain's key in the file, such as "arbitrum": a name an operator recognises before the id.
+			chainName: d.chain,
 			rpc: chain.rpc,
 			explorer: chain.explorer,
 			// A version written without quotes, such as 0.8, would otherwise arrive as a number.

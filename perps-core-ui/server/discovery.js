@@ -65,16 +65,17 @@ export function parseRoleLog(log) {
 	return null;
 }
 // A bounded adaptive scan never represents a truncated history as complete.
-export async function discoverRoleHistory(provider, nodes, blockNumber, onProgress = () => {}, maxRequests = 48) {
+export async function discoverRoleHistory(provider, nodes, blockNumber, onProgress = () => {}, maxRequests = 48, { signal } = {}) {
 	const targets = nodes.filter(n => !["token", "authority", "safe"].includes(n.kind) && n.status === "observed");
 	const pending = targets.length ? [[0, blockNumber]] : [];
 	const logs = [];
 	let requests = 0,
 		failed = 0;
 	while (pending.length && requests < maxRequests) {
+		signal?.throwIfAborted();
 		const batch = pending.splice(0, Math.min(4, maxRequests - requests));
 		requests += batch.length;
-		onProgress(`Discovering permission holders from events · ${requests} history requests`);
+		onProgress(`Discovering permission holders from events · ${requests} history requests`, requests, maxRequests);
 		await Promise.all(
 			batch.map(async ([fromBlock, toBlock]) => {
 				try {
@@ -243,7 +244,7 @@ export function addressesIn(param, value, label) {
 	if (param.baseType === "tuple") return param.components.flatMap((p, i) => addressesIn(p, value[i], `${label}.${p.name || i}`));
 	return [];
 }
-export async function inspectDependencies({ nodes, edges, read, onProgress = () => {} }) {
+export async function inspectDependencies({ nodes, edges, read, onProgress = () => {}, signal }) {
 	const targets = [...nodes].filter(n => n.status === "observed" && (ROLE_SOURCES[n.kind] || n.interfaceAbi));
 	const link = (n, address, label, kind = "pointer", basis = "Live configuration getter") => {
 		const target = ensureNode(nodes, address, kind === "ownership" ? "authority" : kind === "implementation" ? "implementation" : "external");
@@ -262,8 +263,9 @@ export async function inspectDependencies({ nodes, edges, read, onProgress = () 
 				basis,
 			});
 	};
-	for (const n of targets) {
-		onProgress(`Reading setup dependencies · ${n.name}`);
+	for (const [index, n] of targets.entries()) {
+		signal?.throwIfAborted();
+		onProgress(`Reading setup dependencies · ${n.name}`, index, targets.length);
 		const iface = nodeAbi(n);
 		const reads = [];
 		for (const f of iface.fragments) {
@@ -286,7 +288,8 @@ export async function inspectDependencies({ nodes, edges, read, onProgress = () 
 				for (const a of nodes.filter(a => a.kind === "affiliate"))
 					reads.push({ f, args: [a.address], label: `${f.name} · ${a.name}`, origin: a });
 		}
-		for (let start = 0; start < reads.length; start += 12)
+		for (let start = 0; start < reads.length; start += 12) {
+			signal?.throwIfAborted();
 			await Promise.all(
 				reads.slice(start, start + 12).map(async ({ f, args, label, origin }) => {
 					try {
@@ -302,7 +305,9 @@ export async function inspectDependencies({ nodes, edges, read, onProgress = () 
 					}
 				}),
 			);
+		}
 	}
+	signal?.throwIfAborted();
 	// Owner and Safe members are discovered independently of contract family.
 	for (const n of [...nodes].filter(n => n.status === "observed" && (!["token", "authority"].includes(n.kind) || n.state.owners?.length))) {
 		if (!n.authority && n.kind !== "authority")
@@ -346,7 +351,7 @@ export async function inspectDependencies({ nodes, edges, read, onProgress = () 
 }
 
 let runtimeArtifacts;
-export async function inspectRuntimeDependencies({ nodes, edges, provider, blockNumber, onProgress = () => {} }) {
+export async function inspectRuntimeDependencies({ nodes, edges, provider, blockNumber, onProgress = () => {}, signal }) {
 	if (!runtimeArtifacts) {
 		runtimeArtifacts = [];
 		const walk = dir => {
@@ -368,7 +373,8 @@ export async function inspectRuntimeDependencies({ nodes, edges, provider, block
 		const n = queue[i];
 		if (checked.has(n.address.toLowerCase())) continue;
 		checked.add(n.address.toLowerCase());
-		onProgress(`Resolving deployed libraries · ${i + 1} of ${queue.length}`);
+		signal?.throwIfAborted();
+		onProgress(`Resolving deployed libraries · ${i + 1} of ${queue.length}`, i, queue.length);
 		let code;
 		try {
 			code = await provider.getCode(n.address, blockNumber);
@@ -421,24 +427,68 @@ export async function inspectRuntimeDependencies({ nodes, edges, provider, block
 	}
 }
 
+// Only definitive answers are kept: an ABI, or Sourcify saying it has none. A timeout, rate limit or server error is asked
+// again by the next inspection instead of narrowing it until the service restarts.
 const verifiedAbis = new Map();
-async function verifiedAbi(chainId, address) {
+export const sourcifyStats = { lookups: 0, cached: 0, retries: 0, failures: 0 };
+const pause = (ms, signal) =>
+	new Promise((resolve, reject) => {
+		const timer = setTimeout(resolve, ms);
+		signal?.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timer);
+				reject(signal.reason);
+			},
+			{ once: true },
+		);
+	});
+export async function verifiedAbi(chainId, address, { fetchImpl = fetch, signal, retryDelayMs = 500, timeoutMs = 5000 } = {}) {
 	const key = `${chainId}:${address.toLowerCase()}`;
-	if (verifiedAbis.has(key)) return verifiedAbis.get(key);
-	let abi = null;
-	try {
-		const response = await fetch(`https://sourcify.dev/server/v2/contract/${chainId}/${address}?fields=abi`, {
-			signal: AbortSignal.timeout(5000),
-		});
-		if (response.ok) {
-			const data = await response.json();
-			if (Array.isArray(data.abi)) abi = data.abi;
+	if (verifiedAbis.has(key)) {
+		sourcifyStats.cached++;
+		return verifiedAbis.get(key);
+	}
+	for (let attempt = 0; attempt < 2; attempt++) {
+		signal?.throwIfAborted();
+		if (attempt) {
+			sourcifyStats.retries++;
+			await pause(retryDelayMs, signal);
 		}
-	} catch {}
-	verifiedAbis.set(key, abi);
-	return abi;
+		sourcifyStats.lookups++;
+		let response;
+		try {
+			const timeout = AbortSignal.timeout(timeoutMs);
+			response = await fetchImpl(`https://sourcify.dev/server/v2/contract/${chainId}/${address}?fields=abi`, {
+				signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+			});
+		} catch {
+			if (signal?.aborted) throw signal.reason;
+			continue;
+		}
+		if (response.status === 404) {
+			verifiedAbis.set(key, null);
+			return null;
+		}
+		if (response.ok) {
+			try {
+				const data = await response.json();
+				if (Array.isArray(data.abi)) {
+					verifiedAbis.set(key, data.abi);
+					return data.abi;
+				}
+			} catch {
+				/* A truncated answer is treated like no answer. */
+			}
+			break;
+		}
+		if (response.status !== 429 && response.status < 500) break;
+	}
+	sourcifyStats.failures++;
+	return null;
 }
-export async function loadVerifiedInterfaces(nodes, chainId, onProgress = () => {}) {
+export const forgetVerifiedAbis = () => verifiedAbis.clear();
+export async function loadVerifiedInterfaces(nodes, chainId, onProgress = () => {}, { signal, fetchImpl } = {}) {
 	if (chainId === 31337) return;
 	const jobs = nodes
 		.filter(n => n.status === "observed" && !["token", "safe", "authority", "facet", "library"].includes(n.kind))
@@ -446,7 +496,7 @@ export async function loadVerifiedInterfaces(nodes, chainId, onProgress = () => 
 			const addresses = n.diamond?.facets.map(f => f.address) || [n.implementation || n.address];
 			const all = [];
 			for (let i = 0; i < addresses.length; i += 8)
-				all.push(...(await Promise.all(addresses.slice(i, i + 8).map(a => verifiedAbi(chainId, a)))));
+				all.push(...(await Promise.all(addresses.slice(i, i + 8).map(a => verifiedAbi(chainId, a, { signal, fetchImpl })))));
 			const found = all.filter(Boolean);
 			n.abiCoverage = { source: "Sourcify verified deployment ABI", found: found.length, total: addresses.length };
 			// Keep local getters as fallbacks; deployed signatures take precedence by selector.
@@ -457,7 +507,8 @@ export async function loadVerifiedInterfaces(nodes, chainId, onProgress = () => 
 			if (found.length) n.interfaceAbi = [...entries.values()].map(s => JSON.parse(s));
 		});
 	for (let i = 0; i < jobs.length; i += 4) {
-		onProgress(`Loading verified contract interfaces ${i + 1}–${Math.min(i + 4, jobs.length)} of ${jobs.length}`);
+		signal?.throwIfAborted();
+		onProgress(`Loading verified contract interfaces ${i + 1}–${Math.min(i + 4, jobs.length)} of ${jobs.length}`, i, jobs.length);
 		await Promise.all(jobs.slice(i, i + 4).map(run => run()));
 	}
 }

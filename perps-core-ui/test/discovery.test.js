@@ -1,6 +1,14 @@
 import { ADDRESSES_FILE } from "../server/addresses.js";
 import { ROOT } from "../server/build.js";
-import { parseRoleLog, discoverRoleHistory, addressesIn, inspectDependencies } from "../server/discovery.js";
+import {
+	parseRoleLog,
+	discoverRoleHistory,
+	addressesIn,
+	inspectDependencies,
+	verifiedAbi,
+	forgetVerifiedAbis,
+	sourcifyStats,
+} from "../server/discovery.js";
 import { inspectRoleConnections, roleHash, roleNames } from "../server/roles.js";
 import { defaultProfiles, validateProfile, pointerConnections } from "../server/system.js";
 import { createWorkspace } from "../server/workspace.js";
@@ -223,4 +231,70 @@ test("a different configured pointer stays green while the expected destination 
 		],
 	);
 	assert.equal(pointerConnections("gasless", expected.id, "instantLayer", expected.address, expected).length, 1);
+});
+
+test("Sourcify answers are kept only when they are definitive", async () => {
+	forgetVerifiedAbis();
+	const abi = [{ type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" }];
+	const answers = [];
+	let asked = 0;
+	const fetchImpl = async () => {
+		asked++;
+		const next = answers.shift();
+		if (next instanceof Error) throw next;
+		return { ok: next.status === 200, status: next.status, json: async () => next.body };
+	};
+	const lookup = i => verifiedAbi(42161, address(i), { fetchImpl, retryDelayMs: 0 });
+	const retries = sourcifyStats.retries;
+
+	// A rate limit is asked once more, then left uncached: the next inspection asks again and gets the ABI.
+	answers.push({ status: 429 }, { status: 429 });
+	assert.equal(await lookup(10), null);
+	assert.equal(asked, 2);
+	assert.equal(sourcifyStats.retries, retries + 1);
+	answers.push({ status: 200, body: { abi } });
+	assert.deepEqual(await lookup(10), abi);
+	assert.equal(asked, 3);
+	assert.deepEqual(await lookup(10), abi);
+	assert.equal(asked, 3);
+
+	// A timeout or a server error is transient too; a retry that succeeds is kept.
+	answers.push(Object.assign(new Error("timed out"), { name: "TimeoutError" }), { status: 200, body: { abi } });
+	assert.deepEqual(await lookup(11), abi);
+	assert.equal(asked, 5);
+	answers.push({ status: 502 }, Object.assign(new Error("socket hang up")));
+	assert.equal(await lookup(12), null);
+	answers.push({ status: 200, body: { abi } });
+	assert.deepEqual(await lookup(12), abi);
+
+	// Sourcify saying it has no ABI is an answer, kept like one; it is not retried.
+	answers.push({ status: 404 });
+	assert.equal(await lookup(13), null);
+	const before = asked;
+	assert.equal(await lookup(13), null);
+	assert.equal(asked, before);
+	assert.equal(answers.length, 0);
+});
+
+test("a cancelled inspection stops between batches of event history", async () => {
+	const controller = new AbortController();
+	const progress = [];
+	let requests = 0;
+	const provider = {
+		getLogs: async () => {
+			requests++;
+			// The first answer arrives after the operator pressed Cancel.
+			controller.abort(new Error("cancelled"));
+			throw Error("range limit");
+		},
+	};
+	await assert.rejects(
+		discoverRoleHistory(provider, [node("core", "core", 1)], 1000, (label, done, total) => progress.push([done, total]), 48, {
+			signal: controller.signal,
+		}),
+		/cancelled/,
+	);
+	assert.equal(requests, 1);
+	// Progress says how far through its request budget the scan is.
+	assert.deepEqual(progress, [[1, 48]]);
 });

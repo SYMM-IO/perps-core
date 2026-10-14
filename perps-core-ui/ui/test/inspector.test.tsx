@@ -141,3 +141,12 @@ it('only turns plain http(s) profile values into links', () => {
   for (const value of ['javascript:alert(1)', 'data:text/html,<script>1</script>', ' JaVaScRiPt:alert(1)', 'not a url', '', undefined, null])
     expect(httpUrl(value), String(value)).toBeUndefined()
 })
+
+it('disables Prepare upgrade while another operation runs', () => {
+  const onPrepare = vi.fn()
+  inspect(nodes[1], { onPrepare, prepareDisabled: true })
+  const button = screen.getByRole('button', { name: 'Prepare upgrade' })
+  expect((button as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(button)
+  expect(onPrepare).not.toHaveBeenCalled()
+})

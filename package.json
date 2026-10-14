@@ -85,7 +85,7 @@
 		"check:contract-size": "node utils/check-contract-sizes.mjs",
 		"check:release": "npm run compile && npm test",
 		"coverage": "hardhat test mocha --coverage",
-		"lint": "npm run lint:sol && npm run lint:ts",
+		"lint": "npm run lint:sol && npm run lint:ts && npm run ui:typecheck",
 		"lint:sol": "solhint --config ./.solhint.json --disc --noPoster --quiet \"contracts/**/*.sol\"",
 		"lint:ts": "tsc --noEmit --project tsconfig.operations.json",
 		"test": "./utils/runTestsInParallel.sh",

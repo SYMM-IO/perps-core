@@ -1,13 +1,28 @@
 import { createTaskRunner } from "../../cli/task-runner.js";
 import { TASK_DEFINITIONS } from "../../cli/tasks/registry.js";
-import { assertIntentTransaction, codeHash } from "./model.js";
+import { DEFAULT_LEDGER_PATH, ledgerSigner } from "./chain.js";
+import { HttpError } from "./errors.js";
+import { assertIntentTransaction, codeHash, executionConfirmation } from "./model.js";
 import { assertPeripheralInputs } from "./peripherals.js";
 import { Transaction, getAddress, Interface } from "ethers";
 
+export const SYSTEM_TASK_ID = "maintenance.system-upgrade";
+
 // The generic sequence uses the same durable task lock and tx-intent protocol as
 // Diamond upgrades. No retry is permitted while a wallet outcome is unknown.
-export function createQueueRunner({ root, load, loadRecovery = load, save, provider, verify, activity }) {
-	const taskId = "maintenance.system-upgrade";
+// `onWallet` hears when a wallet or Ledger is waiting on the operator, and null when it no longer is.
+export function createQueueRunner({
+	root,
+	load,
+	loadRecovery = load,
+	save,
+	provider,
+	verify,
+	activity,
+	signerFactory = ledgerSigner,
+	onWallet = () => {},
+}) {
+	const taskId = SYSTEM_TASK_ID;
 	async function reconcile(r, ctx) {
 		const p = provider(),
 			unresolved = [],
@@ -91,9 +106,26 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 		r.journal[a.id] = j;
 		save(r);
 		ctx.emit("tx.intent", { id: a.id });
+		const step = r.plan.actions.findIndex(x => x.id === a.id) + 1,
+			of = r.plan.actions.length;
 		let tx;
 		if (mode === "browser") {
-			const response = await ctx.ui.transaction({ id: a.id, sender: a.sender, request, label: a.label });
+			onWallet({ planId: r.plan.id, actionId: a.id, step, of, message: `Waiting for the wallet to sign step ${step} of ${of}: ${a.label}` });
+			let response;
+			try {
+				response = await ctx.ui.transaction({
+					id: a.id,
+					planId: r.plan.id,
+					step,
+					of,
+					sender: a.sender,
+					target: a.to || null,
+					request,
+					label: a.label,
+				});
+			} finally {
+				onWallet(null);
+			}
 			if (response.rejected) {
 				delete r.journal[a.id];
 				save(r);
@@ -107,12 +139,12 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 			if (!tx) ctx.wait("Transaction is not indexed yet; continue after RPC indexing");
 			assertIntentTransaction(tx, request, a.sender);
 		} else {
-			let transport;
+			let session;
 			try {
-				const [{ LedgerSigner }, m] = await Promise.all([import("@ethers-ext/signer-ledger"), import("@ledgerhq/hw-transport-node-hid")]);
-				transport = await (m.default?.default || m.default).create();
-				const signer = new LedgerSigner(transport, p, r.execution.ledgerPath || "m/44'/60'/0'/0/0");
+				session = await signerFactory({ provider: p, path: r.execution.ledgerPath || DEFAULT_LEDGER_PATH });
+				const signer = session.signer;
 				if (getAddress(await signer.getAddress()) !== a.sender) throw new Error("Ledger address differs from the reviewed signer");
+				onWallet({ planId: r.plan.id, actionId: a.id, step, of, message: `Confirm step ${step} of ${of} on the Ledger: ${a.label}` });
 				const raw = await signer.signTransaction(request),
 					signed = Transaction.from(raw);
 				assertIntentTransaction(signed, request, a.sender);
@@ -128,11 +160,18 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 				}
 				throw e;
 			} finally {
-				await transport?.close();
+				onWallet(null);
+				await session?.close?.();
 			}
 		}
 		const { send } = await import("../../tasks/deploy/tx.ts");
-		await ctx.runCallable(a.id, () => send(Promise.resolve(tx), a.label, 1));
+		try {
+			await ctx.runCallable(a.id, () => send(Promise.resolve(tx), a.label, 1));
+		} catch (error) {
+			// A revert still has a receipt: record it now, so the journal and History say failed rather than submitted.
+			await reconcile(r, ctx).catch(() => {});
+			throw error;
+		}
 		const result = await reconcile(r, ctx);
 		if (result.unresolved.length) ctx.wait("Waiting for submitted transaction confirmation");
 		if (result.failed.length) throw new Error("A transaction reverted. Reconcile and cancel before preparing a new plan.");
@@ -192,14 +231,15 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 	return {
 		active: () => runner.getActive(),
 		execute: async (id, input, ui) => {
-			if (runner.getActive()) throw new Error("Continue or cancel the active operator task first");
+			if (runner.getActive()) throw new HttpError(409, "task-active", "Continue or cancel the active operator task first");
 			const r = load(id);
-			if (input.confirmation !== `${r.plan.chainId}:${id.slice(0, 8)}`) throw new Error("Confirm the chain and plan ID");
+			if (input.confirmation !== executionConfirmation(id, r.plan.deployment, r.plan.chainId))
+				throw new HttpError(400, "confirmation-mismatch", "Confirm the deployment and plan ID");
 			if (!["browser", "ledger"].includes(input.deploymentMode) || !["browser", "ledger", "safe"].includes(input.upgradeMode))
-				throw new Error("Invalid signing mode");
-			if (r.rehearsal?.status !== "passed") throw new Error("Rehearse first");
+				throw new HttpError(400, "bad-input", "Invalid signing mode");
+			if (r.rehearsal?.status !== "passed") throw new HttpError(412, "stale-plan", "Rehearse first");
 			const code = await provider().getCode(r.plan.authority);
-			if (input.upgradeMode !== "safe" && code !== "0x") throw new Error("Use Safe for a contract authority");
+			if (input.upgradeMode !== "safe" && code !== "0x") throw new HttpError(400, "bad-input", "Use Safe for a contract authority");
 			if (input.upgradeMode === "safe") {
 				const i = new Interface(["function getOwners() view returns(address[])", "function getThreshold() view returns(uint256)"]);
 				const owners = i.decodeFunctionResult(
@@ -210,7 +250,7 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 						"getThreshold",
 						await provider().call({ to: r.plan.authority, data: i.encodeFunctionData("getThreshold") }),
 					)[0];
-				if (threshold < 1n || threshold > BigInt(owners.length)) throw new Error("Authority does not pass Safe checks");
+				if (threshold < 1n || threshold > BigInt(owners.length)) throw new HttpError(400, "bad-input", "Authority does not pass Safe checks");
 			}
 			r.execution = {
 				deploymentMode: input.deploymentMode,
@@ -221,17 +261,18 @@ export function createQueueRunner({ root, load, loadRecovery = load, save, provi
 			return runner.start(taskId, { input: { planId: id, ...r.execution }, ui, onEvent: e => activity(e.message || e.title || e.type) });
 		},
 		resume: ui => {
-			if (runner.getActive()?.taskId !== taskId) throw new Error("Continue the active task in its original workspace");
+			if (runner.getActive()?.taskId !== taskId)
+				throw new HttpError(409, "task-elsewhere", "Continue the active task in its original workspace");
 			return runner.resumeActive({ ui, onEvent: e => activity(e.message || e.title || e.type) });
 		},
 		cancel: () => {
-			if (runner.getActive()?.taskId !== taskId) throw new Error("Cancel the active task in its original workspace");
+			if (runner.getActive()?.taskId !== taskId) throw new HttpError(409, "task-elsewhere", "Cancel the active task in its original workspace");
 			return runner.cancelActive();
 		},
 		attach: async (id, actionId, hash) => {
 			const r = loadRecovery(id),
 				j = r.journal?.[actionId];
-			if (!j || !/^0x[\da-f]{64}$/i.test(hash)) throw new Error("Choose a pending action and its transaction hash");
+			if (!j || !/^0x[\da-f]{64}$/i.test(hash)) throw new HttpError(400, "bad-input", "Choose a pending action and its transaction hash");
 			assertIntentTransaction(await provider().getTransaction(hash), j.request, j.sender);
 			j.hash = hash;
 			save(r);

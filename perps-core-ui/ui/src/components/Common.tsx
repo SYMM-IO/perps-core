@@ -1,6 +1,9 @@
+import { useWorkbench } from '../api'
+import { httpUrl, planChainId } from '../lib/state'
+import type { Deployment, Plan, Profile } from '../types'
 import { ActionIcon, Alert, Badge, Button, Code, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { Box, Check, Copy, ExternalLink, Gem, Handshake, Layers, ShieldCheck, Zap, type LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 
 export function Address({ value, align = 'start', href }: { value: string; align?: 'start' | 'center'; href?: string }) {
@@ -118,4 +121,66 @@ export function CopyData({ value }: { value: string }) {
       </span>
     </>
   )
+}
+
+/** The deployment a plan was prepared for. Peripheral plans saved before plans carried `deployment` still name their profile. */
+export function planDeployment(plan: Plan): Deployment | undefined {
+  const d = plan.deployment || (plan.kind === 'peripheral' ? plan.profile : undefined)
+  return d?.id ? { id: d.id, name: d.name || d.id, environment: d.environment, chainId: d.chainId ?? planChainId(plan) } : undefined
+}
+/** The address book's name for a chain ("arbitrum"), or "chain 42161" when no profile names it. */
+export const chainName = (chainId: number | undefined, profiles: Profile[] = []) =>
+  profiles.find((p) => p.chainId === chainId && p.chainName)?.chainName || `chain ${chainId ?? '?'}`
+/** "arbitrum (42161)" when the address book names the chain, otherwise "Chain 42161". */
+export function chainLabel(chainId: number | undefined, profiles: Profile[] = []) {
+  const name = profiles.find((p) => p.chainId === chainId && p.chainName)?.chainName
+  return name ? `${name} (${chainId})` : `Chain ${chainId ?? '?'}`
+}
+export function EnvironmentBadge({ environment }: { environment?: string }) {
+  if (!environment) return null
+  return (
+    <span className="env-badge" data-env={environment}>
+      {environment}
+    </span>
+  )
+}
+export function explorerTx(explorer: string | undefined, hash: string) {
+  const base = httpUrl(explorer)
+  return base ? `${base.replace(/\/$/, '')}/tx/${hash}` : undefined
+}
+/** Wallet hashes are public, so they are kept in localStorage per plan and action and outlive a closed tab. */
+const txKey = (planId: string, actionId: string) => `workbench-tx:${planId}:${actionId}`
+export function saveTxHash(planId: string, actionId: string, value: { hash: string; sender?: string; nonce?: number | string }) {
+  try {
+    localStorage.setItem(txKey(planId, actionId), JSON.stringify({ ...value, at: new Date().toISOString() }))
+  } catch {}
+}
+export function readTxHash(planId: string | undefined, actionId: string | undefined): string {
+  if (!planId || !actionId) return ''
+  try {
+    const hash = JSON.parse(localStorage.getItem(txKey(planId, actionId)) || 'null')?.hash
+    return typeof hash === 'string' && /^0x[\da-f]{64}$/i.test(hash) ? hash : ''
+  } catch {
+    return ''
+  }
+}
+export const errorCode = (error: unknown) => {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : ''
+}
+/** Lets a screen hear the error code of an operation started further down, to offer the obvious next step. */
+export const ErrorCodeContext = createContext<(code: string) => void>(() => {})
+export function useTrackedRun() {
+  const { run } = useWorkbench()
+  const report = useContext(ErrorCodeContext)
+  return <T,>(label: string, fn: () => Promise<T>) =>
+    run(label, async () => {
+      report('')
+      try {
+        return await fn()
+      } catch (error) {
+        report(errorCode(error))
+        throw error
+      }
+    })
 }
