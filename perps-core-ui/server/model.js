@@ -163,3 +163,24 @@ export function assertIntentTransaction(tx, request, sender) {
 		throw new Error("Transaction does not match the reviewed sender, nonce, chain, target, value, and calldata");
 	}
 }
+
+/** Who a plan is for. A profile that names a different chain, or none, gives a custom identity that still carries the chain. */
+export function deploymentIdentity(profile, chainId) {
+	if (!profile || profile.chainId !== chainId || !profile.id || profile.id === "custom")
+		return { id: `custom-${chainId}`, name: "Custom target", environment: "Custom", chainId };
+	return { id: String(profile.id), name: String(profile.name || profile.id), environment: String(profile.environment || "Custom"), chainId };
+}
+/** The text an operator types to execute a plan. Plans saved before deployment identity fall back to the chain id. */
+export const executionConfirmation = (planId, deployment, chainId) => `${deployment?.id ?? chainId}:${planId.slice(0, 8)}`;
+export const rehearsalState = record => (["passed", "failed"].includes(record?.rehearsal?.status) ? record.rehearsal.status : "none");
+/** Transaction outcomes in a plan's journal: confirmed, broadcast without a receipt yet, and intents whose wallet outcome is unknown. */
+export function journalCounts(journal = {}) {
+	const counts = { confirmed: 0, submitted: 0, unresolved: 0, failed: 0 };
+	for (const j of Object.values(journal || {})) {
+		if (j.status === "confirmed") counts.confirmed++;
+		else if (j.status === "failed") counts.failed++;
+		else if (j.hash) counts.submitted++;
+		else counts.unresolved++;
+	}
+	return counts;
+}

@@ -40,9 +40,16 @@ test("the repository address book loads, and names the Vibe Arbitrum deployment 
 	assert.match(checked, /^\d{4}-\d{2}-\d{2}$/);
 	const vibe = profiles.find(p => p.id === "arbitrum-vibe");
 	assert.deepEqual(
-		{ chainId: vibe.chainId, version: vibe.version, core: vibe.nodes.find(n => n.id === "core"), entry: vibe.source.entry },
+		{
+			chainId: vibe.chainId,
+			chainName: vibe.chainName,
+			version: vibe.version,
+			core: vibe.nodes.find(n => n.id === "core"),
+			entry: vibe.source.entry,
+		},
 		{
 			chainId: 42161,
+			chainName: "arbitrum",
 			version: "0.8.6.5",
 			core: { id: "core", name: "Symmio", kind: "core", address: CORE },
 			entry: "Vibe Arbitrum",
@@ -190,6 +197,7 @@ test("a hand-written entry maps onto the profile the app uses, put back together
 		name: "Demo",
 		// The chain's details come from the chain.
 		chainId: 42161,
+		chainName: "testnet",
 		rpc: "https://rpc.example.com",
 		explorer: "https://scan.example.com",
 		version: "0.8",

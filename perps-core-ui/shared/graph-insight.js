@@ -15,6 +15,7 @@ const digest = text => {
  *
  * @param {{ nodes: any[], edges: any[] }} model a graph model, after filters
  * @param {{ keep?: string[], expanded?: string[] }} [options] addresses to leave alone, and stacks opened by hand
+ * @returns the model with `stacks` and `memberOf` added, or the model itself when nothing stacks
  */
 export function stackModel(model, { keep = [], expanded = [] } = {}) {
 	const alone = new Set(keep),
@@ -70,7 +71,8 @@ export function stackModel(model, { keep = [], expanded = [] } = {}) {
 		});
 		for (const m of members) memberOf.set(m.id, id);
 	}
-	if (!stacks.size) return { ...model, stacks, memberOf };
+	// Nothing to stack: the same model comes back, so whatever was drawn from it can be kept.
+	if (!stacks.size) return model;
 	const placed = new Set();
 	return {
 		...model,
@@ -101,7 +103,7 @@ export function stackModel(model, { keep = [], expanded = [] } = {}) {
 // Whoever controls one of these acts with its authority, so a question about power continues through it.
 const ACTS_FOR_ITS_OWNERS = new Set(["safe", "timelock", "proxyAdmin"]);
 /** What a verified connection lets its holder do to the contract it points at, if anything. */
-const powerOf = edge => {
+export const powerOf = edge => {
 	if (edge.status !== "verified") return null;
 	const kind = edgeKind(edge);
 	return kind === "role" ? "holds" : kind === "roleAdmin" ? "grants" : kind === "ownership" ? "owns" : null;

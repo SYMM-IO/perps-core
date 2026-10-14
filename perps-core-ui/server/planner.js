@@ -30,7 +30,7 @@ export async function identifyBuild(snapshot, build, provider) {
 		}
 	return { matches, libraryAddresses, complete: Object.keys(matches).length === snapshot.facets.length };
 }
-export async function preparePlan({ snapshot, build, baseline, selected, mode, removals, deployer, provider }) {
+export async function preparePlan({ snapshot, build, baseline, selected, mode, removals, deployer, provider, deployment }) {
 	if (!Array.isArray(selected) || new Set(selected).size !== selected.length) throw new Error("Select unique facets");
 	const current = await identifyBuild(snapshot, build, provider);
 	const previous = baseline ? await identifyBuild(snapshot, baseline, provider) : current;
@@ -104,6 +104,8 @@ export async function preparePlan({ snapshot, build, baseline, selected, mode, r
 		supportingCode,
 		...routing,
 		blockers,
+		// Which deployment the plan is for; part of the checksum, and of the typed execution confirmation.
+		...(deployment ? { deployment } : {}),
 	};
 	return { ...body, id: digest(body), createdAt: new Date().toISOString() };
 }

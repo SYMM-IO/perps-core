@@ -130,15 +130,26 @@ const SHAPES: Record<Shape, object> = {
   cut: { shape: 'cut-rectangle', 'corner-radius': 10 },
 }
 
+/** The roles in styles.css that the canvas draws with, and the variable each one copies. A test holds the two together. */
+export const MIRRORED = {
+  bg: '--canvas',
+  ink: '--mantine-color-text',
+  dim: '--mantine-color-dimmed',
+  ok: '--ok',
+  bad: '--bad',
+  primary: '--primary',
+  warn: '--warn',
+  idle: '--idle',
+} as const
+export function mapPalette(light: boolean): Record<keyof typeof MIRRORED, string> {
+  return light
+    ? { bg: '#fafafa', ink: '#1b1b1d', dim: '#5e5e64', ok: '#1b7a4f', bad: '#ba1a1a', primary: '#b3392b', warn: '#8a6100', idle: '#8a8a90' }
+    : { bg: '#121212', ink: '#e6e6e8', dim: '#a9a9af', ok: '#86d9a8', bad: '#ffb4ab', primary: '#ffb4a8', warn: '#e9c46a', idle: '#8e8e94' }
+}
+
 export function graphStyles(light: boolean): any[] {
-  const bg = light ? '#fafafa' : '#121212',
-    ink = light ? '#1b1b1d' : '#e6e6e8',
-    dim = light ? '#5e5e64' : '#a9a9af',
-    ok = light ? '#1b7a4f' : '#86d9a8',
-    bad = light ? '#ba1a1a' : '#ffb4ab',
-    primary = light ? '#b3392b' : '#ffb4a8',
-    // Amber marks what is different from the previous inspection.
-    warn = light ? '#8a6100' : '#e9c46a',
+  // Amber (`warn`) marks what is different from the previous inspection; `idle` is a line that says nothing either way.
+  const { bg, ink, dim, ok, bad, primary, warn, idle } = mapPalette(light),
     tones = familyTones(light),
     shapeOf = Object.fromEntries(FAMILIES.map((f) => [f.id, f.shape])) as Record<Family, Shape>
   const look = (kind: string) => {
@@ -250,7 +261,7 @@ export function graphStyles(light: boolean): any[] {
     },
     {
       selector: 'edge[state="unknown"]',
-      style: { 'line-color': '#8f8884', 'target-arrow-color': '#8f8884', color: dim, 'line-style': 'dotted' },
+      style: { 'line-color': idle, 'target-arrow-color': idle, color: dim, 'line-style': 'dotted' },
     },
     { selector: 'edge.diff-added', style: { 'line-color': warn, 'target-arrow-color': warn, color: warn, 'line-style': 'solid', 'line-opacity': 1 } },
     {
@@ -259,7 +270,7 @@ export function graphStyles(light: boolean): any[] {
     },
     {
       selector: 'edge.diff-removed',
-      style: { 'line-color': dim, 'target-arrow-color': dim, color: dim, 'line-style': 'dashed', 'line-opacity': 0.7 },
+      style: { 'line-color': idle, 'target-arrow-color': idle, color: dim, 'line-style': 'dashed', 'line-opacity': 0.7 },
     },
     // A dense overview keeps its lines; counts and names appear on hover, selection, or when something is wrong.
     { selector: 'edge.quiet[state="set"]', style: { 'text-opacity': 0, 'text-background-opacity': 0, 'line-opacity': 0.45 } },

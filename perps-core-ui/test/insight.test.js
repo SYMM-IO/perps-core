@@ -64,7 +64,9 @@ test("wallets wired identically are drawn as one stack, and every connection sti
 		nodes: [node("core", "core"), node("a", "partyB"), node("b", "partyB")],
 		edges: [edge("a", "core", "X_ROLE"), edge("b", "core", "X_ROLE")],
 	});
-	assert.equal(stackModel(twins).stacks.size, 0);
+	// With nothing to stack the model comes back as it was, so a view drawn from it need not be redrawn.
+	assert.equal(stackModel(twins), twins);
+	assert.equal(stackModel(twins, { keep: ["a"] }), twins);
 	// Wallets under different names still stack, under a plain count.
 	const mixed = graphModel({
 		nodes: [node("core", "core"), node("a", "authority", "Role holder"), node("b", "authority", "Operator")],

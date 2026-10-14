@@ -273,6 +273,38 @@ export function shouldBehaveLikeFuzzDashboardReporter(): void {
 		})
 	})
 
+	it("names its target catalogues and says where a failure happened", async function () {
+		const directory = await temporaryDirectory()
+		const file = join(directory, "report.json")
+		const recorder = createFuzzDashboardRecorderFromEnv(config, { FUZZ_DASHBOARD_FILE: file })!
+		const current = projection()
+		// The fields FuzzActionError carries, on a plain Error so the test does not load the test manager.
+		const error = Object.assign(new Error("Fuzz action failed: boom"), {
+			actionSequence: 7,
+			actionTitle: "Root:3:user#1->hedger#1:SendQuote",
+		})
+
+		recorder.start(Date.now())
+		recorder.rootComplete(root(1))
+		recorder.rootComplete(root(2))
+		recorder.finalize(final(current, { outcome: "failed", result: result(2), failures: [{ boundary: "execution", error }] }))
+		await recorder.flush()
+
+		const report = await parseReport(file)
+		expect(report.targets.quoteStates).to.deep.equal([...FUZZ_QUOTE_STATUS_NAMES])
+		expect(report.targets.quoteStates).to.have.length(11)
+		expect(report.targets.cornerOperations).to.deep.equal([...FUZZ_CORNER_OPERATIONS])
+		expect(report.targets.cornerOperations).to.have.length(19)
+		const [failure] = report.run.failures
+		// The run stops inside the cycle after the last completed one, so root is the completed count.
+		expect(failure).to.include({ boundary: "execution", root: 2 })
+		expect(failure.error).to.include({
+			message: "Fuzz action failed: boom",
+			actionSequence: 7,
+			actionTitle: "Root:3:user#1->hedger#1:SendQuote",
+		})
+	})
+
 	it("preserves queue peaks that occurred before a root settled and resets them after the checkpoint", async function () {
 		const directory = await temporaryDirectory()
 		const file = join(directory, "report.json")
