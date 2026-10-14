@@ -25,6 +25,8 @@ library DelegationStorage {
 		/// @notice Cooldown period for revoking delegation permissions.
 		/// @dev Settable by SETTER_ROLE.
 		uint256 revocationCooldown; // in seconds
+		/// @notice AccountLayer ownership epoch at each selector grant. Legacy grants have epoch zero.
+		mapping(address => mapping(address => mapping(bytes4 => uint256))) ownershipEpochs;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

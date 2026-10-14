@@ -399,6 +399,17 @@
     {
         "inputs": [
             {
+                "internalType": "uint256",
+                "name": "offset",
+                "type": "uint256"
+            }
+        ],
+        "name": "UnauthorizedTemplateInsertion",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
                 "internalType": "address",
                 "name": "accountLayer",
                 "type": "address"
@@ -1455,6 +1466,35 @@
             }
         ],
         "name": "delegationNonces",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "delegator",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "delegate",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            }
+        ],
+        "name": "delegationOwnershipEpoch",
         "outputs": [
             {
                 "internalType": "uint256",

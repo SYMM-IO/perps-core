@@ -77,7 +77,7 @@ contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLa
 
 			// Apply flex field fills first, then inject template results
 			bytes memory finalCallData = _applyFlexFills(signedOp, fills[i], flexFillerSignatures[i], opHash);
-			finalCallData = _insertResults(finalCallData, op.insertionPoints, op.sourceIndices, op.sourceOffsets, results);
+			finalCallData = _insertResults(finalCallData, op, results, signedOp, opHash, flexFillerSignatures[i]);
 
 			// Execute the operation and capture result
 			(success, results[i]) = _executeOperationSafe(signedOp, finalCallData, usesNativeContextSelectors);
@@ -332,11 +332,15 @@ contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLa
 	/// of later operations at specified byte offsets.
 	function _insertResults(
 		bytes memory callData,
-		uint256[] memory insertionPoints,
-		uint256[] memory sourceIndices,
-		uint256[] memory sourceOffsets,
-		bytes[] memory results
-	) private pure returns (bytes memory) {
+		Operation memory operation,
+		bytes[] memory results,
+		SignedOperation calldata signedOp,
+		bytes32 opHash,
+		bytes[] calldata flexFillerSignatures
+	) private view returns (bytes memory) {
+		uint256[] memory insertionPoints = operation.insertionPoints;
+		uint256[] memory sourceIndices = operation.sourceIndices;
+		uint256[] memory sourceOffsets = operation.sourceOffsets;
 		if (insertionPoints.length == 0) return callData;
 
 		// Work directly on the memory buffer (already mutable)
@@ -359,6 +363,7 @@ contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLa
 
 				uint256 offset = insertionPoints[i];
 				if (offset + 36 > modifiedCallData.length) revert InsertionPointOutOfBounds(offset + 32, modifiedCallData.length);
+				_authorizeTemplateInsertion(signedOp, opHash, offset, value, flexFillerSignatures);
 
 				// Insert at calldata offset + 4 (selector) + 32 (length); the bounds check above
 				// guarantees this 32-byte write lands entirely within modifiedCallData's declared
@@ -372,6 +377,25 @@ contract ExecutionFacet is IExecutionFacet, InstantLayerAccessibility, InstantLa
 		}
 
 		return modifiedCallData;
+	}
+
+	/// @dev Pipeline writes obey the same signed field permissions as ordinary fills. Template
+	///      placement never grants an operator permission to change an otherwise immutable argument.
+	function _authorizeTemplateInsertion(
+		SignedOperation calldata signedOp,
+		bytes32 opHash,
+		uint256 offset,
+		bytes32 value,
+		bytes[] calldata signatures
+	) private view {
+		for (uint256 i = 0; i < signedOp.flexFields.length; i++) {
+			FlexField calldata field = signedOp.flexFields[i];
+			if (field.offset != offset || field.length != 32) continue;
+			if (field.authorizedFlexFiller == msg.sender) return;
+			bytes32 fillHash = LibInstantLayerEIP712.hashFlexFillAuth(opHash, i, abi.encode(value));
+			if (SignatureChecker.isValidSignatureNow(field.authorizedFlexFiller, fillHash, signatures[i])) return;
+		}
+		revert UnauthorizedTemplateInsertion(offset);
 	}
 
 	/// @dev Apply flex field fill values to operation calldata.

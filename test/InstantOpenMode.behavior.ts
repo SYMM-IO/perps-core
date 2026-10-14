@@ -3,7 +3,7 @@ import { ZeroAddress, TypedDataDomain, toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
-import { cloneTypes } from "./helpers/instantLayerEIP712Types.js"
+import { authorizeTemplateFields, cloneTypes } from "./helpers/instantLayerEIP712Types.js"
 import type { InstantLayer } from "./helpers/instantLayerTypes.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { QuoteStatus } from "./models/Enums.js"
@@ -181,10 +181,18 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 		const openOp = createSignedOperation(partyBAddress, symmioAddress, openQuoteCallData, { addr: partyBAddress, isPartyB: true }, 0n, deadline)
 
 		const sendSig = await signOperation(context.signers.admin, domain, types, sendOp)
+		authorizeTemplateFields(lockOp, context.signers.admin.address, [0])
 		const lockSig = await signOperation(partyB1.signer, domain, types, lockOp)
+		authorizeTemplateFields(openOp, context.signers.admin.address, [0])
 		const openSig = await signOperation(partyB1.signer, domain, types, openOp)
 
-		return await context.instantLayer.executeTemplate(templateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []])
+		return await context.instantLayer.executeTemplate(
+			templateId,
+			[sendOp, lockOp, openOp],
+			[sendSig, lockSig, openSig],
+			[[], ["0x"], ["0x"]],
+			[[], ["0x"], ["0x"]],
+		)
 	}
 
 	async function setSendLockOpenRequests(sendRequest: QuoteRequest, openRequest: OpenRequest) {
@@ -485,15 +493,17 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			const openOp1 = createSignedOperation(partyBAddress, symmioAddress, openQuoteCallData, { addr: partyBAddress, isPartyB: true }, 0n, deadline)
 
 			const sendSig1 = await signOperation(context.signers.admin, domain, types, sendOp1)
+			authorizeTemplateFields(lockOp1, context.signers.admin.address, [0])
 			const lockSig1 = await signOperation(partyB1.signer, domain, types, lockOp1)
+			authorizeTemplateFields(openOp1, context.signers.admin.address, [0])
 			const openSig1 = await signOperation(partyB1.signer, domain, types, openOp1)
 
 			const txWithout = await context.instantLayer.executeTemplate(
 				templateId,
 				[sendOp1, lockOp1, openOp1],
 				[sendSig1, lockSig1, openSig1],
-				[[], [], []],
-				[[], [], []],
+				[[], ["0x"], ["0x"]],
+				[[], ["0x"], ["0x"]],
 			)
 			const receiptWithout = await txWithout.wait()
 			const gasWithout = receiptWithout!.gasUsed
@@ -521,15 +531,17 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			const openOp = createSignedOperation(partyBAddress, symmioAddress, openQuoteCallData, { addr: partyBAddress, isPartyB: true }, 0n, deadline)
 
 			const sendSig = await signOperation(context.signers.admin, domain, types, sendOp)
+			authorizeTemplateFields(lockOp, context.signers.admin.address, [0])
 			const lockSig = await signOperation(partyB1.signer, domain, types, lockOp)
+			authorizeTemplateFields(openOp, context.signers.admin.address, [0])
 			const openSig = await signOperation(partyB1.signer, domain, types, openOp)
 
 			const txWith = await context.instantLayer.executeTemplate(
 				templateId,
 				[sendOp, lockOp, openOp],
 				[sendSig, lockSig, openSig],
-				[[], [], []],
-				[[], [], []],
+				[[], ["0x"], ["0x"]],
+				[[], ["0x"], ["0x"]],
 			)
 			const receiptWith = await txWith.wait()
 			const gasWith = receiptWith!.gasUsed
@@ -588,12 +600,20 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			const openOp = createSignedOperation(partyBAddress, symmioAddress, openQuoteCallData, { addr: partyBAddress, isPartyB: true }, 0n, deadline)
 
 			const sendSig = await signOperation(context.signers.admin, domain, types, sendOp)
+			authorizeTemplateFields(lockOp, context.signers.admin.address, [0])
 			const lockSig = await signOperation(partyB1.signer, domain, types, lockOp)
+			authorizeTemplateFields(openOp, context.signers.admin.address, [0])
 			const openSig = await signOperation(partyB1.signer, domain, types, openOp)
 
 			// This should revert — and the revert rolls back all state including the flag
 			await expect(
-				context.instantLayer.executeTemplate(badTemplateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []]),
+				context.instantLayer.executeTemplate(
+					badTemplateId,
+					[sendOp, lockOp, openOp],
+					[sendSig, lockSig, openSig],
+					[[], ["0x"], ["0x"]],
+					[[], ["0x"], ["0x"]],
+				),
 			).to.be.reverted
 
 			// Flag is rolled back by the revert

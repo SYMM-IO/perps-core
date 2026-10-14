@@ -23,7 +23,10 @@ library LibInstantLayerDelegation {
 		DelegationStorage.Layout storage l = DelegationStorage.layout();
 		uint256 expiry = l.delegations[delegator][delegate][selector];
 		uint256 eta = l.pendingRevocationEta[delegator][delegate][selector];
-		return expiry > block.timestamp && (eta == 0 || eta > block.timestamp);
+		return
+			expiry > block.timestamp &&
+			(eta == 0 || eta > block.timestamp) &&
+			l.ownershipEpochs[delegator][delegate][selector] == LibInstantLayerAccount.ownershipEpoch(delegator);
 	}
 
 	/// @notice Revert unless `signer` may execute `callData` on `target` for the PartyA `account`
@@ -88,10 +91,12 @@ library LibInstantLayerDelegation {
 		address delegator = LibInstantLayerAccount.canonicalDelegator(info.account.addr);
 		DelegationStorage.Layout storage l = DelegationStorage.layout();
 		mapping(bytes4 => uint256) storage slot = l.delegations[delegator][delegate];
+		uint256 epoch = LibInstantLayerAccount.ownershipEpoch(delegator);
 
 		for (uint256 i = 0; i < info.selectors.length; i++) {
 			bytes4 selector = info.selectors[i];
 			slot[selector] = expiry;
+			l.ownershipEpochs[delegator][delegate][selector] = epoch;
 			delete l.pendingRevocationEta[delegator][delegate][selector];
 			emit IInstantLayerEvents.DelegationGranted(delegator, delegate, selector, expiry);
 		}

@@ -196,6 +196,7 @@ contract CoreFacet is ICoreFacet, AccountLayerAccessibility, AccountLayerPausabl
 		ahLayout.userToSubAccounts[oldOwner].remove(subAccount);
 		ahLayout.userToSubAccounts[newOwner].add(subAccount);
 		s.owner = newOwner;
+		ahLayout.ownershipEpochs[subAccount] += 1;
 
 		LibAccountLayerUtils.callHook(
 			affiliate,

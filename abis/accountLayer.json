@@ -134,6 +134,11 @@
     },
     {
         "inputs": [],
+        "name": "InvalidFeeReceipt",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "InvalidIsolationType",
         "type": "error"
     },
@@ -1681,6 +1686,25 @@
                 "internalType": "address",
                 "name": "",
                 "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "getAccountOwnershipEpoch",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
             }
         ],
         "stateMutability": "view",

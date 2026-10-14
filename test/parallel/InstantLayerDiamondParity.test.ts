@@ -157,6 +157,7 @@ describe("InstantLayer diamond parity with the monolith", function () {
 			"acceptOwnership()",
 			"cancelOwnershipTransfer()",
 			"diamondCut((address,uint8,bytes4[])[],address,bytes)",
+			"delegationOwnershipEpoch(address,address,bytes4)",
 			"facetAddress(bytes4)",
 			"facetAddresses()",
 			"facetFunctionSelectors(address)",
@@ -193,7 +194,7 @@ describe("InstantLayer diamond parity with the monolith", function () {
 			}
 		})
 
-		it("adds only ownership, role-admin, diamond and delegation-migration functions", function () {
+		it("adds only ownership, role-admin, diamond, delegation-migration and ownership-epoch functions", function () {
 			const legacy = functions(legacyAbi())
 			const added = [...functions(diamondAbi()).keys()].filter(signature => !legacy.has(signature)).sort()
 			expect(added).to.deep.equal([...ADDED_FUNCTIONS].sort())

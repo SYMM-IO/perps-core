@@ -37,14 +37,23 @@ contract MigrationFacet is IInstantLayerMigrationFacet, InstantLayerAccessibilit
 			DelegationMigration calldata entry = migrations[i];
 			if (entry.selectors.length == 0) revert InvalidDelegation();
 			address delegator = LibInstantLayerAccount.canonicalDelegator(entry.account);
+			uint256 currentEpoch = LibInstantLayerAccount.ownershipEpoch(delegator);
 			for (uint256 j = 0; j < entry.selectors.length; ++j) {
 				bytes4 selector = entry.selectors[j];
 				uint256 expiry = source.delegations(delegator, entry.delegate, selector);
 				uint256 eta = source.pendingRevocationEta(delegator, entry.delegate, selector);
 				if (expiry <= block.timestamp || (eta != 0 && eta <= block.timestamp)) continue;
+				// Legacy sources predate ownership epochs. Their grants are valid only before
+				// the first recorded transfer; migration must not resurrect an old owner's grants.
+				(bool hasEpoch, bytes memory encodedEpoch) = oldInstantLayer.staticcall(
+					abi.encodeWithSignature("delegationOwnershipEpoch(address,address,bytes4)", delegator, entry.delegate, selector)
+				);
+				uint256 grantEpoch = hasEpoch && encodedEpoch.length == 32 ? abi.decode(encodedEpoch, (uint256)) : 0;
+				if (grantEpoch != currentEpoch) continue;
 
 				delegations.delegations[delegator][entry.delegate][selector] = expiry;
 				delegations.pendingRevocationEta[delegator][entry.delegate][selector] = eta;
+				delegations.ownershipEpochs[delegator][entry.delegate][selector] = grantEpoch;
 				emit DelegationGranted(delegator, entry.delegate, selector, expiry);
 				if (eta != 0) emit RevocationScheduled(delegator, entry.delegate, selector, eta);
 				emit DelegationMigrated(oldInstantLayer, delegator, entry.delegate, selector, expiry, eta);

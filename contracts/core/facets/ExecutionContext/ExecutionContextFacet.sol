@@ -39,8 +39,8 @@ contract ExecutionContextFacet is Accessibility, IExecutionContextFacet {
 	/// @dev Inside an active transient scope, the deployed InstantLayer sequence always calls
 	///      setCallFromInstantLayer(true) first in the same transaction, so this updates the scope.
 	///      Outside one it keeps the v0.8.6 persistent behavior, so a solver driving core directly
-	///      can still hold instant-open mode across transactions. Mirrors setSigner's
-	///      context-dependent routing.
+	///      can still require full fills across transactions. Pending accounting is skipped only
+	///      in a transient scope, where its closing operation verifies that every quote opened.
 	/// @param instantOpenMode True when entering instant open execution, false when exiting.
 	function setInstantOpenMode(bool instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
 		if (LibExecutionContext.isTransientContextActive()) {

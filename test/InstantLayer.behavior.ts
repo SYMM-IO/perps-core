@@ -4,7 +4,7 @@ import { ZeroAddress, toUtf8Bytes, TypedDataDomain } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
-import { cloneTypes, DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "./helpers/instantLayerEIP712Types.js"
+import { authorizeTemplateFields, cloneTypes, DELEGATE_TYPES, FLEX_FILLER_AUTH_TYPES } from "./helpers/instantLayerEIP712Types.js"
 import type { InstantLayer } from "./helpers/instantLayerTypes.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { OrderType, QuoteStatus } from "./models/Enums.js"
@@ -2863,10 +2863,18 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 
 				const sendSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendOp)
+				authorizeTemplateFields(lockOp, execCtx.context.signers.admin.address, [0])
 				const lockSig = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, lockOp)
+				authorizeTemplateFields(openOp, execCtx.context.signers.admin.address, [0])
 				const openSig = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, openOp)
 
-				await ctx.context.instantLayer.executeTemplate(templateId, [sendOp, lockOp, openOp], [sendSig, lockSig, openSig], [[], [], []], [[], [], []])
+				await ctx.context.instantLayer.executeTemplate(
+					templateId,
+					[sendOp, lockOp, openOp],
+					[sendSig, lockSig, openSig],
+					[[], ["0x"], ["0x"]],
+					[[], ["0x"], ["0x"]],
+				)
 
 				// Verify position is open
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
@@ -3311,9 +3319,12 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 
 				const createVirtualAccountSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, createVirtualAccountOp)
+				authorizeTemplateFields(addMarginOp, execCtx.context.signers.admin.address, [0])
 				const addMarginSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, addMarginOp)
 				const sendQuoteSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, sendQuoteOp)
+				authorizeTemplateFields(lockQuoteOp, execCtx.context.signers.admin.address, [0])
 				const lockQuoteSig = await signOperation(execCtx.partyB1.signer, execCtx.domain, execCtx.types, lockQuoteOp)
+				authorizeTemplateFields(openQuoteOp, execCtx.context.signers.admin.address, [0])
 				const openQuoteSig = await signOperation(execCtx.partyB1.signer, execCtx.domain, execCtx.types, openQuoteOp)
 
 				await expect(
@@ -3321,8 +3332,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 						templateId,
 						[createVirtualAccountOp, addMarginOp, sendQuoteOp, lockQuoteOp, openQuoteOp],
 						[createVirtualAccountSig, addMarginSig, sendQuoteSig, lockQuoteSig, openQuoteSig],
-						[[], [], [], [], []],
-						[[], [], [], [], []],
+						[[], ["0x"], [], ["0x"], ["0x"]],
+						[[], ["0x"], [], ["0x"], ["0x"]],
 					),
 				).not.to.be.reverted
 
@@ -3385,6 +3396,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				const sendQuoteSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
 				const getSignerSig = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, getSignerOp)
+				authorizeTemplateFields(allocateOp, execCtx.context.signers.admin.address, [32])
 				const allocateSig = await signOperation(execCtx.context.signers.hedger, execCtx.domain, execCtx.types, allocateOp)
 
 				await expect(
@@ -3392,8 +3404,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 						templateId,
 						[sendQuoteOp, getSignerOp, allocateOp],
 						[sendQuoteSig, getSignerSig, allocateSig],
-						[[], [], []],
-						[[], [], []],
+						[[], [], ["0x"]],
+						[[], [], ["0x"]],
 					),
 				).not.to.be.reverted
 
@@ -3424,10 +3436,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
+				authorizeTemplateFields(op2, execCtx.context.signers.admin.address, [0])
 				const sig2 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op2)
 
 				const templateId = 1n // basicTemplate
-				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
+				await expect(ctx.context.instantLayer.executeTemplate(templateId, [op1, op2], [sig1, sig2], [[], ["0x"]], [[], ["0x"]])).not.to.be.reverted
 
 				const quote = await ctx.context.viewFacetQuote.getQuote(1)
 				expect(quote.quoteStatus).to.equal(QuoteStatus.LOCKED)
@@ -3469,11 +3482,20 @@ export function shouldBehaveLikeInstantLayer(): void {
 
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
 				const sig2 = await signOperation(execCtx.context.signers.user, execCtx.domain, execCtx.types, op2)
+				authorizeTemplateFields(op3, execCtx.context.signers.admin.address, [0])
 				const sig3 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op3)
+				authorizeTemplateFields(op4, execCtx.context.signers.admin.address, [0])
 				const sig4 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op4)
 
-				await expect(ctx.context.instantLayer.executeTemplate(0, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4], [[], [], [], []], [[], [], [], []]))
-					.not.to.be.reverted
+				await expect(
+					ctx.context.instantLayer.executeTemplate(
+						0,
+						[op1, op2, op3, op4],
+						[sig1, sig2, sig3, sig4],
+						[[], [], ["0x"], ["0x"]],
+						[[], [], ["0x"], ["0x"]],
+					),
+				).not.to.be.reverted
 
 				const quote1 = await ctx.context.viewFacetQuote.getQuote(1)
 				const quote2 = await ctx.context.viewFacetQuote.getQuote(2)
@@ -3562,6 +3584,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const requestCloseSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, requestCloseOp)
 				const fillCloseSig = await signOperation(execCtx.partyB1.signer, execCtx.domain, execCtx.types, fillCloseOp)
 				const balanceOfSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, balanceOfOp)
+				authorizeTemplateFields(allocateOp, execCtx.context.signers.admin.address, [0])
 				const allocateSig = await signOperation(execCtx.partyA1.signer, execCtx.domain, execCtx.types, allocateOp)
 
 				const parentAllocatedBefore = await ctx.context.viewFacet.allocatedBalanceOfPartyA(customSubAccount)
@@ -3574,8 +3597,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 						templateId,
 						[requestCloseOp, fillCloseOp, balanceOfOp, allocateOp],
 						[requestCloseSig, fillCloseSig, balanceOfSig, allocateSig],
-						[[], [], [], []],
-						[[], [], [], []],
+						[[], [], [], ["0x"]],
+						[[], [], [], ["0x"]],
 					),
 				).not.to.be.reverted
 
@@ -3618,6 +3641,7 @@ export function shouldBehaveLikeInstantLayer(): void {
 				)
 
 				const sendSig = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, sendQuoteOp)
+				authorizeTemplateFields(lockQuoteOp, execCtx.context.signers.admin.address, [0])
 				const lockSig = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, lockQuoteOp)
 
 				const quantityValue = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [newQuantity])
@@ -3628,8 +3652,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 						templateId,
 						[sendQuoteOp, lockQuoteOp],
 						[sendSig, lockSig],
-						[[quantityValue], []], // flex fills for op0, empty for op1
-						[["0x"], []], // filler sigs (msg.sender for op0, none for op1)
+						[[quantityValue], ["0x"]], // flex fills for op0, empty for op1
+						[["0x"], ["0x"]], // filler sigs (msg.sender for op0, none for op1)
 					),
 				).not.to.be.reverted
 
@@ -3687,12 +3711,19 @@ export function shouldBehaveLikeInstantLayer(): void {
 				const sig1 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op1)
 				const sig2 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op2)
 				const sig3 = await signOperation(execCtx.context.signers.admin, execCtx.domain, execCtx.types, op3)
+				authorizeTemplateFields(op4, execCtx.context.signers.admin.address, [0])
 				const sig4 = await signOperation(ctx.partyB1.signer, execCtx.domain, execCtx.types, op4)
 
 				const partyANonceBefore = await ctx.context.instantLayer.nonces(op1.signerAccount.addr)
 				const partyBNonceBefore = await ctx.context.instantLayer.nonces(op4.signerAccount.addr)
 				await expect(
-					ctx.context.instantLayer.executeTemplate(templateId, [op1, op2, op3, op4], [sig1, sig2, sig3, sig4], [[], [], [], []], [[], [], [], []]),
+					ctx.context.instantLayer.executeTemplate(
+						templateId,
+						[op1, op2, op3, op4],
+						[sig1, sig2, sig3, sig4],
+						[[], [], [], ["0x"]],
+						[[], [], [], ["0x"]],
+					),
 				).not.to.be.reverted
 				const partyANonceAfter = await ctx.context.instantLayer.nonces(op1.signerAccount.addr)
 				const partyBNonceAfter = await ctx.context.instantLayer.nonces(op4.signerAccount.addr)
@@ -5057,10 +5088,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, externalOp)
+			authorizeTemplateFields(secondExternalOp, ctx.context.signers.admin.address, [0])
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, secondExternalOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2], [[], []], [[], []])).not.to.be
-				.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [externalOp, secondExternalOp], [sig1, sig2], [[], ["0x"]], [[], ["0x"]])).not
+				.to.be.reverted
 
 			// The second operation should have received 444 as its value (injected from first op's result)
 			expect(await mockTarget.lastValue()).to.equal(444n)
@@ -5094,9 +5126,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
+			authorizeTemplateFields(storeOp, ctx.context.signers.admin.address, [0])
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2], [[], ["0x"]], [[], ["0x"]])).not.to.be
+				.reverted
 
 			// Should have stored 100 (first value from tuple)
 			expect(await mockTarget.lastValue()).to.equal(100n)
@@ -5130,9 +5164,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
+			authorizeTemplateFields(storeOp, ctx.context.signers.admin.address, [0])
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTupleOp, storeOp], [sig1, sig2], [[], ["0x"]], [[], ["0x"]])).not.to.be
+				.reverted
 
 			// Should have stored 200 (second value from tuple)
 			expect(await mockTarget.lastValue()).to.equal(200n)
@@ -5175,7 +5211,9 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTupleOp)
+			authorizeTemplateFields(storeFirstOp, ctx.context.signers.admin.address, [0])
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeFirstOp)
+			authorizeTemplateFields(storeSecondOp, ctx.context.signers.admin.address, [0])
 			const sig3 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeSecondOp)
 
 			await expect(
@@ -5183,8 +5221,8 @@ export function shouldBehaveLikeInstantLayer(): void {
 					templateId,
 					[getTupleOp, storeFirstOp, storeSecondOp],
 					[sig1, sig2, sig3],
-					[[], [], []],
-					[[], [], []],
+					[[], ["0x"], ["0x"]],
+					[[], ["0x"], ["0x"]],
 				),
 			).not.to.be.reverted
 
@@ -5221,9 +5259,11 @@ export function shouldBehaveLikeInstantLayer(): void {
 			)
 
 			const sig1 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, getTripleOp)
+			authorizeTemplateFields(storeOp, ctx.context.signers.admin.address, [0])
 			const sig2 = await signOperation(ctx.partyA1.signer, ctx.domain, ctx.types, storeOp)
 
-			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTripleOp, storeOp], [sig1, sig2], [[], []], [[], []])).not.to.be.reverted
+			await expect(ctx.context.instantLayer.executeTemplate(templateId, [getTripleOp, storeOp], [sig1, sig2], [[], ["0x"]], [[], ["0x"]])).not.to.be
+				.reverted
 
 			// Address is stored as uint256 representation
 			expect(await mockTarget.lastValue()).to.equal(BigInt(testAddress))

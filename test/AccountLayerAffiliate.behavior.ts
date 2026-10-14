@@ -93,6 +93,40 @@ export function shouldBehaveLikeAccountLayerAffiliate() {
 			await context.controlFacet.connect(context.signers.admin).grantRole(context.accountLayerDiamond, SIGNER_ADMIN_ROLE)
 		})
 
+		it("rejects a fake fee core before a pending stakeholder can spend tokens held by AccountLayer", async function () {
+			const { affiliate } = await requestAffiliate({
+				stakeholders: [{ receiver: context.signers.user.address, share: ethers.parseEther("1") }],
+				symmioShare: 0n,
+			})
+			const fake = await (await ethers.getContractFactory("AuditFakeFeeCore")).deploy(await context.collateral.getAddress())
+			const amount = 1_000_000n
+			await context.collateral.mint(context.accountLayerDiamond, amount)
+			await expect(
+				context.alAffiliateFacet.connect(context.signers.user).claimFees(affiliate, await fake.getAddress(), amount),
+			).to.be.revertedWithCustomError(context.alAffiliateFacet, "NoWhitelistedSymmioCore")
+			expect(await context.collateral.balanceOf(context.accountLayerDiamond)).to.equal(amount)
+		})
+
+		it("requires newly received collateral even from an approved affiliate core", async function () {
+			const fake = await (await ethers.getContractFactory("AuditFakeFeeCore")).deploy(await context.collateral.getAddress())
+			const fakeAddress = await fake.getAddress()
+			await context.alControlFacet.connect(context.signers.admin).setWhitelistedSymmioCore(fakeAddress, true)
+			const { affiliate } = await requestAffiliate({
+				stakeholders: [{ receiver: context.signers.user.address, share: ethers.parseEther("1") }],
+				symmioShare: 0n,
+				symmioCores: [fakeAddress],
+			})
+			const amount = 1_000_000n
+			await context.collateral.mint(context.accountLayerDiamond, amount)
+			const before = await context.collateral.balanceOf(context.signers.user.address)
+			await expect(context.alAffiliateFacet.connect(context.signers.user).claimFees(affiliate, fakeAddress, amount)).to.be.revertedWithCustomError(
+				context.alAffiliateFacet,
+				"InvalidFeeReceipt",
+			)
+			expect(await context.collateral.balanceOf(context.accountLayerDiamond)).to.equal(amount)
+			expect(await context.collateral.balanceOf(context.signers.user.address)).to.equal(before)
+		})
+
 		describe("requestToRegisterAffiliate", function () {
 			it("rejects invalid inputs", async function () {
 				// zero admin

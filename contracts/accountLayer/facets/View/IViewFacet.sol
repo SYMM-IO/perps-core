@@ -109,6 +109,9 @@ interface IViewFacet is IDiamondAccessControlView {
 	/// @param account The account address
 	function ownerOf(address account) external view returns (address);
 
+	/// @notice Current delegation-authority epoch of an account's root sub-account.
+	function getAccountOwnershipEpoch(address account) external view returns (uint256);
+
 	/// @notice Returns the affiliate for a live sub-account or virtual account
 	/// @param account The AccountLayer account address
 	function getAffiliateForAccount(address account) external view returns (address affiliate, bool exists);

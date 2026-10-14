@@ -25,6 +25,9 @@ interface IInstantLayerViewFacet is IInstantLayerErrors {
 	/// @return True if delegation is active, false otherwise
 	function isDelegationActive(address delegator, address delegate, bytes4 selector) external view returns (bool);
 
+	/// @notice Ownership epoch captured by a grant, for safe delegation migration.
+	function delegationOwnershipEpoch(address delegator, address delegate, bytes4 selector) external view returns (uint256);
+
 	/// @notice Get all currently active delegations for a delegator.
 	/// @param _delegator Account to check delegations for
 	/// @param delegates Array of potential delegates to check

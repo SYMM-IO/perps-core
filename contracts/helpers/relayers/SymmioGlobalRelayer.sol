@@ -58,6 +58,11 @@ contract SymmioGlobalRelayer is Initializable, AccessControlEnumerableUpgradeabl
 	/// @notice Mapping of target protocol addresses to their required withdraw cooldown periods
 	mapping(address => uint256) public targetWithdrawCooldowns;
 
+	/// @notice Exact trusted account manager for each source core; zero disables the source.
+	/// @dev Appended for proxy storage compatibility. Existing deployments must configure sources before resuming transfers.
+	mapping(address => address) public sourceMultiAccounts;
+	bool private transferActive;
+
 	/* ─────────────────────────────── Events ─────────────────────────────── */
 
 	/// @notice Emitted when target protocol whitelist status is updated
@@ -65,6 +70,7 @@ contract SymmioGlobalRelayer is Initializable, AccessControlEnumerableUpgradeabl
 
 	/// @notice Emitted when target protocol withdraw cooldowns are updated
 	event SetTargetWithdrawCooldowns(address[] targets, uint256[] cooldowns);
+	event SetSourceMultiAccount(address indexed source, address indexed multiAccount);
 
 	/// @notice Emitted when a cross-protocol transfer is successfully executed
 	event TransferExecuted(
@@ -93,6 +99,8 @@ contract SymmioGlobalRelayer is Initializable, AccessControlEnumerableUpgradeabl
 
 	/// @notice Thrown when the required withdraw cooldown period has not elapsed
 	error WithdrawCooldownNotReached();
+	error UntrustedSource();
+	error ReentrantTransfer();
 
 	/* ─────────────────────────────── Initialization ─────────────────────────────── */
 
@@ -133,12 +141,15 @@ contract SymmioGlobalRelayer is Initializable, AccessControlEnumerableUpgradeabl
 		address sourceMultiAccount,
 		address target
 	) external whenNotPaused {
+		if (transferActive) revert ReentrantTransfer();
+		transferActive = true;
 		// Input validation
 		if (receiver == address(0) || source == address(0) || target == address(0) || sourceMultiAccount == address(0)) {
 			revert InvalidAddress();
 		}
 
 		if (!whitelistedTargets[target]) revert TargetNotWhitelisted();
+		if (sourceMultiAccounts[source] != sourceMultiAccount) revert UntrustedSource();
 
 		// Authorization check
 		if (msg.sender != IMultiAccount(sourceMultiAccount).owners(sender)) revert Unauthorized();
@@ -169,11 +180,20 @@ contract SymmioGlobalRelayer is Initializable, AccessControlEnumerableUpgradeabl
 		// Deposit to target protocol
 		IERC20(collateral).approve(target, amount);
 		ISymmio(target).depositFor(receiver, amount);
+		transferActive = false;
 
 		emit TransferExecuted(collateral, sender, receiver, amount, source, sourceMultiAccount, target);
 	}
 
 	/* ─────────────────────────────── Admin Functions ─────────────────────────────── */
+
+	/// @notice Sets the reviewed account-manager implementation allowed to execute under a source's temporary cooldown exception.
+	function setSourceMultiAccount(address source, address multiAccount) external onlyRole(SETTER_ROLE) {
+		if (source == address(0)) revert InvalidAddress();
+		if (multiAccount != address(0) && multiAccount.code.length == 0) revert InvalidAddress();
+		sourceMultiAccounts[source] = multiAccount;
+		emit SetSourceMultiAccount(source, multiAccount);
+	}
 
 	/// @notice Updates the whitelist status for multiple target protocols
 	/// @param targets Array of target protocol addresses to update

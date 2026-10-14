@@ -330,6 +330,12 @@ contract ViewFacet is IViewFacet {
 		return LibAccountLayerUtils.resolveAccountOwner(account);
 	}
 
+	function getAccountOwnershipEpoch(address account) external view returns (uint256) {
+		AccountStorage.Layout storage accounts = AccountStorage.layout();
+		address parent = accounts.virtualAccounts[account].parentAccount;
+		return accounts.ownershipEpochs[parent == address(0) ? account : parent];
+	}
+
 	/// @notice Returns the canonical affiliate for a live AccountLayer account
 	/// @param account The sub-account or virtual account address
 	/// @return affiliate The affiliate inherited from the sub-account

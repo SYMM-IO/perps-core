@@ -55,6 +55,8 @@ library LibExecutionContext {
 	bytes32 private constant TRANSIENT_SIGNER_ACTIVE_SLOT = keccak256("symmio.core.transient.signer.active");
 	bytes32 private constant TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT = keccak256("symmio.core.transient.instant-layer.context");
 	bytes32 private constant EXTERNAL_CALL_CONTEXT_NAMESPACE = keccak256("symmio.core.external-call.execution-context");
+	bytes32 private constant INSTANT_OPEN_PENDING_COUNT_SLOT = keccak256("symmio.core.instant-open.pending-count");
+	bytes32 private constant INSTANT_OPEN_QUOTE_NAMESPACE = keccak256("symmio.core.instant-open.quote");
 
 	// ── Live InstantLayer context word ────────────────────────────────────────
 	// Held in TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT.
@@ -116,6 +118,10 @@ library LibExecutionContext {
 	error ExternalCallContextWasModified();
 	/// @dev A signer was left installed by the external call. Same fail-closed reasoning.
 	error ExternalCallSignerWasModified();
+	/// @dev Atomic-open quotes must all be fully opened before their context closes or suspends into a new scope.
+	error IncompleteInstantOpen(uint256 pendingQuotes);
+	/// @dev A pending quote cannot move between ordinary and atomic-open bookkeeping.
+	error InvalidInstantOpenQuote(uint256 quoteId);
 
 	/// @notice Starts a transient InstantLayer execution context.
 	/// @dev `callFromInstantLayer` is always true for this context. InstantLayer must end
@@ -123,6 +129,7 @@ library LibExecutionContext {
 	///      its privileges. EIP-1153 still guarantees cleanup if the transaction reverts.
 	function beginInstantLayerExecution(bool instantOpenMode) internal {
 		if (_instantLayerContext() & INSTANT_CONTEXT_ACTIVE != 0) revert TransientContextAlreadyActive();
+		_requireInstantOpensCompleted();
 		uint256 context = INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER;
 		if (instantOpenMode) context |= INSTANT_OPEN_MODE;
 		_setInstantLayerContext(context);
@@ -137,6 +144,7 @@ library LibExecutionContext {
 	function endInstantLayerExecution() internal {
 		if (_instantLayerContext() & INSTANT_CONTEXT_ACTIVE == 0) revert TransientContextNotActive();
 		if (isTransientSignerActive()) revert TransientSignerNotCleared();
+		_requireInstantOpensCompleted();
 		_setInstantLayerContext(0);
 	}
 
@@ -149,6 +157,7 @@ library LibExecutionContext {
 		if (enabled) {
 			context |= INSTANT_OPEN_MODE;
 		} else {
+			_requireInstantOpensCompleted();
 			context &= ~INSTANT_OPEN_MODE;
 		}
 		_setInstantLayerContext(context);
@@ -171,11 +180,47 @@ library LibExecutionContext {
 		return _instantLayerContext() & INSTANT_CONTEXT_ACTIVE != 0;
 	}
 
-	/// @notice Returns whether the effective context uses atomic-open mode to skip pending balance tracking.
+	/// @notice Returns whether the effective context requires full-fill instant opens.
 	function isInstantOpenMode() internal view returns (bool) {
 		uint256 context = _instantLayerContext();
 		if (context & INSTANT_CONTEXT_ACTIVE != 0) return context & INSTANT_OPEN_MODE != 0;
 		return GlobalAppStorage.layout().instantOpenMode;
+	}
+
+	/// @notice Pending bookkeeping may be skipped only inside a scope that verifies completion in this transaction.
+	/// @dev Persistent direct-core mode still requires a full fill, but uses ordinary pending accounting across transactions.
+	function isAtomicOpenMode() internal view returns (bool) {
+		return isTransientContextActive() && isInstantOpenMode();
+	}
+
+	/// @notice Registers a quote whose pending accounting is intentionally skipped in this execution.
+	function registerInstantOpenQuote(uint256 quoteId) internal {
+		if (!isAtomicOpenMode()) return;
+		_transientStore(_instantOpenQuoteSlot(quoteId), 1);
+		_transientStore(INSTANT_OPEN_PENDING_COUNT_SLOT, _transientLoad(INSTANT_OPEN_PENDING_COUNT_SLOT) + 1);
+	}
+
+	/// @notice Requires locking/opening to use the same bookkeeping mode as quote creation.
+	function requireQuoteExecutionMode(uint256 quoteId) internal view returns (bool instantOpen) {
+		instantOpen = isAtomicOpenMode();
+		if ((_transientLoad(_instantOpenQuoteSlot(quoteId)) != 0) != instantOpen) revert InvalidInstantOpenQuote(quoteId);
+	}
+
+	/// @notice Consumes one atomic quote after its full open, before invoking external hooks.
+	function completeInstantOpenQuote(uint256 quoteId) internal {
+		if (!isAtomicOpenMode()) return;
+		if (_transientLoad(_instantOpenQuoteSlot(quoteId)) == 0) revert InvalidInstantOpenQuote(quoteId);
+		_transientStore(_instantOpenQuoteSlot(quoteId), 0);
+		_transientStore(INSTANT_OPEN_PENDING_COUNT_SLOT, _transientLoad(INSTANT_OPEN_PENDING_COUNT_SLOT) - 1);
+	}
+
+	function _requireInstantOpensCompleted() private view {
+		uint256 pendingQuotes = _transientLoad(INSTANT_OPEN_PENDING_COUNT_SLOT);
+		if (pendingQuotes != 0) revert IncompleteInstantOpen(pendingQuotes);
+	}
+
+	function _instantOpenQuoteSlot(uint256 quoteId) private pure returns (bytes32) {
+		return keccak256(abi.encode(INSTANT_OPEN_QUOTE_NAMESPACE, quoteId));
 	}
 
 	/// @notice Returns true when a transient signer override is installed.

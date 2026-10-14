@@ -31,6 +31,10 @@ contract ViewFacet is IInstantLayerViewFacet {
 		return LibInstantLayerDelegation.isDelegationActive(delegator, delegate, selector);
 	}
 
+	function delegationOwnershipEpoch(address delegator, address delegate, bytes4 selector) external view returns (uint256) {
+		return DelegationStorage.layout().ownershipEpochs[delegator][delegate][selector];
+	}
+
 	/// @inheritdoc IInstantLayerViewFacet
 	function getActiveDelegations(
 		Account calldata _delegator,

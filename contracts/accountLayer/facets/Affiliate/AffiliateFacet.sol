@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IAffiliateFacet } from "./IAffiliateFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
@@ -385,6 +386,9 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 
 	function _claimFees(address affiliate, address symmio, uint256 amount, address caller, bool checkAuthorization) private {
 		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		if (!afLayout.whitelistedSymmioCores[symmio] || !afLayout.affiliates[affiliate].symmioCores.contains(symmio)) {
+			revert NoWhitelistedSymmioCore();
+		}
 		address collateral = ISymmio(symmio).getCollateral();
 		Stakeholder[] memory stakeholders = afLayout.affiliates[affiliate].feeDetails.stakeholders;
 
@@ -416,8 +420,10 @@ contract AffiliateFacet is IAffiliateFacet, AccountLayerAccessibility, AccountLa
 			virtualProvider: address(0),
 			expressProvider: address(0)
 		});
+		uint256 balanceBefore = IERC20(collateral).balanceOf(address(this));
 		(uint256 requestId, ) = ISymmio(symmio).initiateWithdraw(parts, false, "0x");
 		ISymmio(symmio).finalizeWithdrawRequest(afLayout.affiliates[affiliate].feeDetails.feeDistributor, requestId);
+		if (IERC20(collateral).balanceOf(address(this)) != balanceBefore + amount) revert InvalidFeeReceipt();
 		LibAccountLayerSigner.restoreExpectedCallbackCore(previousCallbackCore);
 		LibAccountLayerUtils.endCoreSigner(symmio, usesTransientSigner);
 

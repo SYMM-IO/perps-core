@@ -73,8 +73,8 @@ export class FuzzInstantExecutor {
 		const args = [
 			operations.map(entry => entry.operation),
 			operations.map(entry => entry.signature),
-			options.fills ?? operations.map(() => []),
-			options.fillerSignatures ?? operations.map(() => []),
+			options.fills ?? operations.map(({ operation }) => operation.flexFields.map(() => "0x")),
+			options.fillerSignatures ?? operations.map(({ operation }) => operation.flexFields.map(() => "0x")),
 		] as const
 		const receipt = await runTx(options.templateId === undefined ? il.executeBatch(...args) : il.executeTemplate(options.templateId, ...args))
 		for (const { operation, hash } of operations) {

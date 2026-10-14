@@ -1224,52 +1224,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "ExternalCallContextNotSuspended",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ExternalCallContextWasModified",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "ExternalCallSignerWasModified",
-        "type": "error"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "hook",
-                "type": "address"
-            },
-            {
-                "internalType": "bytes4",
-                "name": "selector",
-                "type": "bytes4"
-            },
-            {
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "internalType": "bytes",
-                "name": "reason",
-                "type": "bytes"
-            }
-        ],
-        "name": "HookReverted",
-        "type": "error"
-    },
-    {
-        "inputs": [],
-        "name": "PendingQuoteIsStale",
-        "type": "error"
-    },
-    {
         "anonymous": false,
         "inputs": [
             {
@@ -1311,31 +1265,6 @@
             }
         ],
         "name": "AcceptCancelRequest",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.BalanceChangeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "BalanceChangePartyA",
         "type": "event"
     },
     {
@@ -2049,104 +1978,6 @@
             }
         ],
         "name": "SolverFeeCharged",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.TradeVolumeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "TradeVolumeRecorded",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "quoteId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyA",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "partyB",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "symbolId",
-                "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "address",
-                "name": "affiliate",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "enum SharedEvents.TradingFeeType",
-                "name": "_type",
-                "type": "uint8"
-            }
-        ],
-        "name": "TradingFeeCharged",
         "type": "event"
     },
     {
@@ -5853,6 +5684,31 @@
         "type": "function"
     },
     {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.BalanceChangeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "BalanceChangePartyA",
+        "type": "event"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -8081,6 +7937,11 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "ExternalCallSignerWasModified",
+        "type": "error"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -8269,6 +8130,11 @@
             }
         ],
         "name": "LiquidationStartNonceMismatch",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "PendingQuoteIsStale",
         "type": "error"
     },
     {
@@ -13692,6 +13558,42 @@
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "ExternalCallContextNotSuspended",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExternalCallContextWasModified",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "hook",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes4",
+                "name": "selector",
+                "type": "bytes4"
+            },
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes",
+                "name": "reason",
+                "type": "bytes"
+            }
+        ],
+        "name": "HookReverted",
+        "type": "error"
+    },
+    {
         "inputs": [
             {
                 "internalType": "uint256",
@@ -14553,6 +14455,115 @@
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "InvalidInstantOpenQuote",
+        "type": "error"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.TradeVolumeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "TradeVolumeRecorded",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyA",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "partyB",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "symbolId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "affiliate",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "enum SharedEvents.TradingFeeType",
+                "name": "_type",
+                "type": "uint8"
+            }
+        ],
+        "name": "TradingFeeCharged",
+        "type": "event"
     },
     {
         "anonymous": false,
@@ -19059,6 +19070,17 @@
     {
         "inputs": [],
         "name": "ExternalCallContextAlreadySuspended",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "pendingQuotes",
+                "type": "uint256"
+            }
+        ],
+        "name": "IncompleteInstantOpen",
         "type": "error"
     },
     {

@@ -6,6 +6,8 @@ pragma solidity >=0.8.18;
 
 /// @notice Custom errors used across the AccountLayer diamond
 interface IAccountLayerErrors {
+	/// @notice A core fee withdrawal did not deliver the amount being distributed.
+	error InvalidFeeReceipt();
 	error ZeroAddress();
 	error EmptyArray();
 	error DeploymentFailed();

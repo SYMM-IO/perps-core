@@ -6,6 +6,8 @@ pragma solidity >=0.8.18;
 
 /// @notice Custom errors used across the InstantLayer diamond
 interface IInstantLayerErrors {
+	/// @notice A template tried to overwrite bytes without an exact signed 32-byte flex-field permission.
+	error UnauthorizedTemplateInsertion(uint256 offset);
 	/// @notice Migration source is self, has no code, or uses a different core or AccountLayer.
 	error InvalidMigrationSource(address source);
 

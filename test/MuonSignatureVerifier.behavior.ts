@@ -49,6 +49,19 @@ export function shouldBehaveLikeMuonSignatureVerifier(): void {
 	})
 
 	describe("MuonSignatureVerifier Permissions", function () {
+		it("rejects keys that would revert the Schnorr verification loop", async function () {
+			const halfQ = (0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n >> 1n) + 1n
+			for (const key of [
+				{ x: 0n, parity: 0 },
+				{ x: halfQ, parity: 0 },
+				{ x: 1n, parity: 2 },
+			]) {
+				await expect(verifier.connect(setter).addPublicKey(key)).to.be.revertedWith("MuonSignatureVerifier: Invalid public key")
+			}
+			expect(await verifier.getAllPublicKeys()).to.have.length(0)
+			await verifier.connect(setter).addPublicKey(dummyPubKey)
+			expect(await verifier.getAllPublicKeys()).to.have.length(1)
+		})
 		describe("Public Key Permissions", function () {
 			it("should default to unauthorized for all categories", async function () {
 				await verifier.connect(setter).addPublicKey(dummyPubKey)
