@@ -61,6 +61,26 @@ export function panToKeep(box: Box, zoom: number, pan: { x: number; y: number },
   return { x: along(box.x1, box.x2, pan.x, size.width), y: along(box.y1, box.y2, pan.y, size.height) }
 }
 
+type Inset = { top: number; right: number; bottom: number; left: number }
+/**
+ * The zoom and pan that fit `box` (the map in its own coordinates) into the canvas, less what covers its
+ * edges: the key, the zoom buttons, the scope pill. Never past `max`. Never below `min` either, and then
+ * `anchor` goes in the middle, so a large system opens readable on the contract that matters.
+ */
+export function fitBox(
+  box: Box,
+  size: { width: number; height: number },
+  inset: Inset,
+  { min = 0, max = 1, anchor }: { min?: number; max?: number; anchor?: { x: number; y: number } } = {},
+) {
+  const width = Math.max(1, size.width - inset.left - inset.right),
+    height = Math.max(1, size.height - inset.top - inset.bottom),
+    fitted = Math.min(width / Math.max(1, box.x2 - box.x1), height / Math.max(1, box.y2 - box.y1)),
+    zoom = Math.max(min, Math.min(max, fitted)),
+    center = zoom > fitted && anchor ? anchor : { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 }
+  return { zoom, pan: { x: inset.left + width / 2 - center.x * zoom, y: inset.top + height / 2 - center.y * zoom } }
+}
+
 /** Shortens a name to the width it has on the node, measured in the font it is drawn in. */
 export function fitText(text: string, width: number, font: string, measure = measurer()) {
   if (!measure) return text.length > 21 ? `${text.slice(0, 20)}…` : text
@@ -68,6 +88,13 @@ export function fitText(text: string, width: number, font: string, measure = mea
   let end = text.length
   while (end > 1 && measure(`${text.slice(0, end).trimEnd()}…`, font) > width) end--
   return `${text.slice(0, end).trimEnd()}…`
+}
+const labels = new Map<string, string>()
+/** `fitText` for the map's own labels, measured once per name. */
+export function fitLabel(text: string, width: number, font: string) {
+  const key = `${font}|${width}|${text}`
+  if (!labels.has(key)) labels.set(key, fitText(text, width, font))
+  return labels.get(key)!
 }
 let context: CanvasRenderingContext2D | null | undefined
 function measurer() {

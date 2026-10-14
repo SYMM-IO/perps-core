@@ -1,4 +1,15 @@
-import { planSelectors, linkBytecode, matchRuntime, assertIntentTransaction, CUT_SELECTOR, LOUPE_SELECTOR } from "../server/model.js";
+import {
+	planSelectors,
+	linkBytecode,
+	matchRuntime,
+	assertIntentTransaction,
+	deploymentIdentity,
+	executionConfirmation,
+	journalCounts,
+	rehearsalState,
+	CUT_SELECTOR,
+	LOUPE_SELECTOR,
+} from "../server/model.js";
 import { Interface } from "ethers";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -50,4 +61,32 @@ test("library self-address immutables are resolved exactly, never ignored", () =
 	assert.deepEqual(matchRuntime(artifact, code, A), {});
 	assert.equal(matchRuntime(artifact, code, B), null);
 	assert.equal(matchRuntime(artifact, code), null);
+});
+
+test("deployment identity names the listed deployment, and a custom one still carries its chain", () => {
+	const profile = { id: "base-lc", name: "Base", environment: "Production", chainId: 8453, rpc: "https://example.invalid/key" };
+	assert.deepEqual(deploymentIdentity(profile, 8453), { id: "base-lc", name: "Base", environment: "Production", chainId: 8453 });
+	assert.equal(deploymentIdentity(profile, 1329).id, "custom-1329", "a profile on another chain never names the plan");
+	assert.equal(deploymentIdentity({ ...profile, id: "custom" }, 8453).id, "custom-8453");
+	assert.equal(deploymentIdentity(null, 1).environment, "Custom");
+});
+test("the typed confirmation is deployment and plan, with the chain for plans saved before deployment identity", () => {
+	const id = "0123456789abcdef".repeat(4);
+	assert.equal(executionConfirmation(id, { id: "base-lc" }, 8453), "base-lc:01234567");
+	assert.equal(executionConfirmation(id, undefined, 8453), "8453:01234567");
+});
+test("journal counts tell confirmed, broadcast, failed and unknown wallet outcomes apart", () => {
+	assert.deepEqual(
+		journalCounts({
+			a: { status: "confirmed", hash: "0x1" },
+			b: { status: "submitted", hash: "0x2" },
+			c: { status: "awaiting-signature" },
+			d: { status: "failed", hash: "0x3" },
+		}),
+		{ confirmed: 1, submitted: 1, unresolved: 1, failed: 1 },
+	);
+	assert.deepEqual(journalCounts(undefined), { confirmed: 0, submitted: 0, unresolved: 0, failed: 0 });
+	assert.equal(rehearsalState({}), "none");
+	assert.equal(rehearsalState({ rehearsal: { status: "failed" } }), "failed");
+	assert.equal(rehearsalState({ rehearsal: { status: "odd" } }), "none");
 });

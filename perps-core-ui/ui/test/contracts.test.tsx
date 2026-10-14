@@ -11,12 +11,12 @@ const nodes = [
   makeNode('Core', 'core'),
   makeNode('AccountLayer', 'accountLayer'),
 ]
-function mount() {
+function mount(busy = false) {
   const onPrepare = vi.fn(),
     onInspect = vi.fn()
   render(
     <MantineProvider env="test">
-      <ContractsTable nodes={nodes} comparison={{}} busy={false} onPrepare={onPrepare} onInspect={onInspect} />
+      <ContractsTable nodes={nodes} comparison={{}} busy={busy} onPrepare={onPrepare} onInspect={onInspect} />
     </MantineProvider>,
   )
   return { onPrepare, onInspect }
@@ -46,4 +46,11 @@ it('searches by contract name and lets an empty result restore the complete inve
   expect(screen.queryByRole('table')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Show all addresses' }))
   expect(within(screen.getByRole('table')).getByRole('button', { name: 'Inspect ControlFacet' })).toBeTruthy()
+})
+it('keeps Prepare unavailable while a job runs', () => {
+  const { onPrepare } = mount(true)
+  const prepare = within(screen.getByRole('table')).getByRole('button', { name: 'Prepare Verifier upgrade' }) as HTMLButtonElement
+  expect(prepare.disabled).toBe(true)
+  fireEvent.click(prepare)
+  expect(onPrepare).not.toHaveBeenCalled()
 })

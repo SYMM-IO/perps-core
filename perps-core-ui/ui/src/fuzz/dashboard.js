@@ -1,3 +1,50 @@
+import {
+  ACTION_TYPES,
+  compactNumber,
+  cornerCounts,
+  cornerState,
+  cornerTargets,
+  cornerTotals,
+  coverageSnapshot,
+  duration,
+  elapsedMs,
+  failureRecords,
+  firstReached,
+  firstReachedCopy,
+  hasQuoteStatusBreakdown,
+  hasQuoteTelemetry,
+  humanize,
+  inputYieldSnapshot,
+  isLiveRun,
+  isObject,
+  isReport,
+  isTerminalRun,
+  numeric,
+  object,
+  optionalNumber,
+  paceTimeline,
+  participantSnapshot,
+  percent,
+  plural,
+  queueTimeline,
+  quoteStateTargets,
+  quoteTimeline,
+  quoteTotals,
+  rate,
+  reportKey,
+  rootCount,
+  runHeadline,
+  runOutcomeSnapshot,
+  runSignalSnapshot,
+  runStatus,
+  runSummary,
+  schemaNotice,
+  stakeholderCopy,
+  targetEvidence,
+  text,
+  timestampNumber,
+} from './model.js'
+
 /**
  * Renders the fuzz report into `root`, a shadow root that already holds dashboard.html.
  * Returns `dispose` to stop polling and `redraw` to repaint the charts after a theme change.
@@ -7,71 +54,27 @@ export function mountFuzzDashboard(root, { authorization }) {
   let disposed = false
   let resizeObserver = null
 
-  const POLL_INTERVAL_MS = 1_000
+  // The runner writes the report at most every two seconds.
+  const POLL_INTERVAL_MS = 2_000
   const RUNS_INTERVAL_MS = 12_000
   const FETCH_TIMEOUT_MS = 5_000
   const STALE_AFTER_MS = 5_000
+  const COPIED_MS = 2_000
   const ACTIVITY_PAGE_SIZE = 12
-
-  const QUOTE_STATES = [
-    { key: 'PENDING', label: 'Awaiting hedger', group: 'waiting' },
-    { key: 'LOCKED', label: 'Reserved by hedger', group: 'waiting' },
-    { key: 'CANCEL_PENDING', label: 'Cancellation requested', group: 'waiting' },
-    { key: 'OPENED', label: 'Position open', group: 'positions' },
-    { key: 'CLOSE_PENDING', label: 'Close requested', group: 'positions' },
-    { key: 'CANCEL_CLOSE_PENDING', label: 'Close cancellation requested', group: 'positions' },
-    { key: 'CANCELED', label: 'Canceled before opening', group: 'outcomes' },
-    { key: 'CLOSED', label: 'Closed', group: 'outcomes' },
-    { key: 'LIQUIDATED', label: 'Liquidated after opening', group: 'outcomes' },
-    { key: 'EXPIRED', label: 'Expired', group: 'outcomes' },
-    { key: 'LIQUIDATED_PENDING', label: 'Liquidated before opening', group: 'outcomes' },
-  ]
-
-  const CORNER_OPERATIONS = [
-    { key: 'FUNDING_CHARGE', label: 'Funding charge', short: 'FUND' },
-    { key: 'SETTLE_UPNL', label: 'Settle unrealized PnL', short: 'SETTLE' },
-    { key: 'FORCE_CLOSE', label: 'Force close', short: 'FORCE' },
-    { key: 'EMERGENCY_CLOSE', label: 'Emergency close', short: 'EMERG' },
-    { key: 'EXPIRE_QUOTE', label: 'Quote expiry', short: 'EXPIRY' },
-    { key: 'LIQUIDATE_PARTY_A', label: 'User liquidation', short: 'USER LIQ' },
-    { key: 'LIQUIDATE_PARTY_B', label: 'Hedger liquidation', short: 'HEDGER LIQ' },
-    { key: 'ACCOUNT_LAYER_LIFECYCLE', label: 'AccountLayer lifecycle', short: 'ACCOUNT' },
-    { key: 'INSTANT_LAYER_LIFECYCLE', label: 'InstantLayer lifecycle', short: 'INSTANT' },
-    { key: 'ACCOUNT_LAYER_SINGLE_VA', label: 'Single VA routing', short: 'SINGLE VA' },
-    { key: 'ACCOUNT_LAYER_OWNERSHIP', label: 'Account ownership', short: 'OWNER' },
-    { key: 'ACCOUNT_LAYER_LEGACY_IMPORT', label: 'Legacy account import', short: 'IMPORT' },
-    { key: 'ACCOUNT_LAYER_MARGIN_RECOVERY', label: 'Safe margin and recovery', short: 'RECOVERY' },
-    { key: 'ACCOUNT_LAYER_TIMELOCK', label: 'AccountLayer timelocks', short: 'AL LOCK' },
-    { key: 'INSTANT_LAYER_TIMELOCK', label: 'InstantLayer timelocks', short: 'IL LOCK' },
-    { key: 'INSTANT_LAYER_DELEGATION', label: 'Delegation lifecycle', short: 'DELEGATE' },
-    { key: 'INSTANT_LAYER_FLEX_FIELDS', label: 'Flex field fills', short: 'FLEX' },
-    { key: 'INSTANT_LAYER_TEMPLATE', label: 'Instant-open template', short: 'TEMPLATE' },
-    { key: 'INSTANT_LAYER_PARTY_B_RELAYS', label: 'PartyB signed relays', short: 'PARTY B' },
-  ]
-
-  const ACTION_ORDER = [
-    'SEND_QUOTE',
-    'CANCEL_REQUEST',
-    'ACCEPT_CANCEL_REQUEST',
-    'LOCK_QUOTE',
-    'UNLOCK_QUOTE',
-    'OPEN_POSITION',
-    'CLOSE_REQUEST',
-    'CANCEL_CLOSE_REQUEST',
-    'ACCEPT_CANCEL_CLOSE_REQUEST',
-    'FILL_POSITION',
-  ]
+  const UNCHANGED = Symbol('unchanged')
 
   const dom = {}
   const chartModels = new WeakMap()
+  const copyTimers = new Map()
   const state = {
     report: null,
+    reportKey: '',
+    etag: null,
     runs: [],
     selectedRunId: '',
     following: true,
     lastSuccessAt: 0,
     lastReportAt: 0,
-    lastRunsAt: 0,
     error: null,
     reportRequest: 0,
     pollTimer: null,
@@ -85,8 +88,6 @@ export function mountFuzzDashboard(root, { authorization }) {
     connectionState: '',
     storyAnimation: null,
     storyTimers: [],
-    storyReportKey: '',
-    storyPlayed: false,
   }
 
   function element(id) {
@@ -96,42 +97,42 @@ export function mountFuzzDashboard(root, { authorization }) {
   function cacheDom() {
     for (const id of [
       'connection-banner',
-      'connection-dot',
       'connection-label',
       'connection-detail',
       'run-select',
       'follow-button',
       'follow-button-label',
       'export-report',
+      'export-hint',
       'waiting-state',
+      'copy-start-command',
+      'start-command',
       'error-banner',
       'error-message',
       'retry-button',
       'dashboard',
       'details',
+      'schema-notice',
       'run-status',
       'run-mode',
       'run-title',
       'run-subtitle',
-      'hero-replay-button',
-      'actors-value',
-      'environment-value',
+      'problems',
+      'problems-count',
+      'problems-list',
+      'problems-seed',
+      'problems-copy',
+      'problems-replay-note',
       'seed-value',
-      'elapsed-value',
-      'freshness-value',
       'trace-value',
       'technical-mode-value',
       'technical-cycle-value',
+      'story',
       'story-replay',
       'story-track',
       'story-token',
       'story-actors',
-      'story-actor-value',
-      'story-cycle-value',
-      'story-job-value',
-      'story-risk-value',
       'story-stage-copy',
-      'story-run-note',
       'health-note',
       'kpi-strip',
       'summary-limit-note',
@@ -139,6 +140,7 @@ export function mountFuzzDashboard(root, { authorization }) {
       'outcome-bar',
       'outcome-strip',
       'outcome-note',
+      'quote-breakdown-label',
       'coverage-verdict-title',
       'coverage-status',
       'coverage-summary',
@@ -159,7 +161,6 @@ export function mountFuzzDashboard(root, { authorization }) {
       'queue-telemetry-note',
       'lifecycle-summary',
       'lifecycle-bars',
-      'action-table',
       'action-type-summary',
       'action-type-coverage',
       'corner-matrix',
@@ -169,8 +170,6 @@ export function mountFuzzDashboard(root, { authorization }) {
       'activity-retention-note',
       'activity-footer',
       'activity-more',
-      'failure-count',
-      'failure-list',
       'replay-command',
       'copy-replay-panel',
       'retention-list',
@@ -181,127 +180,8 @@ export function mountFuzzDashboard(root, { authorization }) {
     }
   }
 
-  function isObject(value) {
-    return value !== null && typeof value === 'object' && !Array.isArray(value)
-  }
-
-  function object(value) {
-    return isObject(value) ? value : {}
-  }
-
-  function array(value) {
-    if (Array.isArray(value)) return value
-    if (isObject(value)) return Object.values(value)
-    return []
-  }
-
-  function valueAt(source, path) {
-    let value = source
-    for (const part of path.split('.')) {
-      if (!isObject(value) && !Array.isArray(value)) return undefined
-      value = value[part]
-    }
-    return value
-  }
-
-  function pick(source, ...paths) {
-    for (const path of paths) {
-      const value = typeof path === 'string' ? valueAt(source, path) : path
-      if (value !== undefined && value !== null) return value
-    }
-    return undefined
-  }
-
-  function firstObject(source, ...paths) {
-    for (const path of paths) {
-      const value = valueAt(source, path)
-      if (isObject(value)) return value
-    }
-    return {}
-  }
-
-  function firstArray(source, ...paths) {
-    for (const path of paths) {
-      const value = valueAt(source, path)
-      if (Array.isArray(value)) return value
-    }
-    return []
-  }
-
-  function numeric(value, fallback = 0) {
-    if (typeof value === 'number' && Number.isFinite(value)) return value
-    if (typeof value === 'bigint') return Number(value)
-    if (typeof value === 'string' && value.trim() !== '') {
-      const parsed = Number(value)
-      if (Number.isFinite(parsed)) return parsed
-    }
-    return fallback
-  }
-
-  function optionalNumber(...values) {
-    for (const value of values) {
-      if (typeof value === 'number' && Number.isFinite(value)) return value
-      if (typeof value === 'bigint') return Number(value)
-      if (typeof value === 'string' && value.trim() !== '') {
-        const parsed = Number(value)
-        if (Number.isFinite(parsed)) return parsed
-      }
-    }
-    return undefined
-  }
-
-  function boolean(value, fallback = false) {
-    if (typeof value === 'boolean') return value
-    if (value === 1 || value === '1' || value === 'true') return true
-    if (value === 0 || value === '0' || value === 'false') return false
-    return fallback
-  }
-
-  function text(value, fallback = '—') {
-    if (typeof value === 'string' && value.trim() !== '') return value
-    if (typeof value === 'number' || typeof value === 'bigint') return String(value)
-    if (typeof value === 'boolean') return value ? 'yes' : 'no'
-    if (isObject(value)) {
-      const message = pick(value, 'message', 'reason', 'detail', 'name')
-      if (message !== undefined) return text(message, fallback)
-    }
-    return fallback
-  }
-
   function clamp(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, value))
-  }
-
-  function compactNumber(value) {
-    const number = numeric(value)
-    const absolute = Math.abs(number)
-    if (absolute < 10_000) return new Intl.NumberFormat('en-US', { maximumFractionDigits: absolute < 10 ? 1 : 0 }).format(number)
-    return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(number)
-  }
-
-  function rate(value) {
-    const number = optionalNumber(value)
-    return number === undefined ? '—' : `${number.toFixed(number >= 10 ? 0 : 1)}/s`
-  }
-
-  function percent(value) {
-    const number = optionalNumber(value)
-    if (number === undefined) return '—'
-    const normalized = number > 1 ? number : number * 100
-    return `${normalized.toFixed(normalized >= 10 ? 0 : 1)}%`
-  }
-
-  function duration(value) {
-    const milliseconds = optionalNumber(value)
-    if (milliseconds === undefined) return '—'
-    if (milliseconds < 1_000) return `${Math.max(0, Math.round(milliseconds))}ms`
-    const seconds = milliseconds / 1_000
-    if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = Math.floor(seconds % 60)
-    if (minutes < 60) return `${minutes}m ${remainingSeconds}s`
-    const hours = Math.floor(minutes / 60)
-    return `${hours}h ${minutes % 60}m`
   }
 
   function bytes(value) {
@@ -312,40 +192,18 @@ export function mountFuzzDashboard(root, { authorization }) {
     return `${(size / 1_048_576).toFixed(1)} MiB`
   }
 
-  function timestampNumber(value) {
-    const number = optionalNumber(value)
-    if (number !== undefined) {
-      if (number > 0 && number < 10_000_000_000) return number * 1_000
-      return number
-    }
-    if (typeof value === 'string') {
-      const parsed = Date.parse(value)
-      if (Number.isFinite(parsed)) return parsed
-    }
-    return undefined
-  }
-
   function clockTime(value) {
     const timestamp = timestampNumber(value)
     if (timestamp === undefined) return ''
-    return new Intl.DateTimeFormat('en', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).format(new Date(timestamp))
+    return new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(timestamp))
   }
 
   function shortDate(value) {
     const timestamp = timestampNumber(value)
     if (timestamp === undefined) return ''
-    return new Intl.DateTimeFormat('en', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(new Date(timestamp))
+    return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(
+      new Date(timestamp),
+    )
   }
 
   function ago(timestamp) {
@@ -357,22 +215,6 @@ export function mountFuzzDashboard(root, { authorization }) {
     return shortDate(timestamp)
   }
 
-  function humanize(value) {
-    return text(value, '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (character) => character.toUpperCase())
-  }
-
-  function stakeholderCopy(value, fallback = '') {
-    return text(value, fallback)
-      .replace(/\bParty\s*A\b/gi, 'user')
-      .replace(/\bParty\s*B\b/gi, 'hedger')
-      .replace(/\bPartyA\b/gi, 'user')
-      .replace(/\bPartyB\b/gi, 'hedger')
-      .replace(/\broot actions?\b/gi, 'simulation cycles')
-      .replace(/\broots?\b/gi, (match) => (/s$/i.test(match) ? 'simulation cycles' : 'simulation cycle'))
-  }
-
   function create(tag, className, content) {
     const node = document.createElement(tag)
     if (className) node.className = className
@@ -380,8 +222,10 @@ export function mountFuzzDashboard(root, { authorization }) {
     return node
   }
 
+  // Writing the same text again would still replace the text node and drop any selection in it.
   function setText(node, value, fallback = '—') {
-    if (node) node.textContent = text(value, fallback)
+    const next = text(value, fallback)
+    if (node && node.textContent !== next) node.textContent = next
   }
 
   function announce(message) {
@@ -392,549 +236,244 @@ export function mountFuzzDashboard(root, { authorization }) {
     }, 20)
   }
 
-  function reportRun(report = state.report) {
-    return firstObject(report || {}, 'run')
+  /** The live view runs its clock to now; anything else stops at the last report write. */
+  function viewNow(report) {
+    const fresh =
+      state.report === report &&
+      state.following &&
+      !state.selectedRunId &&
+      isLiveRun(report) &&
+      state.lastReportAt > 0 &&
+      Date.now() - state.lastReportAt <= STALE_AFTER_MS
+    return fresh ? Date.now() : undefined
   }
 
-  function reportSetup(report = state.report) {
-    return firstObject(report || {}, 'setup', 'run.setup')
+  function seedOf(report) {
+    return text(report?.run?.seed ?? report?.run?.config?.seed, '')
   }
 
-  function reportConfig(report = state.report) {
-    return firstObject(report || {}, 'config', 'run.config')
+  function replayCommand(report) {
+    return text(report?.run?.replay, '')
   }
 
-  function reportLatest(report = state.report) {
-    return firstObject(report || {}, 'latest')
+  function humanRunMode(mode) {
+    if (mode === 'continuous') return 'Continuous simulation'
+    if (mode === 'bounded') return 'Bounded replay'
+    return mode ? humanize(mode) : 'Mode unavailable'
   }
 
-  function reportResult(report = state.report) {
-    return firstObject(report || {}, 'result', 'run.result')
-  }
+  // ---- Copy ---------------------------------------------------------------------------------------
 
-  function currentQueue(report = state.report) {
-    return firstObject(report || {}, 'latest.queue', 'latest.engine.queue', 'result.queue', 'run.queue', 'queue')
-  }
-
-  function currentQuotes(report = state.report) {
-    return firstObject(report || {}, 'latest.quotes', 'latest.quoteInventory', 'latest.inventory', 'result.quotes', 'result.quoteInventory', 'quotes')
-  }
-
-  function currentCorners(report = state.report) {
-    return firstObject(report || {}, 'latest.corners', 'latest.cornerCoverage', 'result.corners', 'corners')
-  }
-
-  function currentAssurance(report = state.report) {
-    return firstObject(report || {}, 'latest.assurance', 'result.assurance', 'assurance')
-  }
-
-  function currentActions(report = state.report) {
-    return firstObject(report || {}, 'latest.actions', 'latest.actionOutcomes', 'result.actions', 'actions')
-  }
-
-  function hasTelemetry(source, fields) {
-    return isObject(source) && fields.some((field) => valueAt(source, field) !== undefined)
-  }
-
-  function hasQuoteTelemetry(quotes) {
-    return hasTelemetry(quotes, ['total', 'active', 'live', 'terminal', 'ended', 'byStatus', 'statuses', 'status'])
-  }
-
-  function quoteStatusMap(quotes) {
-    return firstObject(quotes, 'byStatus', 'statuses', 'status')
-  }
-
-  function hasQuoteStatusBreakdown(quotes) {
-    const counts = quoteStatusMap(quotes)
-    return QUOTE_STATES.some((item) => counts[item.key] !== undefined && counts[item.key] !== null)
-  }
-
-  function hasQueueTelemetry(queue) {
-    return hasTelemetry(queue, [
-      'accepted',
-      'totalAccepted',
-      'completed',
-      'settled',
-      'totalCompleted',
-      'outstanding',
-      'pending',
-      'waiting',
-      'scheduled',
-      'running',
-      'active',
-      'failures',
-      'errors',
-    ])
-  }
-
-  function counterValue(value) {
-    if (Array.isArray(value)) return value.length
-    return optionalNumber(value)
-  }
-
-  function actionFailureSnapshot(report = state.report) {
-    const actions = currentActions(report)
-    const actionMap = firstObject(actions, 'byAction', 'actions', 'by_action')
-    const actionEntries = Object.values(actionMap).filter(isObject)
-    const failedValue = pick(actions, 'failed', 'totals.failed', 'outcomes.failed')
-    const timedOutValue = pick(actions, 'timedOut', 'timed_out', 'totals.timedOut', 'totals.timed_out')
-    const perActionFailuresAvailable = actionEntries.length > 0 && actionEntries.every((item) => pick(item, 'failed', 'failures') !== undefined)
-    const perActionTimeoutsAvailable =
-      actionEntries.length > 0 && actionEntries.every((item) => pick(item, 'timedOut', 'timed_out', 'timeouts') !== undefined)
-    return {
-      failedAvailable: failedValue !== undefined || perActionFailuresAvailable,
-      timedOutAvailable: timedOutValue !== undefined || perActionTimeoutsAvailable,
-      failed:
-        counterValue(failedValue) ??
-        (perActionFailuresAvailable ? actionEntries.reduce((total, item) => total + numeric(pick(item, 'failed', 'failures')), 0) : undefined),
-      timedOut:
-        counterValue(timedOutValue) ??
-        (perActionTimeoutsAvailable
-          ? actionEntries.reduce((total, item) => total + numeric(pick(item, 'timedOut', 'timed_out', 'timeouts')), 0)
-          : undefined),
+  async function writeClipboard(value) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return true
+    } catch {
+      const input = document.createElement('textarea')
+      input.value = value
+      input.setAttribute('readonly', '')
+      input.style.position = 'fixed'
+      input.style.left = '-10000px'
+      document.body.append(input)
+      input.select()
+      const copied = typeof document.execCommand === 'function' && document.execCommand('copy')
+      input.remove()
+      return copied
     }
   }
 
-  function queueFailureSnapshot(report = state.report) {
-    const queue = currentQueue(report)
-    const value = pick(queue, 'failures', 'errors')
-    return {
-      available: value !== undefined,
-      value: counterValue(value),
+  /** Copies `value` and says so on the button itself for two seconds, as the app's copy buttons do. */
+  async function copyWithFeedback(value, button, what) {
+    if (!value) return
+    const copied = await writeClipboard(value)
+    if (disposed) return
+    if (button) {
+      button.dataset.label ??= button.textContent
+      button.textContent = copied ? 'Copied' : 'Copy failed'
+      button.dataset.copied = copied ? 'true' : 'false'
+      window.clearTimeout(copyTimers.get(button))
+      copyTimers.set(
+        button,
+        window.setTimeout(() => {
+          button.textContent = button.dataset.label
+          delete button.dataset.copied
+        }, COPIED_MS),
+      )
     }
+    announce(copied ? `${what} copied.` : `${what} could not be copied.`)
   }
 
-  function statusCounts(quotes) {
-    const counts = quoteStatusMap(quotes)
-    return Object.fromEntries(QUOTE_STATES.map((item) => [item.key, numeric(counts[item.key])]))
-  }
-
-  function terminalCount(counts) {
-    return ['CANCELED', 'CLOSED', 'LIQUIDATED', 'EXPIRED', 'LIQUIDATED_PENDING'].reduce((sum, key) => sum + numeric(counts[key]), 0)
-  }
-
-  function liveCount(counts) {
-    return ['PENDING', 'LOCKED', 'CANCEL_PENDING', 'OPENED', 'CLOSE_PENDING', 'CANCEL_CLOSE_PENDING'].reduce(
-      (sum, key) => sum + numeric(counts[key]),
-      0,
-    )
-  }
-
-  function quoteTotals(quotes) {
-    const counts = statusCounts(quotes)
-    const rawCounts = quoteStatusMap(quotes)
-    const activeKeys = ['PENDING', 'LOCKED', 'CANCEL_PENDING', 'OPENED', 'CLOSE_PENDING', 'CANCEL_CLOSE_PENDING']
-    const terminalKeys = ['CANCELED', 'CLOSED', 'LIQUIDATED', 'EXPIRED', 'LIQUIDATED_PENDING']
-    const active =
-      optionalNumber(quotes.active, quotes.live) ??
-      (activeKeys.every((key) => optionalNumber(rawCounts[key]) !== undefined) ? liveCount(counts) : undefined)
-    const terminal =
-      optionalNumber(quotes.terminal, quotes.ended) ??
-      (terminalKeys.every((key) => optionalNumber(rawCounts[key]) !== undefined) ? terminalCount(counts) : undefined)
-    const total = optionalNumber(quotes.total) ?? (active !== undefined && terminal !== undefined ? active + terminal : undefined)
-    return { counts, active, terminal, total }
-  }
-
-  function queueTotals(queue) {
-    const accepted = numeric(pick(queue, 'accepted', 'totalAccepted'))
-    const completed = numeric(pick(queue, 'completed', 'settled', 'totalCompleted'))
-    const outstanding = optionalNumber(queue.outstanding) ?? Math.max(0, accepted - completed)
-    return {
-      accepted,
-      completed,
-      outstanding,
-      pending: numeric(pick(queue, 'pending', 'waiting')),
-      scheduled: numeric(queue.scheduled),
-      running: boolean(queue.running) ? 1 : numeric(queue.active),
-      paused: boolean(queue.paused),
-      failures: counterValue(pick(queue, 'failures', 'errors')),
-    }
-  }
-
-  function countFailures(report = state.report) {
-    const failures = failureRecords(report)
-    const actions = actionFailureSnapshot(report)
-    const queue = queueFailureSnapshot(report)
-    return {
-      records: failures.length,
-      failedActions: actions.failed,
-      timedOutActions: actions.timedOut,
-      queueFailures: queue.value,
-    }
-  }
-
-  function runSignalSnapshot(report = state.report) {
-    const failures = countFailures(report)
-    const corners = currentCorners(report)
-    const cornerMap = operationMap(corners)
-    const cornerEntries = Object.values(cornerMap).filter(isObject)
-    const explicitCornerFailures = pick(corners, 'totals.failed', 'failed')
-    const perCornerFailuresAvailable = cornerEntries.length > 0 && cornerEntries.every((item) => pick(item, 'failed', 'failures') !== undefined)
-    const cornerFailuresAvailable = explicitCornerFailures !== undefined || perCornerFailuresAvailable
-    const actions = actionFailureSnapshot(report)
-    const queue = queueFailureSnapshot(report)
-    const evidenceGaps = [
-      ...(!actions.failedAvailable ? ['action failures'] : []),
-      ...(!actions.timedOutAvailable ? ['action timeouts'] : []),
-      ...(!queue.available ? ['queue failures'] : []),
-      ...(!cornerFailuresAvailable ? ['high-risk workflow failures'] : []),
-    ]
-    const cornerFailures =
-      counterValue(explicitCornerFailures) ??
-      (perCornerFailuresAvailable ? cornerEntries.reduce((total, item) => total + numeric(pick(item, 'failed', 'failures')), 0) : undefined)
-    const retention = firstObject(report || {}, 'retention')
-    const storageWarning = text(retention.lastWriteError, '')
-    const failureCategories = [
-      failures.records > 0 ? `${compactNumber(failures.records)} boundary ${failures.records === 1 ? 'record' : 'records'}` : '',
-      failures.failedActions > 0 ? `${compactNumber(failures.failedActions)} failed ${failures.failedActions === 1 ? 'action' : 'actions'}` : '',
-      failures.timedOutActions > 0
-        ? `${compactNumber(failures.timedOutActions)} timed-out ${failures.timedOutActions === 1 ? 'action' : 'actions'}`
-        : '',
-      failures.queueFailures > 0 ? `${compactNumber(failures.queueFailures)} queue ${failures.queueFailures === 1 ? 'failure' : 'failures'}` : '',
-      cornerFailures > 0 ? `${compactNumber(cornerFailures)} high-risk workflow ${cornerFailures === 1 ? 'failure' : 'failures'}` : '',
-    ].filter(Boolean)
-    const badStatus = /(fail|error|abort|timeout)/.test(runStatus(report))
-    if (badStatus && failureCategories.length === 0) failureCategories.push(`Run status: ${humanize(runStatus(report))}`)
-    const categories = [...failureCategories, ...(storageWarning ? [`Storage warning: ${storageWarning}`] : [])]
-    return {
-      count: categories.length,
-      categories,
-      failureCategories,
-      hasFailure: failureCategories.length > 0,
-      storageWarning,
-      evidenceComplete: evidenceGaps.length === 0,
-      evidenceGaps,
-    }
-  }
-
-  function runStatus(report = state.report) {
-    const source = report || {}
-    return text(
-      pick(source, 'run.status', 'run.phase', 'run.outcome', 'result.status', 'result.outcome', 'latest.status', 'status'),
-      'waiting',
-    ).toLowerCase()
-  }
-
-  function isLiveRun(report = state.report) {
-    return /(run|active|live|drain)/.test(runStatus(report))
-  }
-
-  function isTerminalRun(report = state.report) {
-    return /(pass|stop|fail|complete|finished|error|abort|timeout)/.test(runStatus(report))
-  }
-
-  function statusTone(status) {
-    if (/(fail|error|abort|timeout)/.test(status)) return 'bad'
-    if (/(pass|complete|success|finished)/.test(status)) return 'good'
-    if (/(drain|stop|frozen|stale)/.test(status)) return 'warn'
-    if (/(run|active|live|ready|start)/.test(status)) return 'info'
-    return 'neutral'
-  }
-
-  function runOutcomeSnapshot(report = state.report) {
-    const status = runStatus(report)
-    const signals = runSignalSnapshot(report)
-    const queueSource = currentQueue(report)
-    const queue = hasQueueTelemetry(queueSource) ? queueTotals(queueSource) : undefined
-    const clean = !signals.hasFailure && signals.evidenceComplete
-    const drained = queue ? queue.outstanding === 0 : undefined
-    const operatorStopped = /(stop)/.test(status) && text(pick(report || {}, 'run.signal', 'signal'), '').toUpperCase() === 'SIGINT'
-    const stoppedCleanly = /(stop)/.test(status) && clean && drained === true
-    const label = signals.hasFailure
-      ? 'Needs attention'
-      : stoppedCleanly
-        ? 'Stopped cleanly'
-        : /(drain)/.test(status)
-          ? 'Finishing current work'
-          : /(run|active|live)/.test(status)
-            ? 'Simulation running'
-            : /(pass|complete|success|finished)/.test(status) && clean
-              ? 'Completed cleanly'
-              : humanize(status)
-    return { status, signals, queue, clean, drained, operatorStopped, stoppedCleanly, label }
-  }
+  // ---- Header, problems and KPIs ------------------------------------------------------------------
 
   function renderRunStatus(report, connectionState = state.connectionState) {
     const outcome = runOutcomeSnapshot(report)
     const snapshot = connectionState === 'stale' || connectionState === 'frozen' || connectionState === 'error'
     setText(dom['run-status'], `${snapshot ? 'Last reported: ' : ''}${outcome.label}`.toUpperCase())
-    const tone = outcome.stoppedCleanly ? 'good' : statusTone(outcome.status)
-    dom['run-status'].dataset.tone = snapshot && tone !== 'bad' ? 'warn' : tone
+    dom['run-status'].dataset.tone = snapshot && outcome.tone !== 'bad' ? 'warn' : outcome.tone
   }
 
-  function rootCount(report = state.report) {
-    const source = report || {}
-    return (
-      optionalNumber(
-        pick(source, 'latest.root.completed', 'latest.root.index', 'latest.rootIndex', 'latest.roots', 'latest.rootActions'),
-        pick(source, 'counters.roots.completed', 'run.result.rootActions', 'result.rootActions', 'run.rootActions', 'run.roots'),
-      ) ?? 0
-    )
+  function renderRunHeader(report) {
+    const mode = report?.run?.config?.runMode
+    const trace = text(report?.run?.traceHash, '')
+    renderRunStatus(report)
+    setText(dom['run-mode'], humanRunMode(mode))
+    setText(dom['run-title'], runHeadline(report, state.connectionState))
+    setText(dom['run-subtitle'], runSummary(report, viewNow(report)))
+    setText(dom['seed-value'], seedOf(report))
+    dom['seed-value'].title = seedOf(report)
+    setText(dom['trace-value'], trace ? trace.slice(0, 16) : '—')
+    dom['trace-value'].title = trace
+    setText(dom['technical-mode-value'], humanRunMode(mode))
+    setText(dom['technical-cycle-value'], compactNumber(rootCount(report)))
+    const notice = schemaNotice(report)
+    setText(dom['schema-notice'], notice, '')
+    dom['schema-notice'].hidden = !notice
   }
 
-  function elapsedMs(report = state.report) {
-    const source = report || {}
-    const explicit = optionalNumber(
-      pick(source, 'latest.elapsedMs', 'run.elapsedMs', 'run.result.durationMs', 'result.durationMs', 'latest.durationMs'),
-    )
-    if (explicit !== undefined) return explicit
-    const startedAt = timestampNumber(pick(source, 'run.startedAt', 'run.started_at', 'startedAt'))
-    if (startedAt === undefined) return undefined
-    const finishedAt = timestampNumber(pick(source, 'run.finishedAt', 'run.finished_at', 'result.finishedAt', 'result.finished_at', 'finishedAt'))
-    if (finishedAt !== undefined) return Math.max(0, finishedAt - startedAt)
-    const currentFreshView =
-      state.report === source &&
-      state.following &&
-      !state.selectedRunId &&
-      isLiveRun(source) &&
-      state.lastReportAt > 0 &&
-      Date.now() - state.lastReportAt <= STALE_AFTER_MS
-    const reportedAt =
-      timestampNumber(pick(source, 'generatedAt', 'updatedAt', 'run.updatedAt', 'run.updated_at', 'latest.at', 'latest.timestamp')) ??
-      (state.report === source ? state.lastReportAt : undefined)
-    const endpoint = currentFreshView ? Date.now() : reportedAt
-    return endpoint === undefined ? undefined : Math.max(0, endpoint - startedAt)
-  }
-
-  function paceSnapshot(report = state.report) {
-    const source = report || {}
-    const latestPace = firstObject(source, 'latest.pace', 'latest.performance', 'result.pace')
-    const elapsed = elapsedMs(source)
-    const roots = rootCount(source)
-    const queueSource = currentQueue(source)
-    const queueAvailable = hasQueueTelemetry(queueSource)
-    const queue = queueAvailable ? queueTotals(queueSource) : undefined
-    const rootSummary = firstObject(source, 'latest.root', 'counters.roots')
-    const timeline = timelineCandidates(source, ['pace', 'throughput', 'roots', 'snapshots', 'buckets', 'points'])
-    const durations = timeline.map((point) => optionalNumber(pick(object(point), 'durationMs'))).filter((value) => value !== undefined)
-    const lastPoint = object(timeline.at(-1))
-    const previousPoint = object(timeline.at(-Math.min(17, timeline.length)))
-    const timelineRate = (() => {
-      const completed = optionalNumber(pick(lastPoint, 'roots.completed', 'root'))
-      const previousCompleted = optionalNumber(pick(previousPoint, 'roots.completed', 'root'))
-      const at = optionalNumber(lastPoint.elapsedMs)
-      const previousAt = optionalNumber(previousPoint.elapsedMs)
-      if (completed !== undefined && previousCompleted !== undefined && at !== undefined && previousAt !== undefined && at > previousAt) {
-        return ((completed - previousCompleted) * 1_000) / (at - previousAt)
-      }
-      if (completed !== undefined && at !== undefined && at > 0) return (completed * 1_000) / at
-      return undefined
-    })()
-    const exactWindow = optionalNumber(pick(latestPace, 'window', 'sampleSize', 'n'))
-    const fallbackWindow = durations.length ? Math.min(64, durations.length) : undefined
-    const explicitRootRate = optionalNumber(
-      pick(latestPace, 'rootsPerSecond', 'rootsPerSec', 'rootRate', 'throughput'),
-      pick(source, 'latest.rootsPerSecond'),
-    )
-    const aggregateRootRate = elapsed && elapsed > 0 ? roots / (elapsed / 1_000) : undefined
-    return {
-      rootsPerSecond: explicitRootRate ?? (isTerminalRun(source) ? (aggregateRootRate ?? timelineRate) : (timelineRate ?? aggregateRootRate)),
-      actionsPerSecond:
-        optionalNumber(pick(latestPace, 'actionsPerSecond', 'actionsPerSec', 'actionRate')) ??
-        (elapsed && elapsed > 0 && queue ? queue.completed / (elapsed / 1_000) : undefined),
-      p50:
-        optionalNumber(pick(latestPace, 'rootP50Ms', 'p50Ms', 'p50', 'latencyP50Ms')) ??
-        (durations.length ? percentile(durations.slice(-64), 0.5) : undefined),
-      p95:
-        optionalNumber(pick(latestPace, 'rootP95Ms', 'p95Ms', 'p95', 'latencyP95Ms')) ??
-        (durations.length ? percentile(durations.slice(-64), 0.95) : undefined),
-      inputYield:
-        optionalNumber(pick(latestPace, 'inputYield', 'yield', 'yieldRate')) ??
-        (numeric(rootSummary.completed) > 0 ? numeric(rootSummary.sent) / numeric(rootSummary.completed) : undefined),
-      window: exactWindow ?? fallbackWindow,
-      windowLabel:
-        exactWindow !== undefined
-          ? `${compactNumber(exactWindow)}-cycle rolling window`
-          : fallbackWindow !== undefined
-            ? `${compactNumber(fallbackWindow)} retained checkpoints`
-            : 'Latency sample unavailable',
+  function failureItem(failure) {
+    const node = create('li', 'problem')
+    const where = [
+      failure.cycle !== undefined && `cycle ${compactNumber(failure.cycle)}`,
+      failure.actionSequence !== undefined && `action #${failure.actionSequence}`,
+      failure.actionTitle,
+    ].filter(Boolean)
+    node.append(create('p', 'problem__boundary', humanize(failure.boundary)), create('p', 'problem__message', failure.message))
+    if (where.length) node.append(create('p', 'problem__where', `During ${where.join(' · ')}`))
+    if (failure.stack || failure.cause) {
+      const disclosure = create('details', 'problem__trace')
+      disclosure.append(create('summary', '', failure.cause ? 'Stack and cause' : 'Stack'))
+      if (failure.stack) disclosure.append(create('pre', '', failure.stack))
+      if (failure.cause) disclosure.append(create('p', 'problem__trace-label', 'Cause'), create('pre', '', failure.cause))
+      node.append(disclosure)
     }
+    return node
   }
 
-  function percentile(values, quantile) {
-    if (values.length === 0) return undefined
-    const ordered = values.map((value) => numeric(value)).sort((left, right) => left - right)
-    const index = clamp(Math.ceil(quantile * ordered.length) - 1, 0, ordered.length - 1)
-    return ordered[index]
-  }
-
-  function operationMap(corners) {
-    return firstObject(corners, 'byOperation', 'operations', 'by_operation')
-  }
-
-  function cornerCounts(corners, key) {
-    const source = object(operationMap(corners)[key])
-    const attempted = numeric(pick(source, 'attempted', 'started', 'tries'))
-    const succeeded = numeric(pick(source, 'succeeded', 'passed', 'verified'))
-    const skipped = numeric(source.skipped)
-    const failed = numeric(source.failed)
-    const unresolved = optionalNumber(source.running, source.inProgress) ?? Math.max(0, attempted - succeeded - skipped - failed)
-    return {
-      attempted,
-      succeeded,
-      skipped,
-      failed,
-      unresolved,
-      detail: text(pick(source, 'detail', 'last.detail', 'message'), ''),
-    }
-  }
-
-  function cornerState(counts) {
-    if (counts.succeeded > 0 && counts.failed > 0) return 'verified-with-failures'
-    if (counts.failed > 0) return 'failed'
-    if (counts.unresolved > 0) return 'unresolved'
-    if (counts.succeeded > 0) return 'passed'
-    if (counts.skipped > 0) return 'skipped'
-    return 'unseen'
-  }
-
-  function verifiedCornerCount(corners) {
-    return CORNER_OPERATIONS.filter((operation) => cornerCounts(corners, operation.key).succeeded > 0).length
-  }
-
-  function coverageSnapshot(report = state.report) {
-    const assurance = currentAssurance(report)
-    const milestones = firstObject(report || {}, 'milestones.quoteStates')
-    const observedValue = pick(assurance, 'observedQuoteStatuses', 'lifecycle.observedStatuses')
-    const lifecycleAvailable = Array.isArray(observedValue) || Object.keys(milestones).length > 0
-    const observedStates = new Set(array(observedValue).map((value) => text(value, '')))
-    for (const item of QUOTE_STATES) if (isObject(milestones[item.key])) observedStates.add(item.key)
-    const observedStateCount = QUOTE_STATES.filter((item) => observedStates.has(item.key)).length
-    const missingStates = lifecycleAvailable ? QUOTE_STATES.filter((item) => !observedStates.has(item.key)) : []
-
-    const confirmedValue = pick(assurance, 'confirmedActionTypes')
-    const validatorsAvailable = Array.isArray(confirmedValue)
-    const confirmedActions = new Set(array(confirmedValue).map((value) => text(value, '')))
-    const missingActions = validatorsAvailable ? ACTION_ORDER.filter((action) => !confirmedActions.has(action)) : []
-
-    const corners = currentCorners(report)
-    const cornerMap = operationMap(corners)
-    const cornersAvailable = Object.keys(cornerMap).length > 0
-    const missingCorners = cornersAvailable ? CORNER_OPERATIONS.filter((operation) => cornerCounts(corners, operation.key).succeeded === 0) : []
+  /** What failed, where, and how to replay it, directly under the hero. Hidden on a clean run. */
+  function renderProblems(report) {
     const signals = runSignalSnapshot(report)
-    const coverageAvailable = lifecycleAvailable && validatorsAvailable && cornersAvailable
-    const complete = coverageAvailable && missingStates.length === 0 && missingActions.length === 0 && missingCorners.length === 0
-    const status = runStatus(report)
-    const terminal = /(pass|stop|fail|complete|finished)/.test(status)
-    const tone = signals.hasFailure
-      ? 'bad'
-      : signals.storageWarning || !coverageAvailable || !signals.evidenceComplete
-        ? 'warn'
-        : complete
-          ? 'good'
-          : terminal
-            ? 'warn'
-            : 'info'
-    const gapCount = missingStates.length + missingActions.length + missingCorners.length
-    const summary = signals.hasFailure
-      ? `${complete ? 'Every configured run target was reached, but ' : ''}${signals.failureCategories.join(
-          '; ',
-        )}. Review these signals before trusting this run.`
-      : signals.storageWarning
-        ? `${complete ? 'Every configured run target was reached, but dashboard' : 'Dashboard'} persistence reported a storage warning. The protocol run may be clean, but this report needs review.`
-        : !coverageAvailable
-          ? 'Historical target evidence is unavailable in this report; the current quote snapshot is not treated as proof.'
-          : !signals.evidenceComplete
-            ? `${complete ? 'Every configured run target was reached, but issue' : 'Issue'} telemetry is incomplete: ${signals.evidenceGaps.join(
-                ', ',
-              )} unavailable.`
-            : complete
-              ? 'Every configured target was reached: all quote states, supported action types, and high-risk workflows have evidence. This is not exhaustive protocol coverage.'
-              : terminal
-                ? `The run ended with ${compactNumber(gapCount)} configured ${gapCount === 1 ? 'target' : 'targets'} still unverified.`
-                : `Evidence is still building; ${compactNumber(gapCount)} configured ${gapCount === 1 ? 'target remains' : 'targets remain'}.`
-    return {
-      tone,
-      title: signals.hasFailure
-        ? 'Review needed'
-        : signals.storageWarning
-          ? 'Storage warning'
-          : !coverageAvailable
-            ? 'Coverage unavailable'
-            : !signals.evidenceComplete
-              ? 'Telemetry incomplete'
-              : complete
-                ? 'Configured targets met'
-                : terminal
-                  ? `${compactNumber(gapCount)} configured ${gapCount === 1 ? 'target' : 'targets'} missing`
-                  : 'Building coverage',
-      label: signals.hasFailure
-        ? complete
-          ? 'REVIEW'
-          : 'ATTENTION'
-        : signals.storageWarning
-          ? complete
-            ? 'WARNING'
-            : 'STORAGE WARNING'
-          : !coverageAvailable
-            ? 'UNAVAILABLE'
-            : !signals.evidenceComplete
-              ? complete
-                ? 'TELEMETRY'
-                : 'TELEMETRY GAPS'
-              : complete
-                ? 'TARGETS MET'
-                : terminal
-                  ? 'GAPS'
-                  : 'BUILDING',
-      summary,
-      cards: [
-        {
-          label: 'Quote states',
-          value: lifecycleAvailable ? `${observedStateCount}/${QUOTE_STATES.length}` : '—',
-          detail: !lifecycleAvailable
-            ? 'Historical target evidence unavailable'
-            : missingStates.length
-              ? `${terminal ? 'Not observed in this run' : 'Not observed yet'}: ${missingStates.map((item) => item.label).join(', ')}`
-              : 'All configured quote states reached',
-          tone: !lifecycleAvailable ? 'warn' : missingStates.length ? 'warn' : 'good',
-        },
-        {
-          label: 'Actions checked',
-          value: validatorsAvailable ? `${ACTION_ORDER.length - missingActions.length}/${ACTION_ORDER.length}` : '—',
-          detail: !validatorsAvailable
-            ? 'Confirmed action-type data unavailable'
-            : missingActions.length
-              ? `${terminal ? 'Not confirmed in this run' : 'Not confirmed yet'}: ${missingActions.map(humanize).join(', ')}`
-              : 'Every supported action type independently checked',
-          tone: !validatorsAvailable ? 'warn' : missingActions.length ? 'warn' : 'good',
-        },
-        {
-          label: 'High-risk checks',
-          value: cornersAvailable ? `${CORNER_OPERATIONS.length - missingCorners.length}/${CORNER_OPERATIONS.length}` : '—',
-          detail: !cornersAvailable
-            ? 'High-risk workflow data unavailable'
-            : missingCorners.length
-              ? `${terminal ? 'Not verified in this run' : 'Not verified yet'}: ${missingCorners.map((item) => item.label).join(', ')}`
-              : 'Every configured workflow passed',
-          tone: !cornersAvailable ? 'warn' : missingCorners.length ? 'warn' : 'good',
-        },
-        {
-          label: 'Problems',
-          value: signals.hasFailure || signals.storageWarning ? (signals.hasFailure ? 'FOUND' : 'WARNING') : signals.evidenceComplete ? '0' : '—',
-          detail:
-            signals.categories.length > 0
-              ? `${signals.categories.slice(0, 2).join(' · ')}${signals.categories.length > 2 ? ` · +${signals.categories.length - 2} more` : ''}`
-              : signals.evidenceComplete
-                ? 'No failures, timeouts, or storage warnings'
-                : `Unavailable: ${signals.evidenceGaps.join(', ')}`,
-          tone: signals.hasFailure ? 'bad' : signals.storageWarning || !signals.evidenceComplete ? 'warn' : 'good',
-        },
-      ],
-      gaps: [
-        ...(!lifecycleAvailable ? [{ label: 'Lifecycle coverage data unavailable', tone: 'warn' }] : []),
-        ...(!validatorsAvailable ? [{ label: 'Independent state-check data unavailable', tone: 'warn' }] : []),
-        ...(!cornersAvailable ? [{ label: 'High-risk workflow data unavailable', tone: 'warn' }] : []),
-        ...missingStates.map((item) => ({ label: `State not observed · ${item.label}`, tone: 'warn' })),
-        ...missingActions.map((action) => ({ label: `Action type not checked · ${humanize(action)}`, tone: 'warn' })),
-        ...missingCorners.map((operation) => ({ label: `Workflow not verified · ${operation.label}`, tone: 'warn' })),
-        ...signals.failureCategories.map((label) => ({ label, tone: 'bad' })),
-        ...(signals.storageWarning ? [{ label: `Storage · ${signals.storageWarning}`, tone: 'warn' }] : []),
-        ...(!signals.evidenceComplete ? [{ label: `Run-signal telemetry unavailable · ${signals.evidenceGaps.join(', ')}`, tone: 'warn' }] : []),
-        ...(complete && signals.count === 0 && signals.evidenceComplete ? [{ label: 'All configured run targets reached', tone: 'good' }] : []),
-      ],
+    const failures = failureRecords(report)
+    const show = signals.hasFailure || Boolean(signals.storageWarning)
+    dom.problems.hidden = !show
+    if (!show) return
+    dom.problems.dataset.tone = signals.hasFailure ? 'bad' : 'warn'
+    setText(
+      dom['problems-count'],
+      failures.length
+        ? plural(failures.length, 'failure')
+        : signals.hasFailure
+          ? plural(signals.failureCategories.length, 'signal')
+          : 'Storage warning',
+    )
+    const items = failures.slice(-10).reverse().map(failureItem)
+    if (failures.length === 0 && signals.hasFailure) {
+      const node = create('li', 'problem')
+      node.append(
+        create('p', 'problem__boundary', 'Run signals'),
+        create('p', 'problem__message', signals.failureCategories.join(' · ')),
+        create('p', 'problem__where', isTerminalRun(report) ? 'The report kept no failure detail.' : 'Failure detail arrives when the run ends.'),
+      )
+      items.push(node)
     }
+    if (signals.storageWarning) {
+      const node = create('li', 'problem')
+      node.dataset.tone = 'warn'
+      node.append(create('p', 'problem__boundary', 'Report storage'), create('p', 'problem__message', signals.storageWarning))
+      items.push(node)
+    }
+    // Rebuilding the list on every poll would close an open stack disclosure, so only rebuild when it changed.
+    const signature = JSON.stringify([failures, signals.failureCategories, signals.storageWarning])
+    if (dom['problems-list'].dataset.signature !== signature) {
+      dom['problems-list'].dataset.signature = signature
+      dom['problems-list'].replaceChildren(...items)
+    }
+    const replay = replayCommand(report)
+    setText(dom['problems-seed'], seedOf(report))
+    dom['problems-copy'].disabled = !replay
+    setText(dom['problems-replay-note'], replay ? '' : 'The replay command is written when the run ends.', '')
+    dom['problems-replay-note'].hidden = Boolean(replay)
   }
+
+  function renderKpis(report) {
+    const { states, actions } = targetEvidence(report)
+    const corners = cornerTotals(report)
+    const cornerTargetList = cornerTargets(report)
+    const cornersAvailable = Object.keys(object(report?.latest?.corners?.byOperation)).length > 0
+    const cornerTypes = cornerTargetList.filter((target) => cornerCounts(report?.latest?.corners, target.key).succeeded > 0).length
+    const signals = runSignalSnapshot(report)
+    const yieldSnapshot = inputYieldSnapshot(report)
+    const reachedStates = states.targets.length - states.missing.length
+    const checkedActions = actions.targets.length - actions.missing.length
+    const kpis = [
+      {
+        label: 'Failures or timeouts',
+        value: signals.hasFailure ? 'FOUND' : signals.evidenceComplete ? '0' : '—',
+        detail: signals.hasFailure
+          ? signals.failureCategories.slice(0, 2).join(' · ')
+          : signals.evidenceComplete
+            ? 'No test failures detected'
+            : `Unavailable: ${signals.evidenceGaps.join(', ')}`,
+        tone: signals.hasFailure ? 'bad' : signals.evidenceComplete ? 'good' : 'warn',
+      },
+      {
+        label: 'Input yield',
+        value: yieldSnapshot?.ratio === undefined ? '—' : percent(yieldSnapshot.ratio),
+        detail: !yieldSnapshot
+          ? 'Input counts unavailable'
+          : yieldSnapshot.total === 0
+            ? 'No inputs generated yet'
+            : `${compactNumber(yieldSnapshot.sent)} sent · ${compactNumber(yieldSnapshot.discarded)} discarded${
+                yieldSnapshot.reasons.length
+                  ? ` · mostly ${yieldSnapshot.reasons.map((entry) => `${entry.reason} (${compactNumber(entry.count)})`).join(', ')}`
+                  : ''
+              }`,
+        tone: yieldSnapshot?.ratio === undefined ? 'neutral' : yieldSnapshot.ratio < 0.5 ? 'warn' : 'neutral',
+      },
+      {
+        label: 'Quote states reached',
+        value: states.available ? `${reachedStates}/${states.targets.length}` : '—',
+        detail: states.available
+          ? states.missing.length === 0
+            ? 'All configured quote states'
+            : `${states.missing.length} configured states not reached`
+          : 'Quote-state evidence unavailable',
+        tone: states.available && states.missing.length === 0 ? 'good' : 'warn',
+      },
+      {
+        label: 'Action types checked',
+        value: actions.available ? `${checkedActions}/${actions.targets.length}` : '—',
+        detail: actions.available ? 'Each supported type checked at least once' : 'State-check evidence unavailable',
+        tone: actions.available && actions.missing.length === 0 ? 'good' : 'warn',
+      },
+      {
+        label: 'High-risk checks',
+        value: cornersAvailable ? `${compactNumber(corners.succeeded)}/${compactNumber(corners.attempted)}` : '—',
+        detail: cornersAvailable ? `${cornerTypes}/${cornerTargetList.length} workflow types passed` : 'Workflow evidence unavailable',
+        tone: cornersAvailable && corners.failed === 0 && cornerTypes === cornerTargetList.length ? 'good' : 'warn',
+      },
+    ]
+    dom['kpi-strip'].replaceChildren(
+      ...kpis.map((kpi) => {
+        const node = create('article', 'kpi')
+        node.dataset.tone = kpi.tone
+        node.append(create('p', 'kpi__label', kpi.label), create('p', 'kpi__value', kpi.value), create('p', 'kpi__detail', kpi.detail))
+        return node
+      }),
+    )
+    const blockedProbability = optionalNumber(report?.run?.config?.blockedQuoteProbability)
+    setText(
+      dom['summary-limit-note'],
+      `Configured targets only${
+        blockedProbability === 0
+          ? ' · blocked generation off'
+          : blockedProbability !== undefined
+            ? ` · blocked generation ${percent(blockedProbability)}`
+            : ''
+      }`,
+    )
+  }
+
+  // ---- Coverage -----------------------------------------------------------------------------------
 
   function renderCoverageVerdict(report) {
     const coverage = coverageSnapshot(report)
@@ -964,28 +503,307 @@ export function mountFuzzDashboard(root, { authorization }) {
     )
   }
 
-  function timelineCandidates(report, names) {
-    const timeline = pick(report || {}, 'timeline')
-    if (Array.isArray(timeline)) return timeline
-    if (!isObject(timeline)) return []
-    for (const name of names) {
-      if (Array.isArray(timeline[name])) return timeline[name]
+  function renderConfidenceLimits(report) {
+    const config = object(report?.run?.config)
+    const assurance = object(report?.latest?.assurance)
+    const target = optionalNumber(config.validationProbability)
+    const eligible = optionalNumber(assurance.observableSuccessfulTransitions)
+    const checked = optionalNumber(assurance.confirmedValidatorTransitions)
+    setText(
+      dom['confidence-limit-summary'],
+      eligible !== undefined && checked !== undefined
+        ? `Independent validators checked ${compactNumber(checked)} of ${compactNumber(eligible)} eligible observable state changes (${percent(
+            eligible ? checked / eligible : undefined,
+          )})${target !== undefined ? ` against a ${percent(target)} target` : ''}.`
+        : 'Validator sampling detail is unavailable in this report.',
+    )
+    const blockedProbability = optionalNumber(config.blockedQuoteProbability)
+    const droppedActivity = numeric(report?.retention?.droppedActivity)
+    const limits = [
+      blockedProbability === 0
+        ? 'Blocked-quote generation was disabled (0%), so blocked-input behavior was not sampled by ordinary generation.'
+        : blockedProbability !== undefined
+          ? `Blocked-quote generation was configured at ${percent(blockedProbability)}.`
+          : 'Blocked-quote generation configuration is unavailable.',
+      'All configured run targets may be reached without covering every contract path, parameter combination, or economic condition.',
+      'Quote-state and action-type evidence is aggregated across many quotes; it does not describe one end-to-end user journey.',
+      'Historical close-order-mode coverage is not recorded; closing-mode counts describe only live close requests.',
+    ]
+    if (droppedActivity > 0) {
+      limits.push(`${compactNumber(droppedActivity)} older raw activity events were not retained; summary counters remain authoritative.`)
     }
-    return []
+    dom['confidence-limit-list'].replaceChildren(...limits.map((limit) => create('li', '', limit)))
   }
 
-  function pointLabel(point, index) {
-    const explicit = pick(point, 'label', 'bucketLabel', 'name')
-    if (explicit !== undefined) return text(explicit, `#${index + 1}`)
-    const root = optionalNumber(pick(point, 'root', 'rootIndex', 'index', 'roots'))
-    if (root !== undefined) return `cycle ${compactNumber(root)}`
-    const at = pick(point, 'at', 'timestamp', 'emittedAt', 'time')
-    const time = clockTime(at)
-    if (time) return time
-    const elapsed = optionalNumber(pick(point, 'elapsedMs', 'elapsed'))
-    if (elapsed !== undefined) return duration(elapsed)
-    return `#${index + 1}`
+  function renderLifecycle(report) {
+    const quotes = object(report?.latest?.quotes)
+    const breakdownAvailable = hasQuoteStatusBreakdown(quotes)
+    const counts = object(quotes.byStatus)
+    const { states } = targetEvidence(report)
+    setText(
+      dom['lifecycle-summary'],
+      states.available
+        ? `${compactNumber(states.targets.length - states.missing.length)} / ${states.targets.length} observed`
+        : 'Coverage unavailable',
+    )
+    setText(dom['quote-breakdown-label'], `All ${states.targets.length} states & modes`)
+    const groups = [
+      { key: 'waiting', label: 'Waiting to open' },
+      { key: 'positions', label: 'Open positions' },
+      { key: 'outcomes', label: 'Ended outcomes' },
+      { key: 'other', label: 'Other states' },
+    ]
+    const groupNodes = groups.flatMap((group) => {
+      const members = states.targets.filter((target) => target.group === group.key)
+      if (members.length === 0) return []
+      const node = create('section', 'lifecycle-group')
+      node.append(create('h3', 'lifecycle-group__title', group.label))
+      for (const item of members) {
+        const row = create('div', 'lifecycle-row')
+        const currentValue = optionalNumber(counts[item.key])
+        const currentAvailable = breakdownAvailable && currentValue !== undefined
+        const observed = states.available ? states.observed.has(item.key) : undefined
+        const first = firstReachedCopy(firstReached(report, 'quoteStates', item.key))
+        row.dataset.group = group.key
+        row.dataset.status = item.key
+        row.dataset.current = currentAvailable ? 'available' : 'unknown'
+        row.dataset.observed = observed === undefined ? 'unknown' : observed ? 'true' : 'false'
+        row.setAttribute(
+          'aria-label',
+          `${item.label}: current count ${currentAvailable ? compactNumber(currentValue) : 'unavailable'}; ${
+            observed === undefined ? 'historical target evidence unavailable' : observed ? 'observed during this run' : 'not observed during this run'
+          }${first ? `, ${first}` : ''}`,
+        )
+        const label = create('span', 'lifecycle-row__label')
+        label.append(create('span', '', item.label))
+        if (first) label.append(create('span', 'lifecycle-row__first', first))
+        row.append(
+          label,
+          create('span', 'lifecycle-row__value', currentAvailable ? compactNumber(currentValue) : '—'),
+          create('span', 'lifecycle-row__history', observed === undefined ? 'unavailable' : observed ? 'yes' : 'no'),
+        )
+        node.append(row)
+      }
+      return [node]
+    })
+    dom['lifecycle-bars'].replaceChildren(...groupNodes)
   }
+
+  function renderActionTypes(report) {
+    const { actions } = targetEvidence(report)
+    setText(
+      dom['action-type-summary'],
+      actions.available ? `${actions.targets.length - actions.missing.length} / ${actions.targets.length} types checked` : 'Evidence unavailable',
+    )
+    dom['action-type-coverage'].replaceChildren(
+      ...ACTION_TYPES.map((action) => {
+        const isConfirmed = actions.confirmed.has(action)
+        const chip = create('span', 'action-type-chip', `${!actions.available ? '—' : isConfirmed ? '✓' : '○'} ${humanize(action)}`)
+        chip.dataset.state = !actions.available ? 'unknown' : isConfirmed ? 'confirmed' : 'missing'
+        const meaning = !actions.available
+          ? 'confirmed action-type data unavailable'
+          : isConfirmed
+            ? 'at least one observable state change was independently checked'
+            : 'no independently checked state change observed yet'
+        chip.title = meaning
+        chip.setAttribute('aria-label', `${humanize(action)}: ${meaning}`)
+        return chip
+      }),
+    )
+  }
+
+  const CORNER_GLYPHS = { passed: '✓', 'verified-with-failures': '!', failed: '×', unresolved: '?', skipped: '↷', unknown: '?' }
+
+  function renderCorners(report) {
+    const corners = report?.latest?.corners
+    const coverageAvailable = Object.keys(object(object(corners).byOperation)).length > 0
+    const rows = cornerTargets(report).map((operation) => {
+      const counts = cornerCounts(corners, operation.key)
+      const operationState = coverageAvailable ? cornerState(counts) : 'unknown'
+      const milestone = firstReached(report, 'corners', operation.key)
+      const row = create('div', 'corner-row')
+      row.dataset.state = operationState
+      const identity = create('div')
+      identity.append(
+        create('p', 'corner-row__name', operation.label),
+        create(
+          'p',
+          'corner-row__detail',
+          operationState === 'unknown'
+            ? 'Coverage data unavailable'
+            : operationState === 'verified-with-failures'
+              ? 'Both passes and failures recorded'
+              : operationState === 'unresolved'
+                ? `${plural(counts.unresolved, 'attempt')} with no recorded outcome`
+                : humanize(operationState),
+        ),
+      )
+      if (milestone) {
+        const first = [firstReachedCopy(milestone), stakeholderCopy(milestone.detail)].filter(Boolean).join(' · ')
+        identity.append(create('p', 'corner-row__first', first))
+      }
+      const unresolvedCount = counts.unresolved > 0 ? `\n${compactNumber(counts.unresolved)} unresolved` : ''
+      row.append(
+        create('span', 'corner-row__glyph', CORNER_GLYPHS[operationState] ?? '·'),
+        identity,
+        create('p', 'corner-row__counts', `${compactNumber(counts.succeeded)} pass\n${compactNumber(counts.failed)} fail${unresolvedCount}`),
+      )
+      return row
+    })
+    dom['corner-matrix'].replaceChildren(...rows)
+  }
+
+  // ---- Quote outcomes and mix ---------------------------------------------------------------------
+
+  function renderOutcomes(report) {
+    const quotes = report?.latest?.quotes
+    if (!hasQuoteTelemetry(quotes)) {
+      dom['outcome-bar'].replaceChildren()
+      dom['outcome-bar'].setAttribute('aria-label', 'Quote outcome distribution unavailable')
+      setText(dom['quotes-title'], 'Quote outcomes')
+      dom['outcome-strip'].replaceChildren(create('p', 'empty-copy', 'Quote outcomes are unavailable in this report.'))
+      setText(dom['outcome-note'], 'The report does not contain a current quote-state snapshot.')
+      return
+    }
+    const totals = quoteTotals(quotes)
+    setText(dom['quotes-title'], totals.total === undefined ? 'Quote outcomes' : `Where ${compactNumber(totals.total)} quotes ended up`)
+    if (!hasQuoteStatusBreakdown(quotes)) {
+      dom['outcome-bar'].replaceChildren()
+      dom['outcome-bar'].setAttribute('aria-label', 'Quote outcome distribution unavailable')
+      dom['outcome-strip'].replaceChildren(
+        create(
+          'p',
+          'empty-copy',
+          totals.total === undefined
+            ? 'A per-state quote outcome breakdown is unavailable.'
+            : `${compactNumber(totals.total)} quotes were reported, but the per-state outcome breakdown is unavailable.`,
+        ),
+      )
+      setText(dom['outcome-note'], 'Unknown outcome fields are not treated as zero.')
+      return
+    }
+    const counts = object(quotes.byStatus)
+    const valueFor = (key) => optionalNumber(counts[key])
+    const warnIfAny = (key) => (numeric(valueFor(key)) > 0 ? 'warn' : 'neutral')
+    const outcomes = [
+      { label: 'Closed', value: valueFor('CLOSED'), tone: 'good' },
+      { label: 'Canceled', value: valueFor('CANCELED'), tone: 'neutral' },
+      { label: 'Still active', value: totals.active, tone: 'info' },
+      { label: 'Liquidated', value: valueFor('LIQUIDATED'), tone: warnIfAny('LIQUIDATED') },
+      { label: 'Expired', value: valueFor('EXPIRED'), tone: warnIfAny('EXPIRED') },
+      { label: 'Liquidated before opening', value: valueFor('LIQUIDATED_PENDING'), tone: warnIfAny('LIQUIDATED_PENDING') },
+    ]
+    const distributionTotal = outcomes.reduce((sum, outcome) => sum + numeric(outcome.value), 0)
+    dom['outcome-bar'].replaceChildren(
+      ...(distributionTotal > 0
+        ? outcomes
+            .filter((outcome) => numeric(outcome.value) > 0)
+            .map((outcome) => {
+              const segment = create('span', 'outcome-bar__segment')
+              segment.dataset.tone = outcome.tone
+              segment.style.flexBasis = `${(numeric(outcome.value) / distributionTotal) * 100}%`
+              segment.title = `${outcome.label}: ${compactNumber(outcome.value)}`
+              return segment
+            })
+        : []),
+    )
+    dom['outcome-bar'].setAttribute(
+      'aria-label',
+      outcomes
+        .filter((outcome) => outcome.value !== undefined)
+        .map((outcome) => `${outcome.label} ${compactNumber(outcome.value)}`)
+        .join(', '),
+    )
+    dom['outcome-strip'].replaceChildren(
+      ...outcomes.map((outcome) => {
+        const node = create('article', 'outcome-card')
+        node.dataset.tone = outcome.tone
+        node.append(
+          create('p', 'outcome-card__value', outcome.value === undefined ? '—' : compactNumber(outcome.value)),
+          create('p', 'outcome-card__label', outcome.label),
+        )
+        return node
+      }),
+    )
+    if (totals.active === undefined) {
+      setText(dom['outcome-note'], 'The active-quote count is unavailable; unknown fields are not treated as zero.')
+      return
+    }
+    setText(
+      dom['outcome-note'],
+      isLiveRun(report)
+        ? `${compactNumber(totals.active)} active now`
+        : report?.run?.config?.runMode === 'continuous'
+          ? `${compactNumber(totals.active)} still active at stop · not failures`
+          : `${compactNumber(totals.active)} still active in the final snapshot`,
+    )
+  }
+
+  function mixBlock(label, value, detail, ratioValue, tone) {
+    const node = create('div', 'mix-block')
+    node.append(create('p', 'mix-block__label', label), create('p', 'mix-block__value', value), create('p', 'mix-block__detail', detail))
+    if (ratioValue !== undefined) {
+      const meter = create('div', 'mix-meter')
+      const fill = create('div', 'mix-meter__fill')
+      if (tone) fill.style.background = tone
+      fill.style.width = `${clamp(ratioValue * 100, 0, 100)}%`
+      meter.append(fill)
+      node.append(meter)
+    }
+    return node
+  }
+
+  function renderMix(report) {
+    const quotes = report?.latest?.quotes
+    const validation = percent(report?.run?.config?.validationProbability)
+    if (!hasQuoteTelemetry(quotes)) {
+      dom['mix-grid'].replaceChildren(
+        mixBlock('Quote execution mix', '—', 'Current quote inventory unavailable'),
+        mixBlock('State-check target', validation, 'Ordinary transition sampling'),
+      )
+      return
+    }
+    const position = object(quotes.byPositionType)
+    const opening = object(quotes.byOpeningOrderType)
+    const closing = object(quotes.byCloseOrderType)
+    const partialOpen = object(quotes.partialOpen)
+    const long = optionalNumber(position.LONG)
+    const short = optionalNumber(position.SHORT)
+    const known = (value) => (value === undefined ? '—' : compactNumber(value))
+    const pair = (left, right) => (left === undefined || right === undefined ? '—' : `${compactNumber(left)} / ${compactNumber(right)}`)
+    const modes = (source) => {
+      const [limit, market, bestEffort] = ['LIMIT', 'MARKET', 'MARKET_BEST_EFFORT'].map((key) => optionalNumber(source[key]))
+      const complete = limit !== undefined && market !== undefined && bestEffort !== undefined
+      return {
+        value: complete ? `${compactNumber(limit)} / ${compactNumber(market)} / ${compactNumber(bestEffort)}` : '—',
+        ratio: complete ? (limit + market + bestEffort === 0 ? 0 : limit / (limit + market + bestEffort)) : undefined,
+      }
+    }
+    const openModes = modes(opening)
+    const closeModes = modes(closing)
+    const activeSplit = optionalNumber(partialOpen.activePositions)
+    dom['mix-grid'].replaceChildren(
+      mixBlock(
+        'Long / short',
+        pair(long, short),
+        'All observed quotes',
+        long === undefined || short === undefined ? undefined : long + short === 0 ? 0 : long / (long + short),
+      ),
+      mixBlock('Opening limit / market / best effort', openModes.value, 'First-seen order mode', openModes.ratio, cssColor('--proof')),
+      mixBlock('Closing limit / market / best effort', closeModes.value, 'Live close requests only', closeModes.ratio, cssColor('--warn')),
+      mixBlock(
+        'Split opens',
+        known(optionalNumber(partialOpen.splits)),
+        activeSplit === undefined ? 'Active split-position count unavailable' : `${compactNumber(activeSplit)} active split positions`,
+      ),
+      mixBlock('Waiting remainders', known(optionalNumber(partialOpen.waitingRemainders)), 'Pre-open split children'),
+      mixBlock('Partial close requests', known(optionalNumber(quotes.partialCloseRequested)), 'Request < remaining open amount'),
+      mixBlock('Partially closed', known(optionalNumber(quotes.partiallyClosed)), '0 < closed amount < quantity'),
+      mixBlock('State-check target', validation, 'Ordinary transition sampling'),
+    )
+  }
+
+  // ---- Charts -------------------------------------------------------------------------------------
 
   function windowedTimeline(points) {
     if (state.chartWindow === 'all') return points
@@ -995,83 +813,6 @@ export function mountFuzzDashboard(root, { authorization }) {
   function timelineWindowCaption(label, visible, total) {
     if (visible >= total) return `${label} across all ${compactNumber(total)} retained checkpoints`
     return `${label}; latest ${compactNumber(visible)} of ${compactNumber(total)} retained checkpoints`
-  }
-
-  function quoteTimeline(report = state.report) {
-    const points = timelineCandidates(report, ['quoteStock', 'quotes', 'inventory', 'snapshots', 'buckets', 'points'])
-    const normalized = points
-      .map((raw, index) => {
-        const point = object(raw)
-        const quotes = firstObject(point, 'quotes', 'quoteInventory', 'inventory', 'stock')
-        const source = hasQuoteTelemetry(quotes) ? quotes : hasQuoteTelemetry(point) ? point : undefined
-        if (!source) return undefined
-        const totals = quoteTotals(source)
-        const live = optionalNumber(point.live, point.active) ?? totals.active
-        const ended = optionalNumber(point.ended, point.terminal) ?? totals.terminal
-        if (live === undefined || ended === undefined) return undefined
-        return {
-          label: pointLabel(point, index),
-          live,
-          ended,
-        }
-      })
-      .filter(Boolean)
-    if (normalized.length > 0) return normalized
-    const quotes = currentQuotes(report)
-    if (!hasQuoteTelemetry(quotes)) return []
-    const totals = quoteTotals(quotes)
-    if (totals.active === undefined || totals.terminal === undefined) return []
-    return [{ label: `cycle ${compactNumber(rootCount(report))}`, live: totals.active, ended: totals.terminal }]
-  }
-
-  function paceTimeline(report = state.report) {
-    const points = timelineCandidates(report, ['pace', 'throughput', 'roots', 'snapshots', 'buckets', 'points'])
-    const normalized = points.map((raw, index) => {
-      const point = object(raw)
-      const pace = firstObject(point, 'pace', 'performance')
-      return {
-        label: pointLabel(point, index),
-        rate: optionalNumber(
-          pick(point, 'rootsPerSecond', 'rootsPerSec', 'rootRate', 'throughput'),
-          pick(pace, 'rootsPerSecond', 'rootsPerSec', 'rootRate'),
-        ),
-        p50: optionalNumber(pick(point, 'rootP50Ms', 'p50Ms', 'p50'), pick(pace, 'rootP50Ms', 'p50Ms', 'p50')),
-        p95: optionalNumber(pick(point, 'rootP95Ms', 'p95Ms', 'p95'), pick(pace, 'rootP95Ms', 'p95Ms', 'p95')),
-        durationMs: optionalNumber(point.durationMs),
-        elapsedMs: optionalNumber(point.elapsedMs),
-        completed: optionalNumber(pick(point, 'roots.completed', 'root')),
-        exact: hasTelemetry(pace, ['rootP50Ms', 'rootP95Ms', 'window']),
-      }
-    })
-    for (let index = 0; index < normalized.length; index++) {
-      const point = normalized[index]
-      const previous = normalized[Math.max(0, index - 16)]
-      if (point.rate === undefined && point.completed !== undefined && point.elapsedMs !== undefined) {
-        if (previous?.completed !== undefined && previous.elapsedMs !== undefined && point.elapsedMs > previous.elapsedMs) {
-          point.rate = ((point.completed - previous.completed) * 1_000) / (point.elapsedMs - previous.elapsedMs)
-        } else if (point.elapsedMs > 0) {
-          point.rate = (point.completed * 1_000) / point.elapsedMs
-        }
-      }
-      const rollingDurations = normalized
-        .slice(Math.max(0, index - 63), index + 1)
-        .map((candidate) => candidate.durationMs)
-        .filter((value) => value !== undefined)
-      point.p50 ??= percentile(rollingDurations, 0.5)
-      point.p95 ??= percentile(rollingDurations, 0.95)
-    }
-    if (normalized.some((point) => point.rate !== undefined || point.p50 !== undefined || point.p95 !== undefined)) return normalized
-    const pace = paceSnapshot(report)
-    const exactPace = firstObject(report || {}, 'latest.pace', 'latest.performance', 'result.pace')
-    return [
-      {
-        label: `cycle ${compactNumber(rootCount(report))}`,
-        rate: pace.rootsPerSecond,
-        p50: pace.p50,
-        p95: pace.p95,
-        exact: hasTelemetry(exactPace, ['rootP50Ms', 'rootP95Ms', 'window']),
-      },
-    ]
   }
 
   function paceTelemetryMode(points) {
@@ -1084,46 +825,9 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   function paceTelemetryCopy(mode) {
     if (mode === 'exact') return 'Whole-cycle duration uses the exact rolling window reported at each checkpoint.'
-    if (mode === 'legacy') return 'Legacy report: whole-cycle duration is approximated from retained checkpoints.'
+    if (mode === 'legacy') return 'Whole-cycle duration is approximated from retained checkpoints.'
     if (mode === 'mixed') return 'Mixed report: exact rolling-cycle duration and retained-checkpoint approximations.'
     return 'Simulation-speed telemetry was not reported.'
-  }
-
-  function queueTimeline(report = state.report) {
-    const points = timelineCandidates(report, ['queue', 'engine', 'snapshots', 'buckets', 'points'])
-    const normalized = points
-      .map((raw, index) => {
-        const point = object(raw)
-        const queue = firstObject(point, 'queue', 'engine.queue')
-        const queuePeak = firstObject(point, 'queuePeak', 'queue.peak', 'engine.queuePeak')
-        const hasPeak = hasQueueTelemetry(queuePeak)
-        const source = hasPeak ? queuePeak : hasQueueTelemetry(queue) ? queue : hasQueueTelemetry(point) ? point : undefined
-        if (!source) return undefined
-        const totals = queueTotals(source)
-        return {
-          label: pointLabel(point, index),
-          outstanding: totals.outstanding,
-          pending: totals.pending,
-          scheduled: totals.scheduled,
-          running: totals.running,
-          peak: hasPeak,
-        }
-      })
-      .filter(Boolean)
-    if (normalized.length > 0) return normalized
-    const queue = currentQueue(report)
-    if (!hasQueueTelemetry(queue)) return []
-    const totals = queueTotals(queue)
-    return [
-      {
-        label: `cycle ${compactNumber(rootCount(report))}`,
-        outstanding: totals.outstanding,
-        pending: totals.pending,
-        scheduled: totals.scheduled,
-        running: totals.running,
-        peak: false,
-      },
-    ]
   }
 
   function queueTelemetryMode(points) {
@@ -1136,7 +840,7 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   function queueTelemetryCopy(mode) {
     if (mode === 'maxima') return 'Per-metric interval maxima between retained checkpoints.'
-    if (mode === 'snapshots') return 'Legacy report: settled queue snapshots only; interval maxima are unavailable.'
+    if (mode === 'snapshots') return 'Settled queue snapshots only; interval maxima are unavailable.'
     if (mode === 'mixed') return 'Mixed report: some checkpoints contain interval maxima and others contain settled snapshots.'
     return 'Queue telemetry was not reported.'
   }
@@ -1190,23 +894,26 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   function chartRect(width, height, overrides = {}) {
     return {
-      left: overrides.left ?? 46,
+      left: overrides.left ?? 50,
       right: overrides.right ?? width - 13,
       top: overrides.top ?? 15,
-      bottom: overrides.bottom ?? height - 29,
+      bottom: overrides.bottom ?? height - 31,
     }
   }
 
   function seriesMaximum(points, fields) {
-    const values = points.flatMap((point) => fields.map((field) => numeric(point[field])))
-    return Math.max(1, ...values)
+    return Math.max(1, ...points.flatMap((point) => fields.map((field) => numeric(point[field]))))
+  }
+
+  function chartFont() {
+    return `12px ${cssColor('--mono-font') || 'monospace'}`
   }
 
   function drawGrid(context, rect, maximum, formatter = compactNumber) {
     context.save()
-    context.font = `10px ${cssColor('--mono-font') || 'monospace'}`
-    context.fillStyle = cssColor('--muted')
-    context.strokeStyle = cssColor('--line-soft')
+    context.font = chartFont()
+    context.fillStyle = cssColor('--quiet')
+    context.strokeStyle = cssColor('--rule-soft')
     context.lineWidth = 1
     context.textAlign = 'right'
     context.textBaseline = 'middle'
@@ -1231,8 +938,8 @@ export function mountFuzzDashboard(root, { authorization }) {
     if (points.length === 0) return
     const indexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
     context.save()
-    context.fillStyle = cssColor('--muted')
-    context.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace'
+    context.fillStyle = cssColor('--quiet')
+    context.font = chartFont()
     context.textBaseline = 'top'
     for (const index of indexes) {
       context.textAlign = index === 0 ? 'left' : index === points.length - 1 ? 'right' : 'center'
@@ -1241,36 +948,21 @@ export function mountFuzzDashboard(root, { authorization }) {
     context.restore()
   }
 
-  function drawLine(context, points, positions, rect, field, maximum, color, fillColor) {
-    const values = points.map((point) => numeric(point[field]))
+  function drawLine(context, points, positions, rect, field, maximum, color) {
     const yFor = (value) => rect.bottom - (rect.bottom - rect.top) * (numeric(value) / maximum)
     context.save()
-    if (fillColor) {
-      const gradient = context.createLinearGradient(0, rect.top, 0, rect.bottom)
-      gradient.addColorStop(0, fillColor)
-      gradient.addColorStop(1, 'rgba(0,0,0,0)')
-      context.beginPath()
-      context.moveTo(positions[0], rect.bottom)
-      for (let index = 0; index < points.length; index++) context.lineTo(positions[index], yFor(values[index]))
-      context.lineTo(positions[positions.length - 1], rect.bottom)
-      context.closePath()
-      context.fillStyle = gradient
-      context.fill()
-    }
     context.beginPath()
     context.lineJoin = 'round'
     context.lineCap = 'round'
     context.lineWidth = 1.75
     context.strokeStyle = color
-    for (let index = 0; index < points.length; index++) {
-      const x = positions[index]
-      const y = yFor(values[index])
-      if (index === 0) context.moveTo(x, y)
-      else context.lineTo(x, y)
-    }
+    points.forEach((point, index) => {
+      if (index === 0) context.moveTo(positions[index], yFor(point[field]))
+      else context.lineTo(positions[index], yFor(point[field]))
+    })
     if (points.length === 1) {
-      context.moveTo(rect.left, yFor(values[0]))
-      context.lineTo(rect.right, yFor(values[0]))
+      context.moveTo(rect.left, yFor(points[0][field]))
+      context.lineTo(rect.right, yFor(points[0][field]))
     }
     context.stroke()
     context.restore()
@@ -1278,8 +970,8 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   function drawNoData(context, width, height, message) {
     context.save()
-    context.fillStyle = cssColor('--muted')
-    context.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace'
+    context.fillStyle = cssColor('--quiet')
+    context.font = chartFont()
     context.textAlign = 'center'
     context.textBaseline = 'middle'
     context.fillText(message, width / 2, height / 2)
@@ -1306,8 +998,7 @@ export function mountFuzzDashboard(root, { authorization }) {
       tooltip.textContent = model.tooltip(model.points[nearest])
       tooltip.hidden = false
       const tooltipWidth = tooltip.offsetWidth || 200
-      const left = clamp(model.positions[nearest] + 12, 8, Math.max(8, bounds.width - tooltipWidth - 8))
-      tooltip.style.left = `${left}px`
+      tooltip.style.left = `${clamp(model.positions[nearest] + 12, 8, Math.max(8, bounds.width - tooltipWidth - 8))}px`
       tooltip.style.top = `${Math.max(8, event.clientY - bounds.top - 20)}px`
     })
     canvas.addEventListener('mouseleave', () => {
@@ -1316,57 +1007,58 @@ export function mountFuzzDashboard(root, { authorization }) {
   }
 
   function drawQuoteChart(points) {
-    const { context, width, height } = canvasContext(dom['quote-chart'])
-    if (!points.some((point) => point.live !== undefined || point.ended !== undefined)) {
+    const canvas = dom['quote-chart']
+    const { context, width, height } = canvasContext(canvas)
+    if (points.length === 0) {
       drawNoData(context, width, height, 'Quote stock has not been reported')
-      chartModels.delete(dom['quote-chart'])
-      dom['quote-chart'].setAttribute('aria-label', 'Quote stock telemetry has not been reported.')
+      chartModels.delete(canvas)
+      canvas.setAttribute('aria-label', 'Quote stock telemetry has not been reported.')
       return
     }
     const rect = chartRect(width, height)
     const maximum = seriesMaximum(points, ['live', 'ended'])
     const positions = xPositions(points, rect)
     drawGrid(context, rect, maximum)
-    drawLine(context, points, positions, rect, 'ended', maximum, cssColor('--violet'), 'rgba(189,154,241,0.11)')
-    drawLine(context, points, positions, rect, 'live', maximum, cssColor('--cyan'), 'rgba(103,216,210,0.12)')
+    drawLine(context, points, positions, rect, 'ended', maximum, cssColor('--series-secondary'))
+    drawLine(context, points, positions, rect, 'live', maximum, cssColor('--proof'))
     drawXAxis(context, rect, points, positions)
-    chartModels.set(dom['quote-chart'], {
+    chartModels.set(canvas, {
       points,
       positions,
       tooltip: (point) => `${point.label}\nLive ${compactNumber(point.live)}\nEnded ${compactNumber(point.ended)}`,
     })
-    dom['quote-chart'].setAttribute(
+    canvas.setAttribute(
       'aria-label',
       `Quote stock over ${points.length} timeline buckets. Latest: ${compactNumber(points.at(-1).live)} live and ${compactNumber(points.at(-1).ended)} ended.`,
     )
   }
 
   function drawQueueChart(points) {
-    const { context, width, height } = canvasContext(dom['queue-chart'])
+    const canvas = dom['queue-chart']
+    const { context, width, height } = canvasContext(canvas)
     const mode = queueTelemetryMode(points)
     if (!points.length) {
       drawNoData(context, width, height, 'Queue telemetry has not been reported')
-      chartModels.delete(dom['queue-chart'])
-      dom['queue-chart'].setAttribute('aria-label', 'Queue telemetry has not been reported.')
+      chartModels.delete(canvas)
+      canvas.setAttribute('aria-label', 'Queue telemetry has not been reported.')
       return
     }
-    const observedMaximum = Math.max(...points.flatMap((point) => [point.outstanding, point.pending, point.scheduled, point.running].map(numeric)))
+    const observedMaximum = Math.max(
+      ...points.flatMap((point) => [point.outstanding, point.pending, point.scheduled, point.running].map((value) => numeric(value))),
+    )
     if (observedMaximum === 0) {
-      const emptyMessage =
-        mode === 'maxima'
-          ? 'No queue pressure observed in retained intervals'
-          : mode === 'snapshots'
-            ? 'Legacy snapshots settled · maxima unavailable'
-            : 'No pressure in retained queue telemetry'
-      drawNoData(context, width, height, emptyMessage)
-      chartModels.delete(dom['queue-chart'])
-      dom['queue-chart'].setAttribute(
+      drawNoData(
+        context,
+        width,
+        height,
+        mode === 'maxima' ? 'No queue pressure observed in retained intervals' : 'No pressure in retained queue telemetry',
+      )
+      chartModels.delete(canvas)
+      canvas.setAttribute(
         'aria-label',
         mode === 'maxima'
           ? `No queue pressure was observed in the per-metric maxima for ${points.length} retained intervals.`
-          : mode === 'snapshots'
-            ? `${points.length} legacy settled queue snapshots contain no pressure; interval maxima are unavailable.`
-            : `No queue pressure appears in ${points.length} mixed retained checkpoints.`,
+          : `No queue pressure appears in ${points.length} retained checkpoints.`,
       )
       return
     }
@@ -1374,11 +1066,11 @@ export function mountFuzzDashboard(root, { authorization }) {
     const maximum = seriesMaximum(points, ['outstanding', 'pending', 'scheduled'])
     const positions = xPositions(points, rect)
     drawGrid(context, rect, maximum)
-    drawLine(context, points, positions, rect, 'outstanding', maximum, cssColor('--amber'), 'rgba(239,196,112,0.08)')
-    drawLine(context, points, positions, rect, 'pending', maximum, cssColor('--blue'))
-    drawLine(context, points, positions, rect, 'scheduled', maximum, cssColor('--cyan'))
+    drawLine(context, points, positions, rect, 'outstanding', maximum, cssColor('--warn'))
+    drawLine(context, points, positions, rect, 'pending', maximum, cssColor('--series-neutral'))
+    drawLine(context, points, positions, rect, 'scheduled', maximum, cssColor('--proof'))
     drawXAxis(context, rect, points, positions)
-    chartModels.set(dom['queue-chart'], {
+    chartModels.set(canvas, {
       points,
       positions,
       tooltip: (point) =>
@@ -1387,24 +1079,18 @@ export function mountFuzzDashboard(root, { authorization }) {
         )}\nWaiting ${compactNumber(point.pending)}\nScheduled ${compactNumber(point.scheduled)}\nRunning ${compactNumber(point.running)}`,
     })
     const peakOutstanding = Math.max(...points.map((point) => numeric(point.outstanding)))
-    dom['queue-chart'].setAttribute(
+    canvas.setAttribute(
       'aria-label',
       mode === 'maxima'
         ? `Queue per-metric interval maxima over ${points.length} retained checkpoints. Maximum outstanding: ${compactNumber(peakOutstanding)} actions.`
-        : mode === 'snapshots'
-          ? `Queue pressure across ${points.length} legacy settled snapshots. Maximum retained outstanding: ${compactNumber(
-              peakOutstanding,
-            )} actions; interval maxima are unavailable.`
-          : `Queue pressure across ${points.length} mixed retained checkpoints. Maximum retained outstanding: ${compactNumber(
-              peakOutstanding,
-            )} actions.`,
+        : `Queue pressure across ${points.length} retained checkpoints. Maximum retained outstanding: ${compactNumber(peakOutstanding)} actions.`,
     )
   }
 
   function drawBandLabel(context, label, x, y, color) {
     context.save()
     context.fillStyle = color
-    context.font = '9px ui-monospace, SFMono-Regular, Menlo, monospace'
+    context.font = chartFont()
     context.textAlign = 'left'
     context.textBaseline = 'top'
     context.fillText(label, x, y)
@@ -1412,37 +1098,38 @@ export function mountFuzzDashboard(root, { authorization }) {
   }
 
   function drawPaceChart(points) {
-    const { context, width, height } = canvasContext(dom['pace-chart'])
-    if (!points.some((point) => point.rate !== undefined || point.p50 !== undefined || point.p95 !== undefined)) {
+    const canvas = dom['pace-chart']
+    const { context, width, height } = canvasContext(canvas)
+    if (points.length === 0) {
       drawNoData(context, width, height, 'Pace telemetry has not been reported')
-      chartModels.delete(dom['pace-chart'])
-      dom['pace-chart'].setAttribute('aria-label', 'Pace telemetry has not been reported.')
+      chartModels.delete(canvas)
+      canvas.setAttribute('aria-label', 'Pace telemetry has not been reported.')
       return
     }
-    const upper = chartRect(width, height, { top: 20, bottom: Math.floor(height * 0.43) })
-    const lower = chartRect(width, height, { top: Math.floor(height * 0.59), bottom: height - 29 })
+    const upper = chartRect(width, height, { top: 22, bottom: Math.floor(height * 0.43) })
+    const lower = chartRect(width, height, { top: Math.floor(height * 0.6), bottom: height - 31 })
     const positions = xPositions(points, upper)
     const rateMaximum = seriesMaximum(points, ['rate'])
     const latencyMaximum = seriesMaximum(points, ['p50', 'p95'])
     drawGrid(context, upper, rateMaximum, (value) => value.toFixed(value >= 10 ? 0 : 1))
     drawGrid(context, lower, latencyMaximum, (value) => duration(value))
-    drawLine(context, points, positions, upper, 'rate', rateMaximum, cssColor('--cyan'), 'rgba(103,216,210,0.1)')
-    drawLine(context, points, positions, lower, 'p95', latencyMaximum, cssColor('--amber'), 'rgba(239,196,112,0.07)')
-    drawLine(context, points, positions, lower, 'p50', latencyMaximum, cssColor('--blue'))
-    drawBandLabel(context, 'CYCLES / SECOND', upper.left, 5, cssColor('--cyan'))
-    drawBandLabel(context, 'WHOLE-CYCLE DURATION · P50 / P95', lower.left, lower.top - 15, cssColor('--muted'))
+    drawLine(context, points, positions, upper, 'rate', rateMaximum, cssColor('--proof'))
+    drawLine(context, points, positions, lower, 'p95', latencyMaximum, cssColor('--warn'))
+    drawLine(context, points, positions, lower, 'p50', latencyMaximum, cssColor('--series-neutral'))
+    drawBandLabel(context, 'Cycles per second', upper.left, 3, cssColor('--proof'))
+    drawBandLabel(context, 'Whole-cycle duration · p50 / p95', lower.left, lower.top - 18, cssColor('--quiet'))
     drawXAxis(context, lower, points, positions)
-    chartModels.set(dom['pace-chart'], {
+    chartModels.set(canvas, {
       points,
       positions,
       tooltip: (point) => `${point.label}\nThroughput ${rate(point.rate)}\nP50 ${duration(point.p50)}\nP95 ${duration(point.p95)}`,
     })
     const latest = points.at(-1)
-    dom['pace-chart'].setAttribute(
+    canvas.setAttribute(
       'aria-label',
-      `Simulation throughput and whole-cycle duration over ${points.length} timeline buckets. Latest: ${rate(
-        latest.rate,
-      )}, p50 ${duration(latest.p50)}, p95 ${duration(latest.p95)}.`,
+      `Simulation throughput and whole-cycle duration over ${points.length} timeline buckets. Latest: ${rate(latest.rate)}, p50 ${duration(
+        latest.p50,
+      )}, p95 ${duration(latest.p95)}.`,
     )
   }
 
@@ -1473,11 +1160,9 @@ export function mountFuzzDashboard(root, { authorization }) {
       timelineWindowCaption(
         paceMode === 'exact'
           ? 'Throughput and exact rolling-cycle duration'
-          : paceMode === 'legacy'
-            ? 'Throughput and retained-checkpoint whole-cycle duration approximation'
-            : paceMode === 'mixed'
-              ? 'Throughput and mixed-source whole-cycle duration'
-              : 'Throughput and whole-cycle duration',
+          : paceMode === 'unavailable'
+            ? 'Throughput and whole-cycle duration'
+            : 'Throughput and approximate whole-cycle duration',
         pacePoints.length,
         allPacePoints.length,
       ),
@@ -1487,13 +1172,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     table(
       dom['queue-chart-table'],
       timelineWindowCaption(
-        queueMode === 'maxima'
-          ? 'Queue per-metric interval maxima'
-          : queueMode === 'snapshots'
-            ? 'Legacy settled queue snapshots; interval maxima unavailable'
-            : queueMode === 'mixed'
-              ? 'Mixed queue maxima and snapshots'
-              : 'Queue telemetry',
+        queueMode === 'maxima' ? 'Queue per-metric interval maxima' : queueMode === 'unavailable' ? 'Queue telemetry' : 'Queue snapshots and maxima',
         queuePoints.length,
         allQueuePoints.length,
       ),
@@ -1508,330 +1187,14 @@ export function mountFuzzDashboard(root, { authorization }) {
     )
   }
 
-  function participantSnapshot(report = state.report) {
-    const setup = reportSetup(report)
-    const config = reportConfig(report)
-    const users = firstArray(setup, 'users')
-    const hedgers = firstArray(setup, 'hedgers')
-    const userCount = users.length || numeric(pick(config, 'userCount', 'users'))
-    const hedgerCount = hedgers.length || numeric(pick(config, 'hedgerCount', 'hedgers'))
-    return { users, hedgers, userCount, hedgerCount }
-  }
+  // ---- Cycle explainer ----------------------------------------------------------------------------
 
-  function cornerTotals(corners = currentCorners()) {
-    const explicit = firstObject(corners, 'totals', 'total')
-    const entries = CORNER_OPERATIONS.map((operation) => cornerCounts(corners, operation.key))
-    const aggregate = (field) => entries.reduce((sum, counts) => sum + numeric(counts[field]), 0)
-    return {
-      attempted: optionalNumber(explicit.attempted) ?? aggregate('attempted'),
-      succeeded: optionalNumber(pick(explicit, 'succeeded', 'passed')) ?? aggregate('succeeded'),
-      skipped: optionalNumber(explicit.skipped) ?? aggregate('skipped'),
-      failed: optionalNumber(explicit.failed) ?? aggregate('failed'),
-    }
-  }
-
-  function plural(count, singular, pluralForm = `${singular}s`) {
-    return `${compactNumber(count)} ${numeric(count) === 1 ? singular : pluralForm}`
-  }
-
-  function humanRunMode(mode) {
-    const normalized = text(mode, '').toLowerCase()
-    if (normalized === 'continuous') return 'Continuous simulation'
-    if (normalized === 'bounded') return 'Bounded replay'
-    return mode ? humanize(mode) : 'Mode unavailable'
-  }
-
-  function runHeadline(report, connectionState = state.connectionState) {
-    const outcome = runOutcomeSnapshot(report)
-    const snapshot = connectionState === 'stale' || connectionState === 'frozen' || connectionState === 'error'
-    if (snapshot && isLiveRun(report)) {
-      return connectionState === 'error' ? 'Last report unavailable' : 'Last reported snapshot'
-    }
-    if (outcome.signals.hasFailure) return 'Needs attention'
-    if (outcome.stoppedCleanly) return 'Stopped cleanly'
-    if (/(drain)/.test(outcome.status)) return 'Finishing…'
-    if (/(run|active|live)/.test(outcome.status)) return 'Simulation running'
-    if (/(pass|complete|success|finished)/.test(outcome.status) && outcome.clean) return 'Completed cleanly'
-    return `Simulation ${humanize(outcome.status).toLowerCase()}`
-  }
-
-  function runSummary(report) {
-    const participants = participantSnapshot(report)
-    const quotesSource = currentQuotes(report)
-    const quotes = hasQuoteTelemetry(quotesSource) ? quoteTotals(quotesSource) : undefined
-    const cycles = rootCount(report)
-    const elapsed = elapsedMs(report)
-    return [
-      participants.userCount || participants.hedgerCount
-        ? `${plural(participants.userCount, 'randomized user')} · ${plural(participants.hedgerCount, 'hedger')}`
-        : 'Actors unavailable',
-      plural(cycles, 'cycle'),
-      quotes?.total !== undefined ? plural(quotes.total, 'quote') : 'Quotes unavailable',
-      duration(elapsed),
-    ].join(' · ')
-  }
-
-  function renderRunHeader(report) {
-    const run = reportRun(report)
-    const config = reportConfig(report)
-    const result = reportResult(report)
-    const latest = reportLatest(report)
-    const participants = participantSnapshot(report)
-    const seed = pick(config, 'seed') ?? pick(run, 'seed') ?? pick(report, 'seed')
-    const mode = pick(config, 'runMode', 'mode') ?? pick(run, 'mode')
-    const trace = pick(result, 'traceHash', 'trace') ?? pick(latest, 'traceHash', 'trace') ?? pick(run, 'traceHash')
-    renderRunStatus(report)
-    setText(dom['run-mode'], humanRunMode(mode))
-    setText(dom['run-title'], runHeadline(report, state.connectionState))
-    setText(dom['run-subtitle'], runSummary(report, state.connectionState))
-    setText(
-      dom['actors-value'],
-      participants.userCount || participants.hedgerCount
-        ? `${plural(participants.userCount, 'user')} · ${plural(participants.hedgerCount, 'hedger')}`
-        : '—',
-    )
-    setText(dom['environment-value'], 'Local Hardhat')
-    setText(dom['seed-value'], seed)
-    dom['seed-value'].title = text(seed)
-    setText(dom['elapsed-value'], duration(elapsedMs(report)))
-    setText(dom['freshness-value'], ago(state.lastReportAt || state.lastSuccessAt))
-    setText(dom['trace-value'], trace ? text(trace).slice(0, 16) : '—')
-    dom['trace-value'].title = text(trace)
-    setText(dom['technical-mode-value'], humanRunMode(mode))
-    setText(dom['technical-cycle-value'], compactNumber(rootCount(report)))
-  }
-
-  function renderKpis(report) {
-    const quoteSource = currentQuotes(report)
-    const quotesAvailable = hasQuoteTelemetry(quoteSource)
-    const assurance = currentAssurance(report)
-    const observedValue = pick(assurance, 'observedQuoteStatuses', 'lifecycle.observedStatuses')
-    const observedStates = new Set(array(observedValue).map((value) => text(value, '')))
-    const milestones = firstObject(report || {}, 'milestones.quoteStates')
-    for (const item of QUOTE_STATES) if (isObject(milestones[item.key])) observedStates.add(item.key)
-    const lifecycleAvailable = Array.isArray(observedValue) || Object.keys(milestones).length > 0
-    const reachedStates = QUOTE_STATES.filter((item) => observedStates.has(item.key)).length
-    const confirmedValue = pick(assurance, 'confirmedActionTypes')
-    const confirmedActions = new Set(array(confirmedValue).map((value) => text(value, '')))
-    const checkedActionCount = ACTION_ORDER.filter((action) => confirmedActions.has(action)).length
-    const validatorsAvailable = Array.isArray(confirmedValue)
-    const corners = currentCorners(report)
-    const cornersAvailable = Object.keys(operationMap(corners)).length > 0
-    const cornersTotal = cornerTotals(corners)
-    const cornerTypes = verifiedCornerCount(corners)
-    const signals = runSignalSnapshot(report)
-    const kpis = [
-      {
-        label: 'Failures or timeouts',
-        value: signals.hasFailure ? 'FOUND' : signals.evidenceComplete ? '0' : '—',
-        detail: signals.hasFailure
-          ? signals.failureCategories.slice(0, 2).join(' · ')
-          : signals.evidenceComplete
-            ? 'No test failures detected'
-            : `Unavailable: ${signals.evidenceGaps.join(', ')}`,
-        tone: signals.hasFailure ? 'bad' : signals.evidenceComplete ? 'good' : 'warn',
-      },
-      {
-        label: 'Quote states reached',
-        value: lifecycleAvailable ? `${reachedStates}/${QUOTE_STATES.length}` : '—',
-        detail: lifecycleAvailable
-          ? reachedStates === QUOTE_STATES.length
-            ? 'All configured quote states'
-            : `${QUOTE_STATES.length - reachedStates} configured states not reached`
-          : 'Quote-state evidence unavailable',
-        tone: lifecycleAvailable && reachedStates === QUOTE_STATES.length ? 'good' : 'warn',
-      },
-      {
-        label: 'Action types checked',
-        value: validatorsAvailable ? `${checkedActionCount}/${ACTION_ORDER.length}` : '—',
-        detail: validatorsAvailable ? 'Each supported type checked at least once' : 'State-check evidence unavailable',
-        tone: validatorsAvailable && checkedActionCount === ACTION_ORDER.length ? 'good' : 'warn',
-      },
-      {
-        label: 'High-risk checks',
-        value: cornersAvailable ? `${compactNumber(cornersTotal.succeeded)}/${compactNumber(cornersTotal.attempted)}` : '—',
-        detail: cornersAvailable ? `${cornerTypes}/${CORNER_OPERATIONS.length} workflow types passed` : 'Workflow evidence unavailable',
-        tone: cornersAvailable && cornersTotal.failed === 0 && cornerTypes === CORNER_OPERATIONS.length ? 'good' : 'warn',
-      },
-    ]
-    dom['kpi-strip'].replaceChildren(
-      ...kpis.map((kpi) => {
-        const node = create('article', 'kpi')
-        if (kpi.tone) node.dataset.tone = kpi.tone
-        node.append(create('p', 'kpi__label', kpi.label), create('p', 'kpi__value', kpi.value), create('p', 'kpi__detail', kpi.detail))
-        return node
-      }),
-    )
-    setText(
-      dom['health-note'],
-      quotesAvailable && quoteTotals(quoteSource).total !== undefined
-        ? `${compactNumber(quoteTotals(quoteSource).total)} tracked quotes · configured targets, not exhaustive coverage`
-        : 'Configured run targets, not exhaustive protocol coverage',
-    )
-    const blockedProbability = optionalNumber(pick(reportConfig(report), 'blockedQuoteProbability'))
-    setText(
-      dom['summary-limit-note'],
-      `Configured targets only${
-        blockedProbability === 0
-          ? ' · blocked generation off'
-          : blockedProbability !== undefined
-            ? ` · blocked generation ${percent(blockedProbability)}`
-            : ''
-      }`,
-    )
-  }
-
-  function renderOutcomes(report) {
-    const quotes = currentQuotes(report)
-    if (!hasQuoteTelemetry(quotes)) {
-      dom['outcome-bar'].replaceChildren()
-      dom['outcome-bar'].setAttribute('aria-label', 'Quote outcome distribution unavailable')
-      setText(dom['quotes-title'], 'Quote outcomes')
-      dom['outcome-strip'].replaceChildren(create('p', 'empty-copy', 'Quote outcomes are unavailable in this report.'))
-      setText(dom['outcome-note'], 'The report does not contain a current quote-state snapshot.')
-      return
-    }
-    const totals = quoteTotals(quotes)
-    setText(dom['quotes-title'], totals.total === undefined ? 'Quote outcomes' : `Where ${compactNumber(totals.total)} quotes ended up`)
-    if (!hasQuoteStatusBreakdown(quotes)) {
-      dom['outcome-bar'].replaceChildren()
-      dom['outcome-bar'].setAttribute('aria-label', 'Quote outcome distribution unavailable')
-      dom['outcome-strip'].replaceChildren(
-        create(
-          'p',
-          'empty-copy',
-          totals.total === undefined
-            ? 'A per-state quote outcome breakdown is unavailable.'
-            : `${compactNumber(totals.total)} quotes were reported, but the per-state outcome breakdown is unavailable.`,
-        ),
-      )
-      setText(dom['outcome-note'], 'Unknown outcome fields are not treated as zero.')
-      return
-    }
-    const rawCounts = quoteStatusMap(quotes)
-    const valueFor = (key) => optionalNumber(rawCounts[key])
-    const liveKeys = ['PENDING', 'LOCKED', 'CANCEL_PENDING', 'OPENED', 'CLOSE_PENDING', 'CANCEL_CLOSE_PENDING']
-    const activeValue =
-      optionalNumber(quotes.active, quotes.live) ??
-      (liveKeys.every((key) => optionalNumber(rawCounts[key]) !== undefined)
-        ? liveKeys.reduce((sum, key) => sum + numeric(rawCounts[key]), 0)
-        : undefined)
-    const outcomes = [
-      { label: 'Closed', value: valueFor('CLOSED'), tone: 'good' },
-      { label: 'Canceled', value: valueFor('CANCELED'), tone: 'neutral' },
-      { label: 'Still active', value: activeValue, tone: 'info' },
-      {
-        label: 'Liquidated',
-        value: valueFor('LIQUIDATED'),
-        tone: numeric(valueFor('LIQUIDATED')) > 0 ? 'warn' : 'neutral',
-      },
-      { label: 'Expired', value: valueFor('EXPIRED'), tone: numeric(valueFor('EXPIRED')) > 0 ? 'warn' : 'neutral' },
-      {
-        label: 'Liquidated before opening',
-        value: valueFor('LIQUIDATED_PENDING'),
-        tone: numeric(valueFor('LIQUIDATED_PENDING')) > 0 ? 'warn' : 'neutral',
-      },
-    ]
-    const distributionTotal = outcomes.reduce((sum, outcome) => sum + (outcome.value === undefined ? 0 : numeric(outcome.value)), 0)
-    const barSegments =
-      distributionTotal > 0
-        ? outcomes
-            .filter((outcome) => numeric(outcome.value) > 0)
-            .map((outcome) => {
-              const segment = create('span', 'outcome-bar__segment')
-              segment.dataset.tone = outcome.tone
-              segment.style.flexBasis = `${(numeric(outcome.value) / distributionTotal) * 100}%`
-              segment.title = `${outcome.label}: ${compactNumber(outcome.value)}`
-              return segment
-            })
-        : []
-    dom['outcome-bar'].replaceChildren(...barSegments)
-    dom['outcome-bar'].setAttribute(
-      'aria-label',
-      outcomes
-        .filter((outcome) => outcome.value !== undefined)
-        .map((outcome) => `${outcome.label} ${compactNumber(outcome.value)}`)
-        .join(', '),
-    )
-    dom['outcome-strip'].replaceChildren(
-      ...outcomes.map((outcome) => {
-        const node = create('article', 'outcome-card')
-        node.dataset.tone = outcome.tone
-        node.append(
-          create('p', 'outcome-card__value', outcome.value === undefined ? '—' : compactNumber(outcome.value)),
-          create('p', 'outcome-card__label', outcome.label),
-        )
-        return node
-      }),
-    )
-    if (activeValue === undefined) {
-      setText(dom['outcome-note'], 'The active-quote count is unavailable; unknown fields are not treated as zero.')
-      return
-    }
-    setText(
-      dom['outcome-note'],
-      isLiveRun(report)
-        ? `${compactNumber(activeValue)} active now`
-        : text(pick(reportConfig(report), 'runMode', 'mode'), '').toLowerCase() === 'continuous'
-          ? `${compactNumber(activeValue)} still active at stop · not failures`
-          : `${compactNumber(activeValue)} still active in the final snapshot`,
-    )
-  }
-
-  function renderConfidenceLimits(report) {
-    const config = reportConfig(report)
-    const assurance = currentAssurance(report)
-    const target = optionalNumber(pick(config, 'validationProbability'))
-    const eligible = optionalNumber(pick(assurance, 'observableSuccessfulTransitions', 'eligibleValidatorSelections'))
-    const checked = optionalNumber(pick(assurance, 'confirmedValidatorTransitions', 'selectedValidators'))
-    const observedRate = eligible && checked !== undefined ? checked / eligible : undefined
-    setText(
-      dom['confidence-limit-summary'],
-      eligible !== undefined && checked !== undefined
-        ? `Independent validators checked ${compactNumber(checked)} of ${compactNumber(eligible)} eligible observable state changes (${percent(
-            observedRate,
-          )})${target !== undefined ? ` against a ${percent(target)} target` : ''}.`
-        : 'Validator sampling detail is unavailable in this report.',
-    )
-    const blockedProbability = optionalNumber(pick(config, 'blockedQuoteProbability'))
-    const retention = firstObject(report || {}, 'retention')
-    const droppedActivity = optionalNumber(pick(retention, 'droppedActivity', 'droppedEvents'))
-    const limits = [
-      blockedProbability === 0
-        ? 'Blocked-quote generation was disabled (0%), so blocked-input behavior was not sampled by ordinary generation.'
-        : blockedProbability !== undefined
-          ? `Blocked-quote generation was configured at ${percent(blockedProbability)}.`
-          : 'Blocked-quote generation configuration is unavailable.',
-      'All configured run targets may be reached without covering every contract path, parameter combination, or economic condition.',
-      'Quote-state and action-type evidence is aggregated across many quotes; it does not describe one end-to-end user journey.',
-      'Historical close-order-mode coverage is not recorded; closing-mode counts describe only live close requests.',
-    ]
-    if (droppedActivity > 0) {
-      limits.push(`${compactNumber(droppedActivity)} older raw activity events were not retained; summary counters remain authoritative.`)
-    }
-    dom['confidence-limit-list'].replaceChildren(...limits.map((limit) => create('li', '', limit)))
-  }
-
-  function storyStages(report) {
-    const participants = participantSnapshot(report)
-    return [
-      {
-        copy: 'Pick one quote user + one hedger',
-      },
-      {
-        copy: 'Try one generated quote',
-      },
-      {
-        copy: 'Wait for resulting work to settle',
-      },
-      {
-        copy: 'Run a due check with its own actors · revisit when available',
-      },
-      {
-        participants,
-      },
-    ]
-  }
+  const STORY_STAGES = [
+    'Pick one quote user + one hedger',
+    'Try one generated quote',
+    'Wait for resulting work to settle',
+    'Run a due check with its own actors · revisit when available',
+  ]
 
   function clearStoryMotion() {
     for (const animation of dom['story-token']?.getAnimations?.() || []) animation.cancel()
@@ -1842,30 +1205,26 @@ export function mountFuzzDashboard(root, { authorization }) {
       dom['story-token'].style.opacity = '0'
       dom['story-token'].style.transform = ''
     }
-    for (const step of dom['story-track'].querySelectorAll('[data-story-step]')) {
-      step.classList.remove('is-active', 'is-complete')
-    }
+    for (const step of dom['story-track'].querySelectorAll('[data-story-step]')) step.classList.remove('is-active', 'is-complete')
   }
 
-  function activateStoryStep(index, stages) {
+  function activateStoryStep(index) {
     const steps = [...dom['story-track'].querySelectorAll('[data-story-step]')]
     steps.forEach((step, stepIndex) => {
       step.classList.toggle('is-active', stepIndex === index)
       step.classList.toggle('is-complete', stepIndex < index)
     })
-    setText(dom['story-stage-copy'], stages[index]?.copy)
+    setText(dom['story-stage-copy'], STORY_STAGES[index])
   }
 
   function playStory() {
-    if (!state.report || !dom['story-track']) return
-    const stages = storyStages(state.report)
+    if (!dom.story.open) return
     clearStoryMotion()
     const steps = [...dom['story-track'].querySelectorAll('[data-story-step]')]
     if (steps.length === 0) return
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reducedMotion || typeof dom['story-token'].animate !== 'function') {
       steps.forEach((step) => step.classList.add('is-complete'))
-      dom['story-token'].style.opacity = '0'
       setText(dom['story-stage-copy'], 'One cycle moves through all four stages before it is counted.')
       return
     }
@@ -1878,21 +1237,17 @@ export function mountFuzzDashboard(root, { authorization }) {
         y: bounds.top - trackBounds.top + 18 - tokenBounds.height / 2,
       }
     })
-    activateStoryStep(0, stages)
+    activateStoryStep(0)
     dom['story-token'].style.opacity = '1'
     state.storyAnimation = dom['story-token'].animate(
       coordinates.map((point, index) => ({
         transform: `translate(${point.x}px, ${point.y}px)`,
         offset: index / Math.max(1, coordinates.length - 1),
       })),
-      {
-        duration: 2_600,
-        easing: 'cubic-bezier(0.77, 0, 0.175, 1)',
-        fill: 'forwards',
-      },
+      { duration: 2_600, easing: 'cubic-bezier(0.77, 0, 0.175, 1)', fill: 'forwards' },
     )
     for (let index = 1; index < steps.length; index++) {
-      state.storyTimers.push(window.setTimeout(() => activateStoryStep(index, stages), Math.round((2_600 * index) / (steps.length - 1))))
+      state.storyTimers.push(window.setTimeout(() => activateStoryStep(index), Math.round((2_600 * index) / (steps.length - 1))))
     }
     state.storyAnimation.addEventListener(
       'finish',
@@ -1913,592 +1268,155 @@ export function mountFuzzDashboard(root, { authorization }) {
   }
 
   function renderStory(report) {
-    const stages = storyStages(report)
-    const details = stages.at(-1)
-    const participants = details.participants
-    const actorNodes = []
-    for (let index = 0; index < participants.userCount; index++) {
-      const node = create('span', 'story-actor story-actor--user', `U${index + 1}`)
-      node.title = `Simulated user ${index + 1}`
-      actorNodes.push(node)
-    }
-    for (let index = 0; index < participants.hedgerCount; index++) {
-      const node = create('span', 'story-actor story-actor--hedger', `H${index + 1}`)
-      node.title = `Simulated hedger ${index + 1}`
-      actorNodes.push(node)
-    }
-    dom['story-actors'].replaceChildren(...actorNodes)
-    setText(dom['story-actor-value'], '1 quote pair')
-    setText(dom['story-cycle-value'], '1 quote')
-    setText(dom['story-job-value'], 'settle')
-    setText(dom['story-risk-value'], 'dedicated actors')
-    setText(
-      dom['story-run-note'],
-      'Queue jobs are runner work, not transaction counts. Scheduled high-risk workflows may use dedicated actors and quotes. The report exposes completed cycles, not live internal phases.',
-    )
-    const seed = text(pick(reportConfig(report), 'seed') ?? pick(reportRun(report), 'seed'), 'current')
-    const storyKey = `${state.selectedRunId || seed}`
-    if (state.storyReportKey !== storyKey) {
-      state.storyReportKey = storyKey
-      window.requestAnimationFrame(() => playStory())
-    }
-  }
-
-  function renderLifecycle(report) {
-    const quotes = currentQuotes(report)
-    const breakdownAvailable = hasQuoteStatusBreakdown(quotes)
-    const counts = quoteStatusMap(quotes)
-    const assurance = currentAssurance(report)
-    const observedValue = pick(assurance, 'observedQuoteStatuses', 'lifecycle.observedStatuses')
-    const milestones = firstObject(report || {}, 'milestones.quoteStates')
-    const coverageAvailable = Array.isArray(observedValue) || Object.keys(milestones).length > 0
-    const observedStatuses = new Set(array(observedValue).map((value) => text(value, '')))
-    for (const item of QUOTE_STATES) if (isObject(milestones[item.key])) observedStatuses.add(item.key)
-    const reached = QUOTE_STATES.filter((item) => observedStatuses.has(item.key)).length
-    setText(dom['lifecycle-summary'], coverageAvailable ? `${compactNumber(reached)} / 11 observed` : 'Coverage unavailable')
-    const groups = [
-      { key: 'waiting', label: 'Waiting to open' },
-      { key: 'positions', label: 'Open positions' },
-      { key: 'outcomes', label: 'Ended outcomes' },
+    const participants = participantSnapshot(report)
+    const actors = [
+      ...Array.from({ length: participants.userCount }, (_, index) => ['user', `U${index + 1}`, `Simulated user ${index + 1}`]),
+      ...Array.from({ length: participants.hedgerCount }, (_, index) => ['hedger', `H${index + 1}`, `Simulated hedger ${index + 1}`]),
     ]
-    const groupNodes = groups.map((group) => {
-      const node = create('section', 'lifecycle-group')
-      node.append(create('h3', 'lifecycle-group__title', group.label))
-      for (const item of QUOTE_STATES.filter((candidate) => candidate.group === group.key)) {
-        const row = create('div', 'lifecycle-row')
-        const currentValue = optionalNumber(counts[item.key])
-        const currentAvailable = breakdownAvailable && currentValue !== undefined
-        row.dataset.group = group.key
-        row.dataset.status = item.key
-        row.dataset.current = currentAvailable ? 'available' : 'unknown'
-        const observed = coverageAvailable ? observedStatuses.has(item.key) : undefined
-        row.dataset.observed = observed === undefined ? 'unknown' : observed ? 'true' : 'false'
-        row.setAttribute(
-          'aria-label',
-          `${item.label}: current count ${currentAvailable ? compactNumber(currentValue) : 'unavailable'}; ${
-            observed === undefined ? 'historical target evidence unavailable' : observed ? 'observed during this run' : 'not observed during this run'
-          }`,
-        )
-        const label = create('span', 'lifecycle-row__label', item.label)
-        const value = create('span', 'lifecycle-row__value', currentAvailable ? compactNumber(currentValue) : '—')
-        const history = create('span', 'lifecycle-row__history', observed === undefined ? 'unavailable' : observed ? 'yes' : 'no')
-        row.append(label, value, history)
-        node.append(row)
-      }
-      return node
-    })
-    dom['lifecycle-bars'].replaceChildren(...groupNodes)
-  }
-
-  function keyedRecords(source, ...paths) {
-    for (const path of paths) {
-      const value = valueAt(source, path)
-      if (Array.isArray(value)) {
-        const result = {}
-        for (const record of value) {
-          if (!isObject(record)) continue
-          const key = text(pick(record, 'action', 'name', 'key', 'operation'), '')
-          if (key) result[key] = record
-        }
-        return result
-      }
-      if (isObject(value)) return value
-    }
-    return {}
-  }
-
-  function actionRecords(report) {
-    const actions = currentActions(report)
-    const assurance = currentAssurance(report)
-    const outcomes = keyedRecords(actions, 'byAction', 'actions', 'by_action')
-    const validators = keyedRecords(assurance, 'byAction', 'actions', 'validators', 'by_action')
-    const perActionKeys = [...new Set([...Object.keys(outcomes), ...Object.keys(validators)])]
-    if (perActionKeys.length === 0) return []
-    const keys = new Set([...ACTION_ORDER.filter((key) => perActionKeys.includes(key)), ...perActionKeys])
-    return [...keys].map((key) => {
-      const outcome = object(outcomes[key])
-      const validator = object(validators[key])
-      return {
-        action: key,
-        succeeded: numeric(pick(outcome, 'succeeded', 'success', 'passed')),
-        failed: numeric(outcome.failed),
-        timedOut: numeric(pick(outcome, 'timedOut', 'timed_out', 'timeout')),
-        late: numeric(pick(outcome, 'settledAfterTimeout', 'settled_after_timeout', 'lateSettled')),
-        eligible: numeric(pick(validator, 'eligible', 'observed', 'decisions')),
-        selected: numeric(pick(validator, 'selected', 'validated')),
-        changed: numeric(pick(validator, 'changed', 'changedSuccessful', 'observable')),
-        confirmed: numeric(pick(validator, 'confirmed', 'checked')),
-      }
-    })
-  }
-
-  function numericCell(value, tone) {
-    const cell = create('td', value === 0 ? 'table-zero' : tone || '', compactNumber(value))
-    return cell
-  }
-
-  function renderActions(report) {
-    const records = actionRecords(report)
-    const caption = create('caption', '', 'Action outcomes and independent state checks')
-    const head = document.createElement('thead')
-    const headRow = document.createElement('tr')
-    for (const label of ['Action', 'OK', 'Fail', 'Timeout', 'Late settle', 'Selected', 'Checked changes']) {
-      const cell = create('th', '', label)
-      cell.scope = 'col'
-      headRow.append(cell)
-    }
-    head.append(headRow)
-    const body = document.createElement('tbody')
-    if (records.length === 0) {
-      const row = document.createElement('tr')
-      const cell = create('td', 'table-zero', 'Per-action outcome telemetry unavailable; aggregate queue jobs are not shown as protocol actions.')
-      cell.colSpan = 7
-      row.append(cell)
-      body.append(row)
-    }
-    for (const record of records) {
-      const row = document.createElement('tr')
-      row.append(create('td', '', humanize(record.action)))
-      row.append(numericCell(record.succeeded, 'table-good'))
-      row.append(numericCell(record.failed, 'table-bad'))
-      row.append(numericCell(record.timedOut, 'table-warn'))
-      row.append(numericCell(record.late, 'table-warn'))
-      const selected = create(
-        'td',
-        record.selected > 0 ? 'table-good' : 'table-zero',
-        `${compactNumber(record.selected)}/${compactNumber(record.eligible)}`,
-      )
-      selected.title = `${percent(record.eligible === 0 ? undefined : record.selected / record.eligible)} observed selection rate`
-      row.append(selected)
-      const confirmed = create(
-        'td',
-        record.confirmed > 0 ? 'table-good' : 'table-zero',
-        `${compactNumber(record.confirmed)}/${compactNumber(record.changed)}`,
-      )
-      confirmed.title = 'Independently checked state changes / observable state changes'
-      row.append(confirmed)
-      body.append(row)
-    }
-    dom['action-table'].replaceChildren(caption, head, body)
-
-    const assurance = currentAssurance(report)
-    const confirmedValue = pick(assurance, 'confirmedActionTypes')
-    const coverageAvailable = Array.isArray(confirmedValue)
-    const confirmed = new Set(array(confirmedValue).map((value) => text(value, '')))
-    const confirmedActions = ACTION_ORDER.filter((action) => confirmed.has(action))
-    setText(
-      dom['action-type-summary'],
-      coverageAvailable ? `${confirmedActions.length} / ${ACTION_ORDER.length} types checked` : 'Evidence unavailable',
-    )
-    dom['action-type-coverage'].replaceChildren(
-      ...ACTION_ORDER.map((action) => {
-        const isConfirmed = confirmed.has(action)
-        const chip = create('span', 'action-type-chip', `${!coverageAvailable ? '—' : isConfirmed ? '✓' : '○'} ${humanize(action)}`)
-        chip.dataset.state = !coverageAvailable ? 'unknown' : isConfirmed ? 'confirmed' : 'missing'
-        const meaning = !coverageAvailable
-          ? 'confirmed action-type data unavailable'
-          : isConfirmed
-            ? 'at least one observable state change was independently checked'
-            : 'no independently checked state change observed yet'
-        chip.title = meaning
-        chip.setAttribute('aria-label', `${humanize(action)}: ${meaning}`)
-        return chip
+    dom['story-actors'].replaceChildren(
+      ...actors.map(([kind, label, title]) => {
+        const node = create('span', `story-actor story-actor--${kind}`, label)
+        node.title = title
+        return node
       }),
     )
   }
 
-  function renderCorners(report) {
-    const corners = currentCorners(report)
-    const coverageAvailable = Object.keys(operationMap(corners)).length > 0
-    const matrixNodes = []
-    for (const operation of CORNER_OPERATIONS) {
-      const counts = cornerCounts(corners, operation.key)
-      const operationState = coverageAvailable ? cornerState(counts) : 'unknown'
-      const row = create('div', 'corner-row')
-      row.dataset.state = operationState
-      const glyph =
-        operationState === 'passed'
-          ? '✓'
-          : operationState === 'verified-with-failures'
-            ? '!'
-            : operationState === 'failed'
-              ? '×'
-              : operationState === 'unresolved'
-                ? '?'
-                : operationState === 'skipped'
-                  ? '↷'
-                  : operationState === 'unknown'
-                    ? '?'
-                    : '·'
-      const identity = create('div')
-      identity.append(
-        create('p', 'corner-row__name', operation.label),
-        create(
-          'p',
-          'corner-row__detail',
-          stakeholderCopy(counts.detail) ||
-            (operationState === 'unknown'
-              ? 'Coverage data unavailable'
-              : operationState === 'verified-with-failures'
-                ? 'Both passes and failures recorded'
-                : operationState === 'unresolved'
-                  ? `${compactNumber(counts.unresolved)} attempt${counts.unresolved === 1 ? '' : 's'} with no recorded outcome`
-                  : humanize(operationState)),
-        ),
-      )
-      const unresolvedCount = counts.unresolved > 0 ? `\n${compactNumber(counts.unresolved)} unresolved` : ''
-      const count = create(
-        'p',
-        'corner-row__counts',
-        `${compactNumber(counts.succeeded)} pass\n${compactNumber(counts.failed)} fail${unresolvedCount}`,
-      )
-      row.append(create('span', 'corner-row__glyph', glyph), identity, count)
-      matrixNodes.push(row)
-    }
-    dom['corner-matrix'].replaceChildren(...matrixNodes)
-  }
+  // ---- Activity -----------------------------------------------------------------------------------
 
-  function mixBlock(label, value, detail, ratioValue, tone) {
-    const node = create('div', 'mix-block')
-    node.append(create('p', 'mix-block__label', label), create('p', 'mix-block__value', value), create('p', 'mix-block__detail', detail))
-    if (ratioValue !== undefined) {
-      const meter = create('div', 'mix-meter')
-      const fill = create('div', 'mix-meter__fill')
-      if (tone) fill.style.background = tone
-      fill.style.width = `${clamp(ratioValue * 100, 0, 100)}%`
-      meter.append(fill)
-      node.append(meter)
-    }
-    return node
-  }
-
-  function renderMix(report) {
-    const quotes = currentQuotes(report)
-    if (!hasQuoteTelemetry(quotes)) {
-      dom['mix-grid'].replaceChildren(
-        mixBlock('Quote execution mix', '—', 'Current quote inventory unavailable'),
-        mixBlock(
-          'State-check target',
-          percent(pick(report, 'run.config.validationProbability', 'config.validationProbability')),
-          'Ordinary transition sampling',
-        ),
-      )
-      return
-    }
-    const position = firstObject(quotes, 'byPositionType', 'positionType', 'direction')
-    const opening = firstObject(quotes, 'byOpeningOrderType', 'openingOrderType', 'opening')
-    const closing = firstObject(quotes, 'byCloseOrderType', 'closeOrderType', 'closing')
-    const partialOpen = firstObject(quotes, 'partialOpen', 'partial_open')
-    const long = optionalNumber(position.LONG, position.long)
-    const short = optionalNumber(position.SHORT, position.short)
-    const openLimit = optionalNumber(opening.LIMIT, opening.limit)
-    const openMarket = optionalNumber(opening.MARKET, opening.market)
-    const openBestEffort = optionalNumber(opening.MARKET_BEST_EFFORT, opening.marketBestEffort)
-    const closeLimit = optionalNumber(closing.LIMIT, closing.limit)
-    const closeMarket = optionalNumber(closing.MARKET, closing.market)
-    const closeBestEffort = optionalNumber(closing.MARKET_BEST_EFFORT, closing.marketBestEffort)
-    const split = optionalNumber(pick(partialOpen, 'splits', 'splitOpens'))
-    const activeSplit = optionalNumber(pick(partialOpen, 'activePositions', 'active'))
-    const waiting = optionalNumber(pick(partialOpen, 'waitingRemainders', 'remainders'))
-    const partialRequests = optionalNumber(pick(quotes, 'partialCloseRequested', 'partialCloseRequests'))
-    const partiallyClosed = optionalNumber(pick(quotes, 'partiallyClosed', 'partialClosed'))
-    const pair = (left, right) => (left === undefined || right === undefined ? '—' : `${compactNumber(left)} / ${compactNumber(right)}`)
-    const triplet = (first, second, third) =>
-      first === undefined || second === undefined || third === undefined
-        ? '—'
-        : `${compactNumber(first)} / ${compactNumber(second)} / ${compactNumber(third)}`
-    const ratioOf = (left, right) => (left === undefined || right === undefined ? undefined : left + right === 0 ? 0 : left / (left + right))
-    const knownNumber = (value) => (value === undefined ? '—' : compactNumber(value))
-    dom['mix-grid'].replaceChildren(
-      mixBlock('Long / short', pair(long, short), 'All observed quotes', ratioOf(long, short)),
-      mixBlock(
-        'Opening limit / market / best effort',
-        triplet(openLimit, openMarket, openBestEffort),
-        'First-seen order mode',
-        ratioOf(openLimit, openMarket === undefined || openBestEffort === undefined ? undefined : openMarket + openBestEffort),
-        cssColor('--cyan'),
-      ),
-      mixBlock(
-        'Closing limit / market / best effort',
-        triplet(closeLimit, closeMarket, closeBestEffort),
-        'Live close requests only',
-        ratioOf(closeLimit, closeMarket === undefined || closeBestEffort === undefined ? undefined : closeMarket + closeBestEffort),
-        cssColor('--amber'),
-      ),
-      mixBlock(
-        'Split opens',
-        knownNumber(split),
-        activeSplit === undefined ? 'Active split-position count unavailable' : `${compactNumber(activeSplit)} active split positions`,
-      ),
-      mixBlock('Waiting remainders', knownNumber(waiting), 'Pre-open split children'),
-      mixBlock('Partial close requests', knownNumber(partialRequests), 'Request < remaining open amount'),
-      mixBlock('Partially closed', knownNumber(partiallyClosed), '0 < closed amount < quantity'),
-      mixBlock(
-        'State-check target',
-        percent(pick(report, 'run.config.validationProbability', 'config.validationProbability')),
-        'Ordinary transition sampling',
-      ),
-    )
-  }
-
+  /** Newest first, without queue bookkeeping. */
   function activityRecords(report) {
-    const value = pick(report || {}, 'activity')
-    let records = []
-    if (Array.isArray(value)) records = value
-    else if (isObject(value)) records = firstArray(value, 'recent', 'items', 'events', 'records')
-    records = records
-      .map((itemValue) => {
-        const item = object(itemValue)
-        if (!isObject(item.event)) return itemValue
-        return {
-          ...item.event,
-          root: item.root,
-          elapsedMs: item.elapsedMs,
-        }
-      })
-      .filter((item) => {
-        if (!isObject(item)) return true
-        const phase = text(item.phase, '').toLowerCase()
-        return phase !== 'queued' && phase !== 'started' && item.type !== 'pause'
-      })
-    const firstTimestamp =
-      timestampNumber(pick(object(records[0]), 'at', 'timestamp', 'emittedAt')) ?? optionalNumber(pick(object(records[0]), 'elapsedMs'))
-    const lastTimestamp =
-      timestampNumber(pick(object(records.at(-1)), 'at', 'timestamp', 'emittedAt')) ?? optionalNumber(pick(object(records.at(-1)), 'elapsedMs'))
-    if (firstTimestamp !== undefined && lastTimestamp !== undefined && firstTimestamp < lastTimestamp) records = [...records].reverse()
+    const records = Array.isArray(report?.activity) ? report.activity : []
     return records
+      .map((record) => ({ ...object(object(record).event), root: record?.root, elapsedMs: record?.elapsedMs }))
+      .filter((item) => item.type !== 'pause' && item.phase !== 'queued' && item.phase !== 'started')
+      .reverse()
   }
 
   function activityTone(item) {
-    const phase = text(pick(item, 'phase', 'status', 'outcome'), '').toLowerCase()
-    if (/(fail|error|timeout)/.test(phase) || pick(item, 'error') !== undefined) return 'bad'
-    if (/(success|pass|settled|complete|verified)/.test(phase)) return 'good'
-    if (/(skip|stop|drain|late)/.test(phase)) return 'warn'
+    const phase = text(item.phase ?? item.status, '').toLowerCase()
+    if (item.error !== undefined || phase === 'failed' || phase === 'timed_out') return 'bad'
+    if (phase === 'settled_after_timeout' || phase === 'skipped') return 'warn'
+    if (phase === 'succeeded' || phase === 'sent') return 'good'
     return 'neutral'
   }
 
   function activityTitle(item) {
-    if (!isObject(item)) return text(item)
-    const explicit = pick(item, 'title', 'message', 'summary', 'label')
-    if (explicit !== undefined) return stakeholderCopy(explicit)
-    const type = text(item.type, '')
-    if (type === 'state') {
-      const quoteId = text(pick(item, 'quoteId', 'quote.id'), '?')
-      return `Quote #${quoteId} → ${text(pick(item, 'quoteStatus', 'status'), 'state observed')}`
-    }
-    if (type === 'operation') return `${humanize(pick(item, 'operation'))} · ${humanize(pick(item, 'phase'))}`
-    if (type === 'action') return `${text(pick(item, 'action', 'name'), 'Action')} · ${humanize(pick(item, 'phase'))}`
-    if (type === 'root') {
-      const index = text(pick(item, 'index', 'root'), '?')
+    if (item.type === 'action') return `${stakeholderCopy(item.title, 'Action')} · ${humanize(item.phase).toLowerCase()}`
+    if (item.type === 'state') return `Quote #${text(item.quoteId, '?')} → ${text(item.quoteStatus, 'state observed')}`
+    if (item.type === 'operation') return `${humanize(item.operation)} · ${humanize(item.phase)}`
+    if (item.type === 'decision') return `${humanize(item.actor)} decision · ${humanize(item.action)}`
+    if (item.type === 'root') {
       const outcome = text(item.status, 'completed').toLowerCase()
-      const outcomeCopy =
-        outcome === 'sent' ? 'Generated quote submitted' : outcome === 'discarded' ? 'Generated input discarded' : stakeholderCopy(humanize(outcome))
-      return `Simulation cycle #${index} · ${outcomeCopy}`
+      const copy = outcome === 'sent' ? 'Generated quote submitted' : outcome === 'discarded' ? 'Generated input discarded' : humanize(outcome)
+      return `Simulation cycle #${text(item.index, '?')} · ${copy}`
     }
-    return humanize(type || pick(item, 'name') || 'Activity')
+    return humanize(item.type || 'Activity')
   }
 
   function activityDetail(item) {
-    if (!isObject(item)) return ''
-    const explicit = pick(item, 'detail', 'description')
-    if (explicit !== undefined) return stakeholderCopy(explicit, '')
+    if (item.detail !== undefined) return stakeholderCopy(item.detail, '')
     const parts = []
-    const actor = pick(item, 'actorId', 'actor', 'userId')
-    const quote = pick(item, 'quoteId')
-    const trigger = pick(item, 'quoteStatus', 'fromStatus')
-    const error = pick(item, 'error')
-    const route =
-      item.type === 'root' && pick(item, 'userId') !== undefined && pick(item, 'hedgerId') !== undefined
-        ? `${text(item.userId)} → ${text(item.hedgerId)}`
-        : undefined
-    if (route !== undefined) parts.push(route)
-    if (actor !== undefined) parts.push(text(actor))
-    if (quote !== undefined) parts.push(`quote #${text(quote)}`)
-    if (trigger !== undefined) parts.push(`from ${text(trigger)}`)
+    if (item.type === 'root' && item.userId !== undefined && item.hedgerId !== undefined) parts.push(`${text(item.userId)} → ${text(item.hedgerId)}`)
+    if (item.actorId !== undefined) parts.push(text(item.actorId))
+    if (item.quoteId !== undefined) parts.push(`quote #${text(item.quoteId)}`)
+    if (item.type === 'decision' && item.quoteStatus !== undefined) parts.push(`from ${text(item.quoteStatus)}`)
+    if (item.reason !== undefined) parts.push(text(item.reason).replace(/[-_]+/g, ' '))
     if (optionalNumber(item.durationMs) !== undefined) parts.push(duration(item.durationMs))
-    if (error !== undefined) parts.push(text(error))
+    if (item.error !== undefined) parts.push(text(item.error))
     return parts.join(' · ')
   }
 
   function activityMatchesFilter(item, filter) {
-    if (filter === 'all') return true
-    const type = text(pick(item, 'type'), '').toLowerCase()
-    if (filter === 'quotes') return type === 'state' || pick(item, 'quoteId', 'quote.id') !== undefined
-    if (filter === 'actors') return type === 'action' || type === 'decision'
-    if (filter === 'corners') return type === 'operation' || /^corner:/i.test(text(pick(item, 'title', 'name'), ''))
+    if (filter === 'quotes') return item.type === 'state' || item.quoteId !== undefined
+    if (filter === 'actors') return item.type === 'action' || item.type === 'decision'
+    if (filter === 'corners') return item.type === 'operation'
     if (filter === 'errors') return activityTone(item) === 'bad'
     return true
   }
 
   function renderActivity(report) {
     const records = activityRecords(report)
-    const filteredRecords = records.filter((itemValue) => activityMatchesFilter(object(itemValue), state.activityFilter))
+    const filteredRecords = records.filter((item) => activityMatchesFilter(item, state.activityFilter))
     const visibleRecords = filteredRecords.slice(0, state.activityVisible)
-    const droppedActivity = numeric(pick(report || {}, 'retention.droppedActivity', 'retention.droppedEvents'))
-    const countDetail =
+    const droppedActivity = numeric(report?.retention?.droppedActivity)
+    setText(
+      dom['activity-count'],
       filteredRecords.length === records.length
         ? `${compactNumber(records.length)} retained`
-        : `${compactNumber(filteredRecords.length)}/${compactNumber(records.length)} retained`
-    setText(dom['activity-count'], countDetail)
+        : `${compactNumber(filteredRecords.length)}/${compactNumber(records.length)} retained`,
+    )
     dom['activity-count'].title =
       `${compactNumber(visibleRecords.length)} shown${droppedActivity > 0 ? `; ${compactNumber(droppedActivity)} raw events not retained` : ''}`
     setText(dom['activity-retention-note'], `${compactNumber(droppedActivity)} older events omitted from this view.`)
     dom['activity-retention-note'].hidden = droppedActivity <= 0
     if (filteredRecords.length === 0) {
-      const empty = create(
-        'li',
-        'empty-copy',
-        records.length === 0 ? 'No meaningful activity has been retained yet.' : 'No retained activity matches this filter.',
+      dom['activity-list'].replaceChildren(
+        create(
+          'li',
+          'empty-copy',
+          records.length === 0 ? 'No meaningful activity has been retained yet.' : 'No retained activity matches this filter.',
+        ),
       )
-      dom['activity-list'].replaceChildren(empty)
       dom['activity-more'].hidden = true
       dom['activity-footer'].hidden = true
       return
     }
-    const nodes = visibleRecords.map((itemValue) => {
-      const item = object(itemValue)
-      const tone = activityTone(item)
-      const row = create('li', 'activity-item')
-      row.dataset.tone = tone
-      const eventTime =
-        clockTime(pick(item, 'at', 'timestamp', 'emittedAt')) || (optionalNumber(item.elapsedMs) !== undefined ? duration(item.elapsedMs) : '—')
-      const marker = tone === 'good' ? '✓' : tone === 'bad' ? '×' : tone === 'warn' ? '!' : '·'
-      const copy = create('div', 'activity-item__copy')
-      copy.append(create('p', 'activity-item__title', activityTitle(item)), create('p', 'activity-item__detail', activityDetail(item)))
-      const rawTag = text(pick(item, 'type', 'phase'), '')
-      const tag =
-        pick(item, 'sequence') !== undefined ? `#${text(item.sequence)}` : rawTag === 'root' ? 'cycle' : rawTag === 'operation' ? 'high-risk' : rawTag
-      row.append(
-        create('time', 'activity-item__time', eventTime),
-        create('span', 'activity-item__marker', marker),
-        copy,
-        create('span', 'activity-item__tag', tag),
-      )
-      return row
-    })
-    dom['activity-list'].replaceChildren(...nodes)
+    const markers = { good: '✓', bad: '×', warn: '!', neutral: '·' }
+    const tags = { root: 'cycle', operation: 'high-risk' }
+    dom['activity-list'].replaceChildren(
+      ...visibleRecords.map((item) => {
+        const tone = activityTone(item)
+        const row = create('li', 'activity-item')
+        row.dataset.tone = tone
+        const copy = create('div', 'activity-item__copy')
+        copy.append(create('p', 'activity-item__title', activityTitle(item)), create('p', 'activity-item__detail', activityDetail(item)))
+        row.append(
+          create('time', 'activity-item__time', optionalNumber(item.elapsedMs) !== undefined ? duration(item.elapsedMs) : '—'),
+          create('span', 'activity-item__marker', markers[tone]),
+          copy,
+          create('span', 'activity-item__tag', item.sequence !== undefined ? `#${text(item.sequence)}` : (tags[item.type] ?? text(item.type, ''))),
+        )
+        return row
+      }),
+    )
     const remaining = filteredRecords.length - visibleRecords.length
     dom['activity-more'].hidden = remaining <= 0
     dom['activity-footer'].hidden = remaining <= 0
     setText(dom['activity-more'], `Show ${compactNumber(Math.min(ACTIVITY_PAGE_SIZE, remaining))} more · ${compactNumber(remaining)} remaining`)
   }
 
-  function failureRecords(report) {
-    const direct = pick(report || {}, 'failures')
-    if (Array.isArray(direct)) return direct
-    if (isObject(direct)) {
-      const nested = firstArray(direct, 'items', 'records', 'errors')
-      if (nested.length > 0) return nested
-      return Object.entries(direct).map(([boundary, error]) => ({ boundary, error }))
-    }
-    const resultFailures = firstArray(report || {}, 'run.failures', 'result.failures', 'run.result.failures')
-    return resultFailures
-  }
-
-  function renderFailures(report) {
-    const failures = failureRecords(report)
-    const signals = runSignalSnapshot(report)
-    const aggregateFailures = signals.failureCategories
-    const hasVisibleFailureDetail = failures.length > 0 || signals.hasFailure || !signals.evidenceComplete
-    dom['failure-list'].hidden = !hasVisibleFailureDetail
-    setText(
-      dom['failure-count'],
-      failures.length > 0
-        ? `${compactNumber(failures.length)} ${failures.length === 1 ? 'record' : 'records'}`
-        : aggregateFailures.length > 0
-          ? `${compactNumber(aggregateFailures.length)} ${aggregateFailures.length === 1 ? 'signal' : 'signals'}`
-          : signals.evidenceComplete
-            ? '0'
-            : '—',
-    )
-    dom['failure-count'].dataset.tone = failures.length > 0 || signals.hasFailure ? 'bad' : signals.evidenceComplete ? 'neutral' : 'warn'
-    if (failures.length === 0) {
-      dom['failure-list'].replaceChildren(
-        create(
-          'p',
-          signals.hasFailure || !signals.evidenceComplete ? 'failure-summary' : 'empty-copy',
-          signals.hasFailure
-            ? `No detailed failure boundaries retained. Aggregate failure signals: ${aggregateFailures.join(' · ')}.`
-            : signals.evidenceComplete
-              ? signals.storageWarning
-                ? 'No fuzz failures recorded. The report storage warning is listed under Coverage and Report integrity.'
-                : 'No failure boundaries or aggregate failure signals recorded.'
-              : `Aggregate failure telemetry unavailable: ${signals.evidenceGaps.join(', ')}.`,
-        ),
-      )
-      return
-    }
-    const nodes = failures
-      .slice(-10)
-      .reverse()
-      .map((itemValue) => {
-        const item = object(itemValue)
-        const node = create('div', 'failure-item')
-        const boundary = stakeholderCopy(humanize(pick(item, 'boundary', 'type', 'phase') || 'Failure'))
-        const message = stakeholderCopy(pick(item, 'message', 'error.message', 'error', 'detail', 'reason'), 'Unknown failure')
-        node.append(create('p', 'failure-item__boundary', boundary), create('p', 'failure-item__message', message))
-        return node
-      })
-    if (aggregateFailures.length > 0) {
-      nodes.unshift(create('p', 'failure-summary', `Aggregate failure signals: ${aggregateFailures.join(' · ')}.`))
-    }
-    dom['failure-list'].replaceChildren(...nodes)
-  }
-
-  function replayCommand(report) {
-    const value = pick(report || {}, 'result.replay', 'result.replayCommand', 'run.replay', 'latest.replay', 'replay')
-    if (Array.isArray(value)) return value.map((item) => text(item, '')).join(' ')
-    return text(value, '')
-  }
+  // ---- Replay and storage -------------------------------------------------------------------------
 
   function renderReplay(report) {
     const replay = replayCommand(report)
     setText(dom['replay-command'], replay || 'Replay command is not available yet.')
     dom['copy-replay-panel'].disabled = !replay
-    dom['hero-replay-button'].disabled = !replay
   }
 
   function retentionEntries(report) {
-    const retention = firstObject(report || {}, 'retention')
-    const entries = []
-    const retentionAvailable = Object.keys(retention).length > 0
-    const byteCapped = boolean(pick(retention, 'capped', 'truncated', 'truncatedToByteCap'))
+    const retention = object(report?.retention)
+    if (Object.keys(retention).length === 0) return [['Mode', 'Unavailable']]
     const compacted =
-      boolean(retention.degraded) ||
       numeric(retention.droppedTimeline) > 0 ||
       numeric(retention.droppedActivity) > 0 ||
-      numeric(retention.droppedEvents) > 0 ||
       numeric(retention.timelineStride) > numeric(retention.timelineEveryRoots)
-    const mode = !retentionAvailable
-      ? 'Unavailable'
-      : retention.lastWriteError
-        ? 'Write error'
-        : byteCapped
-          ? 'Byte-capped'
-          : compacted
-            ? 'Compacted'
-            : 'Exact'
-    entries.push(['Mode', mode])
-    const known = [
-      ['Timeline cadence', ['timelineEveryRoots']],
-      ['Timeline stride', ['timelineStride']],
-      ['Timeline limit', ['maxTimeline', 'timelineBuckets', 'buckets']],
-      ['Activity limit', ['maxActivity', 'activity', 'activityCount']],
-      ['Dropped timeline', ['droppedTimeline', 'dropped']],
-      ['Dropped activity', ['droppedActivity', 'droppedEvents']],
-      ['Coalesced', ['coalesced', 'coalescedEvents']],
-      ['Malformed', ['malformed', 'malformedLines']],
+    const entries = [
+      ['Mode', retention.lastWriteError ? 'Write error' : retention.truncatedToByteCap ? 'Byte-capped' : compacted ? 'Compacted' : 'Exact'],
     ]
-    for (const [label, keys] of known) {
-      const value = keys.map((key) => retention[key]).find((candidate) => candidate !== undefined && candidate !== null)
-      if (value !== undefined) entries.push([label, compactNumber(value)])
+    for (const [label, key] of [
+      ['Timeline cadence', 'timelineEveryRoots'],
+      ['Timeline stride', 'timelineStride'],
+      ['Timeline limit', 'maxTimeline'],
+      ['Activity limit', 'maxActivity'],
+      ['Dropped timeline', 'droppedTimeline'],
+      ['Dropped activity', 'droppedActivity'],
+    ]) {
+      if (retention[key] !== undefined) entries.push([label, compactNumber(retention[key])])
     }
-    const sourceBytes = pick(retention, 'sourceBytes', 'bytes', 'fileBytes')
-    if (sourceBytes !== undefined) entries.push(['Source size', bytes(sourceBytes)])
     if (retention.maxBytes !== undefined) entries.push(['Report byte cap', bytes(retention.maxBytes)])
     if (retention.lastWriteAt !== undefined) entries.push(['Last write', shortDate(retention.lastWriteAt)])
     if (retention.lastWriteError !== undefined) entries.push(['Write error', text(retention.lastWriteError)])
-    if (entries.length === 1) entries.push(['Bounds', 'Not declared'])
     return entries
   }
 
@@ -2512,96 +1430,71 @@ export function mountFuzzDashboard(root, { authorization }) {
     )
   }
 
-  function reportTimestamp(report) {
-    return (
-      timestampNumber(
-        pick(
-          report || {},
-          'generatedAt',
-          'updatedAt',
-          'run.updatedAt',
-          'run.updated_at',
-          'latest.at',
-          'latest.timestamp',
-          'run.finishedAt',
-          'run.finished_at',
-        ),
-      ) ?? Date.now()
-    )
-  }
-
   function renderReport(report) {
     dom['waiting-state'].hidden = true
     dom.dashboard.hidden = false
     renderRunHeader(report)
+    renderProblems(report)
+    renderKpis(report)
     renderStory(report)
     renderCoverageVerdict(report)
-    renderKpis(report)
     renderOutcomes(report)
     renderConfidenceLimits(report)
     renderLifecycle(report)
-    renderActions(report)
+    renderActionTypes(report)
     renderCorners(report)
     renderMix(report)
     renderActivity(report)
-    renderFailures(report)
     renderReplay(report)
     renderRetention(report)
-    dom['export-report'].disabled = false
     setText(
       dom['footer-source'],
       state.selectedRunId ? `Source: /api/fuzz/runs/${state.selectedRunId} · archived run` : 'Source: /api/fuzz/report · current run',
     )
-    window.requestAnimationFrame(() => renderCharts(report))
+    window.requestAnimationFrame(() => {
+      if (!disposed && state.report === report) renderCharts(report)
+    })
   }
 
-  function hasReportPayload(value) {
-    if (!isObject(value)) return false
-    return ['run', 'config', 'setup', 'latest', 'timeline', 'milestones', 'activity', 'failures', 'result', 'retention'].some(
-      (key) => value[key] !== undefined,
-    )
+  // ---- Loading ------------------------------------------------------------------------------------
+
+  function setExportAvailable(available) {
+    dom['export-report'].disabled = !available
+    dom['export-hint'].hidden = available
   }
 
-  function unwrapReport(value) {
-    if (hasReportPayload(value)) return value
-    if (isObject(value) && hasReportPayload(value.report)) return value.report
-    return null
+  function showWaiting() {
+    state.report = null
+    state.reportKey = ''
+    state.lastReportAt = 0
+    setExportAvailable(false)
+    dom['waiting-state'].hidden = false
+    dom.dashboard.hidden = true
   }
 
-  async function fetchJson(url) {
+  /** Resolves to UNCHANGED on a 304, otherwise to the parsed body and its ETag. */
+  async function fetchJson(url, etag) {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
     try {
-      const response = await fetch(url, {
-        cache: 'no-store',
-        headers: { Accept: 'application/json', Authorization: authorization },
-        signal: controller.signal,
-      })
-      if (response.status === 204) return null
+      const headers = { Accept: 'application/json', Authorization: authorization }
+      if (etag) headers['If-None-Match'] = etag
+      const response = await fetch(url, { cache: 'no-store', headers, signal: controller.signal })
+      if (response.status === 304) return UNCHANGED
+      if (response.status === 204) return { payload: null }
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      return await response.json()
+      return { payload: await response.json(), etag: response.headers?.get?.('ETag') ?? null }
     } finally {
       window.clearTimeout(timeout)
     }
   }
 
-  function selectedRun() {
-    return state.runs.find((run) => text(pick(run, 'id', 'runId', 'key', 'value'), '') === state.selectedRunId)
+  function reportUrl() {
+    return state.selectedRunId ? `/api/fuzz/runs/${encodeURIComponent(state.selectedRunId)}` : '/api/fuzz/report'
   }
 
-  function reportUrl() {
-    if (!state.selectedRunId) return '/api/fuzz/report'
-    const run = selectedRun()
-    const explicit = pick(object(run), 'reportUrl', 'url', 'href')
-    if (typeof explicit === 'string') {
-      try {
-        const url = new URL(explicit, window.location.origin)
-        if (url.origin === window.location.origin) return `${url.pathname}${url.search}`
-      } catch {
-        // Fall through to the fixed same-origin endpoint.
-      }
-    }
-    return `/api/fuzz/runs/${encodeURIComponent(state.selectedRunId)}`
+  function reportTimestamp(report) {
+    return timestampNumber(report?.updatedAt) ?? timestampNumber(report?.run?.finishedAt) ?? Date.now()
   }
 
   function showError(error) {
@@ -2626,63 +1519,74 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   async function loadReport({ force = false } = {}) {
     if (!force && !state.following && state.report !== null) return
+    const url = reportUrl()
     const request = ++state.reportRequest
     try {
-      const payload = await fetchJson(reportUrl())
-      if (request !== state.reportRequest) return
+      const response = await fetchJson(url, state.report && state.etag?.url === url ? state.etag.tag : undefined)
+      if (request !== state.reportRequest || disposed) return
       state.lastSuccessAt = Date.now()
       clearError()
-      const report = unwrapReport(payload)
-      if (!report) {
-        state.report = null
-        state.lastReportAt = 0
-        dom['export-report'].disabled = true
-        dom['waiting-state'].hidden = false
-        dom.dashboard.hidden = true
+      if (response === UNCHANGED) {
         updateConnection()
         return
       }
+      state.etag = response.etag ? { url, tag: response.etag } : null
+      if (!isReport(response.payload)) {
+        showWaiting()
+        updateConnection()
+        return
+      }
+      const report = response.payload
+      const key = reportKey(report)
+      // An identical report is not drawn again, so a selection or an open disclosure survives the poll.
+      const changed = state.report === null || key !== state.reportKey
       state.report = report
+      state.reportKey = key
       state.lastReportAt = reportTimestamp(report)
-      renderReport(report)
+      if (changed) {
+        setExportAvailable(true)
+        renderReport(report)
+      }
       updateConnection()
     } catch (error) {
-      if (request !== state.reportRequest) return
+      if (request !== state.reportRequest || disposed) return
       showError(error)
     }
   }
 
+  function runId(run) {
+    return text(run?.name ?? run?.id, '')
+  }
+
+  /** "× Oct 14, 14:48 · Failed, 1 failure · 312 cycles · seed abc". Bare file names from an older server still read. */
   function runLabel(run) {
-    const id = text(pick(run, 'id', 'runId', 'key', 'value'), 'run')
-    const seed = text(pick(run, 'seed', 'config.seed'), '')
-    const status = text(pick(run, 'status', 'outcome', 'phase'), '')
-    const started = shortDate(pick(run, 'startedAt', 'started_at', 'at'))
-    const archiveMatch = id.match(/^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2}(?:\.\d+)?)Z-([a-f0-9]{6,})\.json$/i)
-    const archiveStarted = archiveMatch ? shortDate(`${archiveMatch[1]}:${archiveMatch[2]}:${archiveMatch[3]}Z`) : ''
-    const archiveHash = archiveMatch ? archiveMatch[4].slice(0, 8) : ''
-    if (!status && !seed && !started && archiveMatch) return `${archiveStarted} · ${archiveHash} · archived`
-    const details = [status && humanize(status), seed && `seed ${seed}`, started].filter(Boolean)
-    return details.length ? `${id} · ${details.join(' · ')}` : id
+    const name = runId(run)
+    const status = text(run.status, '').toLowerCase()
+    const archiveMatch = name.match(/^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2}(?:\.\d+)?)Z-([a-f0-9]{6,})\.json$/i)
+    const started = shortDate(run.startedAt) || (archiveMatch ? shortDate(`${archiveMatch[1]}:${archiveMatch[2]}:${archiveMatch[3]}Z`) : '')
+    if (!status && run.seed === undefined && archiveMatch) return `${started} · ${archiveMatch[4].slice(0, 8)} · archived`
+    const failures = optionalNumber(run.failures)
+    const outcome =
+      status === 'failed' ? `Failed${failures ? `, ${plural(failures, 'failure')}` : ''}` : status ? humanize(status) : 'Outcome unknown'
+    const parts = [started || name, outcome, run.cycles !== undefined && plural(run.cycles, 'cycle'), run.seed && `seed ${run.seed}`]
+    return `${status === 'failed' ? '× ' : ''}${parts.filter(Boolean).join(' · ')}`
   }
 
   function renderRunOptions() {
     const currentValue = state.selectedRunId
     const options = [new Option('Current run', '')]
     for (const run of state.runs) {
-      const id = text(pick(run, 'id', 'runId', 'key', 'value'), '')
-      if (!id) continue
-      options.push(new Option(runLabel(run), id))
+      const id = runId(run)
+      if (id) options.push(new Option(runLabel(run), id))
     }
     dom['run-select'].replaceChildren(...options)
     if ([...dom['run-select'].options].some((option) => option.value === currentValue)) dom['run-select'].value = currentValue
     else {
       state.selectedRunId = ''
       state.following = true
-      state.report = null
       state.activityVisible = ACTIVITY_PAGE_SIZE
       dom['run-select'].value = ''
-      dom['waiting-state'].hidden = false
-      dom.dashboard.hidden = true
+      showWaiting()
       updateConnection()
       if (currentValue) void loadReport({ force: true })
     }
@@ -2690,16 +1594,17 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   async function loadRuns() {
     try {
-      const payload = await fetchJson('/api/fuzz/runs')
+      const { payload } = await fetchJson('/api/fuzz/runs')
       if (disposed) return
-      const runs = Array.isArray(payload) ? payload : firstArray(payload || {}, 'runs', 'items', 'reports')
-      state.runs = runs.map((item) => (isObject(item) ? item : { id: item }))
-      state.lastRunsAt = Date.now()
+      const runs = Array.isArray(payload?.runs) ? payload.runs : []
+      state.runs = runs.map((item) => (isObject(item) ? item : { name: item }))
       renderRunOptions()
     } catch {
       // A missing run archive must not interrupt the current live report.
     }
   }
+
+  // ---- Connection and controls --------------------------------------------------------------------
 
   function updateFollowButton() {
     const following = state.following && !state.selectedRunId
@@ -2722,6 +1627,10 @@ export function mountFuzzDashboard(root, { authorization }) {
       detail = state.selectedRunId ? `Showing run ${state.selectedRunId}` : 'Automatic report updates are paused'
     } else if (!state.report) {
       connectionState = 'waiting'
+    } else if (isTerminalRun(state.report)) {
+      connectionState = 'final'
+      label = 'Final report'
+      detail = `Run ${humanize(runStatus(state.report)).toLowerCase()} ${ago(timestampNumber(state.report.run?.finishedAt) ?? state.lastReportAt)}`
     } else if (isLiveRun(state.report) && state.lastReportAt > 0 && Date.now() - state.lastReportAt > STALE_AFTER_MS) {
       connectionState = 'stale'
       label = 'Report stale'
@@ -2737,60 +1646,34 @@ export function mountFuzzDashboard(root, { authorization }) {
     if (state.connectionState && state.connectionState !== connectionState) announce(`${label}. ${detail}.`)
     state.connectionState = connectionState
     updateFollowButton()
-    if (state.report) {
-      const acceptedAt = state.lastReportAt || state.lastSuccessAt
-      const acceptedAge = ago(acceptedAt)
-      renderRunStatus(state.report, connectionState)
-      setText(dom['run-title'], runHeadline(state.report, connectionState))
-      setText(dom['run-subtitle'], runSummary(state.report, connectionState))
-      setText(dom['freshness-value'], acceptedAge)
-      setText(dom['elapsed-value'], duration(elapsedMs(state.report)))
-      const quoteSource = currentQuotes(state.report)
-      const quoteSummary =
-        hasQuoteTelemetry(quoteSource) && quoteTotals(quoteSource).total !== undefined
-          ? `${compactNumber(quoteTotals(quoteSource).total)} tracked quotes · configured targets, not exhaustive coverage`
-          : 'Configured run targets, not exhaustive protocol coverage'
-      const freshnessSummary =
-        connectionState === 'stale'
-          ? `stale snapshot from ${acceptedAge}`
-          : connectionState === 'frozen'
-            ? state.selectedRunId
-              ? `archived snapshot from ${acceptedAge}`
-              : `updates paused at ${acceptedAge}`
-            : connectionState === 'error'
-              ? `last accepted snapshot from ${acceptedAge}`
+    if (!state.report) return
+    const acceptedAge = ago(state.lastReportAt || state.lastSuccessAt)
+    renderRunStatus(state.report, connectionState)
+    setText(dom['run-title'], runHeadline(state.report, connectionState))
+    setText(dom['run-subtitle'], runSummary(state.report, viewNow(state.report)))
+    const total = quoteTotals(state.report.latest?.quotes).total
+    const quoteSummary =
+      total !== undefined
+        ? `${compactNumber(total)} tracked quotes · configured targets, not exhaustive coverage`
+        : 'Configured run targets, not exhaustive protocol coverage'
+    const freshness =
+      connectionState === 'stale'
+        ? `stale snapshot from ${acceptedAge}`
+        : connectionState === 'frozen'
+          ? state.selectedRunId
+            ? `archived snapshot from ${acceptedAge}`
+            : `updates paused at ${acceptedAge}`
+          : connectionState === 'error'
+            ? `last accepted snapshot from ${acceptedAge}`
+            : connectionState === 'final'
+              ? 'final report'
               : `updated ${acceptedAge}`
-      setText(dom['health-note'], `${quoteSummary} · ${freshnessSummary}`)
-    }
-  }
-
-  async function copyReplay() {
-    const replay = replayCommand(state.report)
-    if (!replay) return
-    let copied = false
-    try {
-      await navigator.clipboard.writeText(replay)
-      copied = true
-    } catch {
-      const input = document.createElement('textarea')
-      input.value = replay
-      input.setAttribute('readonly', '')
-      input.style.position = 'fixed'
-      input.style.left = '-10000px'
-      document.body.append(input)
-      input.select()
-      copied = document.execCommand('copy')
-      input.remove()
-    }
-    announce(copied ? 'Replay command copied.' : 'Replay command could not be copied.')
+    setText(dom['health-note'], `${quoteSummary} · ${freshness}`)
   }
 
   function exportFilename(report) {
-    const run = reportRun(report)
-    const config = reportConfig(report)
-    const source = pick(config, 'seed') ?? pick(run, 'seed', 'id', 'runId') ?? state.selectedRunId ?? 'run'
     const safeSource =
-      text(source, 'run')
+      text(seedOf(report) || state.selectedRunId, 'run')
         .toLowerCase()
         .replace(/[^a-z0-9._-]+/g, '-')
         .replace(/^-+|-+$/g, '')
@@ -2801,8 +1684,7 @@ export function mountFuzzDashboard(root, { authorization }) {
   function exportReport() {
     if (!state.report) return
     try {
-      const content = `${JSON.stringify(state.report, null, 2)}\n`
-      const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }))
+      const url = URL.createObjectURL(new Blob([`${JSON.stringify(state.report, null, 2)}\n`], { type: 'application/json' }))
       const link = document.createElement('a')
       link.href = url
       link.download = exportFilename(state.report)
@@ -2834,17 +1716,13 @@ export function mountFuzzDashboard(root, { authorization }) {
     const buttons = [...root.querySelectorAll('[data-details-tab]')]
     const selectedButton = buttons.find((button) => button.dataset.detailsTab === tabName)
     if (!selectedButton) return
-
     state.detailsTab = tabName
     for (const button of buttons) {
       const selected = button === selectedButton
       button.setAttribute('aria-selected', selected ? 'true' : 'false')
       button.tabIndex = selected ? 0 : -1
     }
-    for (const pane of root.querySelectorAll('[data-details-pane]')) {
-      pane.hidden = pane.dataset.detailsPane !== tabName
-    }
-
+    for (const pane of root.querySelectorAll('[data-details-pane]')) pane.hidden = pane.dataset.detailsPane !== tabName
     if (focus) selectedButton.focus()
     if (tabName === 'runner') window.requestAnimationFrame(scheduleChartRender)
   }
@@ -2853,14 +1731,12 @@ export function mountFuzzDashboard(root, { authorization }) {
     const buttons = [...root.querySelectorAll('[data-details-tab]')]
     const currentIndex = buttons.indexOf(event.currentTarget)
     if (currentIndex < 0) return
-
     let nextIndex
     if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % buttons.length
     else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + buttons.length) % buttons.length
     else if (event.key === 'Home') nextIndex = 0
     else if (event.key === 'End') nextIndex = buttons.length - 1
     else return
-
     event.preventDefault()
     activateDetailsTab(buttons[nextIndex].dataset.detailsTab, { focus: true })
   }
@@ -2873,7 +1749,19 @@ export function mountFuzzDashboard(root, { authorization }) {
     })
   }
 
+  function switchTo(runName) {
+    state.selectedRunId = runName
+    state.following = true
+    state.etag = null
+    state.activityVisible = ACTIVITY_PAGE_SIZE
+    dom['run-select'].value = runName
+    showWaiting()
+    updateConnection()
+    void loadReport({ force: true })
+  }
+
   function bindEvents() {
+    const listen = { signal: lifetime.signal }
     dom['follow-button'].addEventListener('click', () => {
       if (state.following && !state.selectedRunId) {
         state.following = false
@@ -2881,31 +1769,20 @@ export function mountFuzzDashboard(root, { authorization }) {
         updateConnection()
         return
       }
-      state.selectedRunId = ''
-      dom['run-select'].value = ''
-      state.following = true
-      state.report = null
-      state.activityVisible = ACTIVITY_PAGE_SIZE
-      dom['waiting-state'].hidden = false
-      dom.dashboard.hidden = true
       announce('Following the current report.')
-      updateConnection()
-      void loadReport({ force: true })
+      switchTo('')
     })
-    dom['run-select'].addEventListener('change', () => {
-      state.selectedRunId = dom['run-select'].value
-      state.following = state.selectedRunId === ''
-      state.report = null
-      state.activityVisible = ACTIVITY_PAGE_SIZE
-      dom['waiting-state'].hidden = false
-      dom.dashboard.hidden = true
-      updateConnection()
-      void loadReport({ force: true })
-    })
+    dom['run-select'].addEventListener('change', () => switchTo(dom['run-select'].value))
     dom['retry-button'].addEventListener('click', () => void loadReport({ force: true }))
-    dom['copy-replay-panel'].addEventListener('click', copyReplay)
-    dom['hero-replay-button'].addEventListener('click', copyReplay)
+    dom['copy-replay-panel'].addEventListener('click', () =>
+      copyWithFeedback(replayCommand(state.report), dom['copy-replay-panel'], 'Replay command'),
+    )
+    dom['problems-copy'].addEventListener('click', () => copyWithFeedback(replayCommand(state.report), dom['problems-copy'], 'Replay command'))
+    dom['copy-start-command'].addEventListener('click', () =>
+      copyWithFeedback(dom['start-command'].textContent, dom['copy-start-command'], 'Start command'),
+    )
     dom['story-replay'].addEventListener('click', playStory)
+    dom.story.addEventListener('toggle', () => (dom.story.open ? window.requestAnimationFrame(playStory) : clearStoryMotion()))
     dom['export-report'].addEventListener('click', exportReport)
     dom['activity-more'].addEventListener('click', () => {
       state.activityVisible += ACTIVITY_PAGE_SIZE
@@ -2955,24 +1832,46 @@ export function mountFuzzDashboard(root, { authorization }) {
       resizeObserver = new ResizeObserver(scheduleChartRender)
       resizeObserver.observe(dom.dashboard)
     } else {
-      window.addEventListener('resize', scheduleChartRender, { signal: lifetime.signal })
+      window.addEventListener('resize', scheduleChartRender, listen)
     }
     window.addEventListener(
       'resize',
       () => {
-        if (!state.report) return
+        if (!state.storyAnimation) return
         clearStoryMotion()
         for (const step of dom['story-track'].querySelectorAll('[data-story-step]')) step.classList.add('is-complete')
         setText(dom['story-stage-copy'], 'Cycle settled. Replay the explanation to see each stage.')
       },
-      { signal: lifetime.signal },
+      listen,
+    )
+    // A hidden tab does not poll; coming back catches up at once.
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.visibilityState === 'visible') pollReport({ catchUp: true })
+      },
+      listen,
     )
   }
 
+  /**
+   * The current run is polled every two seconds while it runs. Once it has ended the report is final, and it is
+   * only checked at the archive cadence in case a new run replaces it.
+   */
+  function pollReport({ catchUp = false } = {}) {
+    if (document.visibilityState === 'hidden' || !state.following || state.selectedRunId) return
+    if (!catchUp && state.report && isTerminalRun(state.report) && Date.now() - state.lastSuccessAt < RUNS_INTERVAL_MS) return
+    void loadReport()
+  }
+
   function startTimers() {
-    state.pollTimer = window.setInterval(() => void loadReport(), POLL_INTERVAL_MS)
-    state.runsTimer = window.setInterval(() => void loadRuns(), RUNS_INTERVAL_MS)
-    state.statusTimer = window.setInterval(updateConnection, 1_000)
+    state.pollTimer = window.setInterval(() => pollReport(), POLL_INTERVAL_MS)
+    state.runsTimer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') void loadRuns()
+    }, RUNS_INTERVAL_MS)
+    state.statusTimer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') updateConnection()
+    }, 1_000)
   }
 
   function initialize() {
@@ -2981,6 +1880,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     activateDetailsTab(state.detailsTab)
     updateChartWindowButtons()
     updateActivityFilterButtons()
+    setExportAvailable(false)
     updateConnection()
     void loadRuns()
     void loadReport({ force: true })
@@ -2991,6 +1891,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     disposed = true
     state.reportRequest++
     for (const timer of [state.pollTimer, state.runsTimer, state.statusTimer]) window.clearInterval(timer)
+    for (const timer of copyTimers.values()) window.clearTimeout(timer)
     if (state.resizeFrame) window.cancelAnimationFrame(state.resizeFrame)
     clearStoryMotion()
     resizeObserver?.disconnect()

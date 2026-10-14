@@ -214,7 +214,7 @@ h3 {
 .seg-tabs .mantine-Tabs-list::before {
   display: none;
 }
-.app-nav button,
+.app-nav a,
 .seg-tabs .mantine-Tabs-tab {
   display: inline-flex;
   align-items: center;
@@ -234,17 +234,17 @@ h3 {
 .seg-tabs .mantine-Tabs-tab {
   height: 36px;
 }
-.app-nav button:hover,
+.app-nav a:hover,
 .seg-tabs .mantine-Tabs-tab:hover {
   background: var(--panel-soft);
   color: var(--mantine-color-text);
 }
-.app-nav button.current,
+.app-nav a.current,
 .seg-tabs .mantine-Tabs-tab[data-active] {
   background: var(--secondary-container);
   color: var(--on-secondary-container);
 }
-.app-nav button:focus-visible {
+.app-nav a:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
@@ -1364,14 +1364,14 @@ main h1.mantine-Title-root {
     justify-content: space-between;
   }
   /* Four sections fit a phone once the icons step aside; one more and the row has to scroll. */
-  .app-nav button {
+  .app-nav a {
     flex: 1;
     justify-content: center;
     height: 36px;
     padding: 0 6px;
     font-size: 13px;
   }
-  .app-nav button svg {
+  .app-nav a svg {
     display: none;
   }
   main {
@@ -1437,3 +1437,288 @@ main h1.mantine-Title-root {
     scroll-behavior: auto !important;
   }
 }
+
+/* Workbench screens and operator safety: deployment identity, execution checklist, wallet checks and removals. */
+.env-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* Production is the one deployment where a mistake is real, so its badge carries the strongest tone on the page. */
+.env-badge[data-env='Production'] {
+  background: var(--mantine-color-text);
+  color: var(--mantine-color-body);
+}
+.context-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--r-card);
+  background: var(--panel);
+}
+.context-deployment {
+  margin-right: 2px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.context-bar .chip[data-tone='warn'] {
+  color: var(--warn);
+}
+.prompt-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+.prompt-facts > div {
+  display: contents;
+}
+.prompt-facts dt {
+  color: var(--mantine-color-dimmed);
+}
+.prompt-facts dd {
+  margin: 0;
+}
+.prompt-facts code,
+.exec-step-body code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.check-list {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--r-inner);
+  background: var(--panel-soft);
+  list-style: none;
+  font-size: 13px;
+}
+.check-list li::before {
+  display: inline-block;
+  width: 18px;
+  content: '✓';
+  color: var(--ok);
+  font-weight: 700;
+}
+.check-list li[data-ok='false']::before {
+  content: '!';
+  color: var(--warn);
+}
+.exec-steps {
+  display: grid;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.exec-steps li {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  counter-increment: step;
+}
+.exec-steps li::before {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--panel-soft);
+  color: var(--mantine-color-dimmed);
+  content: counter(step);
+  font-size: 12px;
+  font-weight: 700;
+}
+.exec-steps li[data-state='done']::before {
+  background: var(--secondary-container);
+  color: var(--ok);
+  content: '✓';
+}
+.exec-step-body {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+.removal-group {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.removal-row {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0 0 4px;
+  font-size: 13px;
+}
+.removal-row code {
+  flex: none;
+  color: var(--mantine-color-dimmed);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.reconnect-row {
+  margin-top: 12px;
+}
+
+/* App shell: section links, the status row under the header, and the plan in progress at the top of History. */
+.app-nav a {
+  text-decoration: none;
+}
+/* The row keeps its height whether or not a job runs, so the page below it never moves. */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 16px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.status-row[data-busy] {
+  background: var(--panel);
+}
+.status-row .status-label,
+.status-row .status-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-bar {
+  flex: 1 1 80px;
+  max-width: 240px;
+}
+.status-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+.history-active {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+@media (max-width: 600px) {
+  .status-row .status-detail,
+  .status-bar {
+    display: none;
+  }
+}
+/* ---- Wiring map: fullscreen overlay, the strip above the canvas, shortcuts, narrow toolbar ---- */
+/* Fullscreen is the same map pinned over the page, so nothing on it is lost on the way in or out. */
+.graph-panel.graph-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: auto;
+  --graph-height: max(240px, var(--graph-fit, calc(100dvh - 142px)));
+}
+/* The scope pill and the empty-state note share one strip, which the fit leaves room for. */
+.graph-top {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+.graph-top .graph-scope {
+  position: static;
+  max-width: 100%;
+  pointer-events: auto;
+}
+.graph-top .graph-empty {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 6px 6px 6px 14px;
+  border-radius: var(--r-pill);
+  background: var(--panel-soft);
+  text-align: left;
+  pointer-events: auto;
+}
+.map-help {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.map-help div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+}
+.map-help dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.map-help dd {
+  margin: 0;
+  color: var(--mantine-color-dimmed);
+}
+/* At laptop widths the tools keep one line and the chips scroll sideways on the next, so the map starts higher. */
+@media (max-width: 1280px) {
+  .graph-panel .graph-toolbar {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .graph-toolbar .seg button {
+    height: 28px;
+    padding: 0 11px;
+  }
+  .graph-panel .graph-focus {
+    width: 210px;
+  }
+  .graph-panel .graph-query {
+    flex: 1 1 120px;
+    width: auto;
+    min-width: 120px;
+  }
+  .graph-panel .graph-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 3px 2px;
+    scrollbar-width: none;
+  }
+  .graph-panel .graph-filters > * {
+    flex: none;
+  }
+  .graph-panel .filter-chip {
+    height: 28px;
+    padding: 0 10px;
+  }
+}
+@media (max-width: 900px) {
+  .graph-panel.graph-fullscreen {
+    --graph-height: 50dvh;
+  }
+}
+@media (max-width: 600px) {
+  .graph-panel.graph-fullscreen {
+    --graph-height: 45dvh;
+  }
+  .graph-panel .graph-focus,
+  .graph-panel .graph-query {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+/* ---- End of wiring map ---- */

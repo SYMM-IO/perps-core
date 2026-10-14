@@ -46,3 +46,14 @@ test("changed linked library forces replacement of its dependent facet and prese
 	assert.equal(plan.changes[0].action, "replace");
 	assert.equal(plan.supportingCode[library], codeHash(before.deployedBytecode));
 });
+test("the deployment a plan is for is part of its checksum", async () => {
+	const input = { snapshot, build: baseline, baseline, selected: ["Facet"], mode: "patch", removals: [], deployer: facet, provider };
+	const without = await preparePlan(input);
+	const deployment = { id: "base-lc", name: "Base", environment: "Production", chainId: 8453 };
+	const withDeployment = await preparePlan({ ...input, deployment });
+	assert.equal(without.deployment, undefined);
+	assert.deepEqual(withDeployment.deployment, deployment);
+	assert.notEqual(withDeployment.id, without.id);
+	const other = await preparePlan({ ...input, deployment: { ...deployment, id: "sei" } });
+	assert.notEqual(other.id, withDeployment.id);
+});
