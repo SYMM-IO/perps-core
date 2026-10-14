@@ -153,6 +153,21 @@ upnlValidTimeByFunction[func] = upnlValidTime;
 						</li>
 					</ul>
 					<p>This view returns the effective value used by verification, not the raw mapping slot.</p>
+					<p>
+						Freshness checks require zero future skew: the signed timestamp must be at or before the executing block timestamp. The
+						current block timestamp and the exact past-age boundary are both accepted. A category override changes the maximum past age,
+						without allowing future timestamps. Both invalid directions retain the existing freshness revert reason.
+					</p>
+					<pre><code class="language-text">timestamp &lt;= block.timestamp
+block.timestamp - timestamp &lt;= effectiveUpnlValidTime(func)
+</code></pre>
+					<p>
+						This rule covers Trading, AccountManagement, RemoveMargin, Settlement, ForceClose, Funding, LiquidationPartyB UPNL, and fresh
+						legacy <code>liquidatePartyA</code>. ExpressCredit already rejects future timestamps and uses its separate
+						<code>muonFreshnessWindow</code> with an inclusive expiry boundary. Deferred and snapshot liquidation and liquidation
+						price-setting or settlement payloads retain the historical, basis, and lifecycle rules identified in the method table; this
+						change does not impose a current-UPNL age limit on historical snapshots. Signed payloads and category IDs are unchanged.
+					</p>
 					<hr />
 					<h2 id="storage-model">Storage model</h2>
 					<p>The new storage field is:</p>

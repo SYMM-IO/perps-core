@@ -23,7 +23,8 @@ library LibPartyALiquidationLegacySetup {
 		_requireLegacyPartyALiquidationAllowed();
 		LibMuonLiquidation.verifyLiquidationSig(liquidationSig, partyA, MuonFunction.LiquidationPartyA);
 		require(
-			block.timestamp <= liquidationSig.timestamp + LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA),
+			liquidationSig.timestamp <= block.timestamp &&
+				block.timestamp - liquidationSig.timestamp <= LibMuon.getUpnlValidTime(MuonFunction.LiquidationPartyA),
 			"LiquidationFacet: Expired signature"
 		);
 		require(QuoteStorage.layout().partyAPositionsCount[partyA] > 0, "LiquidationFacet: PartyA has no open positions");

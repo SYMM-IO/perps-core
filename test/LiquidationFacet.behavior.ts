@@ -564,6 +564,25 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 	}
 
 	describe("Liquidate PartyA", async function () {
+		it("Should reject future-dated legacy liquidation and preserve its exact expiry boundary", async function () {
+			await context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.LiquidationPartyA, 60)
+			const price = decimal(8n)
+			const upnl = (await user.getUpnl(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
+			const totalUnrealizedLoss =
+				(await user.getTotalUnrealisedLoss(getPriceFetcher([1n], [price]))) - (await context.viewFacetQuote.getSumQuoteFundingDebts([1n]))
+			const allocatedBalance = (await user.getBalanceInfo()).allocatedBalances
+			const sig = await getDummyLiquidationSig("0x10", upnl, [1n], [price], totalUnrealizedLoss, allocatedBalance)
+			const now = BigInt(await time.latest())
+			const liquidate = (timestamp: bigint) =>
+				context.partyALiquidationFacet.connect(context.signers.liquidator).liquidatePartyA.staticCall(user.address, { ...sig, timestamp })
+
+			await expect(liquidate(now + 1n)).to.be.revertedWith("LiquidationFacet: Expired signature")
+			await expect(liquidate(ethers.MaxUint256)).to.be.revertedWith("LiquidationFacet: Expired signature")
+			await expect(liquidate(now)).not.to.be.reverted
+			await expect(liquidate(now - 60n)).not.to.be.reverted
+			await expect(liquidate(now - 61n)).to.be.revertedWith("LiquidationFacet: Expired signature")
+		})
+
 		it("Should use separate UPNL validity windows for account management and liquidation", async function () {
 			await expect(context.controlFacet.connect(context.signers.admin).setMuonFunctionUpnlValidTime(MuonFunction.AccountManagement, 10n))
 				.to.emit(context.controlFacet, "SetMuonFunctionUpnlValidTime")
