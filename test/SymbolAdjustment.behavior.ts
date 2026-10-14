@@ -2134,7 +2134,14 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 							...(await sign(await partyALiquidationHash(context, user.address, path, startSig))),
 						})
 					} else if (path === "deferred") await legacy.deferredLiquidatePartyA(user.address, signedSig)
-					else await legacy.liquidatePartyA(user.address, signedSig)
+					else {
+						// Fresh liquidation admission uses current time; the replay probe keeps its future-dated price payload.
+						const startSig = { ...sig, timestamp: await getBlockTimestamp() }
+						await legacy.liquidatePartyA(user.address, {
+							...startSig,
+							...(await sign(await partyALiquidationHash(context, user.address, path, startSig))),
+						})
+					}
 					const setPrice = (payload = signedSig) =>
 						path === "snapshot"
 							? snapshot.setSymbolsPriceWithSnapshot(user.address, payload)
@@ -2162,8 +2169,10 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 
 			it(`rejects future-dated PartyB prices after batched abort on the ${confirmed ? "confirmed" : "direct"} route`, async function () {
 				const quoteId = await startBatchedAbort(confirmed)
-				const timestamp = await startIsolatedPartyBLiquidation()
+				const liquidationTimestamp = await startIsolatedPartyBLiquidation()
 				const sign = await enableSignedLiquidationPrices()
+				// Keep the future price probe inside the existing 100-second liquidation interval.
+				const timestamp = liquidationTimestamp + 60n
 				const sig = { ...(await getDummyPriceSig([quoteId], [decimal(2n, 17)])), timestamp }
 				const signedSig = { ...sig, ...(await sign(await partyBLiquidationPriceHash(context, sig))) }
 				const liquidation = context.partyBLiquidationFacet.connect(context.signers.liquidator)
@@ -2207,7 +2216,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			}
 			const signedSig = { ...sig, ...(await sign(await partyALiquidationHash(context, user.address, "legacy", sig))) }
 			const liquidation = context.partyALiquidationFacet.connect(context.signers.liquidator)
-			await liquidation.liquidatePartyA(user.address, signedSig)
+			const startSig = { ...sig, timestamp: await getBlockTimestamp() }
+			await liquidation.liquidatePartyA(user.address, {
+				...startSig,
+				...(await sign(await partyALiquidationHash(context, user.address, "legacy", startSig))),
+			})
 			await liquidation.setSymbolsPrice.staticCall(user.address, signedSig)
 			const epoch = (await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementEpoch
 			await context.symbolAdjustmentFacet.connect(context.signers.admin).abortRestatement(SYMBOL_ID)
@@ -2232,7 +2245,11 @@ export function shouldBehaveLikeSymbolAdjustment(): void {
 			}
 			const signedSig = { ...sig, ...(await sign(await partyALiquidationHash(context, user.address, "legacy", sig))) }
 			const liquidation = context.partyALiquidationFacet.connect(context.signers.liquidator)
-			await liquidation.liquidatePartyA(user.address, signedSig)
+			const startSig = { ...sig, timestamp: await getBlockTimestamp() }
+			await liquidation.liquidatePartyA(user.address, {
+				...startSig,
+				...(await sign(await partyALiquidationHash(context, user.address, "legacy", startSig))),
+			})
 			await startRestatement()
 			expect(sig.timestamp).to.be.greaterThan((await context.viewFacetSymbol.getSymbolAdjustment(SYMBOL_ID)).restatementStartedAt)
 			await expect(liquidation.setSymbolsPrice(user.address, signedSig)).to.be.revertedWith("MuonSignatureVerifier: TSS not verified")

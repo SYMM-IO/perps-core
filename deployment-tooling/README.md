@@ -163,4 +163,14 @@ the owner/request pair against canonical Core state. Do not use `transaction.fro
 old finalization event alone to assign ownership or infer payout. Rebuild affected
 projections without modifying historical raw logs. Consumer owners must approve and
 verify that rollout/backfill for their deployment; no production upgrade is performed by
-the source fix. Solidity policy finding 012 remains outside this fix.
+the source fix.
+
+Oracle timestamp finding 012 is fixed for Core UPNL freshness checks and fresh legacy
+PartyA liquidation: future skew is zero, while the current block timestamp and exact
+configured expiry boundary are accepted. Per-category past-age overrides and global
+inheritance remain unchanged. Future and expired timestamps use the existing freshness
+revert reasons. Express credit already applies zero future skew with its independent
+freshness window. Historical/deferred liquidation and liquidation price payloads retain
+their existing basis and lifecycle checks rather than gaining a current-UPNL expiry rule.
+See the [category and timestamp policy](../docs/v0.8.6/pages/muon-upnl-validity-overrides.html).
+No signature payload, ABI, storage layout, or production deployment is changed by this fix.

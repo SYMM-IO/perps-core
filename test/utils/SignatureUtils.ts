@@ -20,7 +20,7 @@ import { getBlockTimestamp } from "./Common.js"
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(700n),
+		timestamp: await getBlockTimestamp(),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
@@ -39,7 +39,7 @@ export async function getDummySingleUpnlWithPendingBalanceSig(
 ): Promise<SingleUpnlWithPendingBalanceSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(700n),
+		timestamp: await getBlockTimestamp(),
 		upnl: upnl,
 		fundingDebt: fundingDebt,
 		pendingBalance: pendingBalance,
@@ -84,7 +84,7 @@ export async function getDummyLiquidationSig(
 export async function getDummySingleUpnlAndPriceSig(price: bigint = 1n, upnl: bigint = 0n): Promise<SingleUpnlAndPriceSigStruct> {
 	return {
 		reqId: "0x",
-		timestamp: await getBlockTimestamp(700n),
+		timestamp: await getBlockTimestamp(),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {

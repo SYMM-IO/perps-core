@@ -45,8 +45,12 @@ library LibMuon {
 		return functionValidTime == 0 ? muonLayout.upnlValidTime : functionValidTime;
 	}
 
+	/// @notice Requires a non-future signature timestamp whose age is within the category's inclusive validity window.
 	function verifyUpnlTimestamp(uint256 timestamp, MuonFunction func) internal view {
-		require(block.timestamp <= timestamp + getUpnlValidTime(func), "LibMuon: Expired signature");
+		unchecked {
+			// A wrapped age cannot admit a future timestamp: the explicit upper bound must also pass.
+			require(block.timestamp - timestamp <= getUpnlValidTime(func) && timestamp <= block.timestamp, "LibMuon: Expired signature");
+		}
 	}
 
 	/// @notice Longest UPNL signature validity currently reachable, across the global setting and every per-function override.

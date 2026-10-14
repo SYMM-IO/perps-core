@@ -2,7 +2,7 @@ import { expect } from "chai"
 import { ethers } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
-import { loadFixture } from "./helpers/network-helpers.js"
+import { loadFixture, time } from "./helpers/network-helpers.js"
 import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
@@ -88,6 +88,8 @@ export function shouldBehaveLikeSolverFee(): void {
 			.partyBWhiteList([partyBAddress ?? (await hedger.getAddress())])
 			.upnlSig(getDummySingleUpnlAndPriceSig(decimal(1n)))
 			.build()
+		// This payload is simulated at the latest block before it is submitted in the next block.
+		const upnlSig = { ...(await request.upnlSig), timestamp: BigInt(await time.latest()) }
 		const args = [
 			request.partyBWhiteList,
 			request.symbolId,
@@ -101,7 +103,7 @@ export function shouldBehaveLikeSolverFee(): void {
 			request.partyBmm,
 			await request.deadline,
 			await context.accountManager.getAddress(),
-			await request.upnlSig,
+			upnlSig,
 			encodeData(data),
 			[openRateCap, closeRateCap],
 		]
