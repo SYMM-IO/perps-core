@@ -1,11 +1,11 @@
-import { useWorkbench } from './api'
-import { Address, Empty } from './components/Common'
+import { CANCELLABLE, nextStep, useWorkbench, type ShownError } from './api'
+import { Address, chainLabel, Empty, EnvironmentBadge } from './components/Common'
 import { connectWallet, WalletRequest } from './components/Signing'
 import { Upgrade } from './components/Upgrade'
 import { Workspace } from './components/Workspace'
 import { lazyView } from './lib/lazy'
-import { familyName, historyEntries, recordState, short, upgradeParams } from './lib/state'
-import type { ContractNode } from './types'
+import { familyName, historyEntries, inDeployment, planTarget, recordState, short, upgradeParams, type HistoryRow } from './lib/state'
+import type { ActiveTask, ContractNode, Profile, Time } from './types'
 import {
   ActionIcon,
   Alert,
@@ -16,6 +16,7 @@ import {
   Group,
   Loader,
   PasswordInput,
+  Progress,
   Stack,
   Table,
   Text,
@@ -24,7 +25,7 @@ import {
   useMantineColorScheme,
 } from '@mantine/core'
 import { CircleArrowUp, FlaskConical, GitBranch, History as HistoryIcon, Moon, Sun, Wallet, Waypoints } from 'lucide-react'
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 const Fuzz = lazyView(() => import('./fuzz/Fuzz').then((module) => ({ default: module.Fuzz })))
@@ -36,9 +37,13 @@ const PAGES = {
 }
 type Page = keyof typeof PAGES
 
+const clock = (at: Time) => new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+/** A plain left click stays in the app; modified and middle clicks are left to the browser, so a section opens in a new tab. */
+const plainClick = (e: MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
+
 export default function App() {
   const api = useWorkbench()
-  const { engine, system, run, request } = api
+  const { engine, system, run } = api
   const [params, setParams] = useSearchParams()
   const requested = params.get('view') || 'workspace',
     view = (requested in PAGES ? requested : 'workspace') as Page
@@ -47,12 +52,12 @@ export default function App() {
   const main = useRef<HTMLElement>(null),
     first = useRef(true)
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
-  const navigate = (page: string) =>
-    setParams((p) => {
-      const next = new URLSearchParams(p)
-      next.set('view', page)
-      return next
-    })
+  const viewParams = (page: string) => {
+    const next = new URLSearchParams(params)
+    next.set('view', page)
+    return next
+  }
+  const navigate = (page: string) => setParams(viewParams(page))
   useEffect(() => {
     document.title = `${PAGES[view].label} · SYMMIO`
     if (!first.current) {
@@ -62,8 +67,8 @@ export default function App() {
     first.current = false
   }, [view])
   const prepare = (node: ContractNode) => setParams((p) => upgradeParams(p, node))
-  const error = api.error || api.connectionError?.message || engine?.error || system?.error
-  const operation = engine?.busy ? engine.activity : system?.busy ? system.activity : api.operation
+  // Server errors belong to the workbench; the fuzz report keeps only this tab's own errors.
+  const errors = view === 'fuzz' ? api.errors.filter((e) => !e.source) : api.errors
   return (
     <>
       <a href="#main" className="skip-link">
@@ -81,16 +86,20 @@ export default function App() {
           {(Object.keys(PAGES) as Page[]).map((page) => {
             const Icon = PAGES[page].icon
             return (
-              <button
-                type="button"
+              <a
                 key={page}
+                href={`?${viewParams(page)}`}
                 aria-current={view === page ? 'page' : undefined}
                 className={view === page ? 'current' : ''}
-                onClick={() => navigate(page)}
+                onClick={(e) => {
+                  if (!plainClick(e)) return
+                  e.preventDefault()
+                  navigate(page)
+                }}
               >
                 <Icon size={15} aria-hidden />
                 <span>{PAGES[page].label}</span>
-              </button>
+              </a>
             )
           })}
         </nav>
@@ -143,19 +152,11 @@ export default function App() {
             </section>
           ) : (
             <>
-              {error && (
-                <Alert color="red" role="alert" withCloseButton={!!api.error} onClose={() => api.setError('')}>
-                  {error}
-                </Alert>
-              )}
-              {operation && (
-                <Alert variant="light" color="gray" role="status">
-                  <Group gap="sm">
-                    <Loader size={14} />
-                    <Text size="sm">{operation}</Text>
-                  </Group>
-                </Alert>
-              )}
+              <ErrorBanner errors={errors} onDismiss={() => void api.dismiss(errors)} />
+              <StatusRow
+                reserve={view !== 'fuzz'}
+                idle={params.get('adapter') === 'diamond' && view === 'upgrade' ? engine?.activity : system?.activity}
+              />
               <WalletRequest />
               {view === 'fuzz' ? (
                 <Suspense fallback={<Empty title="Loading fuzz report…" />}>
@@ -179,16 +180,163 @@ export default function App() {
   )
 }
 
-/** Saved plans for the selected deployment; plans from other chains are one click away, not mixed in. */
-function History({ onWorkspace }: { onWorkspace: () => void }) {
+/** One banner for every failure on screen, newest first, each with what failed and when. */
+export function ErrorBanner({ errors, onDismiss }: { errors: ShownError[]; onDismiss: () => void }) {
+  if (!errors.length) return null
+  const [latest, ...older] = errors,
+    step = nextStep(latest.code)
+  return (
+    <Alert
+      color="red"
+      role="alert"
+      title={`${latest.operation} failed · ${clock(latest.at)}`}
+      withCloseButton
+      closeButtonLabel="Dismiss"
+      onClose={onDismiss}
+    >
+      <Text size="sm" className="break">
+        {latest.message}
+      </Text>
+      {step && (
+        <Text size="sm" mt={4} fw={600}>
+          {step}
+        </Text>
+      )}
+      {older.map((e) => (
+        <Text size="sm" mt="xs" key={e.id} className="break">
+          <b>
+            {e.operation} failed · {clock(e.at)}
+          </b>{' '}
+          {e.message}
+        </Text>
+      ))}
+    </Alert>
+  )
+}
+
+function Elapsed({ since }: { since: Time }) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const seconds = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000)),
+    pad = (n: number) => String(n).padStart(2, '0'),
+    minutes = Math.floor(seconds / 60)
+  return (
+    <Text size="sm" c="dimmed" className="status-elapsed">
+      {minutes >= 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}` : minutes}:{pad(seconds % 60)} elapsed
+    </Text>
+  )
+}
+
+/**
+ * What the app is doing: the running job's label, phase and progress, with Cancel where the server can abort it.
+ * On workbench views the row keeps its height when idle and shows the last activity, so nothing below it moves.
+ */
+export function StatusRow({ reserve, idle }: { reserve: boolean; idle?: string }) {
+  const { progress, jobs, operation, cancel, engine, system } = useWorkbench()
+  const running = jobs.find((j) => j.state === 'running'),
+    busy = engine?.busy ? engine : system?.busy ? system : undefined
+  const label = progress?.label || busy?.activity || operation
+  if (!label && !reserve) return null
+  const fraction = progress?.total ? Math.min(1, (progress.done || 0) / progress.total) : undefined,
+    since = progress?.startedAt ?? running?.startedAt
+  return (
+    <div className="status-row" role="status" data-busy={label ? true : undefined}>
+      {label ? (
+        <>
+          <Loader size={14} aria-hidden />
+          <Text size="sm" fw={600} className="status-label">
+            {label}
+          </Text>
+          {progress && progress.phaseCount > 1 && (
+            <Text size="sm" c="dimmed">
+              Phase {progress.phaseIndex} of {progress.phaseCount}
+              {progress.phase && progress.phase !== label ? ` · ${progress.phase}` : ''}
+            </Text>
+          )}
+          {!progress && busy?.activity && operation && busy.activity !== operation && (
+            <Text size="sm" c="dimmed" className="status-detail">
+              {busy.activity}
+            </Text>
+          )}
+          {fraction !== undefined && (
+            <>
+              <Progress className="status-bar" value={fraction * 100} size="sm" aria-label={`${label}: ${Math.round(fraction * 100)}%`} />
+              <Text size="sm" c="dimmed">
+                {progress!.done || 0} of {progress!.total}
+              </Text>
+            </>
+          )}
+          {since !== undefined && <Elapsed since={since} />}
+          {running && CANCELLABLE.includes(running.route) && (
+            <Button size="compact-sm" variant="default" ml="auto" onClick={() => void cancel(running.id)}>
+              Cancel
+            </Button>
+          )}
+        </>
+      ) : (
+        idle && (
+          <Text size="sm" c="dimmed" className="status-label">
+            {idle}
+          </Text>
+        )
+      )}
+    </div>
+  )
+}
+
+/** Adds what the status payloads say about the active task to a history row, for servers that do not mark it. */
+function withActive(h: HistoryRow, tasks: (ActiveTask | undefined)[]): HistoryRow {
+  const task = tasks.find((t) => t?.input?.planId === h.id)
+  return task && !h.active ? { ...h, active: true, taskStatus: task.status, waitingFor: task.waitingFor || task.lastError || undefined } : h
+}
+/** The contract a plan targets, by its address-book name where the deployment lists it. */
+function contractName(h: HistoryRow, profiles: Profile[]) {
+  const profile = profiles.find((p) => p.id === h.deployment?.id) || profiles.find((p) => p.chainId === h.chainId)
+  return profile?.nodes.find((n) => n.address?.toLowerCase() === h.target?.toLowerCase())?.name
+}
+
+/**
+ * Saved plans for the selected deployment, newest first. The plan a task is running is pinned above them whatever the filter,
+ * since it is where every recovery starts. Plans for other deployments are one checkbox away.
+ */
+export function History({ onWorkspace }: { onWorkspace: () => void }) {
   const { engine, system, run, request, busy } = useWorkbench()
   const [, setParams] = useSearchParams()
   const [everything, setEverything] = useState(false)
-  const entries = historyEntries(engine?.history, system?.history),
-    chain = system?.profile.chainId,
-    here = entries.filter((h) => !h.chainId || h.chainId === chain),
-    elsewhere = entries.length - here.length,
-    shown = everything ? entries : here
+  const profiles = system?.profiles || [],
+    profile = system?.profile
+  const entries = historyEntries(engine?.history, system?.history).map((h) => withActive(h, [engine?.active, system?.active]))
+  const pinned = entries.filter((h) => h.active),
+    rest = entries.filter((h) => !h.active),
+    here = rest.filter((h) => inDeployment(h, profile)),
+    elsewhere = rest.length - here.length,
+    shown = everything ? rest : here,
+    byChain = !everything && here.some((h) => !h.deployment)
+  const open = (h: HistoryRow) =>
+    run('Opening saved plan', async () => {
+      const record = h.adapter === 'system' ? await request('system/open', { id: h.id }) : await request(`plan?id=${h.id}`)
+      setParams((p) => {
+        const next = new URLSearchParams(p)
+        next.set('view', 'upgrade')
+        next.set('adapter', h.adapter)
+        next.set('plan', h.id)
+        next.set('scope', record.plan.scope || 'core')
+        next.set('target', planTarget(record.plan))
+        next.set('step', record.rehearsal?.status === 'passed' || record.status === 'verified' ? '2' : '1')
+        return next
+      })
+      return record
+    })
+  const name = (h: HistoryRow) => contractName(h, profiles) || (h.scope ? familyName(h.scope) : 'Diamond upgrade')
+  const deployment = (h: HistoryRow) => (
+    <Group gap={6} wrap="nowrap">
+      <Text size="sm">{h.deployment?.name || chainLabel(h.chainId, profiles)}</Text>
+      <EnvironmentBadge environment={h.deployment?.environment} />
+    </Group>
+  )
   return (
     <Stack className="history-view" gap="sm">
       <Group justify="space-between" align="end">
@@ -197,25 +345,60 @@ function History({ onWorkspace }: { onWorkspace: () => void }) {
             Saved upgrades
           </Title>
           <Text size="sm" c="dimmed">
-            {everything ? 'All deployments' : `${system?.profile.name || 'This deployment'} · Chain ${chain}`}
+            {everything
+              ? 'Every deployment'
+              : `Prepared for ${profile?.name || 'this deployment'}${profile?.environment ? ` (${profile.environment})` : ''}${
+                  byChain ? `, and older plans on ${chainLabel(profile?.chainId, profiles)} that do not record a deployment` : ''
+                }`}
           </Text>
         </div>
-        {!!elsewhere && (
+        {(!!elsewhere || everything) && (
           <Checkbox
-            label={`Include ${elsewhere} from other deployments`}
+            label={`Show other deployments${elsewhere ? ` (${elsewhere})` : ''}`}
             checked={everything}
             onChange={(e) => setEverything(e.currentTarget.checked)}
           />
         )}
       </Group>
+      {pinned.map((h) => {
+        const state = recordState(h)
+        return (
+          <section className="panel history-active" key={`${h.adapter}:${h.id}`} aria-label="Plan in progress">
+            <Group justify="space-between" align="center" wrap="wrap">
+              <Stack gap={4}>
+                <Group gap={6} c="dimmed">
+                  <Text size="sm">In progress · {familyName(h.scope)} ·</Text>
+                  {deployment(h)}
+                </Group>
+                <Group gap="sm">
+                  <Title order={2} size="h4">
+                    {name(h)}
+                  </Title>
+                  <Badge variant="light" color={state.color}>
+                    {state.label}
+                  </Badge>
+                </Group>
+                {state.detail && (
+                  <Text size="sm" className="break">
+                    {state.detail}
+                  </Text>
+                )}
+              </Stack>
+              <Button disabled={busy} onClick={() => open(h)}>
+                Open plan
+              </Button>
+            </Group>
+          </section>
+        )
+      })}
       {shown.length ? (
         <div className="table-scroll">
           <Table highlightOnHover verticalSpacing={6}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Contract</Table.Th>
+                <Table.Th>Deployment</Table.Th>
                 <Table.Th>Address</Table.Th>
-                <Table.Th>Chain</Table.Th>
                 <Table.Th>Created</Table.Th>
                 <Table.Th>Status</Table.Th>
                 <Table.Th>
@@ -225,47 +408,27 @@ function History({ onWorkspace }: { onWorkspace: () => void }) {
             </Table.Thead>
             <Table.Tbody>
               {shown.map((h) => {
-                const state = recordState(h.status)
+                const state = recordState(h)
                 return (
                   <Table.Tr key={`${h.adapter}:${h.id}`}>
                     <Table.Td>
                       <Text size="sm" fw={600}>
-                        {h.scope ? familyName(h.scope) : 'Diamond upgrade'}
+                        {name(h)}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {familyName(h.scope)}
                       </Text>
                     </Table.Td>
+                    <Table.Td>{deployment(h)}</Table.Td>
                     <Table.Td>{h.target && <Address value={h.target} />}</Table.Td>
-                    <Table.Td>{h.chainId || '—'}</Table.Td>
-                    <Table.Td>{new Date(h.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</Table.Td>
+                    <Table.Td>{h.at ? new Date(h.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</Table.Td>
                     <Table.Td>
                       <Badge variant="light" color={state.color}>
                         {state.label}
                       </Badge>
                     </Table.Td>
                     <Table.Td className="contracts-action">
-                      <Button
-                        size="compact-sm"
-                        variant="default"
-                        disabled={busy}
-                        onClick={() =>
-                          run('Opening saved plan', async () => {
-                            const record = await request(
-                              h.adapter === 'system' ? 'system/open' : `plan?id=${h.id}`,
-                              h.adapter === 'system' ? { id: h.id } : undefined,
-                            )
-                            setParams((p) => {
-                              const next = new URLSearchParams(p)
-                              next.set('view', 'upgrade')
-                              next.set('adapter', h.adapter)
-                              next.set('plan', h.id)
-                              next.set('scope', record.plan.scope || 'core')
-                              next.set('target', record.plan.snapshot?.target || record.plan.sourceAddress)
-                              next.set('step', record.rehearsal?.status === 'passed' || record.status === 'verified' ? '2' : '1')
-                              return next
-                            })
-                            return record
-                          })
-                        }
-                      >
+                      <Button size="compact-sm" variant="default" disabled={busy} onClick={() => open(h)}>
                         Open plan
                       </Button>
                     </Table.Td>
@@ -275,9 +438,9 @@ function History({ onWorkspace }: { onWorkspace: () => void }) {
             </Table.Tbody>
           </Table>
         </div>
-      ) : (
+      ) : pinned.length ? null : (
         <Empty
-          title={elsewhere ? `No saved upgrades for ${system?.profile.name || 'this deployment'}` : 'No saved upgrades yet'}
+          title={elsewhere ? `No saved upgrades for ${profile?.name || 'this deployment'}` : 'No saved upgrades yet'}
           action={
             elsewhere ? (
               <Button variant="default" onClick={() => setEverything(true)}>

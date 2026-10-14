@@ -115,12 +115,23 @@ export async function createFork(url, snapshot) {
 		await connection.provider.request({ method: "hardhat_setBalance", params: [who, "0x3635c9adc5dea00000"] });
 		return new JsonRpcSigner(provider, who);
 	};
+	let closing;
 	return {
 		provider,
 		impersonate,
-		close: async () => {
-			provider.destroy();
-			await connection.close();
-		},
+		// Safe to call twice: an aborted rehearsal closes the fork early, and its finally block closes it again.
+		close: () =>
+			(closing ||= (async () => {
+				provider.destroy();
+				await connection.close();
+			})()),
 	};
+}
+export const DEFAULT_LEDGER_PATH = "m/44'/60'/0'/0/0";
+/** Opens the Ledger on this machine. Engines take a `signerFactory` with this shape so tests can supply their own signer. */
+export async function ledgerSigner({ provider, path = DEFAULT_LEDGER_PATH }) {
+	const [{ LedgerSigner }, transportModule] = await Promise.all([import("@ethers-ext/signer-ledger"), import("@ledgerhq/hw-transport-node-hid")]);
+	const Transport = transportModule.default?.default || transportModule.default;
+	const transport = await Transport.create();
+	return { signer: new LedgerSigner(transport, provider, path), close: () => transport.close() };
 }

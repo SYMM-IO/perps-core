@@ -44,6 +44,25 @@ if [ -s "$FORMAT_LIST" ]; then
     tr '\n' '\0' < "$FORMAT_LIST" | xargs -0 git add --
 fi
 
+# The UI checks run only when the commit touches the UI. They read the working tree, so they also see unstaged
+# edits under perps-core-ui/; they never stage or change anything.
+# Deletions count too, so this asks git directly rather than reading the ACMR list above.
+if [ -n "$(git diff --cached --name-only -- perps-core-ui/)" ]; then
+    echo "UI files changed. Typechecking and running the UI tests..."
+
+    npm run ui:typecheck
+    if [ $? -ne 0 ]; then
+        echo "UI typecheck failed. Aborting commit."
+        exit 1
+    fi
+
+    npm run test:ui:web
+    if [ $? -ne 0 ]; then
+        echo "UI tests failed. Aborting commit."
+        exit 1
+    fi
+fi
+
 # Check if any .sol files are staged.
 # Keyed off the same staged list used for re-staging above, so ABI regeneration
 # always matches the Solidity actually going into the commit.

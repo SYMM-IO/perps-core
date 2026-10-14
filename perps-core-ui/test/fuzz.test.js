@@ -1,4 +1,4 @@
-import { fuzzPaths } from "../server/fuzz.js";
+import { archiveSummary, createFuzzReports, fuzzPaths } from "../server/fuzz.js";
 import { startServer } from "../server/server.js";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -71,7 +71,9 @@ test("only safe archived JSON reports are listed and served", async t => {
 	]);
 	await fs.symlink(reportFile, path.join(archiveDir, "linked.json"));
 
-	assert.deepEqual(await (await get("/api/fuzz/runs")).json(), { runs: ["run-002.json", "run-001.json", "broken.json"] });
+	assert.deepEqual(await (await get("/api/fuzz/runs")).json(), {
+		runs: [{ name: "run-002.json" }, { name: "run-001.json" }, { name: "broken.json" }],
+	});
 	const archived = await get("/api/fuzz/runs/run-001.json");
 	assert.equal(archived.status, 200);
 	assert.deepEqual(await archived.json(), { run: 1 });
@@ -96,4 +98,91 @@ test("a missing archive directory is an empty collection", async t => {
 	assert.equal(listing.status, 200);
 	assert.deepEqual(await listing.json(), { runs: [] });
 	assert.equal((await get("/api/fuzz/runs/run-001.json")).status, 404);
+});
+
+const report = (status, extra = {}) => ({
+	schemaVersion: 1,
+	run: { status, seed: "seed-1", startedAt: "2026-10-14T10:00:00.000Z", finishedAt: "2026-10-14T10:05:00.000Z", ...extra },
+	latest: { root: { completed: 42, sent: 40, discarded: 2 } },
+});
+
+test("archived runs are listed with their outcome, seed, times, cycles and failures", async t => {
+	const { get, archiveDir } = await fixture(t);
+	await fs.writeFile(path.join(archiveDir, "a.json"), JSON.stringify(report("passed")));
+	await fs.writeFile(path.join(archiveDir, "b.json"), JSON.stringify(report("failed", { failures: [{ boundary: "execution", error: {} }] })));
+	assert.deepEqual(await (await get("/api/fuzz/runs")).json(), {
+		runs: [
+			{
+				name: "b.json",
+				status: "failed",
+				seed: "seed-1",
+				startedAt: "2026-10-14T10:00:00.000Z",
+				finishedAt: "2026-10-14T10:05:00.000Z",
+				cycles: 42,
+				failures: 1,
+			},
+			{
+				name: "a.json",
+				status: "passed",
+				seed: "seed-1",
+				startedAt: "2026-10-14T10:00:00.000Z",
+				finishedAt: "2026-10-14T10:05:00.000Z",
+				cycles: 42,
+			},
+		],
+	});
+});
+
+test("an archive summary is read once and read again only when the file changes", async t => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "perps-core-ui-fuzz-"));
+	t.after(() => fs.rm(root, { recursive: true, force: true }));
+	const archiveDir = path.join(root, "runs");
+	await fs.mkdir(archiveDir);
+	const file = path.join(archiveDir, "run.json");
+	await fs.writeFile(file, JSON.stringify(report("running")));
+	const reports = createFuzzReports({ reportFile: path.join(root, "report.json"), archiveDir });
+	const readFile = t.mock.method(fs, "readFile");
+	assert.equal((await reports.runs())[1].runs[0].status, "running");
+	assert.equal((await reports.runs())[1].runs[0].status, "running");
+	assert.equal(readFile.mock.callCount(), 1);
+	await fs.writeFile(file, JSON.stringify(report("passed", { seed: "a-longer-seed" })));
+	assert.equal((await reports.runs())[1].runs[0].status, "passed");
+	assert.equal(readFile.mock.callCount(), 2);
+});
+
+test("an archive summary leaves out what it cannot read and shortens long text", () => {
+	assert.deepEqual(archiveSummary("x.json", null), { name: "x.json" });
+	assert.deepEqual(archiveSummary("x.json", { run: { status: 7, seed: "s".repeat(100) }, counters: { roots: { completed: 3 } } }), {
+		name: "x.json",
+		seed: `${"s".repeat(63)}…`,
+		cycles: 3,
+	});
+});
+
+test("a report read carries an ETag from the file's mtime and size, and a matching tag is answered with 304", async t => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "perps-core-ui-fuzz-"));
+	t.after(() => fs.rm(root, { recursive: true, force: true }));
+	const reportFile = path.join(root, "report.json"),
+		archiveDir = path.join(root, "runs");
+	const reports = createFuzzReports({ reportFile, archiveDir });
+	assert.deepEqual(await reports.report({ ifNoneMatch: '"anything"' }), [200, { status: "waiting" }]);
+
+	await fs.writeFile(reportFile, JSON.stringify({ run: { status: "running" } }));
+	const [status, body, headers] = await reports.report();
+	assert.equal(status, 200);
+	assert.deepEqual(body, { run: { status: "running" } });
+	assert.match(headers.ETag, /^"[0-9a-z]+-[0-9a-z]+"$/);
+	assert.deepEqual(await reports.report({ ifNoneMatch: headers.ETag }), [304, null, { ETag: headers.ETag }]);
+	assert.equal((await reports.report({ ifNoneMatch: '"stale"' }))[0], 200);
+
+	await fs.writeFile(reportFile, JSON.stringify({ run: { status: "passed" } }));
+	const [changed, changedBody, changedHeaders] = await reports.report({ ifNoneMatch: headers.ETag });
+	assert.equal(changed, 200);
+	assert.deepEqual(changedBody, { run: { status: "passed" } });
+	assert.notEqual(changedHeaders.ETag, headers.ETag);
+
+	await fs.mkdir(archiveDir);
+	await fs.writeFile(path.join(archiveDir, "run-001.json"), JSON.stringify({ run: 1 }));
+	const [, , archived] = await reports.run("run-001.json");
+	assert.equal((await reports.run("run-001.json", { ifNoneMatch: archived.ETag }))[0], 304);
 });

@@ -75,6 +75,11 @@ export function graphModel(snapshot, { mode = "all", focus = "", missingOnly = f
 	// Hiding a group of connections keeps every contract in place, so the map does not reshuffle under the cursor.
 	if (mode === "all" && !focus && !missingOnly && !text) for (const n of nodes.values()) if (!isImplementation(n.kind)) connected.add(n.id);
 	if (focus && nodes.has(focus) && (mode === "implementation" || !isImplementation(nodes.get(focus).kind))) connected.add(focus);
+	// A search finds a contract by name, alias or address even when none of its connections match, so a listed
+	// address that holds nothing can still be found. One contract's neighbourhood keeps to its neighbours.
+	if (text && !focus)
+		for (const n of snapshot.nodes)
+			if ((mode === "implementation" || !isImplementation(n.kind)) && named(n.id).includes(text)) connected.add(n.id);
 	return {
 		nodes: [...nodes.values()].filter(n => connected.has(n.id)),
 		edges,

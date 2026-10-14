@@ -1,5 +1,5 @@
 import { loadBuild, ROOT } from "./build.js";
-import { canonical, codeHash, digest } from "./model.js";
+import { canonical, codeHash, deploymentIdentity, digest } from "./model.js";
 import { COMPONENTS, IMPLEMENTATION_SLOT, serial } from "./system.js";
 import { ContractFactory, Interface, ZeroAddress, ZeroHash, getAddress, getCreateAddress, id } from "ethers";
 
@@ -18,7 +18,16 @@ export function compareRuntime(artifact, code) {
 		}
 	return expected === actual;
 }
-export async function preparePeripheral({ provider, system, nodeId, deployer, authority, baseline, root = ROOT }) {
+export async function preparePeripheral({
+	provider,
+	system,
+	nodeId,
+	deployer,
+	authority,
+	baseline,
+	root = ROOT,
+	buildFor = scope => loadBuild(root, scope),
+}) {
 	const node = system.nodes.find(n => n.id === nodeId);
 	if (!["partyB", "verifier"].includes(node?.kind)) throw new Error("Choose PartyB or the signature verifier");
 	if (node.status !== "observed") throw new Error("Inspect the selected contract successfully first");
@@ -26,7 +35,7 @@ export async function preparePeripheral({ provider, system, nodeId, deployer, au
 	authority = getAddress(authority);
 	if (deployer === ZeroAddress || authority === ZeroAddress) throw new Error("Signer addresses cannot be zero");
 	if ((await provider.getCode(deployer)) !== "0x") throw new Error("The deployment signer must be an EOA (wallet or Ledger)");
-	const build = await loadBuild(root, node.kind),
+	const build = await buildFor(node.kind),
 		artifact = Object.values(build.catalog)[0],
 		iface = new Interface(artifact.abi);
 	const block = system.blockNumber,
@@ -222,6 +231,7 @@ export async function preparePeripheral({ provider, system, nodeId, deployer, au
 		blockNumber: block,
 		blockHash: system.blockHash,
 		profile: system.profile,
+		deployment: deploymentIdentity(system.profile, system.chainId),
 		sourceAddress: node.address,
 		replacement,
 		deployer,
