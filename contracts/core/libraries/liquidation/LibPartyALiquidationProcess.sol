@@ -158,10 +158,13 @@ library LibPartyALiquidationProcess {
 				settlementState.pending = true;
 				liquidationDetail.involvedPartyBCounts += 1;
 				LiquidationSettlementStorage.Layout storage metadata = LiquidationSettlementStorage.layout();
-				metadata.allocations[partyA][quote.partyB] = LiquidationSettlementStorage.Allocation({
-					key: LibAccount.partyBAllocationKey(quote.partyB, partyA),
-					isSet: true
-				});
+				// Liquidations started before this upgrade have no admission-time allocation snapshot.
+				if (!metadata.allocations[partyA][quote.partyB].isSet) {
+					metadata.allocations[partyA][quote.partyB] = LiquidationSettlementStorage.Allocation({
+						key: LibAccount.partyBAllocationKey(quote.partyB, partyA),
+						isSet: true
+					});
+				}
 				delete metadata.overridden[partyA][quote.partyB];
 				if (metadata.netting[partyA].enabled) metadata.netting[partyA].partyBs.push(quote.partyB);
 			}

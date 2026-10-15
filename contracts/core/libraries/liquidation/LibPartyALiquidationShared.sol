@@ -93,8 +93,20 @@ library LibPartyALiquidationShared {
 		}
 		// Existing in-flight liquidations retain their legacy payment plan. New OVERDUE
 		// liquidations net each solver before distributing the PartyA deficit.
-		delete LiquidationSettlementStorage.layout().netting[partyA];
-		LiquidationSettlementStorage.layout().netting[partyA].enabled = detail.liquidationType == LiquidationType.OVERDUE;
+		LiquidationSettlementStorage.Layout storage metadata = LiquidationSettlementStorage.layout();
+		delete metadata.netting[partyA];
+		metadata.netting[partyA].enabled = detail.liquidationType == LiquidationType.OVERDUE;
+
+		// Freeze each counterparty's collateral bucket before a mode switch can affect position processing.
+		// Connections are bounded by maxPartyAConnectionLimit and include every open-position counterparty.
+		address[] storage partyBs = accountLayout.connectedPartyBs[partyA];
+		for (uint256 i = 0; i < partyBs.length; i++) {
+			address partyB = partyBs[i];
+			metadata.allocations[partyA][partyB] = LiquidationSettlementStorage.Allocation({
+				key: LibAccount.partyBAllocationKey(partyB, partyA),
+				isSet: true
+			});
+		}
 	}
 
 	function validateLiquidationPriceSetup(address partyA, bytes memory liquidationId) internal view {

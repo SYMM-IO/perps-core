@@ -322,7 +322,7 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 	})
 
 	describe("Mode switch after isolated liquidation settlement", function () {
-		async function setupIsolatedPositiveSettlement() {
+		async function setupIsolatedPositiveSettlement(options: { startCross?: boolean; processPositions?: boolean } = {}) {
 			const scenarioContext = await loadFixture(initializeFixture)
 
 			const scenarioUser = new User(scenarioContext, scenarioContext.signers.user)
@@ -354,11 +354,69 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 
 			expect(await scenarioContext.viewFacet.isCrossPartyB(scenarioHedgerAddr)).to.equal(false)
 
-			await scenarioUser.liquidateAndSetSymbolPrices([1n], [decimal(5n, 17)], [losingQuote, positiveSettlementQuote])
-			await scenarioUser.liquidatePositions([losingQuote, positiveSettlementQuote])
+			if (options.startCross) {
+				await migratePartyBToCross(scenarioContext, scenarioHedger, [positiveSettlementQuote])
+				const isolatedBalance = await scenarioContext.viewFacet.allocatedBalanceOfPartyB(scenarioHedgerAddr, scenarioUserAddr)
+				await scenarioContext.partyBAccountFacet
+					.connect(scenarioHedger.signer)
+					.deallocateForPartyB(isolatedBalance, scenarioUserAddr, await getDummySingleUpnlSig(0n))
+			}
 
-			return { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr }
+			await scenarioUser.liquidateAndSetSymbolPrices([1n], [decimal(5n, 17)], [losingQuote, positiveSettlementQuote])
+			if (options.processPositions !== false) {
+				await scenarioUser.liquidatePositions([losingQuote, positiveSettlementQuote])
+			}
+
+			return { scenarioContext, scenarioUser, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr, losingQuote, positiveSettlementQuote }
 		}
+
+		for (const modeSetter of ["self", "admin"] as const) {
+			it(`settles the original isolated bucket when ${modeSetter} enables cross mode before position processing`, async function () {
+				const {
+					scenarioContext: c,
+					scenarioUser: a,
+					scenarioUserAddr: aAddress,
+					scenarioHedger: b,
+					scenarioHedgerAddr: bAddress,
+					losingQuote,
+					positiveSettlementQuote,
+				} = await setupIsolatedPositiveSettlement({ processPositions: false })
+				const before = await c.viewFacet.allocatedBalanceOfPartyB(bAddress, aAddress)
+				await c.controlFacet.setCrossPartyBModeActivated(true)
+				if (modeSetter === "self") await c.partyBAccountFacet.connect(b.signer).activateCrossPartyB()
+				else await c.controlFacet.setCrossPartyB(bAddress, true)
+
+				await a.liquidatePositions([losingQuote])
+				await a.liquidatePositions([positiveSettlementQuote])
+				const [state] = await c.viewFacet.getSettlementStates(aAddress, [bAddress])
+				expect(state.actualAmount).to.equal(decimal(50n))
+				await c.partyALiquidationFacet.settlePartyALiquidation(aAddress, [bAddress, c.signers.hedger2.address])
+				expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, aAddress)).to.equal(before + state.cva - state.actualAmount)
+				expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, ZeroAddress)).to.equal(0n)
+				expect(await c.viewFacet.isPartyALiquidated(aAddress)).to.equal(false)
+			})
+		}
+
+		it("settles the original cross bucket when admin disables cross mode before position processing", async function () {
+			const {
+				scenarioContext: c,
+				scenarioUser: a,
+				scenarioUserAddr: aAddress,
+				scenarioHedgerAddr: bAddress,
+				losingQuote,
+				positiveSettlementQuote,
+			} = await setupIsolatedPositiveSettlement({ startCross: true, processPositions: false })
+			const before = await c.viewFacet.allocatedBalanceOfPartyB(bAddress, ZeroAddress)
+			expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, aAddress)).to.equal(0n)
+			await c.controlFacet.setCrossPartyB(bAddress, false)
+			await a.liquidatePositions([positiveSettlementQuote, losingQuote])
+			const [state] = await c.viewFacet.getSettlementStates(aAddress, [bAddress])
+			expect(state.actualAmount).to.equal(decimal(50n))
+			await c.partyALiquidationFacet.settlePartyALiquidation(aAddress, [bAddress, c.signers.hedger2.address])
+			expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, ZeroAddress)).to.equal(before + state.cva - state.actualAmount)
+			expect(await c.viewFacet.allocatedBalanceOfPartyB(bAddress, aAddress)).to.equal(0n)
+			expect(await c.viewFacet.isPartyALiquidated(aAddress)).to.equal(false)
+		})
 
 		it("Should settle when an isolated-created positive settlement later becomes cross-mode", async function () {
 			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
