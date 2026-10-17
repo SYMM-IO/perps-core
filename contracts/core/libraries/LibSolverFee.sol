@@ -38,7 +38,8 @@ library LibSolverFee {
 	/// @dev Must be called BEFORE the close itself executes: a final close can fire hooks (e.g. AccountLayer
 	///      virtual-account cleanup) that deallocate PartyA's entire allocated balance, which would make a
 	///      post-close fee charge revert. The cap basis therefore includes the pending fill, which is not yet
-	///      reflected in quote.closedAmount/avgClosedPrice. Suspended Party A accounts cannot be charged.
+	///      reflected in quote.closedAmount/avgClosedPrice. Suspended Party A accounts may pay close solver
+	///      fees so their positions can still be closed; the approved fee cap and execution checks still apply.
 	/// @param fillAmount The amount about to be closed.
 	/// @param fillPrice The price the fill amount will be closed at.
 	function chargeCloseSolverFees(
@@ -51,7 +52,6 @@ library LibSolverFee {
 
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		require(!AccountStorage.layout().suspendedAddresses[quote.partyA], "SolverFee: Payer suspended");
 		require(quote.closedAmount + fillAmount > 0, "SolverFee: Quote is not closed");
 
 		SolverFeeState storage feeState = quoteLayout.solverFeeStates[quoteId];

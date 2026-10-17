@@ -473,46 +473,49 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect(state.closeFeeCharged).to.equal(0n)
 	})
 
-	it("models the proportional close solver fee in solver-fee-aware close-to-liquidation", async function () {
-		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(100n))
-		await openQuote(quoteId)
-		await requestClose(quoteId)
+	for (const suspended of [false, true]) {
+		it(`models the proportional close solver fee in solver-fee-aware close-to-liquidation${suspended ? " for a suspended PartyA" : ""}`, async function () {
+			const quoteId = await sendQuoteWithSolverFeeCaps(decimal(100n))
+			await openQuote(quoteId)
+			await requestClose(quoteId)
+			if (suspended) await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await user.getAddress())
 
-		const closePrice = decimal(1n)
-		const marketPrice = decimal(2n)
-		const targetAvailable = decimal(5n)
-		const balanceInfo = await user.getBalanceInfo()
-		const upnlPartyA = targetAvailable - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
-		const quote = await context.viewFacetQuote.getQuote(quoteId)
-		const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
-			(context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+			const closePrice = decimal(1n)
+			const marketPrice = decimal(2n)
+			const targetAvailable = decimal(5n)
+			const balanceInfo = await user.getBalanceInfo()
+			const upnlPartyA = targetAvailable - (balanceInfo.allocatedBalances - balanceInfo.lockedCva - balanceInfo.lockedLf)
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+			const fillToLiquidationWithFee = (quoteId: any, closedPrice: any, upnlSig: any, solverFee: any) =>
+				(context.partyBExecutionFacet.connect(hedger.signer) as any)[FILL_CLOSE_TO_LIQUIDATION_WITH_MAX_AND_SOLVER_FEE](
+					quoteId,
+					quote.quantityToClose,
+					closedPrice,
+					upnlSig,
+					...feeArrays(solverFee),
+				)
+			const [legacyMaxCloseAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
+			const [solverAwareMaxCloseAmount, canCloseAll] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(
 				quoteId,
-				quote.quantityToClose,
-				closedPrice,
-				upnlSig,
-				...feeArrays(solverFee),
+				closePrice,
+				marketPrice,
+				upnlPartyA,
+				decimal(1n),
 			)
-		const [legacyMaxCloseAmount] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(quoteId, closePrice, marketPrice, upnlPartyA, 0n)
-		const [solverAwareMaxCloseAmount, canCloseAll] = await context.viewFacetQuote.getMaxCloseAmountToLiquidation(
-			quoteId,
-			closePrice,
-			marketPrice,
-			upnlPartyA,
-			decimal(1n),
-		)
-		const expectedFee = (decimal(1n) * solverAwareMaxCloseAmount) / quote.quantityToClose
+			const expectedFee = (decimal(1n) * solverAwareMaxCloseAmount) / quote.quantityToClose
 
-		expect(canCloseAll).to.equal(false)
-		expect(solverAwareMaxCloseAmount).to.be.lessThan(legacyMaxCloseAmount)
+			expect(canCloseAll).to.equal(false)
+			expect(solverAwareMaxCloseAmount).to.be.lessThan(legacyMaxCloseAmount)
 
-		await expect(fillToLiquidationWithFee(quoteId, closePrice, await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, 0n), decimal(1n)))
-			.to.emit(context.partyBQuoteActionsFacet, "SolverFeeCharged")
-			.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, CLOSE_FEE, expectedFee, TAG)
+			await expect(fillToLiquidationWithFee(quoteId, closePrice, await getDummyPairUpnlAndPriceSig(marketPrice, upnlPartyA, 0n), decimal(1n)))
+				.to.emit(context.partyBQuoteActionsFacet, "SolverFeeCharged")
+				.withArgs(quoteId, await user.getAddress(), await hedger.getAddress(), await hedger.getAddress(), 1n, CLOSE_FEE, expectedFee, TAG)
 
-		const state = await getSolverFeeState(quoteId)
-		expect(state.closeFeeCharged).to.equal(expectedFee)
-		expect(await partyAAvailableForLiquidation(upnlPartyA)).to.be.gte(0n)
-	})
+			const state = await getSolverFeeState(quoteId)
+			expect(state.closeFeeCharged).to.equal(expectedFee)
+			expect(await partyAAvailableForLiquidation(upnlPartyA)).to.be.gte(0n)
+		})
+	}
 
 	it("keeps legacy quote APIs at zero solver fee caps", async function () {
 		const quoteId = await user.sendQuote()
@@ -1283,15 +1286,83 @@ export function shouldBehaveLikeSolverFee(): void {
 		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(expectedFee)
 	})
 
-	it("rejects CLOSE fees for a suspended PartyA before any state changes", async function () {
+	it("charges CLOSE fees and credits the solver when a suspended PartyA closes", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+		await openQuote(quoteId)
+		const partyA = await user.getAddress()
+		const partyB = await hedger.getAddress()
+		await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(partyA)
+		await requestClose(quoteId)
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const allocatedBefore = (await user.getBalanceInfo()).allocatedBalances
+		const receiverBefore = await context.viewFacet.balanceOf(partyB)
+		const fee = decimal(1n)
+		const protocolCloseFee = (quote.quantityToClose * decimal(1n) * quote.closeFee) / 10n ** 36n
+
+		await expect(fillCloseWithFees(quoteId, fee))
+			.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
+			.withArgs(quoteId, partyA, partyB, partyB, 1n, CLOSE_FEE, fee, TAG)
+		expect(await context.viewFacet.balanceOf(partyB)).to.equal(receiverBefore + fee)
+		expect((await user.getBalanceInfo()).allocatedBalances).to.equal(allocatedBefore - fee - protocolCloseFee)
+		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(fee)
+		const finalQuote = await context.viewFacetQuote.getQuote(quoteId)
+		expect(finalQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+		expect(finalQuote.closedAmount).to.equal(quote.quantity)
+		expect(await context.viewFacet.isSuspended(partyA)).to.equal(true)
+		await expect(context.accountFacet.connect(user.signer).withdraw(1n)).to.be.revertedWith("Accessibility: Sender is Suspended")
+	})
+
+	it("enforces cumulative CLOSE fee caps across partial fills for a suspended PartyA", async function () {
 		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
 		await openQuote(quoteId)
 		await requestClose(quoteId)
 		await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await user.getAddress())
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const halfAmount = quote.quantity / 2n
+		const receiverBefore = await context.viewFacet.balanceOf(await hedger.getAddress())
 
-		await expect(fillCloseWithFees(quoteId, decimal(1n))).to.be.revertedWith("SolverFee: Payer suspended")
+		await expect(fillCloseWithFees(quoteId, decimal(1n) + 1n, halfAmount)).to.be.revertedWith("SolverFee: Solver fee rate cap exceeded")
 		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(0n)
 		expect((await context.viewFacetQuote.getQuote(quoteId)).closedAmount).to.equal(0n)
+		expect(await context.viewFacet.balanceOf(await hedger.getAddress())).to.equal(receiverBefore)
+		await fillCloseWithFees(quoteId, decimal(1n), halfAmount)
+		await expect(fillCloseWithFees(quoteId, decimal(1n) + 1n, halfAmount)).to.be.revertedWith("SolverFee: Solver fee rate cap exceeded")
+		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(decimal(1n))
+		expect((await context.viewFacetQuote.getQuote(quoteId)).closedAmount).to.equal(halfAmount)
+		await fillCloseWithFees(quoteId, decimal(1n), halfAmount)
+		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(decimal(2n))
+		expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CLOSED)
+	})
+
+	it("retains fee solvency checks for a suspended PartyA", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+		await openQuote(quoteId)
+		await requestClose(quoteId)
+		await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await user.getAddress())
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const balanceInfo = await user.getBalanceInfo()
+		const fee = decimal(1n)
+		const protocolCloseFee = (quote.quantityToClose * decimal(1n) * quote.closeFee) / 10n ** 36n
+		const boundaryUpnl = fee + protocolCloseFee - balanceInfo.allocatedBalances
+
+		await expect(fillCloseWithFees(quoteId, fee, undefined, decimal(1n), boundaryUpnl - 1n)).to.be.revertedWith(
+			"SolverFee: PartyA will be insolvent after solver fee",
+		)
+		expect((await getSolverFeeState(quoteId)).closeFeeCharged).to.equal(0n)
+		expect((await context.viewFacetQuote.getQuote(quoteId)).closedAmount).to.equal(0n)
+		await fillCloseWithFees(quoteId, fee, undefined, decimal(1n), boundaryUpnl)
+		expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CLOSED)
+	})
+
+	it("still rejects fee-aware opens and new quotes for a suspended PartyA", async function () {
+		const quoteId = await sendQuoteWithSolverFeeCaps(decimal(2n, 16))
+		await hedger.lockQuote(quoteId)
+		await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(await user.getAddress())
+
+		await expect(openQuoteWithFees(quoteId, decimal(1n))).to.be.revertedWith("PartyBFacet: PartyA is suspended")
+		await expect(sendQuoteWithSolverFeeCaps(decimal(2n, 16))).to.be.revertedWith("Accessibility: Sender is Suspended")
+		expect((await getSolverFeeState(quoteId)).openFeeCharged).to.equal(0n)
+		expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.LOCKED)
 	})
 
 	it("acts as a drop-in replacement for the base methods when both fees are zero", async function () {

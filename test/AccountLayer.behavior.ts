@@ -4773,67 +4773,74 @@ export function shouldBehaveLikeAccountLayer(): void {
 				)
 			})
 
-			it("charges a tagged close solver fee before final POSITION virtual-account cleanup", async () => {
-				const quoteRequest = limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build()
-				await preFundVirtualAccount(positionSubAccountAddress, quoteRequest)
-				await context.alCoreFacet
-					.connect(context.signers.user)
-					._call(positionSubAccountAddress, [
-						await createSolverFeeSendQuoteCallData(quoteRequest, { openRateCap: 0n, closeRateCap: decimal(2n, 16) }),
-					])
+			for (const suspended of [false, true]) {
+				it(`charges a tagged close solver fee before final POSITION virtual-account cleanup${suspended ? " for a suspended PartyA" : ""}`, async () => {
+					const quoteRequest = limitQuoteRequestBuilder().partyBWhiteList([context.signers.hedger.address]).build()
+					await preFundVirtualAccount(positionSubAccountAddress, quoteRequest)
+					await context.alCoreFacet
+						.connect(context.signers.user)
+						._call(positionSubAccountAddress, [
+							await createSolverFeeSendQuoteCallData(quoteRequest, { openRateCap: 0n, closeRateCap: decimal(2n, 16) }),
+						])
 
-				const [virtualAccountAddress] = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(positionSubAccountAddress, 0, 10)
-				const [quoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
-				await openPositionForQuote(quoteId)
+					const [virtualAccountAddress] = await context.alViewFacet.getVirtualAccountsAddressesOfSubAccount(positionSubAccountAddress, 0, 10)
+					const [quoteId] = await context.alViewFacet.getVirtualAccountQuoteIds(virtualAccountAddress, 0, 10)
+					await openPositionForQuote(quoteId)
+					if (suspended) await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(virtualAccountAddress)
 
-				const closeRequest = limitCloseRequestBuilder().build()
-				const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
-					quoteId,
-					closeRequest.closePrice,
-					closeRequest.quantityToClose,
-					closeRequest.orderType,
-					await closeRequest.deadline,
-				])
-				await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
-
-				const tag = ethers.encodeBytes32String("al/final-close")
-				const solverFee = decimal(1n)
-				const receiverBalanceBefore = await context.viewFacet.balanceOf(context.signers.hedger.address)
-
-				// The fee rides the final close itself: it is charged before the fill executes, so it
-				// settles before the POSITION virtual-account cleanup deallocates the payer.
-				const fillCloseRequest = limitFillCloseRequestBuilder().build()
-				await expect(
-					context.partyBExecutionFacet
-						.connect(context.signers.hedger)
-						.fillCloseRequest(
-							quoteId,
-							fillCloseRequest.filledAmount,
-							fillCloseRequest.closedPrice,
-							await getDummyPairUpnlAndPriceSig(
-								BigInt(fillCloseRequest.price),
-								BigInt(fillCloseRequest.upnlPartyA),
-								BigInt(fillCloseRequest.upnlPartyB),
-							),
-							[{ amount: solverFee, tag }],
-						),
-				)
-					.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
-					.withArgs(
+					const closeRequest = limitCloseRequestBuilder().build()
+					const requestToCloseCallData = context.partyAFacet.interface.encodeFunctionData("requestToClosePosition", [
 						quoteId,
-						virtualAccountAddress,
-						context.signers.hedger.address,
-						context.signers.hedger.address,
-						quoteRequest.symbolId,
-						1,
-						solverFee,
-						tag,
-					)
-				expect(await context.viewFacet.balanceOf(context.signers.hedger.address)).to.equal(receiverBalanceBefore + solverFee)
+						closeRequest.closePrice,
+						closeRequest.quantityToClose,
+						closeRequest.orderType,
+						await closeRequest.deadline,
+					])
+					await context.alCoreFacet.connect(context.signers.user)._call(virtualAccountAddress, [requestToCloseCallData])
 
-				expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
-				expect((await context.viewFacetQuote.getSolverFeeState(quoteId)).closeFeeCharged).to.equal(solverFee)
-			})
+					const tag = ethers.encodeBytes32String("al/final-close")
+					const solverFee = decimal(1n)
+					const receiverBalanceBefore = await context.viewFacet.balanceOf(context.signers.hedger.address)
+
+					// The fee rides the final close itself: it is charged before the fill executes, so it
+					// settles before the POSITION virtual-account cleanup deallocates the payer.
+					const fillCloseRequest = limitFillCloseRequestBuilder().build()
+					await expect(
+						context.partyBExecutionFacet
+							.connect(context.signers.hedger)
+							.fillCloseRequest(
+								quoteId,
+								fillCloseRequest.filledAmount,
+								fillCloseRequest.closedPrice,
+								await getDummyPairUpnlAndPriceSig(
+									BigInt(fillCloseRequest.price),
+									BigInt(fillCloseRequest.upnlPartyA),
+									BigInt(fillCloseRequest.upnlPartyB),
+								),
+								[{ amount: solverFee, tag }],
+							),
+					)
+						.to.emit(context.partyBExecutionFacet, "SolverFeeCharged")
+						.withArgs(
+							quoteId,
+							virtualAccountAddress,
+							context.signers.hedger.address,
+							context.signers.hedger.address,
+							quoteRequest.symbolId,
+							1,
+							solverFee,
+							tag,
+						)
+					expect(await context.viewFacet.balanceOf(context.signers.hedger.address)).to.equal(receiverBalanceBefore + solverFee)
+
+					expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CLOSED)
+					expect(await context.viewFacet.isSuspended(virtualAccountAddress)).to.equal(suspended)
+					expect(await context.viewFacet.balanceOf(virtualAccountAddress)).to.equal(0n)
+					expect(await context.viewFacet.allocatedBalanceOfPartyA(virtualAccountAddress)).to.equal(0n)
+					expect((await context.alViewFacet.getVirtualAccount(virtualAccountAddress)).isExists).to.be.false
+					expect((await context.viewFacetQuote.getSolverFeeState(quoteId)).closeFeeCharged).to.equal(solverFee)
+				})
+			}
 
 			async function partialClosePositionForQuote(partyA: HardhatEthersSigner, quoteId: bigint, virtualAccount: string, quantityToClose: bigint) {
 				const closeRequest = limitCloseRequestBuilder().quantityToClose(quantityToClose).build()
