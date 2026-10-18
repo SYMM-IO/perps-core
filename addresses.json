@@ -354,21 +354,25 @@
 				],
 				"timelock": [
 					{ "name": "12h Timelock", "address": "0x62d68CAD88fef03a68e461b476CbB3D9681cCf2C" },
-					{ "name": "3d Timelock", "address": "0x92E89Bb3cE2CeA34dF6168010BBEFce2997b014d" }
+					{ "name": "3d Timelock", "address": "0x92E89Bb3cE2CeA34dF6168010BBEFce2997b014d" },
+					{ "name": "NFT Manager Timelock", "address": "0x8CF65060CdA270a3886452A1A1cb656BECEE5bA4" }
 				],
 				"authority": [
 					{ "owner": "PerpsHub", "name": "Instant Rebalancer", "address": "0x6106D70228d8b1802aa6b5ea92366e5be09E634F" },
 					{ "owner": "BMX", "name": "Accounts Admin", "address": "0x189A8F685646F2A1342d1433faB2df076C3d0E0D" },
 					{ "owner": "Based", "name": "Accounts Admin", "address": "0x14d7B2D56Aa226Ff68451D5AF181d8B51c93f018" },
-					{ "owner": "Carbon", "name": "Rebalancer", "address": "0x767e88D36Fd7879c35939E9622C9930A17F61e9D" }
+					{ "owner": "Carbon", "name": "Rebalancer", "address": "0x767e88D36Fd7879c35939E9622C9930A17F61e9D" },
+					{ "name": "NFT Manager Proxy Admin", "address": "0x7a1FF331d0e9A35A4f0b3C9e13E5c77dF514384b" }
 				],
 				"external": [
 					{ "name": "Pauser", "address": "0x4e6B0a4A8e3Dbf5F92369238D0226BF70515F594" },
 					{ "name": "Fees Manager", "address": "0xfFb5d13CE2888f86b0A02ac29B4e07B2f26B34Ac" },
 					{ "name": "Buyback Gateway", "address": "0x9EB845715461832eF9b063e47187dE9312dD6550" },
-					{ "name": "Instant Withdraw", "address": "0xE0650873D8DadB54a6AC7c666BC98ab45f827b6D" }
+					{ "name": "Instant Withdraw", "address": "0xE0650873D8DadB54a6AC7c666BC98ab45f827b6D" },
+					{ "name": "NFT Manager Proxy", "address": "0xC4377A6D7a01B8ffe59cA11F2C69891CAF91A28f" }
 				]
-			}
+			},
+			"notes": ["The NFT Manager proxy, proxy admin and timelock are shared Base infrastructure used by Vibe Arbitrum production and staging."]
 		},
 		{
 			"id": "arbitrum",
@@ -435,7 +439,7 @@
 			"name": "Vibe Arbitrum",
 			"chain": "arbitrum",
 			"environment": "Production",
-			"version": "0.8.6.5",
+			"version": "0.8.6.7",
 			"subgraphs": {
 				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-mainnet-analytics/latest/gn",
 				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-mainnet-events/stage/gn"
@@ -444,7 +448,7 @@
 				"core": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
 				"token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
 				"accountLayer": "0x573310d1D6ec18cB21E1aB949414470D9bf5c24E",
-				"instantLayer": "0x54c27E4bf1125391aA76e1D6497B069d91e179f6",
+				"instantLayer": "0xF4e8b150fDc756ACA578f5A05811c1998C65C829",
 				"gasless": "0x8347953D80037b8d82827246f37EC7442AD188B4",
 				"express": "0x5733105ab392829E5e20FA1eF6E6e07A2c7E073A",
 				"verifier": "0x8c8D7561C33f296C958492FF7114e3212968BA03",
@@ -462,14 +466,17 @@
 					{ "name": "Create2 Factory", "address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975" },
 					{ "name": "Gasless Receiver", "address": "0xf023395d052b5247971aAb80791D05A16E6aCed8" }
 				]
-			}
+			},
+			"notes": [
+				"Uses the shared NFT Manager on Base (chain 8453), listed under the Base deployment. Its proxy, proxy admin and timelock are not Arbitrum contracts."
+			]
 		},
 		{
 			"id": "vibe-arbitrum-stage",
 			"name": "Vibe Arbitrum",
 			"chain": "arbitrum",
 			"environment": "Staging",
-			"version": "0.8.6.3",
+			"version": "0.8.6.7",
 			"subgraphs": {
 				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-analytics/latest/gn",
 				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/arbitrum-vibe-events/latest/gn"
@@ -478,10 +485,10 @@
 				"core": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
 				"token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
 				"accountLayer": "0x5733107211B2801Acd39933a54d482FE303c4907",
-				"instantLayer": "0x38AaBc7A73523Cd47c710FcdEb3b20ae02310180",
+				"instantLayer": "0x89d1e2a9d2429722F756EDFFAD149D7947B672FF",
 				"gasless": "0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca",
 				"express": "0x573310D7b04fF21BB8628C69eE103dDF4922294A",
-				"verifier": "0xe8D2220Fd6D56C3f2fBDB3c7FF14FEAFA7573695",
+				"verifier": "0x9387A25eB1686257c2Ff7c2C53666d152984fDd6",
 				"symbolManager": "0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c",
 				"liquidator": "0xC180F4C7c6c7C6a2247073Ca7bEaEBeb00D1D23F",
 				"partyB": [{ "owner": "Enigma", "address": "0x9be79D4977D86D440F9e1Ea0d468A58104B9b932" }],
@@ -501,7 +508,10 @@
 					{ "name": "Create2 Factory", "address": "0x99B425BC19F99a1B922664c0E4fa8A0870CE9975" },
 					{ "name": "Gasless Receiver", "address": "0xf023395d052b5247971aAb80791D05A16E6aCed8" }
 				]
-			}
+			},
+			"notes": [
+				"Uses the shared NFT Manager on Base (chain 8453), listed under the Base deployment. Its proxy, proxy admin and timelock are not Arbitrum contracts."
+			]
 		},
 		{
 			"id": "polygon",
@@ -527,9 +537,7 @@
 			"environment": "Production",
 			"version": "0.8.5",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_mainnet_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_mainnet_events/latest/gn",
-				"vibe": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/vibe-back-hyperevm-mainnet/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_mainnet_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x57331038c21982116EE9b0906E4a5c5cB52dcE2e",
@@ -560,8 +568,7 @@
 			"environment": "Production",
 			"version": "0.8.5",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_events/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bnb_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x9A9F48888600FC9c05f11E03Eab575EBB2Fc2c8f",
@@ -625,8 +632,7 @@
 			"environment": "Production",
 			"version": "0.8.4",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/sonic_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/sonic_events/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/sonic_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x803de354cbd853D9aE3BC58131A5D538DE7a72E3",
@@ -655,8 +661,7 @@
 			"environment": "Production",
 			"version": "0.8.5",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/mantle_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/mantle_events/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/mantle_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x2Ecc7da3Cc98d341F987C85c3D9FC198570838B5",
@@ -808,8 +813,7 @@
 			"environment": "Production",
 			"version": "0.8.4",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bera_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bera_events/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/bera_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x3d17f073cCb9c3764F105550B0BCF9550477D266",
@@ -907,9 +911,7 @@
 			"environment": "Staging",
 			"version": "0.8.6",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_events/latest/gn",
-				"vibe": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/vibe-back-hyperevm/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/hyperevm_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB",
@@ -1051,8 +1053,7 @@
 			"environment": "Deprecated",
 			"version": "0.8.2",
 			"subgraphs": {
-				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/blast_analytics/latest/gn",
-				"events": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/blast_events/latest/gn"
+				"analytics": "https://api.goldsky.com/api/public/project_cm1hfr4527p0f01u85mz499u8/subgraphs/blast_analytics/latest/gn"
 			},
 			"contracts": {
 				"core": "0x3d17f073cCb9c3764F105550B0BCF9550477D266",
