@@ -50,7 +50,7 @@ test("the repository address book loads, and names the Vibe Arbitrum deployment 
 		{
 			chainId: 42161,
 			chainName: "arbitrum",
-			version: "0.8.6.5",
+			version: "0.8.6.7",
 			core: { id: "core", name: "Symmio", kind: "core", address: CORE },
 			entry: "Vibe Arbitrum",
 		},
