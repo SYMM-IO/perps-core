@@ -23,7 +23,6 @@
 			"singleFinalFullGreenRun": false
 		},
 		"boundedFuzz": {
-			"seed": "sym-1738-integrated-2026-10-19",
 			"rootActions": 38,
 			"cornerFamilies": 19,
 			"skippedCorners": 0,
