@@ -45,10 +45,9 @@ describe("InstantLayer storage slots", function () {
 
 	it("puts each slot in its own storage library", function () {
 		const literals = keccakLiterals()
-		expect(literals.get(INSTANT_LAYER_SLOTS[0])![0]).to.match(/storages\/InstantLayerStorage\.sol$/)
-		expect(literals.get(INSTANT_LAYER_SLOTS[1])![0]).to.match(/storages\/ExecutionStorage\.sol$/)
-		expect(literals.get(INSTANT_LAYER_SLOTS[2])![0]).to.match(/storages\/DelegationStorage\.sol$/)
-		expect(literals.get(INSTANT_LAYER_SLOTS[3])![0]).to.match(/storages\/TemplateStorage\.sol$/)
+		for (const [index, file] of ["InstantLayerStorage.sol", "ExecutionStorage.sol", "DelegationStorage.sol", "TemplateStorage.sol"].entries()) {
+			expect(literals.get(INSTANT_LAYER_SLOTS[index])![0]).to.equal(path.join("contracts", "instantLayer", "storages", file))
+		}
 	})
 })
 

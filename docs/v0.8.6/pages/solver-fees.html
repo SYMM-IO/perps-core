@@ -427,8 +427,8 @@ event BalanceChangePartyA(
 							it.
 						</li>
 						<li>
-							A non-empty fee list must carry only positive amounts; an empty list means no fee. A suspended PartyA cannot be charged a
-							solver fee.
+							A non-empty fee list must carry only positive amounts; an empty list means no fee. Suspended PartyA accounts may pay close
+							solver fees within their approved caps, including on close-to-liquidation. Opening positions remains blocked.
 						</li>
 						<li>Legacy quote APIs store zero solver fee caps, so solver fee charging reverts unless caps were explicitly approved.</li>
 						<li>Solver rate fee charges revert if PartyA allocated balance is lower than the requested fee amount.</li>

@@ -27,7 +27,7 @@ export function roleNames(kind) {
 export function roleHash(kind, name) {
 	return name === "DEFAULT_ADMIN_ROLE" && !diamondKind(kind) ? ZeroHash : id(name);
 }
-export async function inspectRoleConnections({ nodes, profile, read, onProgress = () => {} }) {
+export async function inspectRoleConnections({ nodes, profile, read, onProgress = () => {}, signal }) {
 	const edges = [],
 		seen = new Set();
 	let expectations = [...EXPECTED_ROLES, ...(profile.expectedRoles || []).map(e => [e.holder, e.contract, e.role])];
@@ -75,7 +75,9 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 	// Candidate inventory is never permission evidence until the pinned live read succeeds.
 	for (const r of profile.roleCandidates || []) ensureNode(nodes, r.address, "authority", r.name || "Inventory candidate");
 	const contracts = [...nodes].filter(n => n.status === "observed" && (ROLE_SOURCES[n.kind] || n.roleHistory?.length || n.interfaceAbi));
-	for (const n of contracts) {
+	for (const [index, n] of contracts.entries()) {
+		signal?.throwIfAborted();
+		onProgress(`Reading role catalogues and members · ${n.name}`, index, contracts.length);
 		const selectors = n.diamond ? new Set(n.diamond.facets.flatMap(f => f.selectors)) : null;
 		const supports = signature => !selectors || selectors.has(id(signature).slice(0, 10));
 		const customOrder = diamondKind(n.kind) && supports("hasRole(address,bytes32)");
@@ -191,7 +193,12 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 			}
 	// Each round is a couple of bundled requests when the chain has Multicall3, and plain parallel reads when it does not.
 	for (let offset = 0; offset < jobs.length; offset += 192) {
-		onProgress(`Checking role grants and administrators ${offset + 1}–${Math.min(offset + 192, jobs.length)} of ${jobs.length}`);
+		signal?.throwIfAborted();
+		onProgress(
+			`Checking role grants and administrators ${offset + 1}–${Math.min(offset + 192, jobs.length)} of ${jobs.length}`,
+			offset,
+			jobs.length,
+		);
 		await Promise.all(jobs.slice(offset, offset + 192).map(run => run()));
 	}
 	for (const n of contracts)

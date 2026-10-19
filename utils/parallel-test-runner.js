@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 
+import { parseTestRunnerArguments } from "./test-runner-args.mjs";
 import { execFileSync, spawn } from "child_process";
-import { readdirSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const hardhatBin = path.join(process.cwd(), "node_modules", ".bin", "hardhat");
+const hardhatPackagePath = fileURLToPath(import.meta.resolve("hardhat/package.json"));
+const hardhatPackage = JSON.parse(readFileSync(hardhatPackagePath, "utf8"));
+const hardhatCli = path.resolve(path.dirname(hardhatPackagePath), hardhatPackage.bin.hardhat);
+// Invoke JavaScript directly so Windows does not need to execute a POSIX npm shim.
+// Register tsx before Hardhat/Mocha load test modules with type-only imports.
+const hardhatArgs = ["--import", "tsx", hardhatCli];
 
 // A developer's deployment .env must never change the local test topology. In
 // particular, a production CREATE2 factory, keystore selection, signer, RPC, or
@@ -48,7 +54,8 @@ function isolatedTestEnvironment(extra = {}) {
 	}
 	return {
 		...env,
-		DOTENV_CONFIG_PATH: "/dev/null",
+		DOTENV_CONFIG_PATH: process.platform === "win32" ? "NUL" : "/dev/null",
+		USE_KEYSTORE: "false",
 		DEPLOY_LOG_LEVEL: "silent",
 		...extra,
 	};
@@ -144,13 +151,7 @@ function createProgressBar(percent, width = 30) {
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const args = process.argv.slice(2);
-const jobsRaw = args[0] ?? "8";
-if (!/^\d+$/.test(jobsRaw) || Number(jobsRaw) < 1 || Number(jobsRaw) > 64 || !Number.isSafeInteger(Number(jobsRaw))) {
-	throw new Error(`parallel jobs must be an integer between 1 and 64; received "${jobsRaw}"`);
-}
-const jobs = Number(jobsRaw);
-const extraArgs = args.slice(1);
+const { jobs, extraArgs } = parseTestRunnerArguments(process.argv.slice(2), process.env.PARALLEL_JOBS);
 
 const parallelTestDir = path.join(process.cwd(), "test/parallel");
 // This suite intentionally writes the canonical chain-scoped PartyB verification file.
@@ -195,7 +196,7 @@ function runTest(file) {
 
 		let proc;
 		try {
-			proc = spawn(hardhatBin, ["test", "mocha", "--no-compile", ...extraArgs, "--", file], {
+			proc = spawn(process.execPath, [...hardhatArgs, "test", "mocha", "--no-compile", ...extraArgs, "--", file], {
 				stdio: ["ignore", "pipe", "pipe"],
 				env: isolatedTestEnvironment({ FORCE_COLOR: colorsEnabled ? "1" : "0" }),
 			});
@@ -468,7 +469,7 @@ function printResults(totalDuration) {
 async function compile() {
 	console.log(style("cyan", "  ⟳ Compiling contracts..."));
 	try {
-		execFileSync(hardhatBin, ["compile", "--quiet"], { stdio: "pipe", env: isolatedTestEnvironment() });
+		execFileSync(process.execPath, [...hardhatArgs, "compile", "--quiet"], { stdio: "pipe", env: isolatedTestEnvironment() });
 		execFileSync(process.execPath, ["utils/check-contract-sizes.mjs"], { stdio: "inherit", env: isolatedTestEnvironment() });
 		console.log(style("brightGreen", "  ✓ Compilation complete!"));
 	} catch (e) {

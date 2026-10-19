@@ -1,7 +1,7 @@
 import { contractAbi, nodeAbi, ensureNode } from "./discovery.js";
 import { ZeroAddress } from "ethers";
 
-export async function inspectSetup({ nodes, edges, read, profile = {}, onProgress = () => {} }) {
+export async function inspectSetup({ nodes, edges, read, profile = {}, onProgress = () => {}, signal }) {
 	const core = nodes.find(n => n.id === "core"),
 		al = nodes.find(n => n.id === "accountLayer"),
 		il = nodes.find(n => n.id === "instantLayer");
@@ -27,7 +27,8 @@ export async function inspectSetup({ nodes, edges, read, profile = {}, onProgres
 		}
 	};
 	if (il)
-		for (const n of candidates)
+		for (const n of candidates) {
+			signal?.throwIfAborted();
 			await relation(
 				il,
 				n,
@@ -36,6 +37,7 @@ export async function inspectSetup({ nodes, edges, read, profile = {}, onProgres
 				[n.address],
 				n.id === "core" || n.id === "accountLayer",
 			);
+		}
 	if (core && al) {
 		try {
 			const hook = await read(core.address, "function getAffiliateHook(address) view returns(address)", [ZeroAddress]);
@@ -63,6 +65,7 @@ export async function inspectSetup({ nodes, edges, read, profile = {}, onProgres
 		}
 	}
 	for (const n of candidates) {
+		signal?.throwIfAborted();
 		if (n.kind === "express")
 			await relation(
 				core,
@@ -129,6 +132,7 @@ export async function inspectSetup({ nodes, edges, read, profile = {}, onProgres
 				}
 			}
 		for (const affiliate of candidates.filter(n => n.kind === "affiliate")) {
+			signal?.throwIfAborted();
 			onProgress(`Reading affiliate hooks and selector permissions · ${affiliate.name}`);
 			try {
 				const values = await read(al.address, iface.getFunction("getAffiliateSelectorConfigs").format("full"), [
@@ -248,7 +252,8 @@ export async function inspectSetup({ nodes, edges, read, profile = {}, onProgres
 					});
 	}
 	for (let i = 0; i < jobs.length; i += 32) {
-		onProgress(`Reading setup permissions ${i + 1}–${Math.min(i + 32, jobs.length)} of ${jobs.length}`);
+		signal?.throwIfAborted();
+		onProgress(`Reading setup permissions ${i + 1}–${Math.min(i + 32, jobs.length)} of ${jobs.length}`, i, jobs.length);
 		await Promise.all(jobs.slice(i, i + 32).map(run => run()));
 	}
 	for (const n of candidates) n.state.templateConfiguration?.sort((a, b) => a.id - b.id);
@@ -264,6 +269,7 @@ export async function inspectSetup({ nodes, edges, read, profile = {}, onProgres
 				f.outputs.every(p => /^u?int|^bool$|^string$|^bytes32$/.test(p.type)) &&
 				!f.name.endsWith("_ROLE"),
 		);
+		signal?.throwIfAborted();
 		for (let offset = 0; offset < getters.length; offset += 16)
 			await Promise.all(
 				getters.slice(offset, offset + 16).map(async f => {

@@ -39,6 +39,7 @@ export function Inspector({
   profile,
   changes = [],
   onPrepare,
+  prepareDisabled = false,
   onSelect,
   onLink,
   onPower,
@@ -51,6 +52,8 @@ export function Inspector({
   /** Entries from the change list that concern this contract. */
   changes?: any[]
   onPrepare: (node: ContractNode) => void
+  /** Set while another operation runs, so a plan is not prepared from a snapshot being replaced. */
+  prepareDisabled?: boolean
   onSelect: (id: string) => void
   onLink: (id: string) => void
   /** Lights the map with what this contract can change, or who can change it. */
@@ -161,7 +164,11 @@ export function Inspector({
           </span>
         </UnstyledButton>
       ))}
-      {supported && <Button onClick={() => onPrepare(node)}>Prepare upgrade</Button>}
+      {supported && (
+        <Button disabled={prepareDisabled} onClick={() => onPrepare(node)}>
+          Prepare upgrade
+        </Button>
+      )}
       {/* Remounted per contract, so each one opens on the section that matters for it. */}
       <Accordion
         key={node.id}

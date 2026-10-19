@@ -8,7 +8,9 @@ import {
 	inspectDependencies,
 	inspectRuntimeDependencies,
 	loadVerifiedInterfaces,
+	sourcifyStats,
 } from "./discovery.js";
+import { errorMessage } from "./errors.js";
 import { codeHash, digest, canonical } from "./model.js";
 import { inspectRoleConnections } from "./roles.js";
 import { inspectSetup } from "./setup.js";
@@ -108,6 +110,7 @@ export function validateProfile(profile) {
 		id: profile.id || "custom",
 		name: String(profile.name || "Deployment"),
 		chainId: profile.chainId,
+		...(profile.chainName ? { chainName: String(profile.chainName).slice(0, 64) } : {}),
 		version: profile.version,
 		nodes,
 		links: (profile.links || []).filter(link => {
@@ -142,13 +145,71 @@ const getters = {
 	liquidator: [["core", "symmioAddress"]],
 	symbolManager: [["core", "symmioAddress"]],
 };
-export async function inspectSystem(source, rawProfile, onProgress = () => {}) {
+// The inspection's phases, in the order they run. Progress names the phase and how far into it the read is.
+export const INSPECTION_PHASES = [
+	["contracts", "Contracts"],
+	["interfaces", "Verified interfaces"],
+	["holders", "Role holders"],
+	["dependencies", "Setup dependencies"],
+	["setup", "Setup permissions"],
+	["libraries", "Linked libraries"],
+	["roles", "Role grants"],
+];
+let phaseLog = () => {};
+/** Where each finished phase is reported, one line each: the server sends it to its terminal, tests leave it quiet. */
+export function logInspectionPhases(write) {
+	phaseLog = typeof write === "function" ? write : () => {};
+}
+const seconds = ms => (ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`);
+/**
+ * Reads a deployment at one pinned block. `onProgress` receives `{ label, phase, phaseIndex, phaseCount, done, total }`
+ * (a function passed in place of the options receives the label alone), and `signal` stops the read between batches.
+ */
+export async function inspectSystem(source, rawProfile, options = {}) {
+	const legacy = typeof options === "function";
+	const { signal, onProgress: report = () => {}, log = phaseLog } = legacy ? { onProgress: options } : options;
 	const profile = validateProfile(rawProfile),
 		network = await source.getNetwork();
 	if (Number(network.chainId) !== profile.chainId) throw new Error(`RPC chain ${network.chainId} differs from profile chain ${profile.chainId}`);
+	signal?.throwIfAborted();
 	// Reads issued together are bundled into one request each, all answered at the pinned block.
 	const provider = batchedProvider(source);
 	const block = await provider.getBlock("latest");
+	const began = Date.now();
+	let phaseIndex = 0,
+		phaseTitle = "";
+	// Every phase reports through this; `done` and `total` are given where the phase counts its work.
+	const onProgress = (label, done = null, total = null) =>
+		report(legacy ? label : { label, phase: phaseTitle, phaseIndex, phaseCount: INSPECTION_PHASES.length, done, total });
+	const phase = async (key, run) => {
+		signal?.throwIfAborted();
+		phaseIndex = INSPECTION_PHASES.findIndex(p => p[0] === key) + 1;
+		phaseTitle = INSPECTION_PHASES[phaseIndex - 1][1];
+		const start = Date.now(),
+			reads = { ...provider.readStats, ...provider.requestStats },
+			lookups = { ...sourcifyStats };
+		onProgress(phaseTitle);
+		try {
+			return await run();
+		} finally {
+			const now = { ...provider.readStats, ...provider.requestStats },
+				requests = now.requests + now.other - reads.requests - reads.other,
+				retries = now.retries - reads.retries + sourcifyStats.retries - lookups.retries,
+				failed = now.failed - reads.failed,
+				fetched = sourcifyStats.lookups - lookups.lookups;
+			log(
+				[
+					`Inspect ${profile.id} · ${phaseIndex}/${INSPECTION_PHASES.length} ${phaseTitle}`,
+					seconds(Date.now() - start),
+					`${requests} RPC request${requests === 1 ? "" : "s"}`,
+					`${retries} ${retries === 1 ? "retry" : "retries"}`,
+					...(failed ? [`${failed} failed`] : []),
+					...(fetched ? [`${fetched} Sourcify lookup${fetched === 1 ? "" : "s"}`] : []),
+					...(signal?.aborted ? ["cancelled"] : []),
+				].join(" · "),
+			);
+		}
+	};
 	const at = block.number,
 		edges = [],
 		nodes = [],
@@ -279,102 +340,107 @@ export async function inspectSystem(source, rawProfile, onProgress = () => {}) {
 			}
 		} catch (error) {
 			n.status = "unavailable";
-			n.errors.push(
-				String(error.shortMessage || error.message)
-					.replace(/https?:\/\/\S+/g, "<rpc>")
-					.slice(0, 200),
-			);
+			n.errors.push(errorMessage(error, 200));
 		}
 		nodes.push(n);
 	};
-	for (let start = 0; start < profile.nodes.length; start += 4) {
-		onProgress(`Inspecting contracts ${start + 1}–${Math.min(start + 4, profile.nodes.length)} of ${profile.nodes.length}`);
-		await Promise.all(profile.nodes.slice(start, start + 4).map(scanNode));
-	}
-	for (let i = 0; i < discovered.length && i < 40; i++)
-		if (!nodes.some(n => n.address.toLowerCase() === discovered[i].address.toLowerCase())) await scanNode(discovered[i]);
-	nodes.sort((a, b) => profile.nodes.findIndex(n => n.id === a.id) - profile.nodes.findIndex(n => n.id === b.id));
+	await phase("contracts", async () => {
+		for (let start = 0; start < profile.nodes.length; start += 4) {
+			signal?.throwIfAborted();
+			onProgress(
+				`Inspecting contracts ${start + 1}–${Math.min(start + 4, profile.nodes.length)} of ${profile.nodes.length}`,
+				start,
+				profile.nodes.length,
+			);
+			await Promise.all(profile.nodes.slice(start, start + 4).map(scanNode));
+		}
+		for (let i = 0; i < discovered.length && i < 40; i++) {
+			signal?.throwIfAborted();
+			if (!nodes.some(n => n.address.toLowerCase() === discovered[i].address.toLowerCase())) await scanNode(discovered[i]);
+		}
+		nodes.sort((a, b) => profile.nodes.findIndex(n => n.id === a.id) - profile.nodes.findIndex(n => n.id === b.id));
 
-	const relation = async (from, to, label, signature, args) => {
-		if (!byId[from] || !byId[to]) return;
-		try {
-			const value = await readCall(provider, byId[from].address, signature, args, at);
-			edges.push({ from, to, label, kind: "membership", status: value ? "verified" : "missing", actual: value, expected: true });
-		} catch {
-			edges.push({ from, to, label, kind: "membership", status: "unknown", actual: null, expected: true });
-		}
-	};
-	if (byId.accountLayer)
-		await relation("accountLayer", "core", "Core allowlist", "function isWhitelistedSymmioCore(address) view returns(bool)", [byId.core.address]);
-	for (const p of profile.nodes.filter(n => n.kind === "partyB")) {
-		await relation("core", p.id, "Registered solver", "function isPartyB(address) view returns(bool)", [p.address]);
-		await relation("instantLayer", p.id, "PartyB enrollment", "function registeredPartyBs(address) view returns(bool)", [p.address]);
-	}
-	const authorities = new Map();
-	for (const n of [...nodes]) {
-		const members = n.authority ? [n.authority.address] : n.state.roles?.DEFAULT_ADMIN_ROLE || [];
-		for (const owner of members) {
-			if (!authorities.has(owner)) {
-				const existing = nodes.find(peer => peer.address.toLowerCase() === owner.toLowerCase());
-				if (existing) {
-					authorities.set(owner, existing);
-				} else {
-					const code = await provider.getCode(owner, at);
-					const a = {
-						id: authorities.size === 0 ? "governance" : `governance-${authorities.size}`,
-						name: n.authority?.kind === "safe" ? "Governance Safe" : "Admin authority",
-						kind: "authority",
-						address: owner,
-						status: "observed",
-						strategy: "Authorizes upgrades",
-						state: { ...(n.authority?.threshold ? { threshold: n.authority.threshold, owners: n.authority.owners } : {}) },
-						codeHash: codeHash(code),
-						codeSize: (code.length - 2) / 2,
-						errors: [],
-					};
-					authorities.set(owner, a);
-					nodes.push(a);
-				}
+		const relation = async (from, to, label, signature, args) => {
+			if (!byId[from] || !byId[to]) return;
+			try {
+				const value = await readCall(provider, byId[from].address, signature, args, at);
+				edges.push({ from, to, label, kind: "membership", status: value ? "verified" : "missing", actual: value, expected: true });
+			} catch {
+				edges.push({ from, to, label, kind: "membership", status: "unknown", actual: null, expected: true });
 			}
-			if (n.authority)
-				edges.push({
-					kind: "ownership",
-					from: authorities.get(owner).id,
-					to: n.id,
-					label: n.authority ? "Diamond owner" : "DEFAULT_ADMIN_ROLE",
-					actual: owner,
-					status: "verified",
-				});
+		};
+		if (byId.accountLayer)
+			await relation("accountLayer", "core", "Core allowlist", "function isWhitelistedSymmioCore(address) view returns(bool)", [
+				byId.core.address,
+			]);
+		for (const p of profile.nodes.filter(n => n.kind === "partyB")) {
+			await relation("core", p.id, "Registered solver", "function isPartyB(address) view returns(bool)", [p.address]);
+			await relation("instantLayer", p.id, "PartyB enrollment", "function registeredPartyBs(address) view returns(bool)", [p.address]);
 		}
-	}
+		const authorities = new Map();
+		for (const n of [...nodes]) {
+			signal?.throwIfAborted();
+			const members = n.authority ? [n.authority.address] : n.state.roles?.DEFAULT_ADMIN_ROLE || [];
+			for (const owner of members) {
+				if (!authorities.has(owner)) {
+					const existing = nodes.find(peer => peer.address.toLowerCase() === owner.toLowerCase());
+					if (existing) {
+						authorities.set(owner, existing);
+					} else {
+						const code = await provider.getCode(owner, at);
+						const a = {
+							id: authorities.size === 0 ? "governance" : `governance-${authorities.size}`,
+							name: n.authority?.kind === "safe" ? "Governance Safe" : "Admin authority",
+							kind: "authority",
+							address: owner,
+							status: "observed",
+							strategy: "Authorizes upgrades",
+							state: { ...(n.authority?.threshold ? { threshold: n.authority.threshold, owners: n.authority.owners } : {}) },
+							codeHash: codeHash(code),
+							codeSize: (code.length - 2) / 2,
+							errors: [],
+						};
+						authorities.set(owner, a);
+						nodes.push(a);
+					}
+				}
+				if (n.authority)
+					edges.push({
+						kind: "ownership",
+						from: authorities.get(owner).id,
+						to: n.id,
+						label: n.authority ? "Diamond owner" : "DEFAULT_ADMIN_ROLE",
+						actual: owner,
+						status: "verified",
+					});
+			}
+		}
+	});
 	const read = (target, signature, args) => readCall(provider, target, signature, args, at);
-	await loadVerifiedInterfaces(nodes, profile.chainId, onProgress);
+	await phase("interfaces", () => loadVerifiedInterfaces(nodes, profile.chainId, onProgress, { signal }));
 	// An events subgraph knows every role holder; the RPC's own event scan is the fallback, and public
 	// endpoints often refuse it. Either way the grants themselves are read from the chain below.
-	let roleHistory = null,
-		subgraphError;
-	try {
-		roleHistory = await discoverRoleHistoryFromSubgraph({ nodes, links: profile.links, blockNumber: at, onProgress });
-	} catch (error) {
-		subgraphError = String(error.message).slice(0, 300);
-	}
-	if (!roleHistory)
-		roleHistory = {
-			...(await discoverRoleHistory(provider, nodes, at, onProgress)),
+	const roleHistory = await phase("holders", async () => {
+		let history = null,
+			subgraphError;
+		try {
+			history = await discoverRoleHistoryFromSubgraph({ nodes, links: profile.links, blockNumber: at, onProgress });
+		} catch (error) {
+			subgraphError = errorMessage(error, 300);
+		}
+		signal?.throwIfAborted();
+		if (history) return history;
+		return {
+			...(await discoverRoleHistory(provider, nodes, at, onProgress, undefined, { signal })),
 			source: "logs",
 			...(subgraphError ? { subgraphError } : {}),
 		};
-	await inspectDependencies({ nodes, edges, read, onProgress });
-	await inspectSetup({ nodes, edges, read, profile, onProgress });
-	await inspectRuntimeDependencies({ nodes, edges, provider, blockNumber: at, onProgress });
-	edges.push(
-		...(await inspectRoleConnections({
-			nodes,
-			profile,
-			onProgress,
-			read: (target, signature, args) => readCall(provider, target, signature, args, at),
-		})),
-	);
+	});
+	await phase("dependencies", () => inspectDependencies({ nodes, edges, read, onProgress, signal }));
+	await phase("setup", () => inspectSetup({ nodes, edges, read, profile, onProgress, signal }));
+	await phase("libraries", () => inspectRuntimeDependencies({ nodes, edges, provider, blockNumber: at, onProgress, signal }));
+	edges.push(...(await phase("roles", () => inspectRoleConnections({ nodes, profile, read, onProgress, signal }))));
+	log(`Inspect ${profile.id} · finished in ${seconds(Date.now() - began)} · ${nodes.length} addresses at block ${at}`);
 	for (const e of edges)
 		for (const key of ["from", "to"])
 			if (e[key].startsWith("address:")) {

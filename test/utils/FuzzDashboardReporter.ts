@@ -154,6 +154,7 @@ const SCHEMA_VERSION = 1
 const ATOMIC_WRITE_ATTEMPTS = 3
 
 const ACTION_PHASES: readonly FuzzActionPhase[] = ["queued", "started", "succeeded", "failed", "timed_out", "settled_after_timeout"]
+const ERROR_OWN_KEYS = new Set(["name", "message", "stack", "cause", "errors"])
 
 function emptyQuoteInventory(): FuzzQuoteInventory {
 	return {
@@ -305,9 +306,15 @@ function normalizeValue(value: unknown, seen = new WeakSet<object>(), depth = 0)
 				return undefined
 			}
 		})()
+		// Own fields such as FuzzActionError's actionSequence and actionTitle say where the failure happened.
+		const fields: Record<string, unknown> = {}
+		for (const [key, item] of Object.entries(value)) {
+			if (!ERROR_OWN_KEYS.has(key)) fields[key] = normalizeValue(item, seen, depth + 1)
+		}
 		return {
 			name: truncateText(value.name, 128),
 			message: truncateText(value.message),
+			...fields,
 			...(value.stack === undefined ? {} : { stack: truncateText(value.stack, 4_096) }),
 			...(cause === undefined ? {} : { cause: normalizeValue(cause, seen, depth + 1) }),
 			...(aggregateErrors === undefined ? {} : { errors: normalizeValue(aggregateErrors, seen, depth + 1) }),
@@ -383,7 +390,7 @@ class JsonFuzzDashboardRecorder implements FuzzDashboardRecorder {
 	private setup?: FuzzSetupInfo
 	private stopSignal?: FuzzStopSignal
 	private finalResult?: FuzzRunResult
-	private finalFailures?: readonly FuzzFailure[]
+	private finalFailures?: readonly (FuzzFailure & { root: number })[]
 	private traceHash?: string
 	private replay?: string
 	private latestQueue?: FuzzQueueSnapshot
@@ -538,7 +545,8 @@ class JsonFuzzDashboardRecorder implements FuzzDashboardRecorder {
 			this.finishedAt = Date.now()
 			this.stopSignal = final.signal ?? this.stopSignal
 			this.finalResult = final.result === undefined ? undefined : { ...final.result, queue: { ...final.result.queue } }
-			this.finalFailures = final.failures === undefined ? undefined : [...final.failures]
+			// The run stops within the cycle that failed, so `root` is the cycles completed before it, as in the milestones.
+			this.finalFailures = final.failures?.map(failure => ({ ...failure, root: this.roots.completed }))
 			this.traceHash = truncateText(final.traceHash, 256)
 			this.replay = truncateText(final.replay, 8_192)
 			this.projection = copyProjection(final.projection)
@@ -818,6 +826,11 @@ class JsonFuzzDashboardRecorder implements FuzzDashboardRecorder {
 			milestones: {
 				quoteStates: { ...this.quoteStateMilestones },
 				corners: { ...this.cornerMilestones },
+			},
+			// The configured targets, so a reader does not need its own copy of the runner's catalogues.
+			targets: {
+				quoteStates: [...FUZZ_QUOTE_STATUS_NAMES],
+				cornerOperations: [...FUZZ_CORNER_OPERATIONS],
 			},
 			timeline: this.timeline.map(checkpoint => ({
 				...checkpoint,

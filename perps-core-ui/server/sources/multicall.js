@@ -5,6 +5,8 @@ export const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const multicall = new Interface([
 	"function aggregate3((address target,bool allowFailure,bytes callData)[] calls) payable returns ((bool success,bytes returnData)[] returnData)",
 ]);
+// Provider methods that each cost one RPC request; counted so a slow inspection can say where its time went.
+const COUNTED = new Set(["getCode", "getStorage", "getLogs", "getBlock", "getBlockNumber", "getBalance", "getTransactionCount", "getTransaction"]);
 const tagKey = tag => (typeof tag === "bigint" || typeof tag === "number" ? `#${tag}` : String(tag ?? "latest"));
 function reverted(call, data) {
 	const error = new Error("execution reverted");
@@ -26,6 +28,8 @@ function reverted(call, data) {
 export function batchedProvider(provider, { address = MULTICALL3, maxCalls = 96, windowMs = 4 } = {}) {
 	const queues = new Map();
 	const stats = { reads: 0, requests: 0, bundles: 0, largest: 0 };
+	// The other requests (code, storage, logs, blocks), bundles re-sent call by call, and requests the RPC refused.
+	const traffic = { other: 0, retries: 0, failed: 0 };
 	let available;
 	const direct = tx => {
 		stats.requests++;
@@ -33,6 +37,7 @@ export function batchedProvider(provider, { address = MULTICALL3, maxCalls = 96,
 	};
 	async function supported(blockTag) {
 		// Asked once: a chain either has the contract or it does not.
+		if (available === undefined) traffic.other++;
 		available ??= provider.getCode(address, blockTag).then(
 			code => code !== "0x",
 			() => false,
@@ -59,6 +64,7 @@ export function batchedProvider(provider, { address = MULTICALL3, maxCalls = 96,
 			if (results.length !== calls.length) throw new Error("Multicall answered a different number of reads");
 		} catch {
 			// One oversized or malformed bundle must not fail the reads inside it.
+			traffic.retries++;
 			return each();
 		}
 		stats.bundles++;
@@ -85,8 +91,16 @@ export function batchedProvider(provider, { address = MULTICALL3, maxCalls = 96,
 		get(target, property) {
 			if (property === "call") return call;
 			if (property === "readStats") return stats;
+			if (property === "requestStats") return traffic;
 			const value = Reflect.get(target, property, target);
-			return typeof value === "function" ? value.bind(target) : value;
+			if (typeof value !== "function") return value;
+			if (!COUNTED.has(property)) return value.bind(target);
+			return (...args) => {
+				traffic.other++;
+				const answer = value.apply(target, args);
+				answer?.catch?.(() => traffic.failed++);
+				return answer;
+			};
 		},
 	});
 	return wrapped;

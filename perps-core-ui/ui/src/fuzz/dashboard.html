@@ -14,7 +14,8 @@
     <button id="follow-button" class="button button--quiet" type="button" aria-pressed="true">
       <span id="follow-button-label">Pause updates</span>
     </button>
-    <button id="export-report" class="button button--quiet" type="button" disabled>Export JSON</button>
+    <button id="export-report" class="button button--quiet" type="button" aria-describedby="export-hint" disabled>Export JSON</button>
+    <span id="export-hint" class="control-hint">No report to export yet</span>
   </div>
 </header>
 
@@ -36,7 +37,11 @@
   <section id="waiting-state" class="empty-state" aria-labelledby="waiting-title">
     <p class="section-label">LOCAL REPORT</p>
     <h1 id="waiting-title">Waiting for a run report</h1>
-    <p>Start one with <code>npm run test:fuzz:dashboard</code>. This page fills in as soon as the run reports.</p>
+    <p>Start one with this command. This page fills in as soon as the run reports.</p>
+    <div class="command-copy">
+      <code id="start-command">npm run test:fuzz:dashboard</code>
+      <button id="copy-start-command" class="button button--quiet" type="button">Copy</button>
+    </div>
   </section>
 
   <div id="error-banner" class="error-banner" role="alert" hidden>
@@ -48,6 +53,7 @@
   </div>
 
   <div id="dashboard" class="dashboard" hidden>
+    <p id="schema-notice" class="schema-notice" role="status" hidden></p>
     <section id="overview" class="run-overview anchor-target" aria-labelledby="run-title">
       <div class="run-hero">
         <div class="run-hero__identity">
@@ -57,79 +63,75 @@
           </div>
           <h1 id="run-title">Protocol simulation</h1>
           <p id="run-subtitle" class="run-subtitle">Waiting for the first simulation cycle.</p>
-          <button id="hero-replay-button" type="button" hidden disabled>Copy deterministic replay</button>
         </div>
-
-        <dl class="run-facts" hidden>
-          <div>
-            <dt>Randomized actors</dt>
-            <dd id="actors-value">—</dd>
-          </div>
-          <div>
-            <dt>Environment</dt>
-            <dd id="environment-value">Local Hardhat</dd>
-          </div>
-          <div>
-            <dt>Duration</dt>
-            <dd id="elapsed-value">—</dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd id="freshness-value">—</dd>
-          </div>
-        </dl>
       </div>
 
-      <article class="simulation-story" aria-labelledby="story-title">
-        <header class="simulation-story__header">
-          <div>
-            <p class="section-label">HOW ONE CYCLE WORKS</p>
-            <h2 id="story-title">One simulation cycle</h2>
-          </div>
-          <button id="story-replay" class="button button--quiet" type="button">Replay</button>
+      <section id="problems" class="problems" aria-labelledby="problems-title" hidden>
+        <header class="problems__header">
+          <h2 id="problems-title">Problems</h2>
+          <span id="problems-count" class="problems__count"></span>
         </header>
-        <p id="story-definition" class="sr-only">
-          One simulation cycle chooses a user and hedger for a new quote attempt, waits for the model’s follow-up work, then may run a due high-risk
-          check and revisit an available position before it is counted.
-        </p>
-        <div id="story-track" class="story-track" aria-label="Four stages in one simulation cycle">
-          <div class="story-route" aria-hidden="true"></div>
-          <div id="story-token" class="story-token" aria-hidden="true"><span>CYCLE</span></div>
-          <article class="story-step" data-story-step="0">
-            <p class="story-step__index">01</p>
-            <h3>Actors</h3>
-            <div id="story-actors" class="story-actors" aria-label="Simulated actors"></div>
-            <p id="story-actor-value" class="story-step__value">—</p>
-          </article>
-          <article class="story-step" data-story-step="1">
-            <p class="story-step__index">02</p>
-            <h3>Quote attempt</h3>
-            <p id="story-cycle-value" class="story-step__value">—</p>
-          </article>
-          <article class="story-step" data-story-step="2">
-            <p class="story-step__index">03</p>
-            <h3>Reactions</h3>
-            <p id="story-job-value" class="story-step__value">—</p>
-          </article>
-          <article class="story-step" data-story-step="3">
-            <p class="story-step__index">04</p>
-            <h3>Due checks</h3>
-            <p id="story-risk-value" class="story-step__value">—</p>
-          </article>
-        </div>
-        <div class="simulation-story__footer">
-          <p id="story-stage-copy">Choose a simulated user and hedger.</p>
-          <p id="story-run-note" class="sr-only">
-            Queue jobs are runner work, not transaction counts. The animation does not invent unreported live phases.
+        <ol id="problems-list" class="problems__list"></ol>
+        <div class="problems__replay">
+          <p class="problems__seed">
+            <span>Seed</span>
+            <code id="problems-seed">—</code>
           </p>
+          <button id="problems-copy" class="button button--primary" type="button" disabled>Copy replay</button>
+          <p id="problems-replay-note" class="problems__note" hidden></p>
         </div>
-      </article>
+      </section>
 
       <div class="snapshot">
         <p id="health-note" class="sr-only">Configured run targets, not exhaustive protocol coverage</p>
         <div id="kpi-strip" class="kpi-strip"></div>
         <p id="summary-limit-note" class="summary-limit-note">These are configured run targets, not exhaustive protocol coverage.</p>
       </div>
+
+      <details id="story" class="simulation-story">
+        <summary>How a cycle works</summary>
+        <div class="simulation-story__body">
+          <div class="simulation-story__intro">
+            <p>
+              One simulation cycle chooses a user and hedger for a new quote attempt, waits for the model’s follow-up work, then may run a due
+              high-risk check and revisit an available position before it is counted.
+            </p>
+            <button id="story-replay" class="button button--quiet" type="button">Replay</button>
+          </div>
+          <div id="story-track" class="story-track" aria-label="Four stages in one simulation cycle">
+            <div class="story-route" aria-hidden="true"></div>
+            <div id="story-token" class="story-token" aria-hidden="true"><span>CYCLE</span></div>
+            <article class="story-step" data-story-step="0">
+              <p class="story-step__index">01</p>
+              <h3>Actors</h3>
+              <div id="story-actors" class="story-actors" aria-label="Simulated actors"></div>
+              <p class="story-step__value">1 quote pair</p>
+            </article>
+            <article class="story-step" data-story-step="1">
+              <p class="story-step__index">02</p>
+              <h3>Quote attempt</h3>
+              <p class="story-step__value">1 quote</p>
+            </article>
+            <article class="story-step" data-story-step="2">
+              <p class="story-step__index">03</p>
+              <h3>Reactions</h3>
+              <p class="story-step__value">settle</p>
+            </article>
+            <article class="story-step" data-story-step="3">
+              <p class="story-step__index">04</p>
+              <h3>Due checks</h3>
+              <p class="story-step__value">dedicated actors</p>
+            </article>
+          </div>
+          <div class="simulation-story__footer">
+            <p id="story-stage-copy">Choose a simulated user and hedger.</p>
+            <p class="simulation-story__note">
+              Queue jobs are runner work, not transaction counts. Scheduled high-risk workflows may use dedicated actors and quotes. The report
+              exposes completed cycles, not live internal phases.
+            </p>
+          </div>
+        </div>
+      </details>
     </section>
 
     <section id="quotes" class="report-section anchor-target" aria-labelledby="quotes-title">
@@ -145,12 +147,12 @@
       <p id="outcome-note" class="section-intro">Open positions in a stopped continuous simulation are a final snapshot, not automatic failures.</p>
 
       <details class="quote-breakdown">
-        <summary>All 11 states &amp; modes</summary>
+        <summary id="quote-breakdown-label">All quote states &amp; modes</summary>
         <div class="quote-grid">
           <article class="panel panel--lifecycle">
             <header class="panel__header">
               <h3>All quote states</h3>
-              <p id="lifecycle-summary" class="panel-stat">0 / 11 observed</p>
+              <p id="lifecycle-summary" class="panel-stat">—</p>
             </header>
             <div class="inventory-columns" aria-hidden="true">
               <span>State</span>
@@ -240,7 +242,7 @@
             </div>
             <span id="coverage-status" class="status-badge sr-only">ANALYZING</span>
           </header>
-          <p id="coverage-summary" class="sr-only">Waiting for enough evidence to assess this run.</p>
+          <p id="coverage-summary" class="coverage-summary">Waiting for enough evidence to assess this run.</p>
           <div id="coverage-grid" class="coverage-grid"></div>
         </div>
 
@@ -268,13 +270,6 @@
                   </div>
                   <p id="action-type-summary" class="panel-stat">0 / 10 types checked</p>
                 </header>
-                <div class="table-scroll table-scroll--flush" role="region" aria-label="Action outcomes and validator check table" tabindex="0">
-                  <table id="action-table" class="data-table">
-                    <caption>
-                      Action outcomes and independent state checks
-                    </caption>
-                  </table>
-                </div>
                 <div class="action-type-coverage">
                   <p>Checked action types</p>
                   <div id="action-type-coverage" class="action-type-chips"></div>
@@ -456,16 +451,6 @@
         hidden
       >
         <div class="activity-layout">
-          <article class="panel panel--failures panel--compact">
-            <header class="panel__header">
-              <div>
-                <h2>Problems</h2>
-              </div>
-              <span id="failure-count" class="count-chip count-chip--danger">0</span>
-            </header>
-            <div id="failure-list" class="failure-list" hidden></div>
-          </article>
-
           <details class="panel panel--activity activity-disclosure">
             <summary>
               <span class="activity-disclosure__title">Event log</span>

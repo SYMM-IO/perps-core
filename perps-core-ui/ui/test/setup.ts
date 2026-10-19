@@ -1,5 +1,13 @@
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+
+// The UI fixtures assert English number formatting, independent of the host's locale.
+const numberToLocaleString = Number.prototype.toLocaleString
+beforeEach(() => {
+  vi.spyOn(Number.prototype, 'toLocaleString').mockImplementation(function (this: number, locales, options) {
+    return numberToLocaleString.call(this, locales ?? 'en-US', options)
+  })
+})
 
 afterEach(() => {
   cleanup()
