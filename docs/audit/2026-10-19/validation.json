@@ -1,0 +1,51 @@
+{
+	"implementationCommit": "02d54089a15dae814333c5ff6b6158c9cf539c98",
+	"auditBaseline": "1338f181f4b17e38d58989248374dc0f4b28897d",
+	"integratedRelease": "f7c5937454ec0a0c1698ec44a14d3ea97f3078e4",
+	"admissionSnapshotFollowUp": "d0e2c39b101d4bd5117debf15c5e130b2018d4a7",
+	"date": "2026-10-19",
+	"toolchain": {
+		"node": "22.21.1",
+		"npm": "10.9.4",
+		"hardhat": "3.15.0",
+		"solidity": "0.8.36+commit.8a079791",
+		"evm": "cancun",
+		"dependencyInstall": "npm ci --ignore-scripts --no-audit --no-fund; repository hardhat-verify patch subsequently applied"
+	},
+	"checks": {
+		"contractSuite": {
+			"initialPassing": 3690,
+			"initialFailing": 2,
+			"failureCauses": ["Windows path separator in storage-slot test", "English-number assumption in vanity-plan test"],
+			"focusedRerunPassing": 30,
+			"focusedRerunIncludesNewUpgradeTest": true,
+			"uniqueContractTestsValidated": 3693,
+			"singleFinalFullGreenRun": false
+		},
+		"boundedFuzz": {
+			"seed": "sym-1738-integrated-2026-10-19",
+			"rootActions": 38,
+			"cornerFamilies": 19,
+			"skippedCorners": 0,
+			"failedCorners": 0,
+			"result": "pass"
+		},
+		"uiTests": { "passing": 116, "files": 13 },
+		"runnerTests": { "passing": 3 },
+		"inventoryTests": { "passing": 3 },
+		"compileAndSize": { "result": "pass", "deployableArtifacts": 261, "sizeWarnings": 5, "sizeFailures": 0 },
+		"lintAndTypes": "pass",
+		"storageProof": "storage-layout.json",
+		"readOnlyDeploymentInventory": "deployment-inventory.json",
+		"commitHook": "passed, including UI checks, compilation and ABI regeneration"
+	},
+	"upgradeTestScope": "Current-artifact AccountLayer/InstantLayer facet replacements with seeded state and missing epoch selectors; not an upgrade from a verified deployed baseline.",
+	"releaseGates": [
+		"Deferred OVERDUE economics decision and remaining audit policy dispositions",
+		"Real Muon source/version and signature vectors",
+		"Verified deployed build identities and actual-baseline fork rehearsal",
+		"Historical ownership/delegation/liquidation reconciliation and global-relayer inventory",
+		"Operator review and live upgrade execution"
+	],
+	"liveTransactionsSent": false
+}

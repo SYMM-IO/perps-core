@@ -1,0 +1,173 @@
+{
+	"baseline": "1338f181f4b17e38d58989248374dc0f4b28897d",
+	"compilerVersion": "solc, the solidity compiler commandline interface\r\nVersion: 0.8.36+commit.8a079791.Windows.msvc",
+	"checked": [
+		{
+			"name": "AccountLayer AccountStorage.Layout",
+			"preservedMembers": 13,
+			"additions": [
+				{
+					"label": "ownershipEpochs",
+					"slot": "13",
+					"offset": 0,
+					"type": {
+						"label": "mapping(address => uint256)",
+						"encoding": "mapping",
+						"numberOfBytes": "32",
+						"key": {
+							"label": "address",
+							"encoding": "inplace",
+							"numberOfBytes": "20"
+						},
+						"value": {
+							"label": "uint256",
+							"encoding": "inplace",
+							"numberOfBytes": "32"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "InstantLayer DelegationStorage.Layout",
+			"preservedMembers": 5,
+			"additions": [
+				{
+					"label": "ownershipEpochs",
+					"slot": "5",
+					"offset": 0,
+					"type": {
+						"label": "mapping(address => mapping(address => mapping(bytes4 => uint256)))",
+						"encoding": "mapping",
+						"numberOfBytes": "32",
+						"key": {
+							"label": "address",
+							"encoding": "inplace",
+							"numberOfBytes": "20"
+						},
+						"value": {
+							"label": "mapping(address => mapping(bytes4 => uint256))",
+							"encoding": "mapping",
+							"numberOfBytes": "32",
+							"key": {
+								"label": "address",
+								"encoding": "inplace",
+								"numberOfBytes": "20"
+							},
+							"value": {
+								"label": "mapping(bytes4 => uint256)",
+								"encoding": "mapping",
+								"numberOfBytes": "32",
+								"key": {
+									"label": "bytes4",
+									"encoding": "inplace",
+									"numberOfBytes": "4"
+								},
+								"value": {
+									"label": "uint256",
+									"encoding": "inplace",
+									"numberOfBytes": "32"
+								}
+							}
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "SymmioGlobalRelayer ordinary compiler storage",
+			"preservedMembers": 2,
+			"additions": [
+				{
+					"label": "sourceMultiAccounts",
+					"slot": "2",
+					"offset": 0,
+					"type": {
+						"label": "mapping(address => address)",
+						"encoding": "mapping",
+						"numberOfBytes": "32",
+						"key": {
+							"label": "address",
+							"encoding": "inplace",
+							"numberOfBytes": "20"
+						},
+						"value": {
+							"label": "address",
+							"encoding": "inplace",
+							"numberOfBytes": "20"
+						}
+					}
+				},
+				{
+					"label": "transferActive",
+					"slot": "3",
+					"offset": 0,
+					"type": {
+						"label": "bool",
+						"encoding": "inplace",
+						"numberOfBytes": "1"
+					}
+				}
+			]
+		}
+	],
+	"namespaceBindings": [
+		{
+			"source": "contracts/accountLayer/storages/AccountStorage.sol",
+			"constant": "ACCOUNT_STORAGE_SLOT",
+			"namespace": "diamond.standard.storage.accountlayer.account"
+		},
+		{
+			"source": "contracts/instantLayer/storages/DelegationStorage.sol",
+			"constant": "DELEGATION_STORAGE_SLOT",
+			"namespace": "diamond.standard.storage.instantlayer.delegation"
+		}
+	],
+	"dependencies": {
+		"@openzeppelin/contracts": {
+			"version": "5.6.1",
+			"integrity": "sha512-Ly6SlsVJ3mj+b18W3R8gNufB7dTICT105fJhodGAGgyC2oqnBAhqSiNDJ8V8DLY05cCz81GLI0CU5vNYA1EC/w=="
+		},
+		"@openzeppelin/contracts-upgradeable": {
+			"version": "5.6.1",
+			"integrity": "sha512-n4a/vfRs114lXyUdYg7pyY8LvFKWvCDF5lEcRRAVxap8g6ZEdLqm+9tmt2zTtRHcNMxTYp9y5t6KBof4tHp7Og=="
+		}
+	},
+	"dependencySourceHashes": {
+		"@openzeppelin/contracts/utils/structs/EnumerableSet.sol": "76c7af99039281b3075780b21b4e2f6be0166d09f89c24171b4bed3b1961c810",
+		"@openzeppelin/contracts/utils/Arrays.sol": "d0a51abdcac27c02821939ed07419b88950bac4117ee75e105010674ef6593c0",
+		"@openzeppelin/contracts/utils/Comparators.sol": "52fb1c8f57967d42a3214bde4a8a414ab25c2e3a844d00e171ca56487024e009",
+		"@openzeppelin/contracts/utils/SlotDerivation.sol": "f8e5f2c672918a21720ce3b5e2637c6366aa0652d085c0478fc0d0d6edb76386",
+		"@openzeppelin/contracts/utils/StorageSlot.sol": "75704538dcb223239280c6726d9a31cf769a7816718517c997fc7d63bdb70778",
+		"@openzeppelin/contracts/utils/math/Math.sol": "bdfdbe133991c0c78042957ff5cd97167926fcaf6d15664f3835a076cb066457",
+		"@openzeppelin/contracts/utils/Panic.sol": "270fc8401c1a13fae6a7a4a2dd6e381b95d658896701e51f0d3e2688acab3dec",
+		"@openzeppelin/contracts/utils/math/SafeCast.sol": "5779bc848bde39f1ad7bc02b4f708a0040888e0083b1a33f119cd94639350134",
+		"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol": "a8b2a4ade9afe90f8e5026906c69911489389f2a892c5e4fe3de5cb918869251",
+		"@openzeppelin/contracts/proxy/utils/Initializable.sol": "f527a063813c2bf60c153fb08e38539578935402894fcc36fac42324ca325d3b",
+		"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol": "18fd32f4ee1c70a19b089839935db44400e59c4724b7e02e430defd1eb670eb5",
+		"@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol": "b5af3bfd79a32c6da2d09b0be38d9b63dcd0d159a1a4a0198431fd00acc1fd52",
+		"@openzeppelin/contracts/interfaces/draft-IERC1822.sol": "73653312bc2eda0ec231553a5295242eaef2d4f46a023532d45fe76cbd0f565f",
+		"@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol": "a89ba2032ab25959c6fde1e508ebf8f966ff632703d3ef79684f578a8fa8033f",
+		"@openzeppelin/contracts/proxy/beacon/IBeacon.sol": "c1c9726bbb0ec4c540c7c98059dcded69a8586b46c168036672381033ee76239",
+		"@openzeppelin/contracts/interfaces/IERC1967.sol": "c4e901318ab6d4963582c62c62ce988a34c68dbae71846b67decacde79e9a317",
+		"@openzeppelin/contracts/utils/Address.sol": "73e54e15285455f0e01e136c3663732641537614723ae5dbd820eb3cb036b1fd",
+		"@openzeppelin/contracts/utils/Errors.sol": "0704b9d6c032cca8512a3bc3f30f49f86f1f03102d2896a3d23e794b82efea66",
+		"@openzeppelin/contracts/utils/LowLevelCall.sol": "e128cbe9c6c406d5a42c26e4079c0a95b369ce552f2d0c3dfd2fcb836c5708f2",
+		"@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol": "033d129c20add72b7117a086b11d789bcabdda2b6d64311031747a61fc856e0f",
+		"@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol": "caf06b4c93bbc1d54eb772e76e949bd4a2520c535cc591d07e57cbafaf90b2fd",
+		"@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol": "070c2413ec9bf8846466335abb7c49654b1c9fda22642b9635394fe20a5b872e",
+		"@openzeppelin/contracts/access/extensions/IAccessControlEnumerable.sol": "e0f69ae5acc588f27b8eba7f5a625f01409be5bb4a08e825774ccee32efc0ff9",
+		"@openzeppelin/contracts/access/IAccessControl.sol": "140304b7e99d517c57a13f391dfd3b550ca633a507f7b2af130f391b6cd89cc5",
+		"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol": "b6fcfbabb4fb0f0b23b018ed667a5302adcda512ce635c52b50ee2704609fdb7",
+		"@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol": "73882072b1bd2744526f0ea1456ae0a53ae867d971ddf744d46b4a7c3c8eee57",
+		"@openzeppelin/contracts/utils/introspection/IERC165.sol": "9055c2994b37dea1a41b7b7926dcb510f05dbe2540b0aafc5fbee9558fffd0ca",
+		"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol": "c2394cb2a327f234711da34884947f4aa0f6dd2791d1d6303a0c7acfaf81bca3",
+		"@openzeppelin/contracts/token/ERC20/IERC20.sol": "01b6f5c4fa45fd38822b286ecef6daf983d27306dd6362496fa71b3e4600b72c",
+		"@openzeppelin/contracts/interfaces/IERC1363.sol": "9c3a75a925a6dac9e88b03cddc58d42fe3131b0aaaad84408521f3f7af2f991b",
+		"@openzeppelin/contracts/interfaces/IERC20.sol": "0158e2d3e0e28bedd99eec13dcf1a8aa3a70a5b7e4bb2ad709609c95fcc740d1",
+		"@openzeppelin/contracts/interfaces/IERC165.sol": "dfb3f56fa928a7c6cae41a7ce2c86b9210fa18d33fa26389099d66a0fa790368"
+	},
+	"coreAccountAndQuoteStorageUnchanged": true,
+	"dependencyScope": "OpenZeppelin lock entries and installed versions are unchanged. ERC-7201 inherited namespaces are not included in ordinary storageLayout.storage; imported dependency source hashes are recorded for review.",
+	"result": "pass"
+}

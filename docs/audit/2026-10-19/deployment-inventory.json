@@ -1,0 +1,5575 @@
+{
+	"addressBookChecked": "2026-10-13",
+	"deployments": [
+		{
+			"id": "arbitrum-vibe",
+			"chainId": 42161,
+			"addressBookVersion": "0.8.6.7",
+			"contracts": {
+				"core": {
+					"address": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A",
+					"hasCode": true,
+					"codeHash": "0xd535fe3152ff772c8f317479f1920074f63b82aee5359a8cad3c862cbfbe28e4",
+					"facets": [
+						{
+							"address": "0x51A96C5EE1883377EAdB735228e3a85095B79861",
+							"selectors": ["0x1f931c1c"]
+						},
+						{
+							"address": "0x6d6AC13c47ff3B611ea7D636637AC9BAbC1510dc",
+							"selectors": ["0xcdffacc6", "0x52ef6b2c", "0xadfca15e", "0x7a0ed627", "0x01ffc9a7"]
+						},
+						{
+							"address": "0x2F1e248cdb184Db9Ce1fC9C626aba3f52876C21d",
+							"selectors": [
+								"0x90ca796b",
+								"0x924c2be4",
+								"0xe3b6de98",
+								"0x9e7c2ef8",
+								"0xea002a7b",
+								"0x9b171f57",
+								"0xb6b55f25",
+								"0xddabc862",
+								"0xa989f526",
+								"0x2f4f21e2",
+								"0xb13f81c4",
+								"0x3e7ba166",
+								"0xfad846e3",
+								"0xe9c236cc",
+								"0x47034661",
+								"0xe0fc7eeb",
+								"0x2e1a7d4d",
+								"0x1b91c54b",
+								"0x205c2878",
+								"0x1738ca93",
+								"0xa51d9168"
+							]
+						},
+						{
+							"address": "0x08b96a7C7632756A9B73B7522bA656F7D89aE922",
+							"selectors": ["0x490b64b4", "0xcd0bac16", "0xa3b298c9", "0x527628b5", "0x06dfc51d", "0xdd6801f2", "0xb074c08d"]
+						},
+						{
+							"address": "0x5587Fc141aeC55F58C73d67c0095086dAef096d0",
+							"selectors": ["0xaf27c2d3", "0xd112d48a", "0x5d6d370b", "0xd45c30de"]
+						},
+						{
+							"address": "0x24A107d90d1e2FE3071f6b2Cd807002C93118fcc",
+							"selectors": ["0x35ff8e7e", "0xcf462cb2", "0x7bcb7050", "0xd66409bd", "0x7e60fee3", "0x7be3eed3", "0x9da6ff6a"]
+						},
+						{
+							"address": "0x0336909Ad11d95AaF5D019928fd7B6F27dc3e744",
+							"selectors": ["0x81f01e1f", "0x4ad18b97", "0xa3550344", "0xfd1d5733", "0x136b7f6e", "0x21fcf6f7", "0xa83cf606"]
+						},
+						{
+							"address": "0xd1a1Bd70BB591fa04e5C46DA449f4d240C6BFe39",
+							"selectors": ["0xfcfcc433", "0x9fb43cd1", "0x4612c2e7", "0x4cb4d82c", "0xffcf37d0"]
+						},
+						{
+							"address": "0x7529Dc124e2BD82b4479D5e25D00bD0A333E0E51",
+							"selectors": [
+								"0x79ba5097",
+								"0x9712fdf8",
+								"0x358d078e",
+								"0xb7df5c88",
+								"0xc610faed",
+								"0x23452b9c",
+								"0x08e63001",
+								"0x825009c7",
+								"0xab2742dc",
+								"0x1b00137a",
+								"0x7efa2700",
+								"0x3fff685b",
+								"0x8d0e6414",
+								"0x56ea676a",
+								"0xc1b03b84",
+								"0x04df017d",
+								"0xbd798412",
+								"0x90f513db",
+								"0x208dd1ff",
+								"0x346e4e34",
+								"0xf1be5d0d",
+								"0x704b6c02",
+								"0x14f5ce49",
+								"0x2ef9fa86",
+								"0x359ef3af",
+								"0x84563bd2",
+								"0x886abef5",
+								"0x3749ce45",
+								"0xd88c1e3e",
+								"0x7e86cee4",
+								"0xff7e4265",
+								"0x26106ff2",
+								"0xccceb7cd",
+								"0x29149799",
+								"0x72ab7db7",
+								"0x873bb5e8",
+								"0xc47dd028",
+								"0xcaa79438",
+								"0xf96866dd",
+								"0xafa13859",
+								"0x72890285",
+								"0xb35077c6",
+								"0xfdf3082d",
+								"0x51adb2d9",
+								"0x49e99d8c",
+								"0x6baf94f0",
+								"0x3d1be20e",
+								"0x74f9625a",
+								"0x0be41b62",
+								"0x2866ef1b",
+								"0x799137c4",
+								"0x86a55764",
+								"0x659476f2",
+								"0x5d60ebbb",
+								"0x8f2fb5a2",
+								"0x857625a2",
+								"0x8f002d02",
+								"0x8aa47d2b",
+								"0x46b6aa23",
+								"0xc2b8c9b5",
+								"0x6c19e783",
+								"0x2ac22366",
+								"0xf0b3fcc1",
+								"0x272dfe1d",
+								"0x0dc0c6d4",
+								"0x2c34dd47",
+								"0xcf66a34d",
+								"0xf2fde38b",
+								"0x643c01c1",
+								"0x28aec4e2",
+								"0x6f0a3fd0",
+								"0x895b6cb3"
+							]
+						},
+						{
+							"address": "0x1Ebac7F421cBBC57C27f0c7d9e7bA94a639964DE",
+							"selectors": [
+								"0xed895fe1",
+								"0x99a8e9d5",
+								"0x62e8ccf7",
+								"0x207f1863",
+								"0x700b0bb3",
+								"0x303e9b05",
+								"0x616524a6",
+								"0x25ce5e62",
+								"0xf8cc92eb",
+								"0x98e9a952",
+								"0x61bfe775",
+								"0x880f25cb",
+								"0x1d966e81",
+								"0x67f460bb",
+								"0xb764907b",
+								"0x637200a2",
+								"0xdff06e55",
+								"0x8ac3a1f8",
+								"0x1492df37",
+								"0xea2b87df",
+								"0x1c1df668",
+								"0x154ae6b6",
+								"0xe5d937e6",
+								"0xbc336026",
+								"0x5c7a5975",
+								"0x6cc524c2",
+								"0x5d76bca7",
+								"0xbd05c90d",
+								"0xfe271375",
+								"0x67b9f368",
+								"0x238208e9",
+								"0xf8d38a70"
+							]
+						},
+						{
+							"address": "0xa43f8C8975aFbfA068C5A8DB185a1feF7C1a704f",
+							"selectors": ["0x6b57917a", "0x9bc2668a", "0xf6e81b25", "0x4e706296", "0x76585cc0", "0x4d33ff7b", "0xa4c2f8fa"]
+						},
+						{
+							"address": "0x5C3C316efB11A28cD4C462Fb34b0a8f887120DfD",
+							"selectors": [
+								"0x29069cf4",
+								"0xe983af15",
+								"0x1d80d8c5",
+								"0x77ad7ed4",
+								"0x4c50f15b",
+								"0x234b549b",
+								"0x70685eb0",
+								"0x94f28e1a",
+								"0x109edc20",
+								"0xc9ec2cc4",
+								"0xb3fa1c68",
+								"0x80e2bfb5",
+								"0xc885058e",
+								"0xab1512d8",
+								"0x60a38861",
+								"0xe01e1003",
+								"0xc678739d",
+								"0x28a88285",
+								"0xb3be1722"
+							]
+						},
+						{
+							"address": "0xBC0580e458a67630d21dD51841AA33b5162584fA",
+							"selectors": [
+								"0x3c2a1c68",
+								"0xf8844bba",
+								"0xe9fc8edc",
+								"0x44d1fb00",
+								"0x8ed90dd2",
+								"0x167fd719",
+								"0x7d6a4e87",
+								"0xcb68b438",
+								"0x696388ec",
+								"0x51c546b3",
+								"0xd548eb41"
+							]
+						},
+						{
+							"address": "0xa0Be0EECce37155835C58770900f550a46F91e0F",
+							"selectors": [
+								"0x8274898b",
+								"0xfc0530ec",
+								"0x448332f7",
+								"0x90c1ed37",
+								"0x14833bde",
+								"0x1531b3c8",
+								"0xb48c2317",
+								"0x2d2e30a8",
+								"0xe8262b31"
+							]
+						},
+						{
+							"address": "0xc6B52D2F97F93d29E164Cdf2f796e9A9E4E7c673",
+							"selectors": [
+								"0xb9eb55c8",
+								"0x5e4a0a31",
+								"0x27c331fb",
+								"0xdbae8915",
+								"0x464a8f22",
+								"0x33a1fd26",
+								"0x714c55dd",
+								"0x70a08231",
+								"0x6f56942a",
+								"0x6d82360d",
+								"0x8b3e7ae2",
+								"0xdb4f6672",
+								"0xf53ae622",
+								"0x018394f4",
+								"0x35122058",
+								"0xd51cbc35",
+								"0xffe03c49",
+								"0x912fd4da",
+								"0xe62f6759",
+								"0xc112bef5",
+								"0x5db6f801",
+								"0x6c175847",
+								"0xa8eda21b",
+								"0x5b09c5b3",
+								"0xb980d4d7",
+								"0x5c1548fb",
+								"0x5c7c1179",
+								"0x5ed2908b",
+								"0xb2d5cd0b",
+								"0xf81173d8",
+								"0x9c2c5bb5",
+								"0x414bc07b",
+								"0xe8523ad6",
+								"0x09239c99",
+								"0xf18c85ff",
+								"0x02572a36",
+								"0x54553ba2",
+								"0x971abf4f",
+								"0x9b9c043b",
+								"0x3669ab57",
+								"0x53c90f03",
+								"0xae9bb416",
+								"0xb142744e",
+								"0xe5277a30",
+								"0x696ecc86",
+								"0xac54b899",
+								"0x73387e6e",
+								"0x0820e008",
+								"0x893d20e8",
+								"0x39bd9ca0",
+								"0x56d773a3",
+								"0x28c02bfe",
+								"0xd7cb57a9",
+								"0x5de1655f",
+								"0x62f8dba0",
+								"0xc031d58f",
+								"0xf275f1af",
+								"0xb4c1427f",
+								"0x345763ad",
+								"0x7ac3c02f",
+								"0x7eca8d57",
+								"0xa68e8b1e",
+								"0x996655d7",
+								"0xc5e66f6a",
+								"0xf3172334",
+								"0x91370f9a",
+								"0xc3ba7de6",
+								"0xa44783ef",
+								"0xac4ab3fb",
+								"0x7d257c32",
+								"0xe4227918",
+								"0x4fa85186",
+								"0xd024c179",
+								"0xe1ba6cf9",
+								"0x67aa6fea",
+								"0x0c6ed451",
+								"0x78b792ab",
+								"0x34b142cd",
+								"0x3b93ce6a",
+								"0xb8bedcad",
+								"0x889a7259",
+								"0x2db0d8ff",
+								"0xcc7b5710",
+								"0x34acdaf5",
+								"0xacd86246",
+								"0x89ae22a9",
+								"0x46d2b14c",
+								"0x52cf8189",
+								"0x904fa60d",
+								"0xff45f19a",
+								"0x232e0e9a",
+								"0x5e248c41",
+								"0x0a885404",
+								"0x6415d156",
+								"0xe671550c",
+								"0x28fbbe21",
+								"0xd6393c29",
+								"0x760cc6cb",
+								"0x85c6c309",
+								"0xe3add37e",
+								"0x2e380b09",
+								"0x060063b5",
+								"0x0182e05d",
+								"0xfbc88806",
+								"0xe8314393",
+								"0x095bb968",
+								"0xd7118351",
+								"0xe30c3978",
+								"0x6250bc81",
+								"0xffd7e9ca",
+								"0x94c0e2e3",
+								"0xcc763897",
+								"0x7ff608b3",
+								"0x5c144c32",
+								"0x106f75ea",
+								"0xf28074f9"
+							]
+						},
+						{
+							"address": "0x97aE7F812bbB9c4542526dceed86EF9236766641",
+							"selectors": [
+								"0xe53a36c0",
+								"0xa62de5d3",
+								"0x3f65c7f4",
+								"0xc81ead74",
+								"0x7d50901c",
+								"0xb680c57d",
+								"0x5e843f74",
+								"0x03f9af79"
+							]
+						},
+						{
+							"address": "0xA4537C94Ac531F71538a5DdA2994C80856B256a3",
+							"selectors": ["0xedbc3265", "0x8d05d020", "0x0b9500c8", "0x771f52cd", "0xf81c9b1e", "0xf2c63a4b", "0x7f22f8ad"]
+						},
+						{
+							"address": "0x3b61cEFa1D88747Bfa2F082506AB87412c3fA04b",
+							"selectors": ["0x7e65a279", "0x97b75d61"]
+						},
+						{
+							"address": "0xcf4Ff31226c69D0F2c5361C0309F893C0B763CED",
+							"selectors": ["0xf2445cd7", "0xa63b9363", "0xa8ffc7ab", "0x501e891f", "0x0ac30baf", "0x40f1310c", "0xa7f3b34b"]
+						},
+						{
+							"address": "0x17b77dD698eF2498eC8b304416ea8d5D3982842d",
+							"selectors": ["0x339fc599", "0x9ad0e748", "0x4760bc29", "0x6c132520", "0x8fe62f6e"]
+						},
+						{
+							"address": "0x54922ad152Fed3bF17e190Fb0CF041303B732dAb",
+							"selectors": [
+								"0x11c80cc8",
+								"0xc6084bc0",
+								"0xff508cbc",
+								"0xb6b3bdf1",
+								"0x2646fbbf",
+								"0x33e737d2",
+								"0x51563435",
+								"0x2e8de3c7",
+								"0xc703a415",
+								"0x13222add",
+								"0x03034a95",
+								"0x84b2d928",
+								"0x8ccac44f",
+								"0x6418413c",
+								"0x93c57d01",
+								"0xee9842a3",
+								"0xd9384520",
+								"0x430c3f7b",
+								"0x87ebc722",
+								"0xc53c9f86",
+								"0x5fa6b6a2",
+								"0x38ea6f53",
+								"0x15791fac",
+								"0x29f9751b",
+								"0xce9bd0b4",
+								"0xa650157c",
+								"0x329ba1b0",
+								"0x108f3213",
+								"0x34e4e7cc",
+								"0x8c8e09b6",
+								"0x8d77a59e",
+								"0xecc553d6",
+								"0xfb9f3b2e"
+							]
+						},
+						{
+							"address": "0x50fe84dB779337d86ad87258aB089a26FFe4e2f4",
+							"selectors": [
+								"0xc29714c0",
+								"0x2729ad29",
+								"0xaa48e2e8",
+								"0x7a425882",
+								"0xe3e332da",
+								"0x15f6b7f4",
+								"0xf366daf1",
+								"0x03764510",
+								"0x4bacbccc",
+								"0xcf39918e",
+								"0xea0b8f8d",
+								"0x1bbad951",
+								"0x29aeb1b0",
+								"0x62c084fa",
+								"0x6950eedf",
+								"0xc8ec3899",
+								"0x823f3701",
+								"0x8a5bee92",
+								"0xc56d284d",
+								"0x0b06070b",
+								"0xec8e7124",
+								"0x52b96502",
+								"0x73d9a7f7",
+								"0x8fa13b2a"
+							]
+						},
+						{
+							"address": "0xbCe976eB5901205eb6814a7af63Aa2bA4Fd5F5F2",
+							"selectors": [
+								"0xe66dd4f1",
+								"0xabe69fef",
+								"0x95c46aa0",
+								"0x7ed1f980",
+								"0xe41faeb3",
+								"0xa4d4eadf",
+								"0x22318751",
+								"0x3bb01160",
+								"0x1233347d",
+								"0x9a2d2c3f",
+								"0x7953b884",
+								"0xd38e364e",
+								"0x7f270f15",
+								"0xb16fb310",
+								"0x49d1a6e7",
+								"0x23048b8f",
+								"0x853a4b3d",
+								"0xa82319b0",
+								"0x46ef08da",
+								"0xde4e50fa",
+								"0x56e98d65",
+								"0x09cf13c5",
+								"0xd6b37f2f",
+								"0xb4a888f0",
+								"0xf0e9fbfa",
+								"0x9196ffe3",
+								"0x8a647b7b"
+							]
+						},
+						{
+							"address": "0x626428128ad264BC6238A0171b9B36a0F7Ab4E88",
+							"selectors": ["0xfe9e82df", "0xd8ee6cec", "0x8e7f8318", "0x20ca6c16", "0xe82551f7", "0xed300aa5", "0x82d5db87"]
+						},
+						{
+							"address": "0x6b2a32d51D5A34e267E0Eea23b63E4F4Dc755569",
+							"selectors": ["0xf03e45b9", "0x5e1313e7", "0x56129889", "0x3bc98be1"]
+						},
+						{
+							"address": "0x6653eC182938937FCB3b331864AF4aFBa9ED1Cf0",
+							"selectors": ["0xec407fe0", "0x5e810cd2", "0xb2a76aab", "0x792df569"]
+						},
+						{
+							"address": "0x9aA72Bf139d042aa7cd026ea73AAdE686788BDdd",
+							"selectors": ["0x4eb1c6bc", "0x3d6627f7", "0x615172cc"]
+						},
+						{
+							"address": "0x8E7deFCbe4B0259B58E1cA1073E5eC1391420d4E",
+							"selectors": ["0x89b90cd3", "0xe0020899", "0xb052244f", "0xfa59fbe8"]
+						},
+						{
+							"address": "0x93D7f53091ae3227adCE87a5807d84bcb5889B5d",
+							"selectors": ["0x393c970e", "0x8bd46afa", "0xef25346b", "0xdc3e562c"]
+						},
+						{
+							"address": "0x58B433c535e345b5dE179603c9001805f3f83d95",
+							"selectors": ["0x606a243b", "0xca6b88de", "0x1bc10456"]
+						},
+						{
+							"address": "0x15B0B951b77F0bF542D02A59792EcC7821501CF2",
+							"selectors": [
+								"0x31b415af",
+								"0x39bd67ed",
+								"0x3acba04e",
+								"0xddb6d9fc",
+								"0x508daa8a",
+								"0x4af32d40",
+								"0x022a868d",
+								"0xd8521fff",
+								"0x9b4b058b",
+								"0x6b284227",
+								"0x451207b6",
+								"0x759f3141"
+							]
+						},
+						{
+							"address": "0x5eAeaF1BAD1184B29429718162daB3BB97Ad5c4e",
+							"selectors": ["0xb98ff519", "0xcb32cdbc"]
+						},
+						{
+							"address": "0x7254Ab8558C464ba0C7A7E3240D01E3523AF62c0",
+							"selectors": ["0x25869929", "0xa3039431"]
+						}
+					]
+				},
+				"accountLayer": {
+					"address": "0x573310d1D6ec18cB21E1aB949414470D9bf5c24E",
+					"hasCode": true,
+					"codeHash": "0xd535fe3152ff772c8f317479f1920074f63b82aee5359a8cad3c862cbfbe28e4",
+					"facets": [
+						{
+							"address": "0x84e7117DE35E7FbdA2c808AB988dB7c0ff216861",
+							"selectors": ["0x1f931c1c"]
+						},
+						{
+							"address": "0xd2f1C24D25Acd1cB476DD5A2922Ca3F540ae5C42",
+							"selectors": [
+								"0xbd367d8e",
+								"0x7652e0c3",
+								"0x247bca56",
+								"0x817ed7f6",
+								"0xd8f4f270",
+								"0xaac271ed",
+								"0x31e69d2d",
+								"0x342fcda9",
+								"0xd9c2337c",
+								"0xd0ac5336",
+								"0x7e0a6cda",
+								"0xea534d2a",
+								"0xf083c834"
+							]
+						},
+						{
+							"address": "0x7ffE6D4c4CDEAA7F10658f8756CffBAeC3375292",
+							"selectors": ["0xcf70cb69", "0xa6d66852", "0x3279017f", "0x5ce56265", "0xd3462ab4"]
+						},
+						{
+							"address": "0xFE21126785e7a256607692a533950c9864467Ca0",
+							"selectors": ["0xb1c10b1a", "0xb2c6bed5", "0xff2418df", "0x8a0b5b77", "0x14da22f1", "0x9734efb6"]
+						},
+						{
+							"address": "0x792f5579308E7F880767F47c9Af81649ec90e213",
+							"selectors": [
+								"0x79ba5097",
+								"0x3f2c69fd",
+								"0x23452b9c",
+								"0xab2742dc",
+								"0x8456cb59",
+								"0x208dd1ff",
+								"0xa2f9588e",
+								"0xc39ad967",
+								"0xac3b09b0",
+								"0xb767ff29",
+								"0x6c19e783",
+								"0xcbc8df17",
+								"0x957d6d5e",
+								"0x4d33ff7b",
+								"0x1786572c",
+								"0x254681b8",
+								"0xf2fde38b",
+								"0x3f4ba83a",
+								"0x704b6c02",
+								"0x90f513db",
+								"0x9c473871",
+								"0xb7df5c88",
+								"0xb9a629f6"
+							]
+						},
+						{
+							"address": "0x98941c34A1928117a974F76abeF41249F69e0527",
+							"selectors": [
+								"0x86074985",
+								"0x5cbd1245",
+								"0xe5546ea1",
+								"0x9f8075ef",
+								"0x6deab385",
+								"0xbc019eed",
+								"0xe28bce28",
+								"0xbaa857cf",
+								"0x325a9052",
+								"0x0aacae04",
+								"0xf854bbf3",
+								"0x2cd6860e",
+								"0x4a9e3794",
+								"0x5554c24d",
+								"0x2a6cf20a",
+								"0x9d479c52",
+								"0xe3265093",
+								"0x893d20e8",
+								"0xc3b5342b",
+								"0x7ac3c02f",
+								"0x2bf68f1f",
+								"0x3f24b714",
+								"0xf14c2608",
+								"0x83be281c",
+								"0x5211640a",
+								"0x83a08b8f",
+								"0xb4626376",
+								"0xd635e6e2",
+								"0x1029269e",
+								"0xc7b112fa",
+								"0xf3d1997c",
+								"0x37e23222",
+								"0xac4ab3fb",
+								"0x9e7132f3",
+								"0x08217281",
+								"0x904fa60d",
+								"0xa09abb1c",
+								"0x14afd79e",
+								"0x5c975abb",
+								"0xe30c3978",
+								"0x06232f2e",
+								"0x0ea782c7",
+								"0x028390bd",
+								"0x6a248819",
+								"0x79b43a0b",
+								"0x80f7735f",
+								"0x903f1f3c",
+								"0xb741ee2b",
+								"0xc0dcd562",
+								"0xc601bdc0",
+								"0xe1beb78e"
+							]
+						},
+						{
+							"address": "0x5022aa80942dC11800A18C96705B7142d0C6B861",
+							"selectors": [
+								"0xe1eae199",
+								"0xf0547bc8",
+								"0x1b037acd",
+								"0x14f3183d",
+								"0xca8c04e7",
+								"0x1971efbf",
+								"0x6bdc06f5",
+								"0x656a4af8",
+								"0xceca23f1",
+								"0x7bdca1a8",
+								"0x74202f0e",
+								"0x38265424",
+								"0x8b8388fa",
+								"0x8a3db2cd",
+								"0xaa9688b4",
+								"0x4f55e2db",
+								"0xd8dc70b2",
+								"0x391a4df9",
+								"0x271fdf19"
+							]
+						},
+						{
+							"address": "0x824634c449C2053480268130846C5A32dF118861",
+							"selectors": ["0xcdffacc6", "0x52ef6b2c", "0xadfca15e", "0x7a0ed627", "0x01ffc9a7"]
+						},
+						{
+							"address": "0xB889791EEf0365Bcc66701B0710275302f718708",
+							"selectors": ["0x1ee3e0cf", "0x2ccebae6", "0x7e8f5407", "0xb3e352ea", "0xd24a817f"]
+						}
+					]
+				},
+				"instantLayer": {
+					"address": "0xF4e8b150fDc756ACA578f5A05811c1998C65C829",
+					"hasCode": true,
+					"codeHash": "0xd535fe3152ff772c8f317479f1920074f63b82aee5359a8cad3c862cbfbe28e4",
+					"facets": [
+						{
+							"address": "0x49798b1BBF52fBf41d167a0c5981FC9B450f5976",
+							"selectors": ["0x1f931c1c"]
+						},
+						{
+							"address": "0xC681218F28C10c2525233aFc54C859D424F16466",
+							"selectors": [
+								"0x108bdc14",
+								"0x23452b9c",
+								"0x2a3d3510",
+								"0x2f2ff15d",
+								"0x36568abe",
+								"0x465e421a",
+								"0x78c6ea51",
+								"0x79ba5097",
+								"0x79ceeac1",
+								"0x982a80f9",
+								"0xb767ff29",
+								"0xbe8e884c",
+								"0xd4e67a61",
+								"0xd547741f",
+								"0xf2fde38b",
+								"0xf871d6f2"
+							]
+						},
+						{
+							"address": "0xaD084B3CF065762F7b924051081BA9926Fff930F",
+							"selectors": [
+								"0x03c8a3c6",
+								"0x1b048c58",
+								"0x267f881e",
+								"0x2c3846dd",
+								"0x3003aa5c",
+								"0x31543cf4",
+								"0x41d0ffa1",
+								"0x483c447d",
+								"0x4d15f558",
+								"0x5456fe4d",
+								"0x5849b93d",
+								"0x5e6ed73f",
+								"0x61810441",
+								"0x6194d5f4",
+								"0x6aa4002c",
+								"0x7c4acabf",
+								"0x7cf3e18a",
+								"0x7ecebe00",
+								"0x84b0196e",
+								"0x893d20e8",
+								"0x904fa60d",
+								"0x905bb7ed",
+								"0x91d14854",
+								"0x9d1daab3",
+								"0xa2011b3f",
+								"0xa217fddf",
+								"0xa5505b9d",
+								"0xab235386",
+								"0xae2b3acf",
+								"0xbc525652",
+								"0xbe27b4dd",
+								"0xc61de0f7",
+								"0xd12edcce",
+								"0xdc2315f9",
+								"0xdf8e1e93",
+								"0xe30c3978",
+								"0xe9b76953",
+								"0xed785044",
+								"0xf5b541a6",
+								"0xf698da25",
+								"0xfb9ed257",
+								"0xfeada722"
+							]
+						},
+						{
+							"address": "0x5fa8503Ba4e30B398f1a4660c7f36D211d5fb16e",
+							"selectors": ["0x7f41bb6a", "0x880231ed", "0x9cfb6914", "0xfd7f4c5e", "0xfeae205f"]
+						},
+						{
+							"address": "0x5fD9bB06319ffB03Ef1B617c894239fe85249510",
+							"selectors": ["0x06bcc336", "0xadc33a88"]
+						},
+						{
+							"address": "0x33aeEd4cEd2A19bc99A2595e76d9eBc743cD1be2",
+							"selectors": ["0x6fae2e15", "0xe9da9b72"]
+						},
+						{
+							"address": "0xeE698365D959a53acC7460a2dF74CE5234Ee2617",
+							"selectors": ["0x01ffc9a7", "0x52ef6b2c", "0x7a0ed627", "0xadfca15e", "0xcdffacc6"]
+						}
+					]
+				},
+				"verifier": {
+					"address": "0x8c8D7561C33f296C958492FF7114e3212968BA03",
+					"hasCode": true,
+					"codeHash": "0x345f9e140573dc92b57ef54e11c2377bed346ca7e6eff113ba91ed37d90b9f01"
+				},
+				"express": {
+					"address": "0x5733105ab392829E5e20FA1eF6E6e07A2c7E073A",
+					"hasCode": true,
+					"codeHash": "0xd535fe3152ff772c8f317479f1920074f63b82aee5359a8cad3c862cbfbe28e4"
+				},
+				"gasless": {
+					"address": "0x8347953D80037b8d82827246f37EC7442AD188B4",
+					"hasCode": true,
+					"codeHash": "0x4e4607550a7987dc7911a2a2d611585092da43ed997cb587d1aeaf23deab8962"
+				}
+			},
+			"reads": {
+				"getMuonIds": {
+					"ok": true,
+					"value": "67095677696457568621176602095256212877581942797155816526660337292193161013107"
+				},
+				"getMuonConfig": {
+					"ok": true,
+					"value": ["60", "60"]
+				},
+				"getNextQuoteId": {
+					"ok": true,
+					"value": "9911"
+				},
+				"coolDownsOfMA": {
+					"ok": true,
+					"value": ["259200", "300", "300", "300"]
+				},
+				"coreAuthority": [
+					{
+						"component": "accountLayer",
+						"role": "COOLDOWN_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "accountLayer",
+						"role": "SIGNER_ADMIN_ROLE",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "accountLayer",
+						"role": "INSTANT_LAYER_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "accountLayer",
+						"role": "BALANCE_SETTLER_ROLE",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "instantLayer",
+						"role": "COOLDOWN_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "instantLayer",
+						"role": "SIGNER_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "instantLayer",
+						"role": "INSTANT_LAYER_ROLE",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "instantLayer",
+						"role": "BALANCE_SETTLER_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "COOLDOWN_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "SIGNER_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "INSTANT_LAYER_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "BALANCE_SETTLER_ROLE",
+						"ok": true,
+						"value": false
+					}
+				],
+				"accountOwnershipEpochGetter": {
+					"ok": false,
+					"error": "execution reverted: \"Diamond: Function does not exist\""
+				},
+				"delegationEpochGetter": {
+					"ok": false,
+					"error": "execution reverted: \"Diamond: Function does not exist\""
+				},
+				"instantCore": {
+					"ok": true,
+					"value": "0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A"
+				},
+				"instantAccountLayer": {
+					"ok": true,
+					"value": "0x573310d1D6ec18cB21E1aB949414470D9bf5c24E"
+				},
+				"knownTargets": [
+					{
+						"component": "core",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "accountLayer",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "gasless",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "express",
+						"ok": true,
+						"value": false
+					}
+				],
+				"templateCount": {
+					"ok": true,
+					"value": "16"
+				},
+				"templates": [
+					{
+						"id": 0,
+						"template": {
+							"name": "InstantOpen",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 1,
+						"template": {
+							"name": "InstantClose",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 2,
+						"template": {
+							"name": "InstantCloseWithAllocation",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 3,
+						"template": {
+							"name": "InstantOpenNoMargin",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 4,
+						"template": {
+							"name": "InstantOpenAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 5,
+						"template": {
+							"name": "InstantCloseAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 6,
+						"template": {
+							"name": "InstantCloseWithAllocationAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 7,
+						"template": {
+							"name": "InstantOpenNoMarginAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 8,
+						"template": {
+							"name": "InstantOpenAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 9,
+						"template": {
+							"name": "InstantOpenAndSetFundingFeeAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 10,
+						"template": {
+							"name": "InstantOpenNoMarginAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 11,
+						"template": {
+							"name": "InstantOpenNoMarginAndSetFundingFeeAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 12,
+						"template": {
+							"name": "InstantOpenAndSettleUpnlWithReqId",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 13,
+						"template": {
+							"name": "InstantOpenAndSetFundingFeeAndSettleUpnlWithReqId",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 14,
+						"template": {
+							"name": "InstantOpenNoMarginAndSettleUpnlWithReqId",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 15,
+						"template": {
+							"name": "InstantOpenNoMarginAndSetFundingFeeAndSettleUpnlWithReqId",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					}
+				],
+				"muonKeys": [
+					{
+						"x": "28816647750548585451357630311330111079635661660584752231799347508659086631222",
+						"parity": "0",
+						"validRange": true
+					},
+					{
+						"x": "10278027162113863689634506684518287173535493228677053782870939011398968189310",
+						"parity": "1",
+						"validRange": true
+					}
+				]
+			},
+			"limitations": [
+				"The quote scan covers only the declared ID range and current stored records; ownership transfers, historical payments, and original liquidation buckets still require historical evidence.",
+				"Role and whitelist checks cover known configured addresses only; full role/target and ownership-transfer history requires deployment blocks and indexed/archive logs.",
+				"The address book does not identify every global relayer, and source/account-manager trust pairs require an operator inventory.",
+				"Selector presence and runtime hashes identify installed code; they do not independently prove that a deployed facet contains each audited fix."
+			],
+			"blockNumber": 516256501,
+			"blockHash": "0xac58269484290fb739c9249a0d6f5aec68b10e6f3d37b685894d7e1dcd145cb5",
+			"quoteScan": {
+				"requestedLimit": "all",
+				"scanned": 9911,
+				"candidates": [],
+				"liquidatingAccounts": [],
+				"firstId": "1",
+				"lastId": "9911",
+				"accounts": [
+					{
+						"address": "0xc3513B44fB455Ba044e083edAc508Efab02a17E9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0EF85c1B0eb55524A2cf5e869C9AEC0Cfd16F677",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xaf74deFbCC0a85deCBaE4A26234B062AFa06b1E2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x892A0e58a8e500a29950b964249634a50f93F473",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x361b7E99E998B06EEE95f22430c565030B2D7Df2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x86d3AAB373B452ad56107D54cE97Ef1e7EF3398f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xB7412Ca5C97b1189ad753EeDd8E1F2169dd3F3B2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x16C83C663fA368E96007013E1C55E293D3a1FEFD",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1A9e8f926815b4533E3f2c15Bd1439C02f5d92FE",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x8dC5CF651e20e322727F61961413FC83ff612e85",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x183A4F63779247Ef2F65f06E607fEc4FD8187704",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x06b36764B3E9D8747dC1Eb700233D9f4cF27fdE3",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4d5189b974F3A95Ea107F03332055D6cB03bb4b1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x21c1CAd1e69371e782cA124c5Ee29C6C08588bad",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x16A2854B3985f836E0982035bB8ebcd83936c130",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1C71b522D9110b95c238Dc07AeAA2f13446719Cd",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2A965f8710c70799C30b1e8b4e3B8a6bc845c2A6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0954F4E244f358431dD9F14949c1EbE7D12BF88D",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7b85EE9517A0db0Aa1f5D04D4E4C6CdDcB3f1861",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4B2b4FC3Fb5Fd06C04440aBd79c74D72531cc88D",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6AA830cDe857D2c0249df712b3cC7A5d817ad6C9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xF225adF8A91B01c86Ea56497421b8A0923Cc9951",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x884fF25cfa2D8BDCC5DAdf05b327Abc62B2Ce051",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xB0F8005FA5f05f4987089979E45bfB08a9Ce7AE1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xBC03b36B1c57a9260A09eBe42b676f069aAB81c1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x400aD6d56459f5d830591267fcd9E5a39f79a402",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2874643684b612Aa0705EcF33d49B5E5Ef5DD8C6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x64F0ECa576EE55053090ed54B113BE1BC8D022A8",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xa67D35818d16B9FD376690564D554a96E4C4a9a4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe1c647ceec6C782DD30E10520875824Ed5F9D015",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x83D5306F04261223e94d5a6fd30300814cBdC33B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6642156F88b217E01545f75cDd4AeF936AD00e50",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xbf185E0b55013977b1fbccB9F33BA2FD595fF6a9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2CF3D555DACFBa6393DC0008D4d1b5a9f3908c15",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xcD783FB9945d08EE0B69eE3c87bd0c3C2988511B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1aFa49E1745638CE884767CaadA2282D35E23dDE",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2e5546967F0EF2585dE7b25Ab901d28740AAb8f4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x37D224fA960D531ae4CeD45424a707FC37059a4f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE3E4a7Ac58191FF4760D10E5adAA0Ca96A5f6dA3",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x949ca5D32A7f10B8D0718C13d636acaFd84764c6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xF72522B139D2D7dF3B193B1F0386291c7d4f4e0E",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xF2822097abe0884d98730bB0e465E6aB281FC439",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE3DaA7698A7e4BaaFA79bf04e6d3BDfbbd949061",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xBe4983FfE417dD02102634Ff197b60191a1cb460",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x30Bc416FF139c06b9dF0fEa635C12e5BEE9b0316",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x3165F2EE3fd3CFc4f4088ffFbd9Eae441ECE05DF",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x443488AC3E1459C8f36ca7aBb262A9A43006D721",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1520CF3d5C5436d2c77dD6CB7985bae990c8468d",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x218175A0c7043b1F7AD74a28aBD4Ad52015D498f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2E3eb736FBC51BDba1C379A531F40D7f7e29A54C",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0c2cf7AB0D18d15fb438b04e24765A534d8846fD",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6e545dE484B773ECb8265eE01Aaa09103d9B4ac0",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7B97b724832fAC9851311e0277C7F617A6C7279d",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x933046A50650b2b897531AD839eE415D784114c9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6BD60DB3965366a5F2cAE17FF72701335FD7fB70",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE1D159A9e185175fDbD0A097a28Ca7f6D5879e0c",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xC9b2287bA9Cc5355593440F35C4Ab78434E02E56",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x64799E8634B3b49E3EB707Ef2acF91561A4C86C1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0C68a025A28788F03A0F695e6657d31E135E1A80",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x590ef7f18a584EAcf16b64b536Df5346137F9Fb5",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4584bB558Fa950487aF1E73C905Ab8F94417af54",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5E51CE55c629A366ce51fCB0C76c1B7e048b0170",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x652b2E3e3850801Ed22c600b13535FbcF93b2664",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x12D1769068193b96060FbDCdDE5CD34C36d7B41A",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x594A2300Baf79d872F350D9140D765ee65bf4Aa4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xB80c579e18a93C5c0667BE58859d14EC09C98e81",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xb3B4A2cCa945cB206a299Dd446Ed989c3C1DF768",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6E4CdB11Eaf3326e3D8C996D4eDCd7bf44Be6107",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0BAd46736fd80D771d89cf7e4fe6c3324b66a1Db",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe547f89538660dD37D669f3A229b456880957A73",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x983fb19B4D5CB352a334AA0e4cebAAcc55E11DA3",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xEC417101c55E75DE4bE29D4D75f0cB4F8A1a5c89",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xAa178431703dF2312bB2e6eC8e39B05814e2C97f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x80aF526be7598D664674F7a3Eef28FFA645806b4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xCb1e550f0c9F937632d55a4bc2141C952C2b3b24",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6Aba9e684A1749dF841ba07318294DB9DD4d94F6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x878C69F683A61D0494e21c1CAA1E25df4f6B8E96",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xC2999A9E6dE1975c337EDc5d8142EFeb6fa2C632",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xB6Db36C5a1DB092c32Ea766b6ba381053457DcB5",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xdC38FbE769Ce5B7d1A540082577277acF67289f9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7cE05b773D9cFD4521696E0384259512A48BA5C5",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x17AE7BB0AfD9e01E9bF6a22E9D4499d5eb97E3A6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6a1F0D045bD5d4861CD63660cA9D8a725528cEcB",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x475157F25F1e6CC27841c086E8CCaE094F195B6C",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xf0f4932613Ae8C32d874EDA307A940Cc230E2F04",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE7260F52196055dd106cEa547a574D9e100CfA7f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xDF826DD3566888c1e1d7d5e5a7F332234890C5A8",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2bBfa87F76BF93fA9b1D13457626D8fe665B3eb2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x529DBdD3c3944700e8aeF9879AA21ed3754fB5a6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x852093829D4BD264A2D2AAB2C2C43020C1D57a76",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x11dA8912d908b550b395201B34C64fbA39EAB6A4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x860d7a6Faaf4E2dA3fe41e54b83DE17E2B69356c",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x49ea2e8277fB03C2D6812Ba51D3F1EA4A80A8b1e",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xCd67a1FD592724b5A760955Dd0d654323DC82331",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6f1FC24Fd3fda5765dCb9302411A61e0636B5B65",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5B8A873A259bD9e58f0617AA6837Ebf4E6831a56",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xa060147bEeE99B86A486AEa1Be80001d7915F65A",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xcF7aFC7B35E69B78E3d8f0bdFa6762eDC152d9fb",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xB5613394798210FAe278e5227612329367fdfEea",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4A1FF96628974ab1085670eeD0b6cf4FB9d5c5e1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1F7E7Fd595355ca5450d1976521D7B68d7c63f55",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x93690119ddAf6caDdCe9420447de80C99C424c36",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x8384D7c03E445B2F4DF14c3f01961f7114a31941",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xbbC62c6c6bD5e4f16774f062F6ED435F3eB867Af",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6Ae7B3c75B0ed72EB6C4854C9da26D712Ea9ee19",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x082e8244D77cAEc6AF271dd54698B095E314A726",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1dFcd85941e56344e1A0d69726AC8F28F5b9634F",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x3e4B01cC93A7E499F4e7eEcBF422Aa640d1DfEE8",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xdab65B801E755A5E47c0818EB7fBCD1860204b8B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x8546A5186d53aE9B9017e1326c3456CB089663f2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1d597b82BeDe56Bc3a309D25636F15aF8fA35b52",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xD2453496E48C7a792f90426aBDa34e31d57655C2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4d797fD64672F765a1752e9e8968c7060cA1DC52",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0B87dd6c1c7A5399F891817A5Cc68bD21Ba5AEc0",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xEF7B4c4f12Ab4e1187D1c219Df9cDC118e486621",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x8D623FddfB1c3d3F8CbEE3847ca46f28cBe17f04",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x347C718cBE8eBF36bCA433989d572aD097DdeeAD",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x8C4439405742E507e9E618d16c3800D8742493Fd",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7D828d43012b3F6D314d9290f55981dbaC99FF6F",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6d578aFCB152560C12F59407f73dd42F0F134943",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xF24ef94D2e3193EeA7aBD6587f744695cDc217A7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0c07581970d2749D8a1415f762c216b93C8b183B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x9331d8B37BB78b5606f4a333ADaC524ae2EcBE78",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xF690A7AC14204445110033D07f55918B291040e4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x956c1C83b71180bC1c716C804b97384B363BA464",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5D92bf2Ec8b8530A2707241EB95602802af9df98",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x47aEc54878AFD036ebE0014CbB6DeB931A63c2F2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe7472F40Bc4dE608E554FaBD4b9851Bd0A9887A9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE54d2aA8Ad0DB101D663158C53bdf85A4D8AEd62",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4238f3332A5b40c3082e45f1d73bFFe694ccc00D",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4E4531371B36C56D72f10F18922918F86f217100",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x96e71505fCfD6c8C4e625093f7fc6f64de625B66",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x896375d220219187E4Ca449b9169A42894a561Be",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4f7577ac55a52a21B273e3B779738824d5b4F723",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xb24fDFFD090E70C4417c5259E55e50605a66C978",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x21900af62A38C791fB714B11E122756a72b312A3",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x9b2e331F7C574CA05f6B2641DA93EAA093769Ed8",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x9d4b78A52005a6baDf6B516A67708265028cf60d",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE7884827A417515d59CE5918ed8D5D362cE36483",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xf527bC8eDE99C861319ff56A0Ea1aBb28EeDa791",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xC04263985Cdd5BD6F2A4d3b66166D17B1BB7Ed1d",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xd5EA3cC094Ff9A3F7e0645a8a8440C8F77590Da9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4c6a7074378423A243E7A651f2379862D28dE417",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xC515590EBef2805555e0dab5E4a2770E91e228Cf",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x407A0aB2E3f4Ea5e388141b7EbB54716FD1C9B3f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x718F790A07156f25b8eFe9e39AEeF7EeF4FD3d5D",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2A5E29ee3B120c39E0de1c2f3Ee4ee97c44Acf9D",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x9F537Be848C72b7D4AA98506160d0564c7D538B7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe2FA4C5Bd363E4317ded0d31DD1f74320041D9eC",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x69950598Bf8E535DbF01E6D7cDE037956D50d526",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x904474145F49b7FAB98a71e05897f08353Ef3807",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5066dACFfE5f9d680Bb9B0891da3F43A7c397F32",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x017F90C731185db9C1fE2Bee8c389353FCB1DB65",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xEa8b13dE5A3451D66F05a2DA0c3Ce8E074252481",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x21F607C65f580791ED9C0E96E7e616791780439B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x147e0334F18da70386F8199C38ad7A94064613E0",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6B29A8FA14867b0EdEbCc4BdAcA10b967aDf55Ca",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0Fd1D53c42925CcADa8dF3F315d2DB3B075DB569",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x4FcD6ad9D95f5a4F85377DB5D51DA0Aa596969CF",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xA80D18B38fDB4d36136b849dF954b7a5eb23EDD1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7d836D6A53A093A0EF05E276DA9E96b941DBbaAf",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xc3a15e9A32F7833Ee022cBA7c3287166a5df4E82",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x47491D5f5f1489Be67cFA805469151F4d136DcD7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6fA1f426778186a528988007FB6C03BB9D6a58FD",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0e32ef359dfBA2DB80b6515669e59c45ba959E5b",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5e9F94d7960EFFBc67429456115db22aBE988415",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xA9f76eFA5F95C10AB5256917fD3D3C869d80F19b",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xfc0f97869C1A1C1179Bb40a37BCd4a5f85773ac8",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1010707C95c2d8Da69c79FbDDC78945C9971c1E5",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xd88832DC747d58773625369440112099155397D4",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xD2d4DaaBE65b90F0C59B913a1485f79682e820B7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2c1a89D3d0D143CB407E0a312A63234F339f6345",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x20f6168508e0A050D29D9306F3e56f131bDB736d",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xBcf0cF18F70729aB511D2135497F013F14B27e36",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x05d90Bb06396805216Bb6972D99BB748a0F36a98",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe7dC258e4b5fd55Ab333f04F2E5E106000DFb0F2",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7C014A94C9025B5615D8A21eB52f3944a659d52f",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2c55ba3e5B3EBDb60261921301C583f796A9d81c",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7178689a30Da7Be96395a6fAe532A5751b1228fc",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5b665C23e6F86BB7d64283764143BF4A70524f36",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0A92aAa3542808ba497088b26008305bb2B3F210",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x65E625AC7b6dA7e93131E0cd6163931454b4DC22",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xf545bB179713561058E22FFf7d2AF04888D4Bc2c",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x96a7fB708fDbAA374Dca47CE2a5D18421619157e",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x492BD231f24f2F08968255DB21fC740EF09dD0aE",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xE7e43ab367347dF2e2ca20f38DDf645C767A8cf7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x95D1eAE777B328a9d705f99248aa9BF3Fe51e9C0",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x69B4f70a54223137d19537b01d54A6974039F23b",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xf0a9eb7Ab662A9c4A82Db26221b9722F8afF21b7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xD582014436D358836BC5c45A4331086B0F0D075E",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xEf2739d220A85DacAae70210E6C84313Ff6C2D3A",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xD3c55361DBae95305202c560B3e12e7e344feE2b",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6a613f9E9c84bfF1dBCc25e37e76065fF0705884",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe211c7af7992c5712b148f26d2A4AA2FA72a91ee",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x6C061A8283052104d9b81D0152DAFAAB6beFf76e",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x85A9CeDBca9b21D714575915C865D1D8a29C9e36",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xb203412270209010d0226751ACa3dB2BDd7b0fFD",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x32b098c32683be2b8721caFb0D533f4a87e0443e",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xc8C7132023EFD503dcF53066B7d07AbE94be2030",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x597afe94D6f8A9B335f1ddaB76699298138aA3EF",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x26F65717EB0AEF0EC029edD79E0F35353F884ce6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xc2CbEA9900Cdb9E2d6B85E5Fb09C737Fc07c93d9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xb5318cDf0b8eA930a2c6928773BFF88D85F160b9",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x2209B36F8cdd6f2b0677C2BE030cb615FBF839BE",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x406E38F724f8448B17b08053c2dD3E92eE4dbe3C",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe262C506f6eAd42173eEd5F1e7AcDE3AF5734221",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x86b0f6586C70340bc819f18fef122e966826dc5a",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					}
+				],
+				"completeAssignedIdRange": true
+			},
+			"requiredReadFailures": [],
+			"status": "declared reads complete"
+		},
+		{
+			"id": "vibe-arbitrum-stage",
+			"chainId": 42161,
+			"addressBookVersion": "0.8.6.7",
+			"contracts": {
+				"core": {
+					"address": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09",
+					"hasCode": true,
+					"codeHash": "0x41f0c56a4e9d8f5cc54a236b5ef594920ad423e400b88aa3582f92ee4aef7db9",
+					"facets": [
+						{
+							"address": "0x56094c2097AA1eBADb351613e4c5Ee00471fF860",
+							"selectors": ["0x1f931c1c"]
+						},
+						{
+							"address": "0x4D5FC71cB5144524cE3Df451763acb767ac88e98",
+							"selectors": ["0xcdffacc6", "0x52ef6b2c", "0xadfca15e", "0x7a0ed627", "0x01ffc9a7"]
+						},
+						{
+							"address": "0x5CbE0Ee162798B1d2675f72688E8cfd6A4F4C3f8",
+							"selectors": [
+								"0x90ca796b",
+								"0x924c2be4",
+								"0xe3b6de98",
+								"0x9e7c2ef8",
+								"0xea002a7b",
+								"0x9b171f57",
+								"0xb6b55f25",
+								"0xddabc862",
+								"0xa989f526",
+								"0x2f4f21e2",
+								"0xb13f81c4",
+								"0x3e7ba166",
+								"0xfad846e3",
+								"0x47034661",
+								"0xe0fc7eeb",
+								"0x2e1a7d4d",
+								"0x1b91c54b",
+								"0x205c2878",
+								"0x1738ca93",
+								"0xe9c236cc",
+								"0xa51d9168"
+							]
+						},
+						{
+							"address": "0x5b158777a6b6Ad5f4844861af22d152903A4e8db",
+							"selectors": [
+								"0x8274898b",
+								"0xe8262b31",
+								"0x2d2e30a8",
+								"0xb48c2317",
+								"0x1531b3c8",
+								"0x14833bde",
+								"0x90c1ed37",
+								"0x448332f7",
+								"0xfc0530ec"
+							]
+						},
+						{
+							"address": "0x3584e99c8D44C36Fd2020C0e97bD0423c8CF4ea7",
+							"selectors": ["0x490b64b4", "0xcd0bac16", "0xa3b298c9", "0x527628b5", "0xdd6801f2", "0xb074c08d", "0x06dfc51d"]
+						},
+						{
+							"address": "0x22518442C88EB15eE6062669eF70a3B2Be198f48",
+							"selectors": ["0xaf27c2d3", "0xd112d48a", "0x5d6d370b", "0xd45c30de"]
+						},
+						{
+							"address": "0x32C8b3b1729F110E832862Ca28A91dFA6c52B3a7",
+							"selectors": ["0x35ff8e7e", "0xcf462cb2", "0x7bcb7050", "0xd66409bd", "0x7e60fee3", "0x7be3eed3", "0x9da6ff6a"]
+						},
+						{
+							"address": "0x060Bfab1Da1Ddbc4676CaE205A96c33435dF2bE0",
+							"selectors": ["0x81f01e1f", "0x4ad18b97", "0xa3550344", "0xfd1d5733", "0x136b7f6e", "0x21fcf6f7", "0xa83cf606"]
+						},
+						{
+							"address": "0x8b1a784dcb800BD07532EfDd263f5102677c7986",
+							"selectors": ["0xfcfcc433", "0x9fb43cd1", "0x4612c2e7", "0x4cb4d82c", "0xffcf37d0"]
+						},
+						{
+							"address": "0xE566bcdC59a644A6D71564f4E941CF93b6A37846",
+							"selectors": [
+								"0x79ba5097",
+								"0x9712fdf8",
+								"0x358d078e",
+								"0xb7df5c88",
+								"0xc610faed",
+								"0x23452b9c",
+								"0x08e63001",
+								"0x825009c7",
+								"0xab2742dc",
+								"0x1b00137a",
+								"0x7efa2700",
+								"0x3fff685b",
+								"0x8d0e6414",
+								"0x56ea676a",
+								"0xc1b03b84",
+								"0x04df017d",
+								"0xbd798412",
+								"0x90f513db",
+								"0x208dd1ff",
+								"0x346e4e34",
+								"0xf1be5d0d",
+								"0x704b6c02",
+								"0x14f5ce49",
+								"0x2ef9fa86",
+								"0x359ef3af",
+								"0x84563bd2",
+								"0x886abef5",
+								"0x3749ce45",
+								"0xd88c1e3e",
+								"0x7e86cee4",
+								"0xff7e4265",
+								"0x26106ff2",
+								"0xccceb7cd",
+								"0x29149799",
+								"0x72ab7db7",
+								"0x873bb5e8",
+								"0xc47dd028",
+								"0xcaa79438",
+								"0xf96866dd",
+								"0xafa13859",
+								"0x72890285",
+								"0xb35077c6",
+								"0xfdf3082d",
+								"0x51adb2d9",
+								"0x49e99d8c",
+								"0x6baf94f0",
+								"0x3d1be20e",
+								"0x74f9625a",
+								"0x0be41b62",
+								"0x2866ef1b",
+								"0x799137c4",
+								"0x86a55764",
+								"0x659476f2",
+								"0x5d60ebbb",
+								"0x8f2fb5a2",
+								"0x857625a2",
+								"0x8f002d02",
+								"0x8aa47d2b",
+								"0x46b6aa23",
+								"0xc2b8c9b5",
+								"0x6c19e783",
+								"0x2ac22366",
+								"0xf0b3fcc1",
+								"0x0dc0c6d4",
+								"0x2c34dd47",
+								"0xcf66a34d",
+								"0xf2fde38b",
+								"0x643c01c1",
+								"0x28aec4e2",
+								"0x6f0a3fd0",
+								"0x272dfe1d",
+								"0x895b6cb3"
+							]
+						},
+						{
+							"address": "0x5CA93FdA018AD7CDbE83FF03A70a2E2D190E5A40",
+							"selectors": ["0x4e706296", "0x76585cc0", "0x6b57917a", "0x9bc2668a", "0xf6e81b25", "0x4d33ff7b", "0xa4c2f8fa"]
+						},
+						{
+							"address": "0xe2271aA092e4BB9A48efFA458ec3710a5349b84b",
+							"selectors": [
+								"0xed895fe1",
+								"0x99a8e9d5",
+								"0x62e8ccf7",
+								"0x207f1863",
+								"0x700b0bb3",
+								"0x303e9b05",
+								"0x616524a6",
+								"0x25ce5e62",
+								"0xf8cc92eb",
+								"0x98e9a952",
+								"0x61bfe775",
+								"0x880f25cb",
+								"0x1d966e81",
+								"0x67f460bb",
+								"0xb764907b",
+								"0x637200a2",
+								"0xdff06e55",
+								"0x8ac3a1f8",
+								"0x1492df37",
+								"0xea2b87df",
+								"0x1c1df668",
+								"0x154ae6b6",
+								"0xe5d937e6",
+								"0xbc336026",
+								"0x5c7a5975",
+								"0x6cc524c2",
+								"0x5d76bca7",
+								"0xbd05c90d",
+								"0xfe271375",
+								"0x67b9f368",
+								"0x238208e9",
+								"0xf8d38a70"
+							]
+						},
+						{
+							"address": "0xEb9Bac85152A7E20e26C67931F06CB629300b504",
+							"selectors": [
+								"0x29069cf4",
+								"0xe983af15",
+								"0x1d80d8c5",
+								"0x77ad7ed4",
+								"0x70685eb0",
+								"0x94f28e1a",
+								"0x109edc20",
+								"0xb3fa1c68",
+								"0x80e2bfb5",
+								"0xc885058e",
+								"0x60a38861",
+								"0xe01e1003",
+								"0xc678739d",
+								"0x28a88285",
+								"0xb3be1722",
+								"0x4c50f15b",
+								"0x234b549b",
+								"0xc9ec2cc4",
+								"0xab1512d8"
+							]
+						},
+						{
+							"address": "0xf25EAaE7B2a243691aC2A4Cf0D38E7c9ED5E31CF",
+							"selectors": [
+								"0x3c2a1c68",
+								"0xf8844bba",
+								"0xe9fc8edc",
+								"0x44d1fb00",
+								"0x167fd719",
+								"0x7d6a4e87",
+								"0x696388ec",
+								"0x8ed90dd2",
+								"0xcb68b438",
+								"0x51c546b3",
+								"0xd548eb41"
+							]
+						},
+						{
+							"address": "0x0E2D9f6864fB30c8e555D6d81AD1c04B32A6D871",
+							"selectors": [
+								"0x33e737d2",
+								"0xc703a415",
+								"0x13222add",
+								"0x8ccac44f",
+								"0x93c57d01",
+								"0x38ea6f53",
+								"0x29f9751b",
+								"0x11c80cc8",
+								"0xc6084bc0",
+								"0xff508cbc",
+								"0xb6b3bdf1",
+								"0x2646fbbf",
+								"0x51563435",
+								"0x6418413c",
+								"0xd9384520",
+								"0x430c3f7b",
+								"0x87ebc722",
+								"0xc53c9f86",
+								"0x15791fac",
+								"0xce9bd0b4",
+								"0xa650157c",
+								"0x329ba1b0",
+								"0x2e8de3c7",
+								"0x03034a95",
+								"0x84b2d928",
+								"0xee9842a3",
+								"0x5fa6b6a2",
+								"0x108f3213",
+								"0x34e4e7cc",
+								"0x8c8e09b6",
+								"0x8d77a59e",
+								"0xecc553d6",
+								"0xfb9f3b2e"
+							]
+						},
+						{
+							"address": "0x61B5f5aE266E1329f0Ce9B63e50e7D0A14e6D719",
+							"selectors": [
+								"0xf0e9fbfa",
+								"0x9196ffe3",
+								"0xe66dd4f1",
+								"0xabe69fef",
+								"0x95c46aa0",
+								"0x7ed1f980",
+								"0xe41faeb3",
+								"0xa4d4eadf",
+								"0x22318751",
+								"0x3bb01160",
+								"0x1233347d",
+								"0x9a2d2c3f",
+								"0x7953b884",
+								"0xd38e364e",
+								"0x7f270f15",
+								"0xb16fb310",
+								"0x49d1a6e7",
+								"0x23048b8f",
+								"0x853a4b3d",
+								"0xa82319b0",
+								"0x46ef08da",
+								"0xde4e50fa",
+								"0x56e98d65",
+								"0x09cf13c5",
+								"0xd6b37f2f",
+								"0xb4a888f0",
+								"0x8a647b7b"
+							]
+						},
+						{
+							"address": "0x3E933291B4C2F518510Ec977E659480B483c40C2",
+							"selectors": [
+								"0xe53a36c0",
+								"0xa62de5d3",
+								"0x3f65c7f4",
+								"0xc81ead74",
+								"0x7d50901c",
+								"0xb680c57d",
+								"0x5e843f74",
+								"0x03f9af79"
+							]
+						},
+						{
+							"address": "0x74de18683A837A63a8170590d753446e989cC760",
+							"selectors": ["0xedbc3265", "0x8d05d020", "0x0b9500c8", "0x771f52cd", "0xf81c9b1e", "0xf2c63a4b", "0x7f22f8ad"]
+						},
+						{
+							"address": "0x01693391Fc037927f0c96d1c7F163cF0c2056143",
+							"selectors": ["0x7e65a279", "0x97b75d61"]
+						},
+						{
+							"address": "0xEA5aeb58edE569dad8C696649882460930e61EE5",
+							"selectors": ["0xf2445cd7", "0xa63b9363", "0xa8ffc7ab", "0x501e891f", "0x0ac30baf", "0x40f1310c", "0xa7f3b34b"]
+						},
+						{
+							"address": "0x81C426b496a7f3F3dbcBccA969dc769F27165FEF",
+							"selectors": ["0x339fc599", "0x9ad0e748", "0x4760bc29", "0x6c132520", "0x8fe62f6e"]
+						},
+						{
+							"address": "0x6a9D7CCD0A24438337153e6275D4Be3e55eDA730",
+							"selectors": [
+								"0x5e4a0a31",
+								"0x27c331fb",
+								"0xdbae8915",
+								"0x464a8f22",
+								"0x33a1fd26",
+								"0x714c55dd",
+								"0x70a08231",
+								"0x6f56942a",
+								"0x6d82360d",
+								"0x8b3e7ae2",
+								"0xdb4f6672",
+								"0xf53ae622",
+								"0x018394f4",
+								"0x35122058",
+								"0xd51cbc35",
+								"0xffe03c49",
+								"0x912fd4da",
+								"0xe62f6759",
+								"0xc112bef5",
+								"0x5db6f801",
+								"0x6c175847",
+								"0xa8eda21b",
+								"0x5b09c5b3",
+								"0xb980d4d7",
+								"0x5c1548fb",
+								"0x5c7c1179",
+								"0x5ed2908b",
+								"0xb2d5cd0b",
+								"0xf81173d8",
+								"0x9c2c5bb5",
+								"0x414bc07b",
+								"0xe8523ad6",
+								"0x09239c99",
+								"0xf18c85ff",
+								"0x02572a36",
+								"0x54553ba2",
+								"0x971abf4f",
+								"0x9b9c043b",
+								"0x3669ab57",
+								"0x53c90f03",
+								"0xae9bb416",
+								"0xb142744e",
+								"0xe5277a30",
+								"0x696ecc86",
+								"0xac54b899",
+								"0x73387e6e",
+								"0x0820e008",
+								"0x893d20e8",
+								"0x39bd9ca0",
+								"0x56d773a3",
+								"0x28c02bfe",
+								"0xd7cb57a9",
+								"0x5de1655f",
+								"0x62f8dba0",
+								"0xc031d58f",
+								"0xf275f1af",
+								"0xb4c1427f",
+								"0x345763ad",
+								"0x7ac3c02f",
+								"0x7eca8d57",
+								"0xa68e8b1e",
+								"0xc5e66f6a",
+								"0xf3172334",
+								"0x91370f9a",
+								"0xc3ba7de6",
+								"0xa44783ef",
+								"0xac4ab3fb",
+								"0x7d257c32",
+								"0xe4227918",
+								"0x4fa85186",
+								"0xd024c179",
+								"0xe1ba6cf9",
+								"0x67aa6fea",
+								"0x0c6ed451",
+								"0x78b792ab",
+								"0x34b142cd",
+								"0x3b93ce6a",
+								"0xb8bedcad",
+								"0x889a7259",
+								"0x2db0d8ff",
+								"0xcc7b5710",
+								"0x34acdaf5",
+								"0xacd86246",
+								"0x89ae22a9",
+								"0x46d2b14c",
+								"0x52cf8189",
+								"0x904fa60d",
+								"0xff45f19a",
+								"0x232e0e9a",
+								"0x5e248c41",
+								"0x0a885404",
+								"0x6415d156",
+								"0xe671550c",
+								"0x28fbbe21",
+								"0xd6393c29",
+								"0x760cc6cb",
+								"0x060063b5",
+								"0x0182e05d",
+								"0xfbc88806",
+								"0xe8314393",
+								"0x095bb968",
+								"0xd7118351",
+								"0xe30c3978",
+								"0x6250bc81",
+								"0xffd7e9ca",
+								"0x94c0e2e3",
+								"0xcc763897",
+								"0x7ff608b3",
+								"0x5c144c32",
+								"0x106f75ea",
+								"0x996655d7",
+								"0x85c6c309",
+								"0xe3add37e",
+								"0x2e380b09",
+								"0xb9eb55c8",
+								"0xf28074f9"
+							]
+						},
+						{
+							"address": "0xC274cC0712a1588A0928DEa765a992C9BdA08AB0",
+							"selectors": [
+								"0x2729ad29",
+								"0xc29714c0",
+								"0xaa48e2e8",
+								"0x7a425882",
+								"0xe3e332da",
+								"0x15f6b7f4",
+								"0xf366daf1",
+								"0x03764510",
+								"0x4bacbccc",
+								"0xcf39918e",
+								"0xea0b8f8d",
+								"0x1bbad951",
+								"0x29aeb1b0",
+								"0x62c084fa",
+								"0x6950eedf",
+								"0xc8ec3899",
+								"0x823f3701",
+								"0x8a5bee92",
+								"0xc56d284d",
+								"0x0b06070b",
+								"0xec8e7124",
+								"0x52b96502",
+								"0x73d9a7f7",
+								"0x8fa13b2a"
+							]
+						},
+						{
+							"address": "0xBf4eC6FFd21e95efDf46A3e6bE928b9D44f73AEb",
+							"selectors": ["0xfe9e82df", "0xd8ee6cec", "0x8e7f8318", "0x20ca6c16", "0xe82551f7", "0xed300aa5", "0x82d5db87"]
+						},
+						{
+							"address": "0x51dF0f8a715cd9e972b2e22Eb012ce8ceaa623Ce",
+							"selectors": ["0xf03e45b9", "0x5e1313e7", "0x56129889", "0x3bc98be1"]
+						},
+						{
+							"address": "0x7550107C9bB8FFD4573310a79728fF41F008a493",
+							"selectors": ["0xec407fe0", "0x5e810cd2", "0xb2a76aab", "0x792df569"]
+						},
+						{
+							"address": "0x052763c58a1d998616f52354eBDCF65DA48350a1",
+							"selectors": ["0x4eb1c6bc", "0x3d6627f7", "0x615172cc"]
+						},
+						{
+							"address": "0x64000872CE9373a642b88701a4CAc76323B1Fa57",
+							"selectors": ["0x89b90cd3", "0xe0020899", "0xb052244f", "0xfa59fbe8"]
+						},
+						{
+							"address": "0x844442d5cBC6357Fd3D7f0c831409c78E71602C8",
+							"selectors": ["0x606a243b", "0xca6b88de", "0x1bc10456"]
+						},
+						{
+							"address": "0xa0EB35c3758B32f5580d745E9a0e0e80D0BB3EA5",
+							"selectors": [
+								"0x39bd67ed",
+								"0x3acba04e",
+								"0xddb6d9fc",
+								"0x508daa8a",
+								"0x4af32d40",
+								"0x022a868d",
+								"0xd8521fff",
+								"0x9b4b058b",
+								"0x6b284227",
+								"0x451207b6",
+								"0x759f3141",
+								"0x31b415af"
+							]
+						},
+						{
+							"address": "0xb120657eCf4256A0f94C12F98c613Fcbd61e9DA1",
+							"selectors": ["0xb98ff519", "0xcb32cdbc"]
+						},
+						{
+							"address": "0x468c6a6c14C769d5FAab1f670a9161f4F680AdAa",
+							"selectors": ["0x25869929", "0xa3039431"]
+						},
+						{
+							"address": "0x19e8C5c9459df4f324560413CF711239De8C5554",
+							"selectors": ["0x393c970e", "0x8bd46afa", "0xef25346b", "0xdc3e562c"]
+						}
+					]
+				},
+				"accountLayer": {
+					"address": "0x5733107211B2801Acd39933a54d482FE303c4907",
+					"hasCode": true,
+					"codeHash": "0x41f0c56a4e9d8f5cc54a236b5ef594920ad423e400b88aa3582f92ee4aef7db9",
+					"facets": [
+						{
+							"address": "0x7a747A8dE82eD01e82989EfAA331a33a68E01860",
+							"selectors": ["0x1f931c1c"]
+						},
+						{
+							"address": "0x99C0eeEA7d806876347694d00f288b9378cfB87C",
+							"selectors": [
+								"0xbd367d8e",
+								"0x247bca56",
+								"0x817ed7f6",
+								"0xd8f4f270",
+								"0xaac271ed",
+								"0x31e69d2d",
+								"0x342fcda9",
+								"0xd9c2337c",
+								"0xd0ac5336",
+								"0x7e0a6cda",
+								"0xea534d2a",
+								"0xf083c834",
+								"0x7652e0c3"
+							]
+						},
+						{
+							"address": "0xc9c8BaC5f81d2bAb99cf4D27332aCA4e3aa79d8D",
+							"selectors": ["0xcf70cb69", "0xa6d66852", "0x3279017f", "0x5ce56265", "0xd3462ab4"]
+						},
+						{
+							"address": "0x8186031e488e105B2157822940EC7d26af5003aF",
+							"selectors": ["0x01ffc9a7", "0xcdffacc6", "0x52ef6b2c", "0xadfca15e", "0x7a0ed627"]
+						},
+						{
+							"address": "0x01B803ddf13F86E2aB0466Df686E3DB9116a3819",
+							"selectors": ["0xb1c10b1a", "0xb2c6bed5", "0xff2418df", "0x8a0b5b77", "0x14da22f1", "0x9734efb6"]
+						},
+						{
+							"address": "0xe8298b864fc1Ddc95D639bd0c9a6C0D992FDAaB9",
+							"selectors": [
+								"0x79ba5097",
+								"0x3f2c69fd",
+								"0x23452b9c",
+								"0xab2742dc",
+								"0x8456cb59",
+								"0x208dd1ff",
+								"0xa2f9588e",
+								"0xc39ad967",
+								"0xac3b09b0",
+								"0xb767ff29",
+								"0x6c19e783",
+								"0xcbc8df17",
+								"0x957d6d5e",
+								"0x254681b8",
+								"0xf2fde38b",
+								"0x3f4ba83a",
+								"0x4d33ff7b",
+								"0x1786572c",
+								"0x704b6c02",
+								"0x90f513db",
+								"0x9c473871",
+								"0xb7df5c88",
+								"0xb9a629f6"
+							]
+						},
+						{
+							"address": "0x376aFE7E943032128fa2F0C0dFB386F4Aa42E590",
+							"selectors": [
+								"0x86074985",
+								"0x5cbd1245",
+								"0xe5546ea1",
+								"0x9f8075ef",
+								"0x6deab385",
+								"0xbc019eed",
+								"0xe28bce28",
+								"0xbaa857cf",
+								"0x0aacae04",
+								"0xf854bbf3",
+								"0x2cd6860e",
+								"0x4a9e3794",
+								"0x5554c24d",
+								"0x2a6cf20a",
+								"0x9d479c52",
+								"0xe3265093",
+								"0x893d20e8",
+								"0xc3b5342b",
+								"0x7ac3c02f",
+								"0x2bf68f1f",
+								"0x3f24b714",
+								"0xf14c2608",
+								"0x83be281c",
+								"0x5211640a",
+								"0x83a08b8f",
+								"0xb4626376",
+								"0xd635e6e2",
+								"0x1029269e",
+								"0xc7b112fa",
+								"0xf3d1997c",
+								"0x37e23222",
+								"0xac4ab3fb",
+								"0x9e7132f3",
+								"0x08217281",
+								"0x904fa60d",
+								"0xa09abb1c",
+								"0x14afd79e",
+								"0x5c975abb",
+								"0xe30c3978",
+								"0x06232f2e",
+								"0x0ea782c7",
+								"0x325a9052",
+								"0x028390bd",
+								"0x6a248819",
+								"0x79b43a0b",
+								"0x80f7735f",
+								"0x903f1f3c",
+								"0xb741ee2b",
+								"0xc0dcd562",
+								"0xc601bdc0",
+								"0xe1beb78e"
+							]
+						},
+						{
+							"address": "0xDbC9f62e74CF8219f51fb7Ec610495DcD9f52b71",
+							"selectors": [
+								"0xe1eae199",
+								"0xf0547bc8",
+								"0x1b037acd",
+								"0x14f3183d",
+								"0xca8c04e7",
+								"0x1971efbf",
+								"0x6bdc06f5",
+								"0x656a4af8",
+								"0xceca23f1",
+								"0x7bdca1a8",
+								"0x74202f0e",
+								"0x38265424",
+								"0x8b8388fa",
+								"0x8a3db2cd",
+								"0xaa9688b4",
+								"0x4f55e2db",
+								"0xd8dc70b2",
+								"0x391a4df9",
+								"0x271fdf19"
+							]
+						},
+						{
+							"address": "0xbBEc9489C9daeB12463533350D17b14338dEAD6c",
+							"selectors": ["0x1ee3e0cf", "0x2ccebae6", "0x7e8f5407", "0xb3e352ea", "0xd24a817f"]
+						}
+					]
+				},
+				"instantLayer": {
+					"address": "0x89d1e2a9d2429722F756EDFFAD149D7947B672FF",
+					"hasCode": true,
+					"codeHash": "0xd535fe3152ff772c8f317479f1920074f63b82aee5359a8cad3c862cbfbe28e4",
+					"facets": [
+						{
+							"address": "0x6f82945E525F6d2683c6730A8278Fcf142F88218",
+							"selectors": ["0x1f931c1c"]
+						},
+						{
+							"address": "0xAF48Bc94361D5eF147e5E3A38A327A4BC508213B",
+							"selectors": [
+								"0x108bdc14",
+								"0x23452b9c",
+								"0x2a3d3510",
+								"0x2f2ff15d",
+								"0x36568abe",
+								"0x465e421a",
+								"0x78c6ea51",
+								"0x79ba5097",
+								"0x79ceeac1",
+								"0x982a80f9",
+								"0xb767ff29",
+								"0xbe8e884c",
+								"0xd4e67a61",
+								"0xd547741f",
+								"0xf2fde38b",
+								"0xf871d6f2"
+							]
+						},
+						{
+							"address": "0xbc6C151aE46FCBF5C45d63C8F173e460572E45d8",
+							"selectors": [
+								"0x03c8a3c6",
+								"0x1b048c58",
+								"0x267f881e",
+								"0x2c3846dd",
+								"0x3003aa5c",
+								"0x31543cf4",
+								"0x41d0ffa1",
+								"0x483c447d",
+								"0x4d15f558",
+								"0x5456fe4d",
+								"0x5849b93d",
+								"0x5e6ed73f",
+								"0x61810441",
+								"0x6194d5f4",
+								"0x6aa4002c",
+								"0x7c4acabf",
+								"0x7cf3e18a",
+								"0x7ecebe00",
+								"0x84b0196e",
+								"0x893d20e8",
+								"0x904fa60d",
+								"0x905bb7ed",
+								"0x91d14854",
+								"0x9d1daab3",
+								"0xa2011b3f",
+								"0xa217fddf",
+								"0xa5505b9d",
+								"0xab235386",
+								"0xae2b3acf",
+								"0xbc525652",
+								"0xbe27b4dd",
+								"0xc61de0f7",
+								"0xd12edcce",
+								"0xdc2315f9",
+								"0xdf8e1e93",
+								"0xe30c3978",
+								"0xe9b76953",
+								"0xed785044",
+								"0xf5b541a6",
+								"0xf698da25",
+								"0xfb9ed257",
+								"0xfeada722"
+							]
+						},
+						{
+							"address": "0x3FaCC925DC1fB580707d3f156c7e6EC6045155C3",
+							"selectors": ["0x7f41bb6a", "0x880231ed", "0x9cfb6914", "0xfd7f4c5e", "0xfeae205f"]
+						},
+						{
+							"address": "0x60Bc45F1559443d939c2be5692926c3f65F11D4A",
+							"selectors": ["0x06bcc336", "0xadc33a88"]
+						},
+						{
+							"address": "0x2bA5D676CB8d16024822d3D2a6D5dbea33cfdf9C",
+							"selectors": ["0x6fae2e15", "0xe9da9b72"]
+						},
+						{
+							"address": "0x8A814cC66A6715E769B2ca01008f03AEC73a29Ad",
+							"selectors": ["0x01ffc9a7", "0x52ef6b2c", "0x7a0ed627", "0xadfca15e", "0xcdffacc6"]
+						}
+					]
+				},
+				"verifier": {
+					"address": "0x9387A25eB1686257c2Ff7c2C53666d152984fDd6",
+					"hasCode": true,
+					"codeHash": "0x345f9e140573dc92b57ef54e11c2377bed346ca7e6eff113ba91ed37d90b9f01"
+				},
+				"express": {
+					"address": "0x573310D7b04fF21BB8628C69eE103dDF4922294A",
+					"hasCode": true,
+					"codeHash": "0x41f0c56a4e9d8f5cc54a236b5ef594920ad423e400b88aa3582f92ee4aef7db9"
+				},
+				"gasless": {
+					"address": "0x386EF97D913acf02B3C9452da4Cd4aaEc82eFBca",
+					"hasCode": true,
+					"codeHash": "0x4e4607550a7987dc7911a2a2d611585092da43ed997cb587d1aeaf23deab8962"
+				}
+			},
+			"reads": {
+				"getMuonIds": {
+					"ok": true,
+					"value": "67095677696457568621176602095256212877581942797155816526660337292193161013107"
+				},
+				"getMuonConfig": {
+					"ok": true,
+					"value": ["60", "60"]
+				},
+				"getNextQuoteId": {
+					"ok": true,
+					"value": "308"
+				},
+				"coolDownsOfMA": {
+					"ok": true,
+					"value": ["900", "300", "300", "300"]
+				},
+				"coreAuthority": [
+					{
+						"component": "accountLayer",
+						"role": "COOLDOWN_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "accountLayer",
+						"role": "SIGNER_ADMIN_ROLE",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "accountLayer",
+						"role": "INSTANT_LAYER_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "accountLayer",
+						"role": "BALANCE_SETTLER_ROLE",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "instantLayer",
+						"role": "COOLDOWN_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "instantLayer",
+						"role": "SIGNER_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "instantLayer",
+						"role": "INSTANT_LAYER_ROLE",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "instantLayer",
+						"role": "BALANCE_SETTLER_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "COOLDOWN_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "SIGNER_ADMIN_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "INSTANT_LAYER_ROLE",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "gasless",
+						"role": "BALANCE_SETTLER_ROLE",
+						"ok": true,
+						"value": false
+					}
+				],
+				"accountOwnershipEpochGetter": {
+					"ok": false,
+					"error": "execution reverted: \"Diamond: Function does not exist\""
+				},
+				"delegationEpochGetter": {
+					"ok": false,
+					"error": "execution reverted: \"Diamond: Function does not exist\""
+				},
+				"instantCore": {
+					"ok": true,
+					"value": "0x573310dB6d160B26026B8706EBe9831c7dEF1D09"
+				},
+				"instantAccountLayer": {
+					"ok": true,
+					"value": "0x5733107211B2801Acd39933a54d482FE303c4907"
+				},
+				"knownTargets": [
+					{
+						"component": "core",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "accountLayer",
+						"ok": true,
+						"value": true
+					},
+					{
+						"component": "gasless",
+						"ok": true,
+						"value": false
+					},
+					{
+						"component": "express",
+						"ok": true,
+						"value": false
+					}
+				],
+				"templateCount": {
+					"ok": true,
+					"value": "16"
+				},
+				"templates": [
+					{
+						"id": 0,
+						"template": {
+							"name": "InstantOpen",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": true
+						}
+					},
+					{
+						"id": 1,
+						"template": {
+							"name": "InstantClose",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 2,
+						"template": {
+							"name": "InstantCloseWithAllocation",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 3,
+						"template": {
+							"name": "InstantOpenNoMargin",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 4,
+						"template": {
+							"name": "InstantOpenAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 5,
+						"template": {
+							"name": "InstantCloseAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 6,
+						"template": {
+							"name": "InstantCloseWithAllocationAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 7,
+						"template": {
+							"name": "InstantOpenNoMarginAndSetFundingFee",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 8,
+						"template": {
+							"name": "InstantOpenAndSettleUpnl",
+							"active": false,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 9,
+						"template": {
+							"name": "InstantOpenAndSetFundingFeeAndSettleUpnl",
+							"active": false,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 10,
+						"template": {
+							"name": "InstantOpenNoMarginAndSettleUpnl",
+							"active": false,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 11,
+						"template": {
+							"name": "InstantOpenNoMarginAndSetFundingFeeAndSettleUpnl",
+							"active": false,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["448"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 12,
+						"template": {
+							"name": "InstantOpenAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 13,
+						"template": {
+							"name": "InstantOpenAndSetFundingFeeAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["1"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 14,
+						"template": {
+							"name": "InstantOpenNoMarginAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"id": 15,
+						"template": {
+							"name": "InstantOpenNoMarginAndSetFundingFeeAndSettleUpnl",
+							"active": true,
+							"operations": [
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": ["0"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								},
+								{
+									"insertionPoints": [],
+									"sourceIndices": [],
+									"sourceOffsets": []
+								},
+								{
+									"insertionPoints": ["480"],
+									"sourceIndices": ["0"],
+									"sourceOffsets": ["0"]
+								}
+							]
+						},
+						"instantOpenMode": {
+							"ok": true,
+							"value": false
+						}
+					}
+				],
+				"muonKeys": [
+					{
+						"x": "10278027162113863689634506684518287173535493228677053782870939011398968189310",
+						"parity": "1",
+						"validRange": true
+					}
+				]
+			},
+			"limitations": [
+				"The quote scan covers only the declared ID range and current stored records; ownership transfers, historical payments, and original liquidation buckets still require historical evidence.",
+				"Role and whitelist checks cover known configured addresses only; full role/target and ownership-transfer history requires deployment blocks and indexed/archive logs.",
+				"The address book does not identify every global relayer, and source/account-manager trust pairs require an operator inventory.",
+				"Selector presence and runtime hashes identify installed code; they do not independently prove that a deployed facet contains each audited fix."
+			],
+			"blockNumber": 516258475,
+			"blockHash": "0xf0419a37bd34931bfaf13bdc74537a7d9dfabdc8760261a86eefb73a1b761a61",
+			"quoteScan": {
+				"requestedLimit": "all",
+				"scanned": 308,
+				"candidates": [],
+				"liquidatingAccounts": [],
+				"firstId": "1",
+				"lastId": "308",
+				"accounts": [
+					{
+						"address": "0x40857e80564f37777F22c3Fb7446D0289BC1522F",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x5D8a50f1119B0630aa80E3Ccbe91195186F7423C",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x7fa1150eFdBC30FA1fB64a833768788618231214",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x3e4CD9Fe5D81fc78dF3400A5aC18356a2C74Bdfc",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x277263A705a1ad30d6f2BD22D335497809e7EAea",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x8Fe2c76874FCCE40D8c26749cb772B6DF6a39BDD",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x3b7a7EdC165745C7633df2cC5aC39F0cb4006385",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x95F3e5BFCb867d49b2b8b19EEd5c64C7AeC17DC7",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x08E75F1A32B8a40c2745610e008a21fA858ba085",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x873B135624608FB778cDF76EC76Ab99d807A6ca6",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x87915863581f515f8bc50f3961946509DDc46c65",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xD9f8B7350DaBf51da09ba31d74b087aaae6d1E4c",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xe99917FC6ea6c181011041Ba88618FBb9De252Ea",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xD9B12103Cefa7F1de845D8C7158186b7C5D304E1",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xfa25B0a45E628028662e6276abC06466353c0B74",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x681cAAd77eaf08aFcA9fdd345DA5D009D4374138",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x391938ACADD9531e6c10BB7F4fDF9b8ffaE8C722",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x1e0Dd96e1BC86B1369e354F1D52aD4CF391F93e0",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x242F1F02eAaC288ca50CaF59ef39B0CB01f6844B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0xf327BbB5060f1e642cF5048C5EcdF8eb8100538B",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x43491512F7A667159Caf07e481436911b2ea10A5",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x807Afe79cb72EE28fddE344c44Dc929cb35Dc67E",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					},
+					{
+						"address": "0x0BdDB576755bA03293f1A53e9Aa7C28a42B3EF47",
+						"pending": {
+							"ok": true,
+							"value": []
+						},
+						"liquidating": {
+							"ok": true,
+							"value": false
+						}
+					}
+				],
+				"completeAssignedIdRange": true
+			},
+			"requiredReadFailures": [],
+			"status": "declared reads complete"
+		}
+	],
+	"purpose": "Read-only pre-upgrade inventory; no transactions or signatures are created."
+}
