@@ -7,8 +7,6 @@ pragma solidity >=0.8.18;
 /******************************************************************************/
 
 import { IDiamondCut } from "../facets/DiamondCut/IDiamondCut.sol";
-import { IDiamondLoupe } from "../facets/DiamondLoup/IDiamondLoupe.sol";
-import { IERC165 } from "../interfaces/IERC165.sol";
 
 library LibDiamond {
 	bytes32 public constant DIAMOND_STORAGE_POSITION = keccak256("diamond.standard.diamond.storage");

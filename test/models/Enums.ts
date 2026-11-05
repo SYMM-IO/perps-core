@@ -20,6 +20,13 @@ export enum PositionType {
 export enum OrderType {
 	LIMIT,
 	MARKET,
+	MARKET_BEST_EFFORT,
+}
+
+export enum BindStatus {
+	NOT_BOUND,
+	BOUND,
+	PENDING_UNBIND,
 }
 
 export enum Event {

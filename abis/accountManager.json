@@ -21,6 +21,22 @@
         "type": "error"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "scope",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "AccountOutOfScope",
+        "type": "error"
+    },
+    {
         "inputs": [],
         "name": "AffiliateNotActive",
         "type": "error"
@@ -37,12 +53,27 @@
     },
     {
         "inputs": [],
-        "name": "BalanceInvariantViolation",
+        "name": "ApprovalExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ApprovalUsed",
         "type": "error"
     },
     {
         "inputs": [],
         "name": "CoreNotFound",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DelayAboveMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "DelayBelowMinimum",
         "type": "error"
     },
     {
@@ -58,6 +89,11 @@
     {
         "inputs": [],
         "name": "EnforcedPause",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ExecuteForAccountNotAllowedDuringSubAccountDeletion",
         "type": "error"
     },
     {
@@ -99,12 +135,12 @@
     },
     {
         "inputs": [],
-        "name": "InvalidCallData",
+        "name": "InvalidApprovalSignature",
         "type": "error"
     },
     {
         "inputs": [],
-        "name": "InvalidExpressRate",
+        "name": "InvalidCallData",
         "type": "error"
     },
     {
@@ -144,12 +180,22 @@
     },
     {
         "inputs": [],
+        "name": "LegacyAccountCannotBeTimelocked",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "LegacyAccountNotOwned",
         "type": "error"
     },
     {
         "inputs": [],
         "name": "LegacyContractNotRegistered",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "MarginKeyMismatch",
         "type": "error"
     },
     {
@@ -199,6 +245,11 @@
     },
     {
         "inputs": [],
+        "name": "NotRootSubAccount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "NotSymmioCore",
         "type": "error"
     },
@@ -230,6 +281,53 @@
     {
         "inputs": [],
         "name": "ReentrancyGuardReentrantCall",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint64",
+                "name": "expiredAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "ScheduleExpired",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ScheduleGracePeriodAboveMaximum",
+        "type": "error"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint64",
+                "name": "readyAt",
+                "type": "uint64"
+            }
+        ],
+        "name": "ScheduleNotReady",
         "type": "error"
     },
     {
@@ -269,6 +367,22 @@
         "type": "error"
     },
     {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "subAccount",
+                "type": "address"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "callDataHash",
+                "type": "bytes32"
+            }
+        ],
+        "name": "TimelockOpNotApprovedOrScheduled",
+        "type": "error"
+    },
+    {
         "inputs": [],
         "name": "Unauthorized",
         "type": "error"
@@ -280,7 +394,7 @@
     },
     {
         "inputs": [],
-        "name": "VirtualProviderRequired",
+        "name": "UnusedTimelockApproval",
         "type": "error"
     },
     {
@@ -291,6 +405,11 @@
     {
         "inputs": [],
         "name": "ZeroAmount",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "ZeroUnlocker",
         "type": "error"
     },
     {
@@ -399,43 +518,7 @@
                 "type": "uint256"
             }
         ],
-        "name": "depositAndAllocateForAccountWithExpressRate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
         "name": "depositForAccount",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "account",
-                "type": "address"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amount",
-                "type": "uint256"
-            }
-        ],
-        "name": "depositForAccountWithExpressRate",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

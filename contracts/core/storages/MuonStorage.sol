@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { IMuonSignatureVerifier } from "../interfaces/IMuonSignatureVerifier.sol";
+import { IMuonSignatureVerifier, MuonFunction } from "../interfaces/IMuonSignatureVerifier.sol";
 
 /// @notice Muon signature attesting to a single party's unrealized PnL
 struct SingleUpnlSig {
@@ -15,12 +15,16 @@ struct SingleUpnlSig {
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
-/// @notice Muon signature attesting to a party's UPNL plus their pending withdrawal balance
+/// @notice Safe-deallocation signature attesting to a party's UPNL, gross accrued funding liability,
+/// pending withdrawal balance, and locked balance re-marked to live notional (scaledLockedBalance).
+/// @dev fundingDebt excludes funding receivables; net UPNL continues to include funding.
 struct SingleUpnlWithPendingBalanceSig {
 	bytes reqId;
 	uint256 timestamp;
 	int256 upnl;
+	uint256 fundingDebt;
 	uint256 pendingBalance;
+	uint256 scaledLockedBalance;
 	bytes gatewaySignature;
 	IMuonSignatureVerifier.SchnorrSign sigs;
 }
@@ -95,6 +99,30 @@ struct LiquidationSig {
 	uint256[] prices; // Corresponding prices of the symbols involved in the liquidation
 	bytes gatewaySignature; // Signature from the gateway for verification
 	IMuonSignatureVerifier.SchnorrSign sigs; // Schnorr signature for additional verification
+}
+
+/// @notice Muon-signed price and cumulative funding state for one PartyB-symbol pair in liquidation settlement.
+struct LiquidationPartyBSymbolState {
+	address partyB;
+	uint256 symbolId;
+	uint256 price;
+	int256 cumulativeLongFee;
+	int256 cumulativeShortFee;
+}
+
+/// @notice Liquidation signature that freezes historical insolvency data and per-PartyB symbol price/funding state.
+struct LiquidationSnapshotSig {
+	bytes reqId;
+	uint256 timestamp;
+	bytes liquidationId;
+	int256 upnl;
+	int256 totalUnrealizedLoss;
+	LiquidationPartyBSymbolState[] states;
+	uint256 liquidationBlockNumber;
+	uint256 liquidationTimestamp;
+	uint256 liquidationAllocatedBalance;
+	bytes gatewaySignature;
+	IMuonSignatureVerifier.SchnorrSign sigs;
 }
 
 /// @notice Muon signature attesting to current prices for a set of quotes
@@ -203,6 +231,9 @@ library MuonStorage {
 		/// @dev Kept for storage layout compatibility. Gateway signature checks are now
 		///      delegated to GlobalAppStorage.signatureVerifier contract.
 		address validGateway;
+		/// @notice Optional per-Muon-function UPNL signature validity period.
+		/// @dev Zero is the unset value. Unset functions use the global upnlValidTime configured by setMuonConfig.
+		mapping(MuonFunction => uint256) upnlValidTimeByFunction;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -10,7 +10,6 @@ import { BridgeStorage, BridgeTransaction, BridgeTransactionStatus } from "../..
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
-import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibSafeERC20 } from "../../libraries/LibSafeERC20.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 
@@ -119,7 +118,8 @@ library BridgeFacetImpl {
 		bridgeTransaction.status = BridgeTransactionStatus.SUSPENDED;
 	}
 
-	/// @notice Restores a suspended bridge transaction to RECEIVED status with a reduced valid amount, crediting the invalid portion to the pool's internal balance.
+	/// @notice Restores a suspended bridge transaction to RECEIVED status with a reduced valid amount,
+	///         crediting the invalid portion to the pool's internal balance.
 	function restoreBridgeTransaction(uint256 transactionId, uint256 validAmount) internal {
 		BridgeStorage.Layout storage bridgeLayout = BridgeStorage.layout();
 		BridgeTransaction storage bridgeTransaction = bridgeLayout.bridgeTransactions[transactionId];

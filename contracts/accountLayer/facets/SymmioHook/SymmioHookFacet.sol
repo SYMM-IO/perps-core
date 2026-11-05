@@ -9,7 +9,7 @@ import { ISymmioHookFacet } from "./ISymmioHookFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountStorage, VirtualAccountData } from "../../storages/AccountStorage.sol";
+import { AccountStorage, VirtualAccountData, VirtualAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
 import { IAccountLayerHook } from "../../interfaces/IAccountLayerHook.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
@@ -19,16 +19,36 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	using EnumerableSet for EnumerableSet.AddressSet;
 	using EnumerableSet for EnumerableSet.UintSet;
 
-	/// @notice Called by Symmio core when a position is opened (no-op in AccountLayer)
+	/// @notice Called by Symmio core when a position is opened
+	/// @dev Tracks the pending child quote created when a quote is partially filled. On a
+	///      POSITION-isolated VA the child is cancelled instead: tracking it would let a second
+	///      position open on a VA whose isolation contract is exactly one position.
 	function onOpenPosition(
-		uint256 /* quoteId */,
+		uint256 quoteId,
 		uint256 /* filledAmount */,
 		uint256 /* openedPrice */,
-		address /* partyA */,
+		address partyA,
 		address /* partyB */
 	) external onlySymmio whenNotPaused {
-		// No-op: Account layer doesn't need to track position opens
-		// This function exists to prevent hook reverts when positions are opened
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		VirtualAccountData storage vData = ahLayout.virtualAccounts[partyA];
+		if (!vData.isExists) return;
+
+		address core = LibAccountLayerUtils.getRelatedCore(vData.parentAccount);
+		ISymmio symmio = ISymmio(core);
+		uint256 childQuoteId = symmio.getNextQuoteId();
+		ISymmio.Quote memory childQuote = symmio.getQuote(childQuoteId);
+		if (childQuote.parentId == quoteId && childQuote.partyA == partyA && childQuote.quoteStatus == ISymmio.QuoteStatus.PENDING) {
+			if (vData.isolationType == VirtualAccountIsolationType.POSITION) {
+				// Cancel is immediate and refunds in the same tx: the child is PENDING with no
+				// partyB, and openPosition already required block.timestamp <= deadline. The
+				// nested onCancelQuote hook re-enters this facet, so it must use the
+				// callback-aware guard rather than the ordinary nonReentrant modifier.
+				LibAccountLayerUtils.executeWithSigner(partyA, abi.encodeWithSelector(ISymmio.requestToCancelQuote.selector, childQuoteId));
+			} else {
+				vData.quoteIds.add(childQuoteId);
+			}
+		}
 	}
 
 	/// @notice Called by Symmio core when a position is closed; removes quoteId from the virtual account
@@ -41,7 +61,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		uint256 /* closedPrice */,
 		address partyA,
 		address partyB
-	) external onlySymmio nonReentrant whenNotPaused {
+	) external onlySymmio nonReentrantCallback whenNotPaused {
 		_removeQuoteFromAccount(quoteId, partyA, partyB);
 	}
 
@@ -49,7 +69,7 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	/// @param quoteId The cancelled quote identifier
 	/// @param partyA The trader address (may be a virtual account)
 	/// @param partyB The counterparty address
-	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external onlySymmio whenNotPaused {
+	function onCancelQuote(uint256 quoteId, address partyA, address partyB) external onlySymmio nonReentrantCallback whenNotPaused {
 		_removeQuoteFromAccount(quoteId, partyA, partyB);
 	}
 
@@ -73,9 +93,9 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 	/// @notice Called by Symmio core after a partyA's liquidation is fully settled
 	/// @dev Attempts deferred VA cleanup now that liquidation state has been cleared
 	/// @param partyA The trader address whose liquidation was settled
-	function onLiquidationSettled(address partyA) external onlySymmio nonReentrant whenNotPaused {
+	function onLiquidationSettled(address partyA) external onlySymmio nonReentrantCallback whenNotPaused {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		// Settlement means this VA's share has been credited — clear pending cross-liq deferrals
+		// Settlement means this VA's share has been credited. Clear pending cross-liquidation deferrals
 		// so _tryDeleteVirtualAccount can proceed regardless of overall cross-liq status.
 		EnumerableSet.AddressSet storage crossPartyBs = ahLayout.vaPendingCrossLiqPartyBs[partyA];
 		address[] memory pending = crossPartyBs.values();
@@ -99,11 +119,11 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		if (coreTotal < vData.quoteIds.length()) {
 			vData.quoteIds.remove(quoteId); // full close/cancel/liquidation
 		}
-		// else: partial close — keep tracking
+		// A partial close remains tracked.
 
 		// If this partyB is currently in cross liquidation, record it so _tryDeleteVirtualAccount
 		// can defer even when a later hook fires with a different partyB. This prevents fund stranding
-		// when a VA has positions with multiple partyBs and the cross-liq distributeForClearingHouse
+		// when a VA has positions with multiple partyBs and the cross-liq applyClearingHouseSettlement
 		// has not yet credited the VA's share.
 		if (partyB != address(0) && ISymmio(core).getPartyBCrossLiquidationStatus(partyB)) {
 			ahLayout.vaPendingCrossLiqPartyBs[partyA].add(partyB);
@@ -135,9 +155,9 @@ contract SymmioHookFacet is ISymmioHookFacet, AccountLayerAccessibility, Account
 		address[] memory pending = crossPartyBs.values();
 		for (uint256 i = 0; i < pending.length; i++) {
 			if (ISymmio(core).getPartyBCrossLiquidationStatus(pending[i])) {
-				return; // still in cross liq — defer
+				return; // Defer while cross-liquidation remains active.
 			}
-			crossPartyBs.remove(pending[i]); // cross liq done — clean up
+			crossPartyBs.remove(pending[i]); // Remove completed cross-liquidation tracking.
 		}
 
 		_deleteVirtualAccount(partyA);

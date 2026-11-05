@@ -6,7 +6,7 @@ import type { SettlementSigStructOutput, UnifiedSettlementSigStruct } from "../.
 import type { QuoteStructOutput, SingleUpnlSigStructOutput } from "../../src/types/interfaces/ISymmio.js"
 import { setBalance } from "../helpers/network-helpers.js"
 import { decimal, serializeToJson, unDecimal } from "../utils/Common.js"
-import { logger } from "../utils/LoggerUtils.js"
+import { logDetailedDebug } from "../utils/LoggerUtils.js"
 import { getPrice } from "../utils/PriceUtils.js"
 import { getDummyPairUpnlAndPriceSig, getDummySettlementSig, getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "../utils/SignatureUtils.js"
 import { runTx } from "../utils/TxUtils.js"
@@ -61,7 +61,7 @@ export class Hedger extends PartyEntity {
 	public async openPosition(id: BigNumberish, request: OpenRequest = limitOpenRequestBuilder().build()) {
 		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
@@ -133,7 +133,7 @@ export class Hedger extends PartyEntity {
 	public async fillCloseRequest(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()) {
 		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
@@ -165,7 +165,7 @@ export class Hedger extends PartyEntity {
 	public async fillCloseRequestToLiquidation(id: BigNumberish, request: FillCloseRequest = limitFillCloseRequestBuilder().build()): Promise<bigint> {
 		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
@@ -209,7 +209,7 @@ export class Hedger extends PartyEntity {
 	public async emergencyClosePosition(id: BigNumberish, request: EmergencyCloseRequest = emergencyCloseRequestBuilder().build()) {
 		const quote = await this.context.viewFacetQuote.getQuote(id)
 		const user = this.context.manager.getUser(quote.partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				request: request,
 				hedgerBalanceInfo: await this.getBalanceInfo(quote.partyA),
@@ -233,7 +233,7 @@ export class Hedger extends PartyEntity {
 		let signature = sig instanceof Promise ? await sig : sig
 
 		const user = this.context.manager.getUser(partyA)
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				partyA: partyA,
 				updatedPrices: updatedPrices,
@@ -251,7 +251,7 @@ export class Hedger extends PartyEntity {
 	) {
 		let signature = sig instanceof Promise ? await sig : sig
 
-		logger.detailedDebug(
+		await logDetailedDebug(async () =>
 			serializeToJson({
 				partyB: signature.partyB,
 				partyAs: signature.partyAs,
@@ -270,10 +270,12 @@ export class Hedger extends PartyEntity {
 		let openPositions: QuoteStructOutput[] = []
 		const pageSize = 30
 		let last = 0
+		const partyB = await this.getAddress()
 		while (true) {
-			const page = await this.context.viewFacetQuote.getPartyBOpenPositions(await this.getAddress(), partyA, last, pageSize)
+			const page = await this.context.viewFacetQuote.getPartyBOpenPositions(partyB, partyA, last, pageSize)
 			openPositions.push(...page)
 			if (page.length < pageSize) break
+			last += page.length
 		}
 
 		let upnl = 0n

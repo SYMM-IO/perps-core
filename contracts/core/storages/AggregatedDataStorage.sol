@@ -20,7 +20,7 @@ struct PartiesAggregatedFunding {
 }
 
 /// @title AggregatedDataStorage
-/// @notice UPNL optimization - aggregated positions and funding
+/// @notice Aggregated positions and funding used for UPNL calculations.
 /// @dev Uses diamond storage pattern with a unique slot to avoid collisions.
 library AggregatedDataStorage {
 	bytes32 internal constant AGGREGATED_DATA_STORAGE_SLOT = keccak256("diamond.standard.storage.aggregateddata");

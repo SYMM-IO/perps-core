@@ -15,7 +15,8 @@ interface ISymmio {
 	/// @notice Order type
 	enum OrderType {
 		LIMIT,
-		MARKET
+		MARKET,
+		MARKET_BEST_EFFORT
 	}
 
 	/// @notice Fee configuration for an affiliate and symbol pair
@@ -37,6 +38,19 @@ interface ISymmio {
 		bytes reqId;
 		uint256 timestamp;
 		int256 upnl;
+		bytes gatewaySignature;
+		SchnorrSign sigs;
+	}
+
+	/// @notice Muon signature proving a single account's unrealized PnL, gross accrued funding liability,
+	/// pending balance, and locked balance re-marked to live notional (scaledLockedBalance)
+	struct SingleUpnlWithPendingBalanceSig {
+		bytes reqId;
+		uint256 timestamp;
+		int256 upnl;
+		uint256 fundingDebt;
+		uint256 pendingBalance;
+		uint256 scaledLockedBalance;
 		bytes gatewaySignature;
 		SchnorrSign sigs;
 	}
@@ -132,6 +146,70 @@ interface ISymmio {
 		address expressProvider;
 	}
 
+	/// @notice Solver fee caps approved by PartyA when sending a quote.
+	/// @dev Mirror of core's QuoteStorage.SolverFeeCaps -- keep the field types in sync. LibQuoteParams derives
+	///      the sendQuote selector from this interface, and that selector depends on this struct's ABI tuple
+	///      shape; changing its field types would make the selector diverge from the core diamond's.
+	struct SolverFeeCaps {
+		uint256 openRateCap;
+		uint256 closeRateCap;
+	}
+
+	/// @notice Sends a quote with an affiliate. Declared only so LibQuoteParams can derive its selector.
+	function sendQuoteWithAffiliate(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 maxFundingRate,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig
+	) external returns (uint256);
+
+	/// @notice Sends a quote with an affiliate and custom data. Declared only so LibQuoteParams can derive its selector.
+	function sendQuoteWithAffiliateAndData(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data
+	) external returns (uint256 quoteId);
+
+	/// @notice Sends a quote with affiliate, custom data, and solver fee caps. Declared only so LibQuoteParams can derive its selector.
+	function sendQuote(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data,
+		SolverFeeCaps memory solverFeeCaps
+	) external returns (uint256 quoteId);
+
 	/// @notice Deposits collateral for a user
 	/// @param user The user address
 	/// @param amount The amount to deposit
@@ -155,6 +233,11 @@ interface ISymmio {
 	/// @param amount The amount to deallocate
 	/// @param upnlSig The Muon signature proving UPNL
 	function deallocate(uint256 amount, ISymmio.SingleUpnlSig memory upnlSig) external;
+
+	/// @notice Deallocates collateral while reserving pending balance and enforcing the scaled retention floor
+	/// @param amount The amount to deallocate
+	/// @param upnlSig The Muon signature carrying UPNL, funding debt, pending balance, and scaledLockedBalance
+	function safeDeallocate(uint256 amount, ISymmio.SingleUpnlWithPendingBalanceSig memory upnlSig) external;
 
 	/// @notice Initiates a withdraw request with receiver parts
 	/// @param parts The withdraw receiver specifications
@@ -186,6 +269,12 @@ interface ISymmio {
 	/// @param signer The signer address
 	function setSigner(address signer) external;
 
+	/// @notice Installs the effective signer for this transaction, or clears it with zero
+	/// @dev Transient counterpart of setSigner. Core rejects it while a persistent
+	///      signer is set, so one transaction never mixes the two mechanisms
+	/// @param signerOrZero The signer address, or address(0) to end the signer scope
+	function setTransientSigner(address signerOrZero) external;
+
 	/// @notice Returns the allocated balance of a partyA
 	/// @param partyA The partyA address
 	/// @return The allocated balance
@@ -200,6 +289,12 @@ interface ISymmio {
 	/// @param user The recipient account address
 	/// @param amount The amount to transfer
 	function internalTransferToBalance(address user, uint256 amount) external;
+
+	/// @notice Transfers from the signer's deposited balance to another account's allocated balance.
+	///         Restricted to BALANCE_SETTLER_ROLE and not stopped by the core internal-transfer pause.
+	/// @param user The recipient account address
+	/// @param amount The amount to transfer
+	function internalTransferToAllocatedBalance(address user, uint256 amount) external;
 
 	/// @notice Deallocates collateral without requiring a UPNL signature (zero UPNL assumed)
 	/// @param amount The amount to deallocate
@@ -231,6 +326,20 @@ interface ISymmio {
 	/// @return Whether the call is from InstantLayer
 	function isCallFromInstantLayer() external view returns (bool);
 
+	/// @notice Temporarily strips core's InstantLayer privileges before AccountLayer calls out
+	///         to an affiliate hook
+	/// @dev Without this, a hook reached during an InstantLayer batch could call core directly
+	///      and inherit the batch's transaction-wide routing authority. Core binds the saved
+	///      context to msg.sender, so AccountLayer cannot choose or alter what it later restores
+	/// @return suspended True if a context existed and was suspended -- only then may
+	///         restoreExecutionContextAfterExternalCall be called
+	function suspendExecutionContextForExternalCall() external returns (bool suspended);
+
+	/// @notice Restores the execution context this same caller suspended
+	/// @dev Reverts if nothing is suspended for this caller, or if the hook installed its own
+	///      execution context while the original one was suspended
+	function restoreExecutionContextAfterExternalCall() external;
+
 	/// @notice Sets the fee collector address for an affiliate
 	/// @param affiliate The affiliate address
 	/// @param feeCollector The fee collector address
@@ -238,7 +347,14 @@ interface ISymmio {
 
 	/// @notice Returns the last assigned quote ID
 	/// @return The last assigned quote ID
-	function getNextQuoteId() external returns (uint256);
+	function getNextQuoteId() external view returns (uint256);
+
+	/// @notice Returns a quote by ID
+	function getQuote(uint256 quoteId) external view returns (Quote memory);
+
+	/// @notice Requests to cancel a quote; cancels immediately when the quote is still PENDING
+	/// @param quoteId The quote ID to cancel
+	function requestToCancelQuote(uint256 quoteId) external;
 
 	/// @notice Registers an affiliate on the Symmio core
 	/// @param affiliate The affiliate address to register

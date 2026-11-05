@@ -7,9 +7,11 @@ pragma solidity >=0.8.18;
 import { IAccountFacet } from "../facets/Account/IAccountFacet.sol";
 import { IControlFacet } from "../facets/Control/IControlFacet.sol";
 import { ISymbolControlFacet } from "../facets/SymbolControl/ISymbolControlFacet.sol";
+import { ISymbolAdjustmentFacet } from "../facets/SymbolAdjustment/ISymbolAdjustmentFacet.sol";
 import { IPauseControlFacet } from "../facets/PauseControl/IPauseControlFacet.sol";
 import { IFundingRateFacet } from "../facets/FundingRate/IFundingRateFacet.sol";
 import { IPartyALiquidationFacet } from "../facets/PartyALiquidation/IPartyALiquidationFacet.sol";
+import { IPartyALiquidationSnapshotFacet } from "../facets/PartyALiquidationSnapshot/IPartyALiquidationSnapshotFacet.sol";
 import { IPartyBLiquidationFacet } from "../facets/PartyBLiquidation/IPartyBLiquidationFacet.sol";
 import { IPartyAFacet } from "../facets/PartyA/IPartyAFacet.sol";
 import { IBridgeFacet } from "../facets/Bridge/IBridgeFacet.sol";
@@ -20,6 +22,7 @@ import { IDiamondCut } from "../../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IDiamondLoupe } from "../../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IPartyBQuoteActionsFacet } from "../facets/PartyBQuoteActions/IPartyBQuoteActionsFacet.sol";
 import { IPartyBPositionActionsFacet } from "../facets/PartyBPositionActions/IPartyBPositionActionsFacet.sol";
+import { IPartyBExecutionFacet } from "../facets/PartyBExecution/IPartyBExecutionFacet.sol";
 import { IForceActionsFacet } from "../facets/ForceActions/IForceActionsFacet.sol";
 import { ISettlementFacet } from "../facets/Settlement/ISettlementFacet.sol";
 import { IPartyBBatchActionsFacet } from "../facets/PartyBBatchActions/IPartyBBatchActionsFacet.sol";
@@ -29,6 +32,7 @@ interface ISymmio is
 	IAccountFacet,
 	IControlFacet,
 	ISymbolControlFacet,
+	ISymbolAdjustmentFacet,
 	IPauseControlFacet,
 	IFundingRateFacet,
 	IBridgeFacet,
@@ -36,9 +40,11 @@ interface ISymmio is
 	IForceActionsFacet,
 	IPartyBQuoteActionsFacet,
 	IPartyBPositionActionsFacet,
+	IPartyBExecutionFacet,
 	IPartyBBatchActionsFacet,
 	IPartyAFacet,
 	IPartyALiquidationFacet,
+	IPartyALiquidationSnapshotFacet,
 	IPartyBLiquidationFacet,
 	IViewFacet,
 	IViewFacetSymbol,
@@ -61,12 +67,40 @@ interface ISymmio is
 		FUNDING_FEE_IN,
 		FUNDING_FEE_OUT,
 		DEFERRED_BALANCE_IN,
-		DEFERRED_BALANCE_OUT
+		DEFERRED_BALANCE_OUT,
+		REIMBURSEMENT_IN,
+		OPERATIONAL_FEE_OUT,
+		OPEN_SOLVER_FEE_OUT,
+		CLOSE_SOLVER_FEE_OUT,
+		SETTLEMENT_PNL_IN,
+		SETTLEMENT_PNL_OUT
 	}
 
-	/// @notice Emitted when a PartyA's allocated balance changes
+	/// @notice Reasons for exact changes to PartyA's liquidation reimbursement bucket.
+	/// @dev The deprecated entries remain in their original ordinal positions for historical log decoding.
+	enum ReimbursementChangeType {
+		CLEARING_HOUSE_IN_DEPRECATED,
+		PLATFORM_FEE_IN,
+		CLEARING_HOUSE_OUT_DEPRECATED,
+		RELEASE_TO_ALLOCATED,
+		MOVE_TO_LIQUIDATION_ESCROW,
+		REALIZED_PNL_IN,
+		REALIZED_PNL_OUT,
+		FUNDING_FEE_IN,
+		FUNDING_FEE_OUT,
+		PLATFORM_FEE_OUT
+	}
+
+	/// @notice Emitted only when a PartyA's allocated balance changes.
+	/// @dev `amount` is the absolute allocated-balance delta represented by `_type`.
 	event BalanceChangePartyA(address indexed partyA, uint256 amount, BalanceChangeType _type);
 
-	/// @notice Emitted when a PartyB's allocated balance changes for a specific PartyA
+	/// @notice Emitted only when a PartyB allocated-balance bucket changes.
+	/// @dev `partyA` is the exact storage key: the PartyA address for isolated allocations or address(0) for cross mode.
+	///      `amount` is the absolute allocated-balance delta represented by `_type`.
 	event BalanceChangePartyB(address indexed partyB, address indexed partyA, uint256 amount, BalanceChangeType _type);
+
+	/// @notice Emitted only when PartyA's liquidation reimbursement bucket changes.
+	/// @dev `amount` is the absolute bucket delta and `newBalance` is the post-change bucket balance.
+	event PartyAReimbursementChange(address indexed partyA, uint256 amount, uint256 newBalance, ReimbursementChangeType _type);
 }

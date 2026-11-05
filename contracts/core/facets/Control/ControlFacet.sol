@@ -12,10 +12,9 @@ import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
-import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { ExternalTransferStorage } from "../../storages/ExternalTransferStorage.sol";
-import { IControlFacet } from "./IControlFacet.sol";
+import { IControlEvents } from "./IControlEvents.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
@@ -23,9 +22,18 @@ import { BridgeStorage } from "../../storages/BridgeStorage.sol";
 import { WithdrawStorage } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
+import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 
-contract ControlFacet is Accessibility, Ownable, IControlFacet {
+/// @dev Native transient execution administration lives in ExecutionContextFacet.
+///      This facet retains the legacy selector adapters without exceeding EIP-170, while
+///      the Diamond continues to expose the same composite IControlFacet ABI.
+contract ControlFacet is Accessibility, Ownable, IControlEvents {
+	error IncompatibleSignatureVerifier();
+
 	/// @notice Initiates a two-step ownership transfer to a new address. The new owner must call acceptOwnership() to complete the transfer.
 	/// @param owner The address of the pending new owner.
 	function transferOwnership(address owner) external onlyOwner {
@@ -94,7 +102,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Registers a new Party B (market maker/hedger) into the system, allowing them to respond to quotes from Party A users.
 	/// @param partyB The address to register as Party B.
-	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+	function registerPartyB(address partyB) external onlyRole(LibAccessibility.PARTY_B_REGISTRAR_ROLE) {
 		checkZeroAddress(partyB);
 		require(!MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is already registered");
 		MAStorage.layout().partyBStatus[partyB] = true;
@@ -107,13 +115,13 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @param index The index of the Party B in the partyBList array (used for gas-efficient removal).
 	/// @dev WARNING: Use with extreme caution. This should almost never be called in production.
 	///      Setting partyBStatus to false has serious side effects:
-	///      - distributeFromLiquidationEscrow and distributeForClearingHouse will misroute funds
+	///      - distributeFromLiquidationEscrow and applyClearingHouseSettlement will misroute funds
 	///        to allocatedBalances instead of partyBAllocatedBalances
 	///      - deallocateForPartyB becomes inaccessible (onlyPartyB modifier fails), locking funds
 	///      Only use this if a PartyB address was registered by mistake and needs immediate removal
 	///      (e.g., within minutes, before any positions or balances exist).
 	///      To prevent a PartyB from opening new positions while preserving correct fund routing,
-	///      use setPartyBOpenPositionsPaused() in PauseControlFacet instead.
+	///      use pausePartyBOpenPositionsFor() in PauseControlFacet instead.
 	function deregisterPartyB(address partyB, uint256 index) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		checkZeroAddress(partyB);
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
@@ -126,17 +134,71 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit DeregisterPartyB(partyB, index);
 	}
 
-	/// @notice Sets the metadata for a Party B, including display name and other identifying information.
-	/// @param partyB The address of the Party B to set metadata for.
-	/// @param metadata The EntityMetadata struct containing the Party B's metadata.
-	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
-		MAStorage.layout().entitiesMetadata[partyB] = metadata;
-		emit SetEntityMetadata(partyB, metadata);
+	/// @notice Registers a non-PartyB address as an operational-fee charger.
+	/// @dev Registered PartyBs are operational-fee chargers by default.
+	function registerOperationalFeeCharger(address charger) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
+		checkZeroAddress(charger);
+		require(!LibOperationalFee.isCharger(charger), "ControlFacet: Already a charger");
+		MAStorage.layout().operationalFeeChargers[charger] = true;
+		emit OperationalFeeChargerRegistered(charger);
+	}
+
+	/// @notice Removes an explicitly registered operational-fee charger.
+	/// @dev Registered PartyBs remain chargers while their PartyB registration is active.
+	function unregisterOperationalFeeCharger(address charger) external onlyRole(LibAccessibility.FEE_ADMIN_ROLE) {
+		require(MAStorage.layout().operationalFeeChargers[charger], "ControlFacet: Not a charger");
+		MAStorage.layout().operationalFeeChargers[charger] = false;
+		emit OperationalFeeChargerUnregistered(charger);
+	}
+
+	/// @notice Sets the timelock applied to operational-fee allowance reductions.
+	function setOperationalFeeReductionDelay(uint256 delay) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
+		emit OperationalFeeReductionDelaySet(MAStorage.layout().operationalFeeReductionDelay, delay);
+		MAStorage.layout().operationalFeeReductionDelay = delay;
+	}
+
+	/// @notice Sets the receiver of a registered charger's operational fees (address(0) = the charger itself).
+	/// @dev Callable by the charger itself or by FEE_ADMIN_ROLE, which is also the role that registers chargers.
+	///      Caller is resolved via LibSigner.getSigner() (consistent with approveOperationalFee), so a charger
+	///      can set its receiver directly or through the signer/proxy mechanism.
+	/// @param charger The registered charger whose operational fee receiver is being set.
+	/// @param receiver The account to credit, or address(0) to reset to the charger itself.
+	function setOperationalFeeReceiver(address charger, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.FEE_ADMIN_ROLE) || sender == charger, "ControlFacet: Not authorized");
+		require(LibOperationalFee.isCharger(charger), "OperationalFee: Not a registered charger");
+		MAStorage.layout().operationalFeeReceivers[charger] = receiver;
+		emit SetOperationalFeeReceiver(charger, receiver);
+	}
+
+	/// @notice Sets the receiver of a Party B's solver fees (address(0) = the Party B itself).
+	/// @dev Callable by the Party B itself or by PARTY_B_MANAGER_ROLE, mirroring the authorization used for
+	///      symbol listings in SymbolControlFacet. The receiver is resolved at charge time, so a change only
+	///      affects subsequent solver fees, never ones already collected.
+	/// @param partyB The registered Party B whose solver fee receiver is being set.
+	/// @param receiver The account to credit, or address(0) to reset to the Party B itself.
+	function setSolverFeeReceiver(address partyB, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
+		MAStorage.layout().solverFeeReceivers[partyB] = receiver;
+		emit SetSolverFeeReceiver(partyB, receiver);
+	}
+
+	/// @notice Sets the receiver of a Party B's solver fees for one arbitrary tag.
+	/// @dev The raw tag is hashed for storage. A zero receiver clears the tag override, after which the
+	///      Party B's default solver fee receiver applies. Authorization matches setSolverFeeReceiver.
+	function setSolverFeeReceiverForTag(address partyB, bytes32 tag, address receiver) external {
+		address sender = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(sender, LibAccessibility.PARTY_B_MANAGER_ROLE) || sender == partyB, "ControlFacet: Not authorized");
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not registered");
+		MAStorage.layout().solverFeeReceiversByTag[partyB][tag] = receiver;
+		emit SetSolverFeeReceiverForTag(partyB, receiver, tag);
 	}
 
 	/// @notice Registers a new affiliate (frontend partner) into the system.
 	/// @param affiliate The address to register as an affiliate.
-	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
+	function registerAffiliate(address affiliate) external onlyRole(LibAccessibility.AFFILIATE_REGISTRAR_ROLE) {
 		require(!MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Address is already registered");
 		MAStorage.layout().affiliateStatus[affiliate] = true;
 		emit RegisterAffiliate(affiliate);
@@ -150,10 +212,52 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit DeregisterAffiliate(affiliate);
 	}
 
-	/// @notice Sets the metadata for an affiliate, including display name and other identifying information.
-	/// @param affiliate The address of the affiliate to set metadata for.
-	/// @param metadata The EntityMetadata struct containing the affiliate's metadata.
-	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_MANAGER_ROLE) {
+	/// @notice Schedules an affiliate shutdown. New positions are blocked immediately, and ClearingHouse can close remaining positions at shutdownTime.
+	/// @param affiliate The affiliate/frontend address being shut down.
+	/// @param shutdownTime The timestamp when ClearingHouse can close remaining positions.
+	function scheduleAffiliateShutdown(address affiliate, uint256 shutdownTime) external {
+		checkZeroAddress(affiliate);
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
+		require(MAStorage.layout().affiliateStatus[affiliate], "ControlFacet: Invalid affiliate");
+		require(GlobalAppStorage.layout().affiliateShutdownTime[affiliate] == 0, "ControlFacet: Affiliate shutdown already scheduled");
+		require(shutdownTime != 0, "ControlFacet: Invalid shutdown time");
+
+		GlobalAppStorage.layout().affiliateShutdownTime[affiliate] = shutdownTime;
+		emit ScheduleAffiliateShutdown(affiliate, shutdownTime);
+	}
+
+	/// @notice Cancels a scheduled affiliate shutdown and restores normal opening through that affiliate.
+	/// @param affiliate The affiliate/frontend address whose shutdown is being cancelled.
+	function cancelAffiliateShutdown(address affiliate) external {
+		checkZeroAddress(affiliate);
+		address signer = LibSigner.getSigner();
+		require(LibAccessibility.hasRole(signer, LibAccessibility.AFFILIATE_MANAGER_ROLE) || signer == affiliate, "ControlFacet: Not authorized");
+		require(GlobalAppStorage.layout().affiliateShutdownTime[affiliate] != 0, "ControlFacet: Affiliate shutdown not scheduled");
+
+		delete GlobalAppStorage.layout().affiliateShutdownTime[affiliate];
+		emit CancelAffiliateShutdown(affiliate);
+	}
+
+	/// @notice Sets display and identifying metadata for a protocol entity.
+	/// @dev Uses a dedicated role because entities span Party Bs, affiliates, liquidators, fee chargers, and providers.
+	/// @param entity The address whose metadata is being set.
+	/// @param metadata The entity's display and identifying metadata.
+	function setEntityMetadata(address entity, EntityMetadata memory metadata) external onlyRole(LibAccessibility.ENTITY_METADATA_MANAGER_ROLE) {
+		MAStorage.layout().entitiesMetadata[entity] = metadata;
+		emit SetEntityMetadata(entity, metadata);
+	}
+
+	/// @notice Sets metadata through the legacy Party B-specific interface.
+	/// @dev Kept for backward compatibility with integrations authorized through PARTY_B_REGISTRAR_ROLE.
+	function setPartyBMetadata(address partyB, EntityMetadata memory metadata) external onlyRole(LibAccessibility.PARTY_B_REGISTRAR_ROLE) {
+		MAStorage.layout().entitiesMetadata[partyB] = metadata;
+		emit SetEntityMetadata(partyB, metadata);
+	}
+
+	/// @notice Sets metadata through the legacy affiliate-specific interface.
+	/// @dev Kept for backward compatibility with integrations authorized through AFFILIATE_REGISTRAR_ROLE.
+	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external onlyRole(LibAccessibility.AFFILIATE_REGISTRAR_ROLE) {
 		MAStorage.layout().entitiesMetadata[affiliate] = metadata;
 		emit SetEntityMetadata(affiliate, metadata);
 	}
@@ -166,6 +270,17 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		muonLayout.upnlValidTime = upnlValidTime;
 		muonLayout.priceValidTime = priceValidTime;
+	}
+
+	/// @notice Sets or clears a UPNL signature validity override for one Muon function category.
+	/// @dev A zero value means the override is unset, so verification uses the global UPNL validity from setMuonConfig.
+	/// @param func The Muon function category to configure.
+	/// @param upnlValidTime Override duration in seconds, or zero to clear the override.
+	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external onlyRole(LibAccessibility.MUON_SETTER_ROLE) {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		// Zero is the unset sentinel; the validity resolver then falls back to the global value.
+		muonLayout.upnlValidTimeByFunction[func] = upnlValidTime;
+		emit SetMuonFunctionUpnlValidTime(func, upnlValidTime);
 	}
 
 	/// @notice Sets the Muon application ID used to identify this protocol in the Muon oracle network.
@@ -193,7 +308,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Sets the maximum number of pending (unaccepted) quotes a Party A can have at once.
 	/// @param pendingQuotesValidLength The maximum number of pending quotes allowed per user.
-	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setPendingQuotesValidLength(uint256 pendingQuotesValidLength) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		emit SetPendingQuotesValidLength(MAStorage.layout().pendingQuotesValidLength, pendingQuotesValidLength);
 		MAStorage.layout().pendingQuotesValidLength = pendingQuotesValidLength;
 	}
@@ -395,7 +510,8 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		SymbolStorage.layout().forceCloseGapRatio[symbolId] = forceCloseGapRatio;
 	}
 
-	/// @notice Sets the minimum time between UPNL settlements. Prevents excessive settlement frequency by third-party signers (Party B is exempt from this cooldown).
+	/// @notice Sets the minimum time between UPNL settlements by third-party signers.
+	/// @dev PartyB is exempt from this cooldown.
 	/// @param settlementCooldown The minimum time in seconds between consecutive UPNL settlements.
 	function setSettlementCooldown(uint256 settlementCooldown) external onlyRole(LibAccessibility.COOLDOWN_ADMIN_ROLE) {
 		emit SetSettlementCooldown(MAStorage.layout().settlementCooldown, settlementCooldown);
@@ -418,7 +534,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Sets the maximum number of Party B connections a single Party A can have simultaneously.
 	/// @param maxLimit The maximum number of Party Bs a Party A can be connected to at once.
-	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setMaxPartyAConnectionLimit(uint256 maxLimit) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		require(maxLimit > 0, "ControlFacet: Value must be greater than zero");
 		MAStorage.layout().maxPartyAConnectionLimit = maxLimit;
 		emit SetMaxPartyAConnectionLimit(maxLimit);
@@ -433,7 +549,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 
 	/// @notice Sets the maximum collateral balance a single user can hold in the protocol. Used for risk management.
 	/// @param balanceLimitPerUser The maximum collateral amount (in collateral token units) a user can deposit.
-	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setBalanceLimitPerUser(uint256 balanceLimitPerUser) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		emit SetBalanceLimitPerUser(balanceLimitPerUser);
 		GlobalAppStorage.layout().balanceLimitPerUser = balanceLimitPerUser;
 	}
@@ -444,14 +560,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		emit SetCrossPartyBModeActivated(appLayout.crossPartyBModeActivated, activated);
 		appLayout.crossPartyBModeActivated = activated;
-	}
-
-	/// @notice Enables or disables the legacy deallocate function. When deprecated, users must use safeDeallocate.
-	/// @param deprecated True to deprecate legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
-	function setLegacyDeallocateDeprecated(bool deprecated) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
-		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
-		emit SetLegacyDeallocateDeprecated(appLayout.legacyDeallocateDeprecated, deprecated);
-		appLayout.legacyDeallocateDeprecated = deprecated;
 	}
 
 	/// @notice Registers a bridge contract.
@@ -486,11 +594,14 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the contract address responsible for verifying muon cryptographic signatures in the protocol.
 	/// @param signatureVerifier The address of the signature verifier contract.
 	function setSignatureVerifierAddress(address signatureVerifier) external onlyRole(LibAccessibility.DEFAULT_ADMIN_ROLE) {
+		if (signatureVerifier != address(0) && !LibMuonVerifier.supportsMuonFunction(signatureVerifier, uint8(MuonFunction.RemoveMargin)))
+			revert IncompatibleSignatureVerifier();
 		GlobalAppStorage.layout().signatureVerifier = signatureVerifier;
 		emit SetSignatureVerifierAddress(signatureVerifier);
 	}
 
-	/// @notice Authorizes a relayer to facilitate external transfers to a specific target (another Symmio diamond or any trusted contract).
+	/// @notice Authorizes a relayer to perform external transfers to a specific target.
+	/// @dev The target may be another Symmio diamond or any trusted contract.
 	/// @param target The external transfer destination address. Symmio trusts this target and its relayer to handle funds correctly.
 	/// @param relayer The address authorized to relay transfers to the target.
 	function addRelayerForExternalTransferTarget(address target, address relayer) external onlyRole(LibAccessibility.INTEGRATION_ADMIN_ROLE) {
@@ -515,20 +626,6 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit RegisterHook(affiliate, hook);
 	}
 
-	/// @notice Sets the flag indicating if the current operation is being executed via the instant layer.
-	/// @dev Instant layer sets this flag to true before execution and MUST reset it back to false after its operation.
-	/// @param _callFromInstantLayer True when entering instant layer execution, false when exiting.
-	function setCallFromInstantLayer(bool _callFromInstantLayer) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		require(!(_callFromInstantLayer && GlobalAppStorage.layout().instantLayerPaused), "ControlFacet: Instant Layer Paused");
-		GlobalAppStorage.layout().callFromInstantLayer = _callFromInstantLayer;
-	}
-
-	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
-	/// @param _instantOpenMode True when entering instant open execution, false when exiting.
-	function setInstantOpenMode(bool _instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		GlobalAppStorage.layout().instantOpenMode = _instantOpenMode;
-	}
-
 	/// @notice Enables or disables Auto-Deleveraging (ADL) for a Party B. When enabled, positions can be force-closed to reduce risk.
 	/// @param partyB The address of the Party B to configure ADL for.
 	/// @param enabled True to enable ADL for this Party B, false to disable.
@@ -537,9 +634,19 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit SetADLEnabled(partyB, enabled);
 	}
 
+	/// @notice Controls whether a Party B must keep locked and pending CVA + LF allocated when deallocating.
+	/// @dev The protection is disabled by default and configured independently for each Party B.
+	/// @param partyB The Party B whose deallocation protection is being configured.
+	/// @param enabled True to prevent positive uPnL from replacing allocated CVA + LF, false to retain legacy behavior.
+	function setPartyBStrictDeallocation(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
+		MAStorage.layout().strictDeallocationEnabledForPartyB[partyB] = enabled;
+		emit SetPartyBStrictDeallocation(partyB, enabled);
+	}
+
 	/// @notice Sets the maximum number of partial withdrawals allowed. Withdrawals can be split to manage liquidity.
 	/// @param _maxWithdrawParts The maximum number of parts a single withdrawal can be divided into.
-	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.PROTOCOL_CONFIG_ROLE) {
+	function setMaxWithdrawParts(uint256 _maxWithdrawParts) external onlyRole(LibAccessibility.PROTOCOL_LIMITS_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
 		withdrawLayout.maxWithdrawParts = _maxWithdrawParts;
 		emit SetMaxWithdrawParts(_maxWithdrawParts);
@@ -560,7 +667,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		maLayout.withdrawCooldownPeriod = newValue;
 	}
 
-	/// @notice Registers a virtual provider that can facilitate virtual deposits/withdrawals without actual token transfers.
+	/// @notice Registers a virtual provider for virtual deposits and withdrawals without token transfers.
 	/// @param provider The address to authorize as a virtual provider.
 	function registerVirtualProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -577,7 +684,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 		emit UnregisterVirtualProvider(provider);
 	}
 
-	/// @notice Registers an express provider that can facilitate expedited withdrawals with reduced cooldown periods.
+	/// @notice Registers an express provider for expedited withdrawals with reduced cooldown periods.
 	/// @param provider The address to authorize as an express provider.
 	function registerExpressProvider(address provider) external onlyRole(LibAccessibility.PROVIDER_ADMIN_ROLE) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -622,6 +729,15 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	/// @notice Sets the trusted signer address whose signatures are accepted for protocol operations.
 	/// @param signer The address of the trusted signer for off-chain signature verification.
 	function setSigner(address signer) external onlyRoleAllowProxy(LibAccessibility.SIGNER_ADMIN_ROLE) {
+		if (LibExecutionContext.isTransientContextActive()) {
+			require(GlobalAppStorage.layout().signer == address(0), "ControlFacet: Persistent signer is set");
+			LibExecutionContext.setTransientSigner(signer);
+			emit SignerSet(signer);
+			return;
+		}
+		if (signer != address(0) && LibExecutionContext.isTransientSignerActive() && LibExecutionContext.transientSigner() != address(0)) {
+			revert("ControlFacet: Transient signer is set");
+		}
 		GlobalAppStorage.layout().signer = signer;
 		emit SignerSet(signer);
 	}
@@ -654,7 +770,7 @@ contract ControlFacet is Accessibility, Ownable, IControlFacet {
 	///      The solver must fund the cross bucket by allocating to address(0) after enabling.
 	/// @param partyB The address of the Party B to configure.
 	/// @param enabled True to enable cross partyB mode, false to disable.
-	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "ControlFacet: Cross feature disabled");
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
 		MAStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;

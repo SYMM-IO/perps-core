@@ -2,6 +2,7 @@ import { expect } from "chai"
 import { ethers, toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers as hardhatEthers } from "./helpers/hardhat-connection.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
@@ -11,7 +12,32 @@ import { limitCloseRequestBuilder } from "./models/requestModels/CloseRequest.js
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
-import { getDummyHighLowPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { deterministicMuonKey, signMuonHash } from "./utils/MuonSignature.js"
+import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+
+const quoteFundingSettledInterface = new ethers.Interface([
+	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
+])
+
+const parseQuoteFundingSettledLogs = (logs: readonly { topics: readonly string[]; data: string }[]) =>
+	logs.flatMap(log => {
+		try {
+			const parsed = quoteFundingSettledInterface.parseLog({ topics: [...log.topics], data: log.data })
+			if (parsed?.name !== "QuoteFundingSettled") return []
+			return [
+				{
+					quoteId: parsed.args.quoteId as bigint,
+					symbolId: parsed.args.symbolId as bigint,
+					partyB: parsed.args.partyB as string,
+					partyA: parsed.args.partyA as string,
+					allocationKey: parsed.args.allocationKey as string,
+					funding: parsed.args.funding as bigint,
+				},
+			]
+		} catch {
+			return []
+		}
+	})
 
 export function shouldBehaveLikeFundingRate(): void {
 	let context: RunContext, user: User, hedger: Hedger, hedger2: Hedger
@@ -60,7 +86,7 @@ export function shouldBehaveLikeFundingRate(): void {
 
 	it("Should fail on invalid quote state", async function () {
 		await expect(hedger.chargeFundingRate(await context.signers.user.getAddress(), [3], [1], await getDummyPairUpnlSig())).to.be.revertedWith(
-			"ChargeFundingFacet: Invalid state",
+			"LibQuote: Invalid state",
 		)
 	})
 
@@ -376,6 +402,150 @@ export function shouldBehaveLikeFundingRate(): void {
 				await time.increase(EightHourInSec * 5)
 			})
 
+			describe("bound solver authorization", () => {
+				const muonKey = deterministicMuonKey()
+				let partyA: string, partyB: string
+
+				beforeEach(async () => {
+					partyA = await user.getAddress()
+					partyB = await hedger.getAddress()
+					await context.controlFacet.connect(context.signers.admin).setPartyBBindable(partyB, true)
+					await context.bindingFacet.connect(context.signers.user).bindToPartyB(partyB)
+					const verifier = await hardhatEthers.deployContract("MuonSignatureVerifier", [context.signers.admin.address])
+					await verifier.connect(context.signers.admin).addPublicKey(muonKey.publicKey)
+					await verifier.connect(context.signers.admin).setPublicKeyPermissions(muonKey.publicKey, [4], true)
+					await verifier.connect(context.signers.admin).addGatewaySigner(context.signers.admin.address)
+					await verifier.connect(context.signers.admin).setGatewaySignerPermissions(context.signers.admin.address, [4], true)
+					await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
+				})
+
+				function unsignedUpnl(timestamp = 0n) {
+					return {
+						reqId: "0x",
+						timestamp,
+						// Ignored in bound mode; these values must not feed solvency arithmetic.
+						upnlPartyA: ethers.MinInt256,
+						upnlPartyB: ethers.MinInt256,
+						gatewaySignature: "0x",
+						sigs: { signature: 0n, owner: ethers.ZeroAddress, nonce: ethers.ZeroAddress },
+					}
+				}
+
+				async function signedUpnl(upnlPartyA = 0n, upnlPartyB = 0n) {
+					const sig = { ...unsignedUpnl(BigInt(await time.latest())), upnlPartyA, upnlPartyB }
+					const hash = ethers.solidityPackedKeccak256(
+						["uint256", "bytes", "address", "address", "address", "uint256", "uint256", "int256", "int256", "uint256", "uint256"],
+						[
+							await context.viewFacet.getMuonIds(),
+							sig.reqId,
+							await context.fundingRateFacet.getAddress(),
+							partyB,
+							partyA,
+							await context.viewFacet.nonceOfPartyB(partyB, partyA),
+							await context.viewFacet.nonceOfPartyA(partyA),
+							upnlPartyB,
+							upnlPartyA,
+							sig.timestamp,
+							(await hardhatEthers.provider.getNetwork()).chainId,
+						],
+					)
+					return { ...sig, sigs: signMuonHash(hash, muonKey), gatewaySignature: await context.signers.admin.signMessage(ethers.getBytes(hash)) }
+				}
+
+				function charge(sig = unsignedUpnl(), quoteIds = [1n], signer = context.signers.hedger, targetPartyB = partyB) {
+					return context.fundingRateFacet.connect(signer).chargeAccumulatedFundingFee(partyA, targetPartyB, quoteIds, sig)
+				}
+
+				for (const quoteId of [1n, 2n]) {
+					it(`settles quote ${quoteId} with empty signatures and ignores signature timestamp and UPNLs`, async () => {
+						const [funding] = await context.viewFacetQuote.getQuoteFundingDebts([quoteId])
+						expect(funding).not.to.equal(0n)
+						const beforeA = await user.getBalanceInfo()
+						const beforeB = await hedger.getBalanceInfo(partyA)
+						const nonceA = await context.viewFacet.nonceOfPartyA(partyA)
+						const nonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+						const nonceCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+						const receipt = await (await charge(unsignedUpnl(), [quoteId])).wait()
+						expect((await user.getBalanceInfo()).allocatedBalances).to.equal(beforeA.allocatedBalances - funding)
+						expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(beforeB.allocatedBalances + funding)
+						expect(parseQuoteFundingSettledLogs(receipt?.logs ?? [])).to.deep.equal([
+							{ quoteId, symbolId: 1n, partyB, partyA, allocationKey: partyA, funding },
+						])
+						expect(await context.viewFacetQuote.getQuoteFundingDebts([quoteId])).to.deep.equal([0n])
+						expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(nonceA + 1n)
+						expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(nonceB + 1n)
+						expect(await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)).to.equal(nonceCross + 1n)
+					})
+				}
+
+				it("requires Muon when a different registered solver charges a bound pair", async () => {
+					await expect(charge(unsignedUpnl(BigInt(await time.latest())), [1n], context.signers.hedger2)).to.be.revertedWith("no zero inputs allowed")
+					await expect(charge(await signedUpnl(), [1n], context.signers.hedger2)).not.to.be.reverted
+				})
+
+				it("requires Muon when the bound caller supplies another partyB", async () => {
+					await expect(
+						charge(unsignedUpnl(BigInt(await time.latest())), [1n], context.signers.hedger, context.signers.hedger2.address),
+					).to.be.revertedWith("no zero inputs allowed")
+				})
+
+				it("requires Muon again when bindability is disabled", async () => {
+					await context.controlFacet.connect(context.signers.admin).setPartyBBindable(partyB, false)
+					await expect(charge(unsignedUpnl(BigInt(await time.latest())))).to.be.revertedWith("no zero inputs allowed")
+					await expect(charge(await signedUpnl())).not.to.be.reverted
+				})
+
+				it("keeps the bypass during pending unbind and requires Muon after completion", async () => {
+					await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+					await expect(charge()).not.to.be.reverted
+					await context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(partyA)
+					await expect(charge(unsignedUpnl(BigInt(await time.latest())), [2n])).to.be.revertedWith("no zero inputs allowed")
+					await expect(charge(await signedUpnl(), [2n])).not.to.be.reverted
+				})
+
+				it("retains timestamp and solvency checks after unbinding", async () => {
+					await context.bindingFacet.connect(context.signers.user).requestToUnbindFromPartyB()
+					await context.bindingFacet.connect(context.signers.hedger).completeUnbindRequest(partyA)
+					await context.controlFacet.connect(context.signers.admin).setMuonConfig(60, 60)
+					await expect(charge()).to.be.revertedWith("LibMuon: Expired signature")
+					const staleSig = await signedUpnl()
+					await time.increase(1)
+					await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+					await expect(charge(staleSig)).to.be.revertedWith("FundingRateFacet: Outdated funding signature")
+					await expect(charge(await signedUpnl(-decimal(100000n), 0n))).to.be.revertedWith("FundingRateFacet: PartyA will be insolvent")
+					await expect(charge(await signedUpnl(0n, -decimal(100000n)))).to.be.revertedWith("FundingRateFacet: PartyB will be insolvent")
+				})
+
+				it("retains quote ownership and position status checks in bound mode", async () => {
+					await expect(charge(unsignedUpnl(), [0n])).to.be.revertedWith("FundingRateFacet: Invalid quote")
+					await expect(charge(unsignedUpnl(), [3n])).to.be.revertedWith("LibQuote: Invalid state")
+				})
+
+				it("retains the pause guard in bound mode", async () => {
+					await context.pauseControlFacet.pausePartyBActions()
+					await expect(charge()).to.be.revertedWith("Pausable: PartyB actions paused")
+				})
+
+				it("rolls back funding and nonces when the payer cannot cover the debit", async () => {
+					await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(100n)], [0n], [decimal(1n)])
+					await time.increase(EightHourInSec)
+					const beforeA = await user.getBalanceInfo()
+					const beforeB = await hedger.getBalanceInfo(partyA)
+					const debt = await context.viewFacetQuote.getQuoteFundingDebts([1n])
+					const nonceA = await context.viewFacet.nonceOfPartyA(partyA)
+					const nonceB = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+					const nonceCross = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+					expect(debt[0]).to.be.greaterThan(beforeA.allocatedBalances)
+					await expect(charge()).to.be.revertedWithPanic(0x11)
+					expect((await user.getBalanceInfo()).allocatedBalances).to.equal(beforeA.allocatedBalances)
+					expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(beforeB.allocatedBalances)
+					expect(await context.viewFacetQuote.getQuoteFundingDebts([1n])).to.deep.equal(debt)
+					expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(nonceA)
+					expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(nonceB)
+					expect(await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)).to.equal(nonceCross)
+				})
+			})
+
 			it("should fail when partyB action paused", async () => {
 				await context.pauseControlFacet.pausePartyBActions()
 				await expect(
@@ -419,6 +589,63 @@ export function shouldBehaveLikeFundingRate(): void {
 
 			// TODO ::: test notLiquidatedPartyB(partyB, partyA) modifier
 
+			it("should expose each quote's exact signed funding and market", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const funding = await context.viewFacetQuote.getQuoteFundingDebts([1n, 2n])
+				expect(funding[0]).to.be.greaterThan(0n)
+				expect(funding[1]).to.be.lessThan(0n)
+
+				const tx = await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(partyA, partyB, [1n, 2n], await getDummyPairUpnlSig())
+				const receipt = await tx.wait()
+
+				expect(parseQuoteFundingSettledLogs(receipt?.logs ?? [])).to.deep.equal([
+					{
+						quoteId: 1n,
+						symbolId: 1n,
+						partyB,
+						partyA,
+						allocationKey: partyA,
+						funding: funding[0],
+					},
+					{
+						quoteId: 2n,
+						symbolId: 1n,
+						partyB,
+						partyA,
+						allocationKey: partyA,
+						funding: funding[1],
+					},
+				])
+			})
+
+			it("should settle opposite funding debts sequentially instead of netting the batch", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n)], [-decimal(2n)], [decimal(1n)])
+				await time.increase(EightHourInSec)
+
+				const partyBBeforeDeallocation = await hedger.getBalanceInfo(partyA)
+				const retainedPartyBAllocation = partyBBeforeDeallocation.totalLockedPartyB
+				await context.partyBAccountFacet
+					.connect(context.signers.hedger)
+					.deallocateForPartyB(partyBBeforeDeallocation.allocatedBalances - retainedPartyBAllocation, partyA, await getDummySingleUpnlSig(0n))
+
+				const fundingBefore = await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])
+				expect(fundingBefore[0]).to.be.lessThan(-retainedPartyBAllocation)
+				expect(fundingBefore[0] + fundingBefore[1]).to.equal(0n)
+
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [2n, 1n], await getDummyPairUpnlSig()),
+				).to.be.reverted
+
+				expect((await hedger.getBalanceInfo(partyA)).allocatedBalances).to.equal(retainedPartyBAllocation)
+				expect(await context.viewFacetQuote.getQuoteFundingDebts([2n, 1n])).to.deep.equal(fundingBefore)
+			})
+
 			it("should failed when quote has invalid party A", async () => {
 				await expect(
 					context.fundingRateFacet
@@ -455,8 +682,168 @@ export function shouldBehaveLikeFundingRate(): void {
 							[3],
 							await getDummyPairUpnlSig(),
 						),
-				).to.revertedWith("FundingRateFacet: Invalid state")
+				).to.revertedWith("LibQuote: Invalid state")
 			})
+
+			it("should reject a signature created before the latest funding-state update", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const staleSig = await getDummyPairUpnlSig()
+
+				await time.increase(1)
+				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [NineHourInSec])
+
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [1], staleSig),
+				).to.be.revertedWith("FundingRateFacet: Outdated funding signature")
+
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [1], await getDummyPairUpnlSig()),
+				).not.to.be.reverted
+			})
+
+			it("should increment partyA and partyB nonces after a successful accumulated funding charge", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+				const partyBCrossNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+				await context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [1], await getDummyPairUpnlSig())
+
+				expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(partyANonceBefore + 1n)
+				expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(partyBNonceBefore + 1n)
+				expect(await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)).to.equal(partyBCrossNonceBefore + 1n)
+			})
+
+			it("should not double-count funding paid by partyA in the solvency check", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const [fundingFee] = await context.viewFacetQuote.getQuoteFundingDebts([1])
+				expect(fundingFee).to.be.greaterThan(0n)
+
+				const partyABefore = await user.getBalanceInfo()
+				const freeBalance = partyABefore.allocatedBalances - partyABefore.lockedCva - partyABefore.lockedLf
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(partyA, partyB, [1], await getDummyPairUpnlSig(-freeBalance, 0n))
+
+				const partyAAfter = await user.getBalanceInfo()
+				expect(partyABefore.allocatedBalances - partyAAfter.allocatedBalances).to.equal(fundingFee)
+			})
+
+			it("should not double-count funding paid by partyB in the solvency check", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const [fundingFee] = await context.viewFacetQuote.getQuoteFundingDebts([2])
+				expect(fundingFee).to.be.lessThan(0n)
+
+				const partyBBefore = await hedger.getBalanceInfo(partyA)
+				const freeBalance = partyBBefore.allocatedBalances - partyBBefore.lockedCva - partyBBefore.lockedLf
+				await context.fundingRateFacet
+					.connect(context.signers.hedger)
+					.chargeAccumulatedFundingFee(partyA, partyB, [2], await getDummyPairUpnlSig(0n, -freeBalance))
+
+				const partyBAfter = await hedger.getBalanceInfo(partyA)
+				expect(partyBAfter.allocatedBalances - partyBBefore.allocatedBalances).to.equal(fundingFee)
+			})
+
+			it("should include funding accrued after the signature when partyA pays", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const partyABefore = await user.getBalanceInfo()
+				const freeBalance = partyABefore.allocatedBalances - partyABefore.lockedCva - partyABefore.lockedLf
+				const upnlSig = await getDummyPairUpnlSig(-freeBalance, 0n)
+				const nextEpoch = (upnlSig.timestamp / BigInt(EightHourInSec) + 1n) * BigInt(EightHourInSec)
+
+				await time.setNextBlockTimestamp(nextEpoch)
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [1], upnlSig),
+				).to.be.revertedWith("FundingRateFacet: PartyA will be insolvent")
+			})
+
+			it("should include funding accrued after the signature when partyB pays", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const partyBBefore = await hedger.getBalanceInfo(partyA)
+				const freeBalance = partyBBefore.allocatedBalances - partyBBefore.lockedCva - partyBBefore.lockedLf
+				const upnlSig = await getDummyPairUpnlSig(0n, -freeBalance)
+				const nextEpoch = (upnlSig.timestamp / BigInt(EightHourInSec) + 1n) * BigInt(EightHourInSec)
+
+				await time.setNextBlockTimestamp(nextEpoch)
+				await expect(
+					context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [2], upnlSig),
+				).to.be.revertedWith("FundingRateFacet: PartyB will be insolvent")
+			})
+
+			it("should not increment nonces for an empty accumulated funding charge", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+				const partyBCrossNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+				await context.fundingRateFacet.connect(context.signers.hedger).chargeAccumulatedFundingFee(partyA, partyB, [], await getDummyPairUpnlSig())
+
+				expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(partyANonceBefore)
+				expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(partyBNonceBefore)
+				expect(await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)).to.equal(partyBCrossNonceBefore)
+			})
+
+			it("should leave both nonces unchanged when the funding charge reverts", async () => {
+				const partyA = await context.signers.user.getAddress()
+				const partyB = await context.signers.hedger.getAddress()
+				const partyANonceBefore = await context.viewFacet.nonceOfPartyA(partyA)
+				const partyBNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, partyA)
+				const partyBCrossNonceBefore = await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)
+
+				await expect(
+					context.fundingRateFacet
+						.connect(context.signers.hedger)
+						.chargeAccumulatedFundingFee(partyA, partyB, [1], await getDummyPairUpnlSig(-decimal(100000n), 0n)),
+				).to.be.revertedWith("FundingRateFacet: PartyA will be insolvent")
+
+				expect(await context.viewFacet.nonceOfPartyA(partyA)).to.equal(partyANonceBefore)
+				expect(await context.viewFacet.nonceOfPartyB(partyB, partyA)).to.equal(partyBNonceBefore)
+				expect(await context.viewFacet.nonceOfPartyB(partyB, ethers.ZeroAddress)).to.equal(partyBCrossNonceBefore)
+			})
+		})
+
+		it("does not roll symbol partyB funding state when close charges funding", async () => {
+			const startTime = 2000000000n
+			const epochDuration = 400n
+			const setRateTimestamp = startTime + 100n
+			const closeTimestamp = startTime + 800n
+
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [epochDuration])
+
+			await time.setNextBlockTimestamp(setRateTimestamp)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+			await user.requestToClosePosition(
+				1,
+				limitCloseRequestBuilder()
+					.deadline(startTime + 1000n)
+					.build(),
+			)
+
+			await time.setNextBlockTimestamp(closeTimestamp)
+			const tx = context.partyBPositionActionsFacet
+				.connect(context.signers.hedger)
+				.fillCloseRequest(1, decimal(100n), decimal(1n), await getDummyPairUpnlAndPriceSig(decimal(1n)))
+
+			await expect(tx).to.not.emit(context.fundingRateFacet, "AccumulatedFundingStateUpdated")
+
+			// Symbol/PartyB state stays at the last solver update; the quote settles via lazy extrapolation
+			const fundingFee = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+			expect(fundingFee.accumulatedLongRate).to.equal(0n)
+			expect(fundingFee.lastUpdatedEpoch).to.equal(setRateTimestamp / epochDuration)
+			expect(fundingFee.lastUpdatedTimeStamp).to.equal(setRateTimestamp)
+
+			// Two epochs elapsed at 0.02 → cumulative baseline recorded on the quote
+			const quote = await context.viewFacetQuote.getQuote(1)
+			expect(quote.accumulatedPaidFunding).to.equal(decimal(4n, 16))
 		})
 
 		describe("funding rate accumulation over multiple epochs", () => {
@@ -464,6 +851,60 @@ export function shouldBehaveLikeFundingRate(): void {
 				// Set initial block timestamp to a known value
 				await time.setNextBlockTimestamp(2000000000)
 				await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [400])
+			})
+
+			it("should roll accumulated funding only when an update crosses an epoch boundary", async () => {
+				const startTime = await time.latest()
+
+				await time.setNextBlockTimestamp(startTime + 100)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+				const fundingRate1 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate1.currentLongRate).to.equal(decimal(2n, 16))
+				expect(fundingRate1.accumulatedLongRate).to.equal(0n)
+
+				await time.setNextBlockTimestamp(startTime + 200)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(3n, 16)], [0], [decimal(1n)])
+				const fundingRate2 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate2.currentLongRate).to.equal(decimal(3n, 16))
+				expect(fundingRate2.accumulatedLongRate).to.equal(0n)
+
+				await time.setNextBlockTimestamp(startTime + 800)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(4n, 16)], [0], [decimal(1n)])
+				const fundingRate3 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate3.currentLongRate).to.equal(decimal(4n, 16))
+				expect(fundingRate3.accumulatedLongRate).to.equal(decimal(3n, 16))
+
+				await time.setNextBlockTimestamp(startTime + 900)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+				const fundingRate4 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate4.currentLongRate).to.equal(decimal(5n, 16))
+				expect(fundingRate4.accumulatedLongRate).to.equal(decimal(3n, 16))
+			})
+
+			it("should not roll symbol funding state when opening a position", async () => {
+				const startTime = await time.latest()
+
+				await time.setNextBlockTimestamp(startTime + 100)
+				await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(2n, 16)], [0], [decimal(1n)])
+
+				const quoteId = await user.sendQuote(
+					limitQuoteRequestBuilder()
+						.deadline(BigInt(startTime + 1000))
+						.build(),
+				)
+				await hedger.lockQuote(quoteId)
+
+				await time.setNextBlockTimestamp(startTime + 800)
+				await hedger.openPosition(quoteId)
+
+				// Symbol/PartyB state stays at the last solver update
+				const fundingRate = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger.address)
+				expect(fundingRate.lastUpdatedEpoch).to.equal(BigInt(Math.floor((startTime + 100) / 400)))
+				expect(fundingRate.accumulatedLongRate).to.equal(0n)
+
+				// Baseline = two epochs of lazy extrapolation at the current rate
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				expect(quote.accumulatedPaidFunding).to.equal(decimal(4n, 16))
 			})
 
 			it("should correctly accumulate and charge funding rates across multiple epochs", async () => {
@@ -501,7 +942,8 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate3 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 				const quote1 = await context.viewFacetQuote.getQuote(4)
 				expect(fundingRate3.currentLongRate).to.equal(decimal(3n, 16))
-				expect(fundingRate3.accumulatedLongRate).to.equal(decimal(3n, 16))
+				// Position open no longer rolls symbol funding state
+				expect(fundingRate3.accumulatedLongRate).to.equal(0n)
 				expect(quote1.lastFundingPaymentTimestamp).to.approximately(startTime + 500, 10)
 
 				//* Move to t+700: Update funding fee
@@ -642,7 +1084,8 @@ export function shouldBehaveLikeFundingRate(): void {
 				const fundingRate10 = await context.viewFacetSymbol.getFundingFeesOfPartyB(1, context.signers.hedger)
 
 				expect(fundingRate10.currentLongRate).to.equal(decimal(5n, 16))
-				expect(fundingRate10.accumulatedLongRate).to.equal(decimal(325n, 14))
+				// Charging funding no longer rolls symbol state; it stays at the t+1800 solver update
+				expect(fundingRate10.accumulatedLongRate).to.equal(decimal(15n, 15))
 
 				expect(quote4.accumulatedPaidFunding).to.approximately(decimal(155n, 15), decimal(1n, 13))
 				expect(quote4.lastFundingPaymentTimestamp).to.equal(await time.latest())
@@ -836,6 +1279,45 @@ export function shouldBehaveLikeFundingRate(): void {
 			// New epoch tracking starts from 0
 			const newEpochsBefore = fundingAfter.lastUpdatedEpoch - fundingAfter.startEpoch
 			expect(newEpochsBefore).to.equal(0n)
+		})
+
+		it("should charge snapshotted funding immediately after changing duration", async () => {
+			const startTime = 2000000000
+
+			await time.setNextBlockTimestamp(startTime)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [10])
+
+			await time.setNextBlockTimestamp(startTime + 1)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 2)
+			const quoteId = await user.sendQuote()
+			await hedger.lockQuote(quoteId)
+			await hedger.openPosition(quoteId)
+
+			await time.setNextBlockTimestamp(startTime + 12)
+			await context.fundingRateFacet.connect(context.signers.hedger).setFundingFee([1], [decimal(5n, 16)], [0], [decimal(1n)])
+
+			await time.setNextBlockTimestamp(startTime + 13)
+			await context.fundingRateFacet.connect(context.signers.hedger).setEpochDurations([1], [1000])
+
+			const beforeBalance = (await user.getBalanceInfo()).allocatedBalances
+
+			await time.setNextBlockTimestamp(startTime + 14)
+			await context.fundingRateFacet
+				.connect(context.signers.hedger)
+				.chargeAccumulatedFundingFee(
+					await context.signers.user.getAddress(),
+					await context.signers.hedger.getAddress(),
+					[quoteId],
+					await getDummyPairUpnlSig(),
+				)
+
+			const afterBalance = (await user.getBalanceInfo()).allocatedBalances
+			const quote = await context.viewFacetQuote.getQuote(quoteId)
+
+			expect(afterBalance - beforeBalance).to.equal(-decimal(5n))
+			expect(quote.accumulatedPaidFunding).to.equal(decimal(5n, 16))
 		})
 
 		it("should handle multiple successive duration changes correctly", async () => {

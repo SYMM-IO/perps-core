@@ -6,6 +6,7 @@ import { deployDiamond } from "../tasks/deploy/diamond.js"
 import { deployInstantLayer } from "../tasks/deploy/instantLayer.js"
 import { deploySymmioPartyB } from "../tasks/deploy/partyB.js"
 import { deployStablecoin } from "../tasks/deploy/stablecoin.js"
+import { CORE_PAUSE_ROLES } from "../utils/corePauseRoles.js"
 import { ethers, hre } from "./helpers/hardhat-connection.js"
 import { createRunContext, RunContext } from "./models/RunContext.js"
 import { decimal } from "./utils/Common.js"
@@ -47,6 +48,10 @@ export async function initializeFixture(): Promise<RunContext> {
 	context.accountLayerDiamond = accountLayerDiamondAddress
 	context.alCoreFacet = await ethers.getContractAt("contracts/accountLayer/facets/Core/CoreFacet.sol:CoreFacet", accountLayerDiamondAddress)
 	context.alMarginFacet = await ethers.getContractAt("contracts/accountLayer/facets/Margin/MarginFacet.sol:MarginFacet", accountLayerDiamondAddress)
+	context.alTimelockFacet = await ethers.getContractAt(
+		"contracts/accountLayer/facets/Timelock/TimelockFacet.sol:TimelockFacet",
+		accountLayerDiamondAddress,
+	)
 	context.alSymmioHookFacet = await ethers.getContractAt(
 		"contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol:SymmioHookFacet",
 		accountLayerDiamondAddress,
@@ -112,11 +117,14 @@ export async function initializeFixture(): Promise<RunContext> {
 	const affiliate2Address = await context.alAffiliateFacet.requestToRegisterAffiliate.staticCall(affiliate2Data)
 	await context.alAffiliateFacet.requestToRegisterAffiliate(affiliate2Data)
 
-	// Approve affiliates - grant AFFILIATE_MANAGER_ROLE to accountLayer diamond on core diamond first
+	// Approve affiliates - grant AFFILIATE_MANAGER_ROLE and AFFILIATE_REGISTRAR_ROLE to accountLayer diamond on core diamond first
 	await context.controlFacet.connect(context.signers.admin).setAdmin(context.signers.admin.address)
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("AFFILIATE_MANAGER_ROLE")))
+	await context.controlFacet
+		.connect(context.signers.admin)
+		.grantRole(accountLayerDiamondAddress, ethers.keccak256(toUtf8Bytes("AFFILIATE_REGISTRAR_ROLE")))
 	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliateAddress)
 	await context.alAffiliateFacet.connect(context.signers.admin).approveAffiliate(affiliate2Address)
 
@@ -132,17 +140,23 @@ export async function initializeFixture(): Promise<RunContext> {
 	// Grant roles to admin
 	const rolesToGrant = [
 		"SYMBOL_MANAGER_ROLE",
-		"PAUSER_ROLE",
+		"SYMBOL_LISTING_ROLE",
+		...CORE_PAUSE_ROLES,
+		"UNPAUSER_ROLE",
 		"PARTY_B_MANAGER_ROLE",
+		"PLEDGE_TOKEN_MANAGER_ROLE",
+		"PARTY_B_REGISTRAR_ROLE",
 		"SUSPENDER_ROLE",
 		"DISPUTE_ROLE",
 		"AFFILIATE_MANAGER_ROLE",
+		"AFFILIATE_REGISTRAR_ROLE",
+		"ENTITY_METADATA_MANAGER_ROLE",
 		"MUON_SETTER_ROLE",
 		"LIQUIDATOR_ROLE",
-		"DEALLOCATE_COOLDOWN_SETTER_ROLE",
 		"INSTANT_LAYER_ROLE",
 		"PARTYB_LIQUIDATOR_ROLE",
 		"PROTOCOL_CONFIG_ROLE",
+		"PROTOCOL_LIMITS_ROLE",
 		"FEE_ADMIN_ROLE",
 		"COOLDOWN_ADMIN_ROLE",
 		"PROVIDER_ADMIN_ROLE",
@@ -157,6 +171,9 @@ export async function initializeFixture(): Promise<RunContext> {
 	for (const role of rolesToGrant) {
 		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, ethers.keccak256(toUtf8Bytes(role)))
 	}
+
+	// Pledge tokens are denied by default; explicitly approve the fixture's reviewed collateral.
+	await context.pledgeFacet.connect(context.signers.admin).setPledgeTokenWhitelist(await collateral.getAddress(), true)
 
 	// Grant liquidator roles (PARTYB_LIQUIDATOR_ROLE is now merged into LIQUIDATOR_ROLE)
 	await context.controlFacet
@@ -175,9 +192,6 @@ export async function initializeFixture(): Promise<RunContext> {
 	await context.symbolControlFacet
 		.connect(context.signers.admin)
 		.addSymbol("BTCUSDT", decimal(5n), decimal(1n, 16), decimal(1n, 16), decimal(100n), 28800, 900)
-	await context.controlFacet
-		.connect(context.signers.admin)
-		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("DEALLOCATE_COOLDOWN_SETTER_ROLE")))
 	await context.controlFacet
 		.connect(context.signers.admin)
 		.grantRole(context.signers.admin.getAddress(), ethers.keccak256(toUtf8Bytes("SUSPENDED_FUNDS_WITHDRAWER_ROLE")))
@@ -242,13 +256,14 @@ export async function initializeExternalTransferRelayerFixture(): Promise<{
 
 	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
 
-	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
 	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
 	const protocolConfigRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_CONFIG_ROLE"))
+	const protocolLimitsRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_LIMITS_ROLE"))
 
-	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	for (const role of CORE_PAUSE_ROLES) await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, ethers.id(role))
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolConfigRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolLimitsRole)
 
 	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())
 	await target.controlFacet.connect(target.signers.admin).setBalanceLimitPerUser(decimal(10000n))
@@ -285,15 +300,16 @@ export async function initializeVirtualFixture(): Promise<{
 
 	await target.controlFacet.connect(target.signers.admin).setAdmin(adminAddress)
 
-	const pauserRole = ethers.keccak256(toUtf8Bytes("PAUSER_ROLE"))
 	const unpauserRole = ethers.keccak256(toUtf8Bytes("UNPAUSER_ROLE"))
 	const virtualRole = ethers.keccak256(toUtf8Bytes("VIRTUAL_DEPOSITOR_ROLE"))
 	const protocolConfigRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_CONFIG_ROLE"))
+	const protocolLimitsRole = ethers.keccak256(toUtf8Bytes("PROTOCOL_LIMITS_ROLE"))
 	const providerAdminRole = ethers.keccak256(toUtf8Bytes("PROVIDER_ADMIN_ROLE"))
 
-	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, pauserRole)
+	for (const role of CORE_PAUSE_ROLES) await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, ethers.id(role))
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, unpauserRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolConfigRole)
+	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, protocolLimitsRole)
 	await target.controlFacet.connect(target.signers.admin).grantRole(adminAddress, providerAdminRole)
 
 	await target.controlFacet.connect(target.signers.admin).setCollateral(await source.collateral.getAddress())

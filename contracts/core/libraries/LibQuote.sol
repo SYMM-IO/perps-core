@@ -8,10 +8,15 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AggregatedDataStorage, PartiesAggregatedPositions } from "../storages/AggregatedDataStorage.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
 import { LibAggregateFunding } from "./LibAggregateFunding.sol";
+import { LibSymbolAdjustmentInventory } from "./LibSymbolAdjustmentInventory.sol";
 import { LibUtils } from "./LibUtils.sol";
 
 library LibQuote {
 	using LockedValuesOps for LockedValues;
+
+	/// @dev Trading fees are `amount * price * feeRate`, where all three carry 18 decimals. Dividing by
+	///      1e36 cancels the price and fee-rate scales and leaves the fee in collateral's 18-decimal form.
+	uint256 private constant TRADING_FEE_SCALE = 1e36;
 
 	/// @notice Calculates the remaining open amount of a quote.
 	/// @param quote The quote for which to calculate the remaining open amount.
@@ -46,10 +51,13 @@ library LibQuote {
 		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
 		uint256 notional = amount * quote.openedPrice;
 
-		// Check if partyB had any position in this symbol BEFORE adding (for global active symbols)
-		bool hadPositionGlobal = partyBHasPositionInSymbol(quote.partyB, quote.symbolId);
-		// Check if partyB had any position in this symbol with this partyA BEFORE adding
-		bool hadPositionPerPartyA = partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+		// Update active-symbol membership before mutating the aggregates used by the membership checks.
+		if (!partyBHasPositionInSymbol(quote.partyB, quote.symbolId)) {
+			addToPartyBActiveSymbols(quote.partyB, quote.symbolId);
+		}
+		if (!partyBHasPositionInSymbolPerPartyA(quote.partyB, quote.partyA, quote.symbolId)) {
+			addToPartyBActiveSymbolsPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
+		}
 
 		// Update global partyB aggregated positions (for cross partyB mode UPNL)
 		PartiesAggregatedPositions storage partyBGlobalInfo = aggregatedLayout.partyBAggregatedPositions[quote.partyB][quote.symbolId][
@@ -64,15 +72,6 @@ library LibQuote {
 		][quote.positionType];
 		partyBPerPartyAInfo.aggregatedAmount += amount;
 		partyBPerPartyAInfo.aggregatedNotional += notional;
-
-		// Add to global active symbols if this is the first position in this symbol
-		if (!hadPositionGlobal) {
-			addToPartyBActiveSymbols(quote.partyB, quote.symbolId);
-		}
-		// Add to per-partyA active symbols if this is the first position with this partyA in this symbol
-		if (!hadPositionPerPartyA) {
-			addToPartyBActiveSymbolsPerPartyA(quote.partyB, quote.partyA, quote.symbolId);
-		}
 	}
 
 	/// @notice Adds to Party A aggregated positions when a position opens.
@@ -299,13 +298,16 @@ library LibQuote {
 	/// @param quote The quote being updated.
 	/// @param amount The amount to subtract.
 	function subFromPartiesAggregatedPositions(Quote storage quote, uint256 amount) internal {
+		uint256 oldOpenAmount = quoteOpenAmount(quote);
+		uint256 newOpenAmount = oldOpenAmount - amount;
+		LibSymbolAdjustmentInventory.consumeOldBasisAmount(quote, amount);
 		subFromPartyBAggregatedPositions(quote, amount);
 		subFromPartyAAggregatedPositions(quote, amount);
 
 		// Track aggregate funding for nonce-free Muon verification
 		// Note: If funding was charged before this call, accumulatedPaidFunding is already updated
 		// and updatePartiesAggregateFunding was called in chargeAccumulatedFundingFee
-		LibAggregateFunding.subFromPartiesAggregateFunding(quote, amount);
+		LibAggregateFunding.subFromPartiesAggregateFunding(quote, oldOpenAmount, newOpenAmount);
 	}
 
 	/// @notice Updates Party B aggregated positions notional when the opened price changes.
@@ -471,16 +473,23 @@ library LibQuote {
 		}
 	}
 
-	/// @notice Gets the open trading fee for the remaining open amount (quantity - closedAmount) of a quote.
-	/// @param quoteId The ID of the quote for which to get the trading fee.
-	/// @return fee The trading fee for the remaining open amount of the quote.
-	function getOpenTradingFee(uint256 quoteId) internal view returns (uint256 fee) {
-		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
-		Quote storage quote = quoteLayout.quotes[quoteId];
-		if (quote.orderType == OrderType.LIMIT) {
-			fee = (LibQuote.quoteOpenAmount(quote) * quote.requestedOpenPrice * quote.tradingFee) / 1e36;
-		} else {
-			fee = (LibQuote.quoteOpenAmount(quote) * quote.marketPrice * quote.tradingFee) / 1e36;
-		}
+	/// @notice Gets the open trading fee reserved for `amount` of a quote that has not opened yet.
+	/// @dev Priced at the request-time basis: requestedOpenPrice for limit quotes, marketPrice for market quotes.
+	///      This is what sendQuote debits and reserves, so every refund path (cancel, expire, force cancel,
+	///      liquidation, clearing-house takeover) must keep using it to give back exactly what was taken.
+	function getReservedOpenTradingFee(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _openTradingFeeAt(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.marketPrice, quote.tradingFee);
+	}
+
+	/// @notice Gets the open trading fee actually owed for `amount` of a quote that has just opened.
+	/// @dev Priced at the execution basis: openedPrice for market quotes. Limit quotes stay on
+	///      requestedOpenPrice, which is the price they were validated against, so their reserved and
+	///      executed fees are identical and no adjustment is ever needed.
+	function getExecutedOpenTradingFee(Quote storage quote, uint256 amount) internal view returns (uint256 fee) {
+		return _openTradingFeeAt(amount, quote.orderType == OrderType.LIMIT ? quote.requestedOpenPrice : quote.openedPrice, quote.tradingFee);
+	}
+
+	function _openTradingFeeAt(uint256 amount, uint256 tradingPrice, uint256 feeRate) private pure returns (uint256 fee) {
+		return (amount * tradingPrice * feeRate) / TRADING_FEE_SCALE;
 	}
 }

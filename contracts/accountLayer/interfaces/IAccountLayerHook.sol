@@ -29,6 +29,12 @@ interface IAccountLayerHook {
 	/// @param owner The owner of the deleted sub-account
 	function onSubAccountDeletion(address subAccount, address owner) external;
 
+	/// @notice Called when sub-account ownership is transferred
+	/// @param subAccount The transferred sub-account address
+	/// @param oldOwner The previous owner of the sub-account
+	/// @param newOwner The new owner of the sub-account
+	function onSubAccountOwnershipTransfer(address subAccount, address oldOwner, address newOwner) external;
+
 	/// @notice Called after _call executes Symmio operations on behalf of an account
 	/// @param account The account that calls were executed for
 	/// @param callDatas The encoded function calls that were executed

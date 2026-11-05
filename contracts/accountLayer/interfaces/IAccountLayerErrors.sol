@@ -47,16 +47,34 @@ interface IAccountLayerErrors {
 	error PositionTypeNotAllowedForThisAccount();
 	error SymbolNotAllowedForThisAccount();
 	error SelectorNotAllowed(bytes4 selector);
+	/// @notice The signer session is confined to one account family and the call targeted a different one
+	/// @param scope Canonical sub-account the session is confined to
+	/// @param account Account the call attempted to act on
+	error AccountOutOfScope(address scope, address account);
 	error UnauthorizedHookCaller();
+	error ExecuteForAccountNotAllowedDuringSubAccountDeletion();
 	error HookFailed(bytes reason);
 	error HookActionFailed(bytes reason);
-	error VirtualProviderRequired();
-	error InvalidExpressRate();
-	error BalanceInvariantViolation();
 	error ReentrancyGuardReentrantCall();
 	error EnforcedPause();
 	error ExpectedPause();
 	error ExternalCallFailed();
 	error LegacyAccountNotOwned();
 	error LegacyContractNotRegistered();
+	error MarginKeyMismatch();
+
+	// Timelock
+	error TimelockOpNotApprovedOrScheduled(address subAccount, bytes32 callDataHash);
+	error ScheduleNotReady(address subAccount, bytes32 callDataHash, uint64 readyAt);
+	error ScheduleExpired(address subAccount, bytes32 callDataHash, uint64 expiredAt);
+	error ApprovalUsed();
+	error UnusedTimelockApproval();
+	error ApprovalExpired();
+	error InvalidApprovalSignature();
+	error ZeroUnlocker();
+	error DelayBelowMinimum();
+	error DelayAboveMaximum();
+	error NotRootSubAccount();
+	error ScheduleGracePeriodAboveMaximum();
+	error LegacyAccountCannotBeTimelocked();
 }

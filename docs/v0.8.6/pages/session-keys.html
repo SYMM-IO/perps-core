@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A session key is a key pair the front end creates and the account owner authorizes once, so it can sign chosen operations for one account until it expires."
+		/>
+		<title>Session Keys - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#what">What a session key is</a>
+				<a class="toc-link level-2" href="#why">Why use one</a>
+				<a class="toc-link level-2" href="#lifecycle">Lifecycle</a>
+				<a class="toc-link level-2" href="#create">Creating and storing the key</a>
+				<a class="toc-link level-2" href="#authorize">Authorizing the key</a>
+				<a class="toc-link level-2" href="#sign">Signing operations</a>
+				<a class="toc-link level-2" href="#limits">What a key can and cannot do</a>
+				<a class="toc-link level-3" href="#limits-wallets">GaslessWallet operations</a>
+				<a class="toc-link level-2" href="#services">Service delegates</a>
+				<a class="toc-link level-2" href="#ending">Expiry, renewal and revocation</a>
+				<a class="toc-link level-2" href="#devices">Using a key on another device</a>
+				<a class="toc-link level-2" href="#checking">Checking a key</a>
+				<a class="toc-link level-2" href="#security">Security boundaries</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Session Keys</h1>
+							<p class="hero-copy">
+								Session keys exist for seamless one-click trading. A session key is a key pair the front end creates and the account
+								owner authorizes once. Until the authorization expires, the key signs the operations the owner allowed, for one
+								account, so each trade is a single click instead of a wallet approval.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="what">What a session key is</h2>
+					<p>
+						A session key is an ordinary Ethereum key pair with its own address. It is not the owner wallet&rsquo;s key and not a
+						contract. Its only power comes from an InstantLayer <strong>delegation</strong>: an on-chain record, written by the account
+						owner, saying this key may sign these functions for this account until this time.
+					</p>
+					<p>
+						The key holds no funds. Collateral and positions stay in the user&rsquo;s accounts; the key only signs instructions about
+						them. A signed operation still names the user&rsquo;s account, and InstantLayer executes it as that account once it confirms
+						the delegation.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Identity</th>
+									<th>Role</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Owner wallet</td>
+									<td>Owns the accounts and signs the delegation grant</td>
+								</tr>
+								<tr>
+									<td>Session key</td>
+									<td>Signs operations the grant allows, without wallet prompts</td>
+								</tr>
+								<tr>
+									<td>SubAccount</td>
+									<td>The trading account a delegation is granted for; holds the funds</td>
+								</tr>
+								<tr>
+									<td>Virtual Account</td>
+									<td>Holds a position and its margin under a SubAccount; covered by the SubAccount&rsquo;s grant</td>
+								</tr>
+								<tr>
+									<td>Service signer</td>
+									<td>A separate delegate, such as a conditional-order bot, with its own grant</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<h2 id="why">Why use one</h2>
+					<ul>
+						<li>
+							<strong>One wallet prompt instead of many.</strong> The user signs once to authorize the key. Opening and closing
+							positions, moving margin, and approving fees are then signed by the key in the background.
+						</li>
+						<li>
+							<strong>Gasless by design.</strong> Key-signed operations are relayed by a solver or through Gasless Layer. The relayer
+							pays the network fee, and any charge comes from the account in collateral. The user never needs native gas.
+						</li>
+						<li>
+							<strong>Narrower than the wallet.</strong> A key reaches one account family, only the functions it was granted, and only
+							until its expiry. The owner wallet keeps full control and can revoke the key.
+						</li>
+						<li>
+							<strong>Portable.</strong> The key is independent of the wallet, so it can be moved to another device, such as a phone,
+							which can then trade without the wallet app.
+						</li>
+						<li>
+							<strong>Verifiable by services.</strong> A delegation is public on-chain state, so an off-chain service can confirm that a
+							request signed by the key comes from the account&rsquo;s authorized key.
+						</li>
+					</ul>
+
+					<h2 id="lifecycle">Lifecycle</h2>
+					<pre data-diagram-size="1202 663"><code class="language-mermaid">sequenceDiagram
+    participant FE as Front end
+    participant Owner as Owner wallet
+    participant Relayer as Relayer or solver
+    participant IL as InstantLayer
+    FE->>FE: Generate or restore the session key
+    FE->>FE: Key signs its first operations
+    FE->>Owner: Ask for one signature on the grant
+    Owner-->>FE: Signed grant (key, account, functions, expiry)
+    FE->>Relayer: Grant + key-signed operations
+    Relayer->>IL: One batch
+    IL->>IL: Write delegation, then run key-signed operations
+    Note over FE,IL: Later actions: key signs, relayer submits, no wallet prompt
+    Note over FE,IL: Ends at expiry, or when a revocation takes effect
+</code></pre>
+
+					<h2 id="create">Creating and storing the key</h2>
+					<p>
+						Generate the key from fresh randomness in the client. Do not derive it from the owner&rsquo;s address or from a wallet
+						signature: a derived key needs an extra prompt, and anyone who can reproduce the derivation holds the key. The owner address
+						only labels which owner a stored key belongs to.
+					</p>
+					<pre><code class="language-typescript">import { Wallet } from "ethers"
+
+const sessionKey = Wallet.createRandom() // random; its address goes into the grant</code></pre>
+					<p>
+						A generated key has no authority until the owner grants it. The front end can create or restore the key early, and treat
+						trading as enabled only once the delegation is active on-chain.
+					</p>
+					<ul>
+						<li>
+							<strong>Encrypt it at rest.</strong> For example, encrypt the private key with AES-GCM under a non-extractable Web Crypto
+							key kept in IndexedDB, and store only the ciphertext, the key&rsquo;s address, and the owner it belongs to.
+						</li>
+						<li>
+							<strong>Scope storage to the deployment.</strong> Include the chain and the contract addresses in the storage key, so a
+							key authorized on one deployment is never reused on another with different contracts on the same chain.
+						</li>
+						<li>
+							<strong>One key, several accounts.</strong> A single key can serve several SubAccounts of the same owner, but each
+							SubAccount needs its own grant, and each grant is checked separately.
+						</li>
+						<li>
+							<strong>Losing storage means a new key.</strong> A lost key cannot be recreated. The front end generates a new one, and
+							the owner authorizes its new address.
+						</li>
+					</ul>
+
+					<h2 id="authorize">Authorizing the key</h2>
+					<p>
+						The owner authorizes the key by signing a delegation grant: a <code>SignedOperation</code> that targets InstantLayer with
+						<code>grantDelegation(DelegationInfo)</code>. It can travel in the same relayed batch as the key&rsquo;s first operations,
+						because InstantLayer applies the grant before it verifies the next operation. See
+						<a href="instant-layer-batch-delegation-grant.html">Batch Delegation Grant Operations</a> for the operation format and its
+						rules.
+					</p>
+					<pre><code class="language-typescript">const grant = {
+  account: { addr: subAccount, isPartyB: false }, // the account the key will act for
+  delegatedSigner: sessionKey.address,
+  selectors: [sendQuoteSelector, requestToClosePositionSelector, approveOperationalFeeSelector],
+  expiryTimestamp: now + 7n * 24n * 3600n, // authority ends after one week
+}
+const grantCallData = instantLayer.interface.encodeFunctionData("grantDelegation", [grant])
+// Wrap grantCallData in a SignedOperation targeting InstantLayer, signed by the owner.</code></pre>
+					<ul>
+						<li>
+							<strong>Grant only what is missing.</strong> Read the current delegations first, and include the functions that are not
+							active or expire soon.
+						</li>
+						<li>
+							<strong>Sign the key&rsquo;s operations first.</strong> The key&rsquo;s signatures need no prompt, so prepare them before
+							asking for the owner&rsquo;s signature. A typical first batch is the grant followed by the key&rsquo;s
+							<code>approveOperationalFee</code>, which lets the relayer charge operational fees to the account.
+						</li>
+						<li><strong>Verify after the batch.</strong> Read the delegation again before reporting that trading is enabled.</li>
+					</ul>
+					<p>
+						The fee approval is a standing allowance, separate from the delegation. Approving a large amount once avoids a new approval
+						every time it runs out; approving a small amount caps what the relayer can charge.
+					</p>
+
+					<h2 id="sign">Signing operations</h2>
+					<p>
+						The key signs each operation as EIP-712 typed data with the <code>SymmioInstantLayer</code> domain, version <code>1</code>,
+						the chain ID, and InstantLayer as the verifying contract. The operation&rsquo;s target can be a different contract, such as
+						Core or AccountLayer: InstantLayer verifies the signature, then calls the target.
+					</p>
+					<pre><code class="language-typescript">import { hexlify, randomBytes } from "ethers"
+
+const op = {
+  signer: sessionKey.address,
+  target: core, // the contract to call
+  callData, // the function and its arguments
+  signerAccount: { addr: subAccountOrVirtualAccount, isPartyB: false },
+  flexFields: [],
+  maxUses: 1,
+  replayAttackHeader: { nonce: 0n, deadline, salt: hexlify(randomBytes(32)) },
+}
+const signature = await sessionKey.signTypedData(
+  { name: "SymmioInstantLayer", version: "1", chainId, verifyingContract: instantLayer },
+  signedOperationTypes,
+  op,
+)</code></pre>
+					<ul>
+						<li>
+							<strong>Replay protection.</strong> Each operation can run at most <code>maxUses</code> times, counted per signed
+							operation, so a random <code>salt</code> with <code>maxUses = 1</code> makes it single-use. A nonzero
+							<code>nonce</code> additionally forces order: it must equal <code>nonces(account) + 1</code>, and consecutive operations
+							in a batch use consecutive values. A zero nonce leaves the operation unordered.
+						</li>
+						<li>
+							<strong>Deadlines.</strong> Use short deadlines, and give operations that belong together, such as adding margin and
+							opening the position it funds, the same deadline so one cannot execute long after the other expired.
+						</li>
+						<li>
+							<strong>Enforcement happens at execution.</strong> Signing does not check the delegation. A key can sign anything; only
+							granted, unexpired functions execute. Check the delegation before submitting to give the user a clear error.
+						</li>
+					</ul>
+
+					<h2 id="limits">What a key can and cannot do</h2>
+					<p>InstantLayer enforces these limits on-chain, against the calldata that actually executes:</p>
+					<ul>
+						<li>
+							<strong>Only the granted functions.</strong> Each operation&rsquo;s function selector must have an active delegation to
+							the key. For AccountLayer timelock wrappers (<code>executeTimelockOp</code>), the check applies to the wrapped function.
+						</li>
+						<li>
+							<strong>Only the granted account family.</strong> A grant covers the named SubAccount and its Virtual Accounts. Other
+							SubAccounts of the same owner are rejected with <code>AccountOutOfScope</code>. See
+							<a href="delegation-account-scope.html">Delegation Account Scope</a>.
+						</li>
+						<li><strong>No new delegations.</strong> Only the owner can sign a grant. A key cannot extend or share its own authority.</li>
+						<li>
+							<strong>No amount limits.</strong> A grant restricts the account, the functions, and the expiry, nothing else. Each
+							operation carries its own amounts. A key granted withdrawal functions can withdraw, so grant those only if the front end
+							lets the key sign withdrawals.
+						</li>
+						<li><strong>No PartyB accounts.</strong> PartyB accounts cannot grant delegations.</li>
+						<li>
+							<strong>Billed to the account.</strong> Operations relayed through Gasless Layer are billed to the account. The key can
+							cap each operation&rsquo;s charge with a signed fee limit; see
+							<a href="gasless-layer.html#fee-limits">Signed fee limits</a>.
+						</li>
+					</ul>
+
+					<h3 id="limits-wallets">GaslessWallet operations</h3>
+					<p>
+						To sign operations for the owner&rsquo;s GaslessWallets, the key needs <code>WALLET_EXECUTION_SENTINEL_SELECTOR</code> plus
+						the selector of every call inside the wallet operation. It cannot send native currency from a wallet. Wallet permissions are
+						checked by selector, not by target contract or wallet ID, so a granted selector works through every wallet the owner has. With
+						the sentinel and a general token selector such as ERC-20 <code>transfer</code> or <code>approve</code>, the key could move any
+						wallet&rsquo;s tokens. See <a href="gasless-layer.html#wallet-operations">GaslessWallet operations</a>.
+					</p>
+
+					<h2 id="services">Service delegates</h2>
+					<p>
+						An automated service, such as a take-profit and stop-loss bot, gets its own delegate address with its own functions and
+						expiry, usually fewer functions and a longer expiry than the session key. The session key then signs requests to the service
+						off-chain, for example "close this position at this price", and the service later executes them on-chain with its own
+						delegation. The service can confirm that a request came from the account&rsquo;s key with
+						<code>isDelegationActive</code>.
+					</p>
+					<p>
+						<code>grantDelegations(DelegationInfo[])</code> authorizes the session key and the service with one owner signature, each
+						entry with its own functions and expiry.
+					</p>
+
+					<h2 id="ending">Expiry, renewal and revocation</h2>
+					<p>Three separate clocks apply, and each can end use independently:</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Clock</th>
+									<th>Set by</th>
+									<th>When it ends</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Stored key</td>
+									<td>The front end</td>
+									<td>The key can no longer be loaded on that device</td>
+								</tr>
+								<tr>
+									<td>Delegation</td>
+									<td><code>expiryTimestamp</code> in the grant</td>
+									<td>The key&rsquo;s signatures stop executing</td>
+								</tr>
+								<tr>
+									<td>Operation</td>
+									<td><code>deadline</code> in each signed operation</td>
+									<td>That one operation can no longer execute</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						The key itself never stops being able to sign; only its authority expires. To renew, the owner grants the same key again with
+						a new expiry; a new key is not needed. A grant with an expiry in the past reverts with
+						<code>DelegationExpired</code>.
+					</p>
+					<p>
+						To end a key early, call <code>initiateRevokeDelegation(account, key, selectors)</code>. The owner, the key itself, or an
+						address with <code>REVOKER_ROLE</code> may call it. It is a direct transaction, not a relayed operation, so the caller pays
+						its network fee. The revocation takes effect after <code>revocationCooldown</code>, which defaults to 10 minutes and can be
+						set between 5 minutes and 30 days. The key keeps its authority until then, and loses it at that moment even if nobody calls
+						<code>finalizeRevokeDelegation</code>; anyone may call that afterwards to clear the record. A new grant for the same functions
+						cancels a pending revocation.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Deleting a key locally is not revocation.</strong> Any other copy, for example on a linked phone, keeps its authority
+						until the delegation expires or a revocation takes effect. Operations the key already signed also stay valid until their
+						deadline. Revoke on-chain when a key may have leaked, and keep expiries short.
+					</aside>
+
+					<h2 id="devices">Using a key on another device</h2>
+					<p>A front end can extend a session to a second device, such as a phone, in two ways:</p>
+					<ul>
+						<li>
+							<strong>Share the same key.</strong> Transfer the private key through an end-to-end encrypted handoff, for example HPKE
+							with a pairing secret shown as a QR code. No new grant is needed, but both devices then share one authority, and ending
+							access on one device requires revoking the key everywhere.
+						</li>
+						<li>
+							<strong>Give the device its own key.</strong> Generate a new key on the second device and have the owner authorize it.
+							This costs one more owner signature, but each device can be revoked on its own.
+						</li>
+					</ul>
+
+					<h2 id="checking">Checking a key</h2>
+					<p>
+						<code>isDelegationActive(account, key, selector)</code> returns whether the key may sign that function for the account now,
+						accounting for expiry and any revocation that has taken effect. Pass the SubAccount address; delegations granted for a Virtual
+						Account are recorded under its parent. <code>delegations(account, key, selector)</code> returns the expiry, which shows when
+						to renew. <code>getActiveDelegations</code> lists active permissions for several keys at once.
+					</p>
+					<pre><code class="language-typescript">const active = await instantLayer.isDelegationActive(subAccount, sessionKey.address, sendQuoteSelector)
+const expiresAt = await instantLayer.delegations(subAccount, sessionKey.address, sendQuoteSelector)
+if (!active) {
+  // Expired or revoked: ask the owner to grant this key again.
+}</code></pre>
+
+					<h2 id="security">Security boundaries</h2>
+					<ul>
+						<li>
+							<strong>Encryption protects stored data, not the running app.</strong> The key is decrypted into memory to sign, so any
+							script running in the same origin can use it. It is not a hardware-wallet boundary.
+						</li>
+						<li>
+							<strong>The protocol, not the key, limits what executes.</strong> The key can sign any message. Only the
+							delegation&rsquo;s account, functions, and expiry decide what InstantLayer executes.
+						</li>
+						<li>
+							<strong>Grant the minimum.</strong> Give each key and service only the functions it uses, give onboarding-only permissions
+							a short expiry in a separate grant entry, and never pair the wallet sentinel with general token selectors.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

@@ -1,145 +1,126 @@
-# SYMMIO: Decentralized Derivatives Protocol
+# SYMMIO Perps Core
 
-SYMMIO is a trustless hybrid clearing house (combining on-chain and off-chain components) acting as a communication,
-settlement, and clearing layer for permissionless derivatives. At its core, SYMMIO is an intent-centric,
-meta-derivatives engine, with its first use case being a new type of hyper-efficient perpetuals trading technology.
+Smart contracts for SYMMIO's intent-based perpetual derivatives protocol.
 
-## Code Architecture
+[Website](https://www.symm.io/) · [Protocol docs](https://docs.symm.io/) · [Technical docs](https://docs.symm.io/protocol-architecture/technical-documentation) · [Deployments](https://docs.symm.io/api-endpoints-and-deployments/symmio-perps-deployments) · [Explorer](https://symmscan.com/)
 
-This project utilizes the Diamond Proxy pattern ([EIP-2535](https://eips.ethereum.org/EIPS/eip-2535)) for upgradability
-and modularity. Currently, we have 29 facets:
+## What is SYMMIO?
 
-1. **DiamondCutFacet** - Diamond upgrade operations (EIP-2535)
-2. **DiamondLoupeFacet** - Diamond introspection (EIP-2535)
-3. **AccountFacet** - Account management operations
-4. **PledgeFacet** - Pledge collateral management
-5. **BindingFacet** - PartyA-PartyB binding operations
-6. **BridgeFacet** - Fast withdrawals
-7. **ClearingHouseFacet** - Clearing house functionality
-8. **ControlFacet** - Protocol control and configuration
-9. **ExternalTransferFacet** - External transfer operations
-10. **ForceActionsFacet** - Atomic force close and cancel operations
-11. **ForceCloseStepsFacet** - 3-step force close flow (init, settle, finalize)
-12. **FundingRateFacet** - Funding rate calculations
-13. **MigrationFacet** - Cross partyB migration functionality
-14. **PartyAFacet** - PartyA (trader) operations
-15. **PartyALiquidationFacet** - PartyA liquidation logic
-16. **PartyBAccountFacet** - PartyB account management
-17. **PartyBBatchActionsFacet** - Batch operations for PartyB
-18. **PartyBEmergencyActionsFacet** - Emergency close and ADL operations
-19. **PartyBLiquidationFacet** - PartyB liquidation logic
-20. **PartyBPositionActionsFacet** - PartyB position operations
-21. **PartyBQuoteActionsFacet** - PartyB quote operations
-22. **PauseControlFacet** - Emergency pause controls
-23. **SettlementFacet** - Trade settlement logic
-24. **SymbolControlFacet** - Trading symbol management
-25. **ViewFacet** - General read-only queries
-26. **ViewFacetAggregate** - Aggregated position and funding queries
-27. **ViewFacetQuote** - Quote-related queries
-28. **ViewFacetSymbol** - Symbol-related queries
-29. **WithdrawFacet** - Withdrawal operations
+SYMMIO is shared infrastructure for permissionless derivatives markets. Traders submit intents through independent exchanges built on SYMMIO, and solvers compete to take the other side of each trade. Solvers lock collateral, while the protocol enforces positions, funding, liquidations, and settlement on-chain.
 
-### AccountLayer Diamond
+This hybrid design keeps quoting and trade discovery off-chain for speed, while collateral and settlement remain verifiable on-chain. It does not depend on a shared AMM liquidity pool or a central order book.
 
-The AccountLayer is a separate Diamond contract that manages account abstraction and affiliate functionality. It has 6 facets:
+SYMMIO itself does not operate a trading frontend. Traders access the protocol through [independent frontend builders](https://www.symm.io/frontends); exchanges and market makers integrate with the protocol as infrastructure.
 
-1. **ControlFacet** - Role management, pause control, and protocol configuration
-2. **CoreFacet** - Sub-account and virtual account management, call execution
-3. **MarginFacet** - Margin addition and removal operations
-4. **AffiliateFacet** - Affiliate registration, management, fee distribution, and hook configuration
-5. **ViewFacet** - Read-only queries for accounts, affiliates, and system state
-6. **SymmioHookFacet** - Callback hooks for position close and quote cancel events from Symmio core
+## What is in this repository?
 
-### Additional Contracts
+`perps-core` contains the Solidity contracts and operator tooling for SYMMIO's perpetuals system:
 
-There are also some additional second-layer contracts required by hedgers and frontends:
+- **Core protocol** — collateral, bilateral positions, funding, settlement, liquidations, and withdrawals.
+- **AccountLayer** — sub-accounts, delegated access, affiliates, and account-level margin.
+- **InstantLayer** — authorized batched execution for low-latency trading flows.
+- **Express Withdrawal Layer** — independently deployed, credit-backed fast withdrawals.
+- **gaslessLayer** contains the upgradeable Gasless Layer, deterministic GaslessWallet contracts, fee routing, and relay tooling.
+- **Deployment application** — reviewed deployment, upgrade, verification, and handover workflows.
 
-1. **InstantLayer**:
-   This contract enables instant trade execution and settlement features.
-2. **SymmioPartyB**:
-   This contract enables hedgers to have multiple private keys behind their bots.
+The contracts use the [EIP-2535 Diamond standard](https://eips.ethereum.org/EIPS/eip-2535). Detailed contract and module documentation belongs in the technical docs and release notes, not in this overview.
 
-## Getting Started
+## Versions
 
-This project uses [Hardhat](https://hardhat.org/). You can compile the code with:
+| Version                | Status                | Code and release notes                                                                                                       |
+| ---------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **v0.8.6**             | Current release line  | [`version_0.8.6`](https://github.com/SYMM-IO/perps-core/tree/version_0.8.6) · [v0.8.6 release notes](docs/v0.8.6/index.html) |
+| **v0.8.5**             | Previous release line | [`version_0.8.5`](https://github.com/SYMM-IO/perps-core/tree/version_0.8.5) · [v0.8.5 release notes](docs/v0.8.5/index.html) |
+| **v0.8.4 and earlier** | Historical releases   | [Git tags](https://github.com/SYMM-IO/perps-core/tags)                                                                       |
 
-```bash
-npx hardhat compile
-```
-
-### Running Tests
-
-Run the test suite with:
-
-```bash
-npx hardhat test mocha
-```
-
-Tests use a `MockMuonSignatureVerifier` contract deployed during test initialization, which accepts all signatures without verification. This allows tests to run without needing real Muon signatures.
-
-#### Test Commands
-
-```bash
-# Run all tests sequentially
-npx hardhat test mocha
-
-# Run with coverage
-npx hardhat test mocha --coverage
-
-# Run specific tests
-npx hardhat test mocha --grep "MyTest"
-```
-
-#### Parallel Test Execution
-
-For faster execution, use the parallel test runner which runs tests across multiple workers:
-
-```bash
-# Run all tests in parallel (default: 8 workers)
-./utils/runTestsInParallel.sh
-
-# Customize number of parallel workers
-PARALLEL_JOBS=4 ./utils/runTestsInParallel.sh
-```
-
-The parallel runner displays live progress and aggregated results with colorful output.
-
-#### Environment Configuration
-
-- **`.env` file**: Automatically sourced if present in the project root
-- **`PARALLEL_JOBS`**: Number of parallel test workers (default: 8)
-
-### Log Levels
-
-The deployment scripts support different log levels controlled via the `DEPLOY_LOG_LEVEL` environment variable:
-
-| Level       | Description                                                  |
-| ----------- | ------------------------------------------------------------ |
-| `silent`  | No deployment output (default for tests)                     |
-| `minimal` | Summary output only                                          |
-| `verbose` | Full deployment details with formatted output and separators |
-
-Examples:
-
-```bash
-# Run tests with silent logs (default)
-npx hardhat test mocha
-
-# Run tests with verbose deployment logs
-DEPLOY_LOG_LEVEL=verbose npx hardhat test mocha
-
-# Run parallel tests with minimal logs
-DEPLOY_LOG_LEVEL=minimal ./utils/runTestsInParallel.sh
-```
+`main` tracks production releases, `develop` is the integration branch, and `version_*` branches hold release-specific work. A branch or tag identifies source code; it does **not** prove which version is deployed on a network. Use the [deployment registry](https://docs.symm.io/api-endpoints-and-deployments/symmio-perps-deployments) for live contract addresses.
 
 ## Documentation
 
-For detailed technical documentation, visit:
+| If you want to…                            | Start here                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Understand SYMMIO from first principles    | [What is SYMMIO?](https://docs.symm.io/protocol-architecture/protocol-introduction)                                       |
+| Understand the protocol and contract flows | [Technical documentation](https://docs.symm.io/protocol-architecture/technical-documentation)                             |
+| Build an exchange on SYMMIO                | [Frontend builder documentation](https://docs.symm.io/exchange-builder-documentation/frontend-builder-technical-guidance) |
+| Integrate as a solver or market maker      | [Liquidity provider documentation](https://docs.symm.io/liquidity-provider-documentation)                                 |
+| Review changes between contract versions   | [Versioned release notes](docs/index.html)                                                                                |
+| Find deployed contracts and API endpoints  | [Deployments](https://docs.symm.io/api-endpoints-and-deployments/symmio-perps-deployments)                                |
+| Deploy or operate the contracts            | [Deployment runbook](docs/deployment.md)                                                                                  |
 
-[https://docs.symm.io/protocol-architecture/technical-documentation](https://docs.symm.io/protocol-architecture/technical-documentation)
+To browse the versioned documentation site locally:
+
+```bash
+npm run docs
+```
+
+## Development
+
+The project uses Node.js, npm, Hardhat, Solidity, TypeScript, Mocha, and Chai.
+
+```bash
+# Install the locked dependency tree
+npm ci
+
+# Compile contracts and check contract sizes
+npm run compile
+
+# Run the test suite in parallel
+npm test
+```
+
+Useful focused commands:
+
+```bash
+# Run tests sequentially
+npx hardhat test mocha
+
+# Run tests matching a name
+npx hardhat test mocha --grep "Test name"
+
+# Run lint checks
+npm run lint
+
+# Validate the in-repository documentation
+npm run docs:check
+```
+
+Tests use `MockMuonSignatureVerifier`, which accepts test signatures without performing real Muon verification.
+
+The fuzz runner uses direct core users, AccountLayer sub-accounts, and signed InstantLayer batches in the same quote lifecycle. Its seeded corner campaigns cover POSITION, MARKET, MARKET_DIRECTION, and CUSTOM isolation, partial fills/closes, margin transfers, cleanup, and address reuse. Additional campaigns exercise single-VA mode and isolation keys, live ownership transfer/deletion, funded legacy imports, safe margin removal and orphan recovery, and selector timelocks through both layers. InstantLayer campaigns cover direct/by-signature/in-batch delegation grants, revocation and expiry, authenticated flex fills, result-chained instant-open templates, contract PartyB relays, and atomic rollback across accounts.
+
+```bash
+# Run a bounded campaign with full validation and all nineteen campaign families
+FUZZ_SEED=layer-features FUZZ_ROOT_ACTIONS=38 npm run test:fuzz:ci
+
+# Keep generating flows until Ctrl+C
+npm run test:fuzz
+```
+
+The default three users exercise all three routes. `FUZZ_USER_COUNT=1` keeps only the direct actor; `2` also includes AccountLayer. Layer campaigns remain in the corner-operation bag regardless of actor count. `FUZZ_CORNER_EVERY=0` disables that bag. Bounded runs that schedule at least nineteen corner campaigns require every family to succeed; operation counters appear in the fuzz logs and dashboard. The seed varies routes, amounts, directions, delays and isolation keys. Focused integration tests cover both template accounting modes and both execution-context protocols; a campaign counter records its family, not every parameter combination.
+
+## Deployment and operations
+
+Deployment is handled through the interactive operator application:
+
+```bash
+./symmio
+```
+
+Do not treat low-level Hardhat deployment tasks as the public operator interface. The application runs the required preflight, rehearsal, transaction reconciliation, verification, health, and handover steps. Read the [deployment runbook](docs/deployment.md) before operating against any live network.
+
+## Repository map
+
+```text
+contracts/core/                   Core protocol diamond
+contracts/accountLayer/           Account and affiliate system
+contracts/instantLayer/           Batched execution layer
+contracts/expressWithdrawLayer/   Express withdrawal provider
+contracts/gaslessLayer/          Gas-sponsored operations layer
+cli/                              Interactive operator application
+test/                             Contract and deployment tests
+docs/                             Release notes and operator guides
+```
 
 ## License
 
-SYMM-Core-Business-Source-License-1.1
-
-For more information, see https://docs.symm.io/legal-disclaimer/license
+The contracts are licensed under the [SYMM Core Business Source License 1.1](License). Review the [license documentation](https://docs.symm.io/legal-disclaimer/license) before production use.

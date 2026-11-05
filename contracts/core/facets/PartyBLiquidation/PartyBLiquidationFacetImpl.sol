@@ -7,8 +7,10 @@ pragma solidity >=0.8.18;
 import { LibMuonLiquidation } from "../../libraries/muon/LibMuonLiquidation.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
-import { LibLiquidation } from "../../libraries/LibLiquidation.sol";
+import { LibPartyBLiquidation } from "../../libraries/liquidation/LibPartyBLiquidation.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -20,13 +22,14 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBLiquidationFacetImpl {
 	using LockedValuesOps for LockedValues;
+	using LibQuoteState for Quote;
 
-	/// @notice Verifies insolvency and initiates the liquidation process for Party B against a Party A
-	function liquidatePartyB(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
+	/// @notice Verifies insolvency and starts the liquidation process for Party B against a Party A
+	function startPartyBLiquidation(address partyB, address partyA, SingleUpnlSig memory upnlSig) internal {
 		require(!MAStorage.layout().crossModeEnabledForPartyB[partyB], "LiquidationFacet: PartyB cross mode is active");
 
 		LibMuonLiquidation.verifyPartyBUpnl(upnlSig, partyB, partyA, MuonFunction.LiquidationPartyB);
-		LibLiquidation.liquidatePartyB(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
+		LibPartyBLiquidation.startPartyBLiquidation(partyB, partyA, upnlSig.upnl, upnlSig.timestamp);
 	}
 
 	/// @notice Closes all specified positions at liquidation prices and distributes liquidation fees
@@ -53,12 +56,8 @@ library PartyBLiquidationFacetImpl {
 
 		for (uint256 i = 0; i < priceSig.quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[priceSig.quoteIds[i]];
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"LiquidationFacet: Invalid state"
-			);
+			LibSymbolAdjustment.requireCurrentLiquidationSignature(quote.symbolId, priceSig.timestamp);
+			quote.requireOpenPosition();
 			require(quote.partyA == partyA && quote.partyB == partyB, "LiquidationFacet: Invalid party");
 
 			liquidatedAmounts[i] = quote.quantity - quote.closedAmount;
@@ -68,7 +67,7 @@ library PartyBLiquidationFacetImpl {
 
 			accountLayout.lockedBalances[partyA].subQuote(quote);
 
-			uint256 liquidationPrice = priceSig.prices[i];
+			uint256 liquidationPrice = LibSymbolAdjustment.liquidationPriceInStoredUnits(quote, priceSig.prices[i]);
 			LibQuote.closePositionFully(quote.id, liquidationPrice);
 			LibConnections.removeConnectionIfNoPositions(quote.partyA, quote.partyB);
 
@@ -77,14 +76,13 @@ library PartyBLiquidationFacetImpl {
 		}
 		if (maLayout.partyBPositionLiquidatorsShare[partyB][partyA] > 0) {
 			uint256 lf = maLayout.partyBPositionLiquidatorsShare[partyB][partyA] * priceSig.quoteIds.length;
-			accountLayout.allocatedBalances[msg.sender] += lf;
-			emit SharedEvents.BalanceChangePartyA(msg.sender, lf, SharedEvents.BalanceChangeType.LF_IN);
+			LibAccount.increasePartyAAllocatedBalance(msg.sender, lf, SharedEvents.BalanceChangeType.LF_IN);
 		}
 
 		if (quoteLayout.partyBPositionsCount[partyB][partyA] == 0) {
 			maLayout.partyBLiquidationStatus[partyB][partyA] = false;
 			maLayout.partyBLiquidationTimestamp[partyB][partyA] = 0;
-			LibAccount.increasePartyBNonce(partyB, partyA);
+			LibAccount.increasePartyBUpnlCounter(partyB, partyA);
 		}
 		return (liquidatedAmounts, closeIds, averageClosedPrices);
 	}

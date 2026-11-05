@@ -21,10 +21,6 @@ interface IExpressProvider {
 	/// @param withdrawRequest The withdrawal request being cancelled
 	function onWithdrawCancelRequest(WithdrawRequest memory withdrawRequest) external;
 
-	/// @notice Called when the protocol force-cancels a withdrawal handled by this provider
-	/// @param withdrawRequest The force-cancelled withdrawal request
-	function onForceWithdrawCancel(WithdrawRequest memory withdrawRequest) external;
-
 	/// @notice Called when a withdrawal handled by this provider is suspended
 	/// @param withdrawRequest The suspended withdrawal request
 	function onWithdrawSuspend(WithdrawRequest memory withdrawRequest) external;

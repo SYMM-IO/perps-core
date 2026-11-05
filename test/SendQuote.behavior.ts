@@ -4,7 +4,7 @@ import { toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
 import { loadFixture, time } from "./helpers/network-helpers.js"
-import { QuoteStatus } from "./models/Enums.js"
+import { OrderType, QuoteStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
@@ -52,6 +52,48 @@ export function shouldBehaveLikeSendQuote(): void {
 		await expect(
 			user.sendQuote(limitQuoteRequestBuilder().quantity(decimal(100n)).cva(decimal(1n)).partyAmm(decimal(1n)).lf(decimal(0n)).build()),
 		).to.be.revertedWith("PartyAFacet: LF is not enough")
+	})
+
+	it("Should enforce the effective minimum LF rate against quote notional", async function () {
+		const fourPercent = decimal(4n, 16)
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(0, fourPercent)
+
+		await expect(
+			user.sendQuote(
+				limitQuoteRequestBuilder()
+					.lf(decimal(4n) - 1n)
+					.build(),
+			),
+		).to.be.revertedWith("PartyAFacet: Notional LF is not enough")
+		await expect(user.sendQuote(limitQuoteRequestBuilder().lf(decimal(4n)).build())).to.not.be.reverted
+
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(1, decimal(3n, 16))
+		await expect(user.sendQuote(limitQuoteRequestBuilder().lf(decimal(3n)).build())).to.not.be.reverted
+
+		const dustPrice = decimal(1n) + 1n
+		const dustQuantity = decimal(100n) + 2n
+		await context.symbolControlFacet.connect(context.signers.admin).setSymbolMinAcceptableNotionalLFRate(0, decimal(5n, 17))
+		await context.symbolControlFacet.connect(context.signers.admin).clearSymbolMinAcceptableNotionalLFRateOverride(1)
+		await expect(
+			user.sendQuote(
+				limitQuoteRequestBuilder()
+					.price(dustPrice)
+					.quantity(dustQuantity)
+					.lf(decimal(50n) + 51n)
+					.upnlSig(getDummySingleUpnlAndPriceSig(dustPrice))
+					.build(),
+			),
+		).to.be.revertedWith("PartyAFacet: Notional LF is not enough")
+		await expect(
+			user.sendQuote(
+				limitQuoteRequestBuilder()
+					.price(dustPrice)
+					.quantity(dustQuantity)
+					.lf(decimal(50n) + 52n)
+					.upnlSig(getDummySingleUpnlAndPriceSig(dustPrice))
+					.build(),
+			),
+		).to.not.be.reverted
 	})
 
 	it("Should fail on quote value lower than minAcceptableQuoteValue", async function () {
@@ -135,6 +177,15 @@ export function shouldBehaveLikeSendQuote(): void {
 		const before = await validator.before(context, { user: user })
 		let qId = await user.sendQuote(marketQuoteRequestBuilder().build())
 		await validator.after(context, { user: user, quoteId: qId, beforeOutput: before })
+	})
+
+	it("Should reject MARKET_BEST_EFFORT when opening a quote", async function () {
+		expect(OrderType.LIMIT).to.equal(0)
+		expect(OrderType.MARKET).to.equal(1)
+		expect(OrderType.MARKET_BEST_EFFORT).to.equal(2)
+		await expect(user.sendQuote(limitQuoteRequestBuilder().orderType(OrderType.MARKET_BEST_EFFORT).build())).to.be.revertedWith(
+			"PartyAFacet: MARKET_BEST_EFFORT is close-only",
+		)
 	})
 
 	it("Should fail on more sent quotes than the allowed range", async function () {
@@ -304,7 +355,22 @@ export function shouldBehaveLikeSendQuote(): void {
 		await expect(
 			context.partyAFacet
 				.connect(liquidator)
-				.sendQuote([], 1, 0, 0, decimal(1n), decimal(100n), decimal(3n), decimal(22n), decimal(75n), decimal(50n), 1, getBlockTimestamp(1000n), sig),
+				.sendQuoteWithAffiliate(
+					[],
+					1,
+					0,
+					0,
+					decimal(1n),
+					decimal(100n),
+					decimal(3n),
+					decimal(22n),
+					decimal(75n),
+					decimal(50n),
+					1,
+					getBlockTimestamp(1000n),
+					ethers.ZeroAddress,
+					sig,
+				),
 		).to.be.revertedWith("PartyAFacet: Liquidator can't be partyA")
 	})
 
@@ -337,6 +403,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		)
 
 		// Verify decoded params match the quote from storage
+		expect((paramsData.length - 2) / 64).to.equal(12)
 		expect(decodedParams[0]).to.equal(quote.symbolId) // symbolId
 		expect(decodedParams[1]).to.equal(BigInt(quote.positionType)) // positionType
 		expect(decodedParams[2]).to.equal(BigInt(quote.orderType)) // orderType
@@ -422,6 +489,7 @@ export function shouldBehaveLikeSendQuote(): void {
 		const decodedParams = decodeSendQuoteParamsDataManual(paramsData)
 
 		// Verify decoded params match the quote from storage
+		expect((paramsData.length - 2) / 64).to.equal(12)
 		expect(decodedParams.symbolId).to.equal(quote.symbolId)
 		expect(BigInt(decodedParams.positionType)).to.equal(BigInt(quote.positionType))
 		expect(BigInt(decodedParams.orderType)).to.equal(BigInt(quote.orderType))

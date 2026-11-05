@@ -16,9 +16,19 @@ import {
 	LegacyAccountInfo
 } from "../../storages/AccountStorage.sol";
 import { AccountLayerStorage } from "../../storages/AccountLayerStorage.sol";
-import { AffiliateStorage, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import {
+	AffiliateStorage,
+	AffiliateData,
+	AffiliateDetail,
+	AffiliateSelectorConfig,
+	AffiliateState,
+	Stakeholder
+} from "../../storages/AffiliateStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 import { LibAccountLayerAccessibility } from "../../libraries/LibAccountLayerAccessibility.sol";
+import { LibTimelock } from "../../libraries/LibTimelock.sol";
+import { TimelockStorage, SelectorTimelock, Schedule, TimelockApproval } from "../../storages/TimelockStorage.sol";
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { IMultiAccount } from "../../interfaces/IMultiAccount.sol";
 
@@ -298,6 +308,14 @@ contract ViewFacet is IViewFacet {
 		return LibAccountLayerUtils.getSigner();
 	}
 
+	/// @notice Returns the account family the current signer session is confined to
+	/// @dev Zero means the session is unconfined. Non-zero only while a caller is executing on behalf
+	///      of a delegate, and always cleared with the signer, so this reads zero between transactions.
+	/// @return The canonical sub-account of the active scope, or address(0)
+	function getSignerScope() external view returns (address) {
+		return LibAccountLayerSigner.effectiveScope();
+	}
+
 	/// @notice Returns the Symmio core address associated with an account
 	/// @param account The sub-account, virtual account, or legacy account address
 	/// @return The Symmio core diamond address
@@ -310,6 +328,23 @@ contract ViewFacet is IViewFacet {
 	/// @return The owner address (address(0) if not found)
 	function ownerOf(address account) external view returns (address) {
 		return LibAccountLayerUtils.resolveAccountOwner(account);
+	}
+
+	/// @notice Returns the canonical affiliate for a live AccountLayer account
+	/// @param account The sub-account or virtual account address
+	/// @return affiliate The affiliate inherited from the sub-account
+	/// @return exists Whether the account and its parent sub-account are live
+	function getAffiliateForAccount(address account) external view returns (address affiliate, bool exists) {
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		SubAccountData storage subAccount = ahLayout.subAccounts[account];
+		if (subAccount.isExists) return (subAccount.affiliate, true);
+
+		VirtualAccountData storage virtualAccount = ahLayout.virtualAccounts[account];
+		if (!virtualAccount.isExists) return (address(0), false);
+
+		SubAccountData storage parentAccount = ahLayout.subAccounts[virtualAccount.parentAccount];
+		if (!parentAccount.isExists) return (address(0), false);
+		return (parentAccount.affiliate, true);
 	}
 
 	/// @notice Returns the global nonce used for sub-account address generation
@@ -325,6 +360,61 @@ contract ViewFacet is IViewFacet {
 	}
 
 	// ==================== Affiliate View Functions ====================
+
+	/// @notice Returns everything stored about an affiliate in a single call
+	/// @dev Aggregates AffiliateData with its pending fee update, so callers don't have to stitch
+	///      together getAffiliateState/Admin/FeeDistributor/SymmioCores/Stakeholders/SymmioShare.
+	///      Per-selector data (hooks and allow-lists) lives in mappings and is returned by
+	///      getAffiliateSelectorConfigs instead. An unregistered affiliate reads back as an empty
+	///      struct with state NONE.
+	/// @param affiliate The affiliate address
+	/// @return The full affiliate detail struct
+	function getAffiliate(address affiliate) external view returns (AffiliateDetail memory) {
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+		AffiliateData storage a = afLayout.affiliates[affiliate];
+
+		return
+			AffiliateDetail({
+				affiliateAddress: affiliate,
+				name: a.name,
+				brandColor: a.brandColor,
+				admin: a.admin,
+				pendingAdmin: a.pendingAdmin,
+				state: a.state,
+				symmioShare: a.feeDetails.symmioShare,
+				stakeholders: a.feeDetails.stakeholders,
+				feeDistributor: a.feeDetails.feeDistributor,
+				metadata: a.metadata,
+				legacyMultiAccounts: a.legacyMultiAccounts,
+				symmioCores: a.symmioCores.values(),
+				accountManager: a.accountManager,
+				registrant: a.registrant,
+				registrationNonce: a.registrationNonce,
+				pendingFeeUpdate: afLayout.pendingFeeUpdates[affiliate]
+			});
+	}
+
+	/// @notice Returns the hook and allow-list configuration of an affiliate for the given selectors
+	/// @param affiliate The affiliate address
+	/// @param selectors The function selectors to look up
+	/// @return configs One entry per requested selector, in the same order
+	function getAffiliateSelectorConfigs(
+		address affiliate,
+		bytes4[] calldata selectors
+	) external view returns (AffiliateSelectorConfig[] memory configs) {
+		AffiliateStorage.Layout storage afLayout = AffiliateStorage.layout();
+
+		configs = new AffiliateSelectorConfig[](selectors.length);
+		for (uint256 i = 0; i < selectors.length; i++) {
+			bytes4 selector = selectors[i];
+			configs[i] = AffiliateSelectorConfig({
+				selector: selector,
+				hook: afLayout.affiliates[affiliate].hooks[selector],
+				hookAllowed: afLayout.hookAllowedSelectors[affiliate][selector],
+				callAllowed: afLayout.callAllowedSelectors[affiliate][selector]
+			});
+		}
+	}
 
 	/// @notice Returns the registration state of an affiliate
 	/// @param affiliate The affiliate address
@@ -376,13 +466,6 @@ contract ViewFacet is IViewFacet {
 		return AffiliateStorage.layout().affiliates[affiliate].feeDetails.symmioShare;
 	}
 
-	/// @notice Returns the express deposit rate for an affiliate (fraction of 1e18)
-	/// @param affiliate The affiliate address
-	/// @return The express deposit rate
-	function getAffiliateExpressRate(address affiliate) external view returns (uint256) {
-		return AffiliateStorage.layout().affiliates[affiliate].expressRate;
-	}
-
 	/// @notice Checks whether a Symmio core address is whitelisted
 	/// @param core The Symmio core address
 	/// @return Whether the core is whitelisted
@@ -414,7 +497,7 @@ contract ViewFacet is IViewFacet {
 
 		address[] memory legacyContracts = afLayout.legacyMultiAccounts.values();
 
-		// Count total accounts across all legacy contracts (number of legacy contracts is very limited)
+		// Count accounts across all registered legacy contracts.
 		uint256 totalCount = 0;
 		for (uint256 i = 0; i < legacyContracts.length; i++) {
 			totalCount += IMultiAccount(legacyContracts[i]).getAccountsLength(owner);
@@ -516,7 +599,7 @@ contract ViewFacet is IViewFacet {
 	// ==================== Ownership ====================
 
 	/// @notice Returns the current diamond owner address
-	function owner() external view returns (address) {
+	function getOwner() external view returns (address) {
 		return LibDiamond.contractOwner();
 	}
 
@@ -531,6 +614,62 @@ contract ViewFacet is IViewFacet {
 	/// @return Whether the system is paused
 	function paused() external view returns (bool) {
 		return AccountLayerStorage.layout().globalPaused;
+	}
+
+	// ==================== Timelock View Functions ====================
+
+	/// @notice Timelock on one selector of a root sub-account; unlocker == address(0) means not timelocked.
+	function getSelectorTimelock(address subAccount, bytes4 selector) external view returns (SelectorTimelock memory) {
+		return LibTimelock.timelockOf(subAccount, selector);
+	}
+
+	/// @notice True when the non-empty selector set is timelocked by unlocker with a delay of at least minDelay.
+	function allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] calldata selectors) external view returns (bool) {
+		if (unlocker == address(0) || selectors.length == 0) return false;
+		for (uint256 i = 0; i < selectors.length; i++) {
+			SelectorTimelock memory st = LibTimelock.timelockOf(subAccount, selectors[i]);
+			if (st.unlocker != unlocker || st.delay < minDelay) return false;
+		}
+		return true;
+	}
+
+	/// @notice Timelock nonce of a root sub-account; advances on every policy change, and schedules stamped with an older nonce are dead.
+	function timelockNonce(address subAccount) external view returns (uint32) {
+		return TimelockStorage.layout().nonces[subAccount];
+	}
+
+	/// @notice The schedule for an op on the account's family; one stamped with an older nonce reads as empty.
+	function getSchedule(address account, bytes32 callDataHash) external view returns (Schedule memory) {
+		TimelockStorage.Layout storage t = TimelockStorage.layout();
+		address root = LibTimelock.rootOf(account);
+		Schedule memory w = t.schedules[root][callDataHash];
+		if (w.nonce != t.nonces[root]) return Schedule({ scheduledAt: 0, nonce: 0 });
+		return w;
+	}
+
+	/// @notice True once an approval digest has been consumed.
+	function isApprovalUsed(bytes32 approvalHash) external view returns (bool) {
+		return TimelockStorage.layout().usedApprovals[approvalHash];
+	}
+
+	/// @notice EIP-712 domain separator for TimelockApproval signatures (name SymmioAccountLayerTimelock, version 1).
+	function timelockDomainSeparator() external view returns (bytes32) {
+		return LibTimelock.domainSeparator();
+	}
+
+	/// @notice EIP-712 digest an unlocker signs for approval.
+	function hashTimelockApproval(TimelockApproval calldata approval) external view returns (bytes32) {
+		return LibTimelock.hashApproval(approval);
+	}
+
+	/// @notice Lower bound for a selector delay; zero means no minimum.
+	function minTimelockDelay() external view returns (uint256) {
+		return TimelockStorage.layout().minTimelockDelay;
+	}
+
+	/// @notice How long a schedule stays valid once its delay has passed: the configured value, or 10 minutes when unset.
+	function scheduleGracePeriod() external view returns (uint256) {
+		return LibTimelock.scheduleGracePeriod();
 	}
 
 	// ==================== Constants ====================

@@ -57,4 +57,10 @@ abstract contract Pausable {
 		require(!GlobalAppStorage.layout().accountingPaused, "Pausable: Accounting paused");
 		_;
 	}
+
+	modifier whenNotWithdrawAdvancePaused() {
+		require(!GlobalAppStorage.layout().globalPaused, "Pausable: Global paused");
+		require(!GlobalAppStorage.layout().withdrawAdvancePaused, "Pausable: Withdraw advance paused");
+		_;
+	}
 }

@@ -8,6 +8,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 interface ISymmioCore {
 	function acceptWithdrawRequest(address user, uint256 requestId) external;
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) external;
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external;
 	function finalizeWithdrawRequest(address user, uint256 requestId) external;
 	function rejectWithdrawRequest(address user, uint256 requestId) external;
 }
@@ -24,6 +25,10 @@ contract ExpressProvider is IExpressProvider {
 
 	function finalizeWithdrawRequest(address user, uint256 requestId) external {
 		ISymmioCore(symmioAddress).finalizeWithdrawRequest(user, requestId);
+	}
+
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) external {
+		ISymmioCore(symmioAddress).advanceWithdraw(user, requestId, amount);
 	}
 
 	function acceptWithdrawRequest(address user, uint256 requestId) external {
@@ -57,8 +62,6 @@ contract ExpressProvider is IExpressProvider {
 	}
 
 	function onWithdrawCancelRequest(WithdrawRequest memory) external pure override {}
-
-	function onForceWithdrawCancel(WithdrawRequest memory) external pure override {}
 
 	function onWithdrawSuspend(WithdrawRequest memory _req) external override {
 		emit WithdrawSuspended(_req.user, _req.id);

@@ -105,10 +105,9 @@ library GlobalAppStorage {
 		///      instant actions revert but normal trading continues.
 		bool instantLayerPaused;
 		/// @notice Flag indicating calls should be treated as instant layer operations
-		/// @dev Set via setCallFromInstantLayer() by authorized callers. This is a persistent
-		///      state flag, not automatically reset - the caller must manage its lifecycle.
-		///      When true, instant actions mode checks pass for bound PartyAs. Checked in
-		///      Accessibility modifiers to allow/restrict certain operations.
+		/// @dev Legacy persistent context set via setCallFromInstantLayer(). New Cancun
+		///      InstantLayer executions use LibExecutionContext's EIP-1153 override instead.
+		///      When true, instant actions mode checks pass for bound PartyAs.
 		bool callFromInstantLayer;
 		/// @notice Master switch for cross (master account) mode
 		/// @dev When false, PartyBs cannot activate cross mode. This is the global
@@ -119,7 +118,8 @@ library GlobalAppStorage {
 		/// @notice Skip pending balance tracking in atomic send+lock+open flows
 		/// @dev When true, sendQuote/lockQuote skip writing to pending balances/arrays,
 		///      and openPosition skips removing them. Eliminates ~24 wasted SSTOREs.
-		///      Set via setInstantOpenMode() by the instant layer around template execution.
+		///      This is the legacy persistent fallback. Cancun execution uses the transient
+		///      LibExecutionContext override around template execution.
 		///      IMPORTANT: Appended after crossPartyBModeActivated to preserve storage layout.
 		bool instantOpenMode;
 		/// @notice Per-PartyB flag that prevents a specific PartyB from locking or opening new positions
@@ -127,9 +127,21 @@ library GlobalAppStorage {
 		///      Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still:
 		///      - Close existing positions (fillCloseRequest, emergencyClosePosition)
 		///      - Deallocate funds (deallocateForPartyB)
-		///      - Receive correct routing in distributeFromLiquidationEscrow / distributeForClearingHouse
+		///      - Receive correct routing in distributeFromLiquidationEscrow / applyClearingHouseSettlement
 		///      Use this instead of deregisterPartyB when winding down a PartyB.
 		mapping(address => bool) partyBOpenPositionsPausedPerPartyB;
+		/// @notice Per-affiliate shutdown timestamp.
+		/// @dev Nonzero values immediately put the affiliate in close-only mode. Once block.timestamp
+		///      reaches this value, ClearingHouse can close the affiliate's remaining open positions.
+		mapping(address => uint256) affiliateShutdownTime;
+		/// @notice Disables legacy PartyA liquidation entrypoints that rely on symbol-level prices.
+		/// @dev When true, liquidators must use the signed PartyB-symbol price/funding state path.
+		bool legacyPartyALiquidationDeprecated;
+		/// @notice Stops express providers from advancing locked withdrawal collateral early.
+		/// @dev Used as a surgical emergency stop for credit-line-backed express withdrawals.
+		///      Finalization, cancellation, and suspension remain available so in-flight
+		///      withdrawals can unwind or settle normally.
+		bool withdrawAdvancePaused;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

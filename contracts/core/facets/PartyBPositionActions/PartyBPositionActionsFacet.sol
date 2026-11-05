@@ -11,6 +11,9 @@ import { Pausable } from "../../utils/Pausable.sol";
 import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
+import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
+import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
+import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
 
 contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionActionsFacet {
 	/// @notice Opens a position for the specified quote. The opened position's size can't be excessively small or large.
@@ -26,35 +29,39 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	) external whenNotPartyBOpenPositionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) {
 		uint256 newId = PartyBPositionActionsFacetImpl.openPosition(quoteId, filledAmount, openedPrice, upnlSig);
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
-		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice);
-		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice, quote.lockedValues);
-		if (newId != 0) {
-			Quote storage newQuote = QuoteStorage.layout().quotes[newId];
-			if (newQuote.quoteStatus == QuoteStatus.PENDING) {
-				LibSendQuoteEvents.emitSendQuoteEvents(
-					LibSendQuoteEvents.SendQuoteEventParams({
-						partyA: newQuote.partyA,
-						quoteId: newQuote.id,
-						partyBsWhiteList: newQuote.partyBsWhiteList,
-						symbolId: newQuote.symbolId,
-						positionType: newQuote.positionType,
-						orderType: newQuote.orderType,
-						price: newQuote.requestedOpenPrice,
-						marketPrice: newQuote.marketPrice,
-						quantity: newQuote.quantity,
-						cva: newQuote.lockedValues.cva,
-						lf: newQuote.lockedValues.lf,
-						partyAmm: newQuote.lockedValues.partyAmm,
-						partyBmm: newQuote.lockedValues.partyBmm,
-						tradingFee: newQuote.tradingFee,
-						deadline: newQuote.deadline,
-						affiliate: newQuote.affiliate,
-						data: newQuote.data
-					})
-				);
-			} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
-				emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
-			}
+		LibPartiesEvents.emitOpenPosition(quote, quoteId, filledAmount, openedPrice);
+		if (newId != 0) _emitRemainderQuote(newId);
+	}
+
+	/// @dev A partial fill splits the original quote and leaves the unfilled remainder as a new
+	///      PENDING quote. Re-emitting SendQuote for it keeps indexers in sync, since nothing
+	///      else announces a quote created inside an open. Building the params field by field
+	///      (instead of one struct literal) keeps the IR pipeline within stack limits.
+	function _emitRemainderQuote(uint256 newId) private {
+		Quote storage newQuote = QuoteStorage.layout().quotes[newId];
+		if (newQuote.quoteStatus == QuoteStatus.PENDING) {
+			LibSendQuoteEvents.SendQuoteEventParams memory params;
+			params.partyA = newQuote.partyA;
+			params.quoteId = newQuote.id;
+			params.partyBsWhiteList = newQuote.partyBsWhiteList;
+			params.symbolId = newQuote.symbolId;
+			params.positionType = newQuote.positionType;
+			params.orderType = newQuote.orderType;
+			params.price = newQuote.requestedOpenPrice;
+			params.marketPrice = newQuote.marketPrice;
+			params.quantity = newQuote.quantity;
+			params.cva = newQuote.lockedValues.cva;
+			params.lf = newQuote.lockedValues.lf;
+			params.partyAmm = newQuote.lockedValues.partyAmm;
+			params.partyBmm = newQuote.lockedValues.partyBmm;
+			params.tradingFee = newQuote.tradingFee;
+			params.deadline = newQuote.deadline;
+			params.affiliate = newQuote.affiliate;
+			params.solverFeeCaps = LibSolverFee.caps(QuoteStorage.layout().solverFeeStates[newId]);
+			params.data = newQuote.data;
+			LibSendQuoteEvents.emitSendQuoteEvents(params);
+		} else if (newQuote.quoteStatus == QuoteStatus.CANCELED) {
+			emit AcceptCancelRequest(newQuote.id, QuoteStatus.CANCELED);
 		}
 	}
 
@@ -73,17 +80,7 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		PartyBPositionActionsFacetImpl.fillCloseRequest(quoteId, filledAmount, closedPrice, upnlSig);
-		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		emit FillCloseRequest(
-			quoteId,
-			quote.partyA,
-			quote.partyB,
-			filledAmount,
-			closedPrice,
-			quote.quoteStatus,
-			quoteLayout.closeIds[quoteId],
-			quote.lockedValues
-		);
+		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 
 	/// @notice Accepts a cancel close request for the specified quote.
@@ -93,10 +90,13 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 		emit AcceptCancelCloseRequest(quoteId, QuoteStatus.OPENED, QuoteStorage.layout().closeIds[quoteId]);
 	}
 
-	/// @notice Fills a close request up to the maximum amount that keeps PartyA at the edge of liquidation.
+	/// @notice Fills a close request up to PartyB's configured close-to-liquidation boundary.
 	///         Use this when the standard fillCloseRequest would revert due to PartyA insolvency.
-	///         This calculates and closes only the amount that brings PartyA to approximately 0 available balance.
-	///         Reverts if even a full close keeps PartyA insolvent.
+	///         With the default zero overshoot this brings PartyA to approximately zero available balance.
+	///         A nonzero manager-configured overshoot may leave PartyA below zero by the calculated allowance.
+	///         The existing non-harmful/full-close insolvency behavior is preserved when the allowance cannot cover it.
+	///         LIMIT requests retain any unfilled request; MARKET_BEST_EFFORT requests cancel it atomically.
+	/// @dev Solver fees are separate draws and are not included in this close sizing calculation.
 	/// @param quoteId The ID of the quote for which the close request is filled.
 	/// @param closedPrice The closed price for the close request.
 	/// @param upnlSig The Muon signature containing PairUpnlAndPriceSig data.
@@ -108,17 +108,10 @@ contract PartyBPositionActionsFacet is Accessibility, Pausable, IPartyBPositionA
 	) external whenNotPartyBActionsPaused onlyPartyBOfQuote(quoteId) notLiquidated(quoteId) returns (uint256 filledAmount) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		filledAmount = PartyBPositionActionsFacetImpl.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
-		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, quoteLayout.closeIds[quoteId]);
-		emit FillCloseRequest(
-			quoteId,
-			quote.partyA,
-			quote.partyB,
-			filledAmount,
-			closedPrice,
-			quote.quoteStatus,
-			quoteLayout.closeIds[quoteId],
-			quote.lockedValues
-		);
+		(LibPartyBPositionsActions.CloseToLiquidationPlan memory plan, uint256 actualShortfall) = PartyBPositionActionsFacetImpl
+			.fillCloseRequestToLiquidation(quoteId, closedPrice, upnlSig);
+		filledAmount = plan.filledAmount;
+		LibPartiesEvents.emitPartyALiquidationOvershootUsedIfAny(quote, quoteId, plan.effectiveRate, plan.allowedShortfall, actualShortfall);
+		LibPartiesEvents.emitFillCloseRequest(quoteLayout, quote, quoteId, filledAmount, closedPrice);
 	}
 }

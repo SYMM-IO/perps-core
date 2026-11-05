@@ -4,7 +4,7 @@ import type { QuoteStructOutput, SymbolStructOutput } from "../../src/types/inte
 import { network } from "../helpers/hardhat-connection.js"
 import { time } from "../helpers/network-helpers.js"
 import { OrderType, QuoteStatus } from "../models/Enums.js"
-import { RunContext } from "../models/RunContext.js"
+import type { RunContext } from "../models/RunContext.js"
 import { safeDiv } from "./SafeMath.js"
 
 const defaultSerializer = new JsonSerializer()
@@ -107,31 +107,20 @@ export async function getTotalLockedValuesForQuoteIds(
 export async function getTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
 	let out = 0n
 	for (const quoteId of quoteIds) {
-		let q = await context.viewFacetQuote.getQuote(quoteId)
-		// Use the quote's actual trading fee, not the symbol's default
-		let tf = q.tradingFee
-		if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(q.quantity * q.requestedOpenPrice * tf, 36)
-		else out += unDecimal(q.quantity * q.marketPrice * tf, 36)
+		const q = await context.viewFacetQuote.getQuote(quoteId)
+		out += getQuoteTradingFeeWithAmount(q, q.quantity, q.quoteStatus === BigInt(QuoteStatus.OPENED))
 	}
 	return out
 }
 
 export async function getTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
-	let out = 0n
-	let q = await context.viewFacetQuote.getQuote(quoteId)
-	let tf = (await context.viewFacetSymbol.getSymbol(q.symbolId)).tradingFee
-	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
-	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
-	return out
+	const q = await context.viewFacetQuote.getQuote(quoteId)
+	return getQuoteTradingFeeWithAmount(q, filledAmounts, q.quoteStatus === BigInt(QuoteStatus.OPENED))
 }
 
 export async function getOpenTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
-	let out = 0n
-	let q = await context.viewFacetQuote.getQuote(quoteId)
-	let tf = q.tradingFee
-	if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(filledAmounts * q.requestedOpenPrice * tf, 36)
-	else out += unDecimal(filledAmounts * q.marketPrice * tf, 36)
-	return out
+	const q = await context.viewFacetQuote.getQuote(quoteId)
+	return getQuoteTradingFeeWithAmount(q, filledAmounts, false)
 }
 
 export async function getCloseTradingFeeForQuoteWithFilledAmount(context: RunContext, quoteId: bigint, filledAmounts: bigint): Promise<bigint> {
@@ -157,12 +146,47 @@ export async function getCloseTradingFeeForQuotes(context: RunContext, quoteIds:
 export async function getOpenTradingFeeForQuotes(context: RunContext, quoteIds: bigint[]): Promise<bigint> {
 	let out = 0n
 	for (const quoteId of quoteIds) {
-		let q = await context.viewFacetQuote.getQuote(quoteId)
-		let tf = q.tradingFee
-		if (q.orderType === BigInt(OrderType.LIMIT)) out += unDecimal(q.quantity * q.requestedOpenPrice * tf, 36)
-		else out += unDecimal(q.quantity * q.marketPrice * tf, 36)
+		const q = await context.viewFacetQuote.getQuote(quoteId)
+		out += getQuoteTradingFeeWithAmount(q, q.quantity, false)
 	}
 	return out
+}
+
+export function getTradingFeeAtPrice(amount: bigint, tradingPrice: bigint, tradingFee: bigint): bigint {
+	return unDecimal(amount * tradingPrice * tradingFee, 36)
+}
+
+export function getQuoteOpenTradingFeeAtPrice(quote: QuoteStructOutput, amount: bigint, tradingPrice: bigint): bigint {
+	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
+}
+
+/**
+ * Picks an unrealized PnL that leaves PartyA exactly one wei short of covering the open-fee shortfall:
+ * solvent right up until the delta is applied, insolvent immediately after. Used to prove the debit
+ * lands early enough for the caller's solvency check to reject the whole open.
+ */
+export function getOpenFeeDeltaInsolvencyUpnl(
+	allocatedBefore: bigint,
+	lockedCva: bigint,
+	lockedLf: bigint,
+	reservedFee: bigint,
+	executedFee: bigint,
+): { feeShortfall: bigint; freeBalanceBeforeDelta: bigint; upnlPartyA: bigint } {
+	const feeShortfall = executedFee - reservedFee
+	const freeBalanceBeforeDelta = allocatedBefore - (lockedCva + lockedLf)
+	const upnlPartyA = -freeBalanceBeforeDelta + feeShortfall - 1n
+	return { feeShortfall, freeBalanceBeforeDelta, upnlPartyA }
+}
+
+/** Mirrors LibQuote: limit quotes price off requestedOpenPrice, market quotes off marketPrice (reserved) or openedPrice (executed). */
+function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedBasis: boolean): bigint {
+	const tradingPrice =
+		quote.orderType === BigInt(OrderType.LIMIT)
+			? quote.requestedOpenPrice
+			: useExecutedBasis && quote.openedPrice !== 0n
+				? quote.openedPrice
+				: quote.marketPrice
+	return getTradingFeeAtPrice(amount, tradingPrice, quote.tradingFee)
 }
 
 export async function pausePartyB(context: RunContext): Promise<void> {

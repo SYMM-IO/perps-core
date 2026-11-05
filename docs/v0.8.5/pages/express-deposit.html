@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="SYMMIO enforces a withdrawal cooldown (typically 12 hours from the user&#x27;s last deallocation) to protect against attack vectors. While essential for security, this creates real friction — users who need timely access to funds have no option but to wait. Frontends can&#x27;t differentiate on…"
+		/>
+		<title>Express Deposit &amp; Withdrawal System - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-express-deposit-the-problem">The Problem</a>
+				<a class="toc-link level-2" href="#doc-express-deposit-what-we-introduced-in-symmio-core">What We Introduced in SYMMIO Core</a>
+				<a class="toc-link level-2" href="#doc-express-deposit-the-future-system-express-virtual-withdrawals"
+					>The Future System: Express &amp; Virtual Withdrawals</a
+				>
+				<a class="toc-link level-3" href="#doc-express-deposit-overview">Overview</a>
+				<a class="toc-link level-3" href="#doc-express-deposit-instant-withdrawal-flow">Instant Withdrawal Flow</a>
+				<a class="toc-link level-3" href="#doc-express-deposit-components">Components</a>
+				<a class="toc-link level-3" href="#doc-express-deposit-liquidity-priority">Liquidity Priority</a>
+				<a class="toc-link level-3" href="#doc-express-deposit-safety-guarantees">Safety Guarantees</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Express Deposit &amp; Withdrawal System</h1>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<h2 id="doc-express-deposit-the-problem">The Problem</h2>
+					<p>
+						SYMMIO enforces a withdrawal cooldown (typically 12 hours from the user's last deallocation) to protect against attack
+						vectors. While essential for security, this creates real friction — users who need timely access to funds have no option but
+						to wait. Frontends can't differentiate on withdrawal speed, and failed withdrawals due to insufficient contract balance lead
+						to poor UX.
+					</p>
+					<h2 id="doc-express-deposit-what-we-introduced-in-symmio-core">What We Introduced in SYMMIO Core</h2>
+					<p>
+						v0.8.5 adds express deposit hooks and virtual provider integration into the core protocol. When a user deposits through an
+						affiliate's frontend, the affiliate can configure a percentage (X%) of that deposit to be automatically routed to an external
+						provider contract via the <code>onExpressDeposit</code> callback. This is built on top of the
+						<a href="virtual-funds.html">Virtual Fund System</a> — the provider contract is registered as a virtual provider in SYMMIO and
+						implements the <code>IVirtualProvider</code> lifecycle callbacks (<code>onExpressDeposit</code>,
+						<code>onWithdrawRequest</code>, <code>onWithdrawComplete</code>, etc.).
+					</p>
+					<p>
+						The core protocol also adds the withdraw system hooks that let registered express providers accept, process, cancel, and
+						finalize withdrawal requests through callbacks.
+					</p>
+					<p>
+						The deposit fee percentage is each affiliate's own decision and their own capital responsibility. SYMMIO core provides the
+						mechanism, but the affiliate chooses what percentage to allocate. The protocol does not manage or guarantee these funds.
+					</p>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Frontend
+    participant AccountLayer
+    participant SYMMIO Core
+    participant Virtual Provider
+
+    User-&gt;&gt;Frontend: Deposit 1000 USDC
+    Frontend-&gt;&gt;AccountLayer: depositWithExpressRate(1000 USDC)
+    Note over AccountLayer: Affiliate configured 3% express split
+    AccountLayer-&gt;&gt;SYMMIO Core: depositFor(user, 970 USDC)
+    Note over SYMMIO Core: Credit user 970 USDC balance
+    AccountLayer-&gt;&gt;Virtual Provider: transfer 30 USDC + onExpressDeposit(user, 30 USDC)
+    Virtual Provider-&gt;&gt;SYMMIO Core: virtualDepositFor(user, 30 USDC)
+    Note over SYMMIO Core: Credit user additional 30 USDC (virtual)
+    Note over Virtual Provider: 30 USDC routed to provider,&lt;br/&gt;970 USDC stays in SYMMIO
+    Note over Virtual Provider: Liquidity pool grows&lt;br/&gt;with every deposit
+</code></pre>
+					<p>
+						<strong>What the core provides:</strong> - Express deposit splitting on the deposit path (configurable % per affiliate) -
+						Virtual provider registration and callback interface - Express provider registration and withdraw lifecycle hooks (accept,
+						complete, cancel, suspend) - Withdraw request data field for passing signed options from providers
+					</p>
+					<p>
+						<strong>What the core does NOT provide (not yet implemented):</strong> - The actual Express and Virtual provider contracts -
+						The off-chain bot - Withdrawal option generation and signing
+					</p>
+					<hr />
+					<h2 id="doc-express-deposit-the-future-system-express-virtual-withdrawals">
+						The Future System: Express &amp; Virtual Withdrawals
+					</h2>
+					<p>
+						The hooks above are designed to enable a full Express and Virtual Withdrawal System that will give users fast access to their
+						funds. Here's what that system will look like.
+					</p>
+					<h3 id="doc-express-deposit-overview">Overview</h3>
+					<p>
+						An <strong>Express Contract</strong> and <strong>Virtual Contract</strong> will be deployed as the provider-side
+						infrastructure. Together with an off-chain <strong>Bot</strong>, they will offer users up to three withdrawal options:
+					</p>
+					<pre><code class="language-mermaid">flowchart TD
+    A[User requests withdrawal] --&gt; B{Bot evaluates&lt;br/&gt;available liquidity}
+    B --&gt;|Enough now| C["Option A: Instant&lt;br/&gt;(~20 seconds)"]
+    B --&gt;|Enough later| D["Option A2: Earliest-Available&lt;br/&gt;(between now and 12h)"]
+    B --&gt;|Not enough| E["Option B: After Cooldown&lt;br/&gt;(12 hours, always available)"]
+
+    C --&gt; F[Express Contract fronts funds immediately]
+    D --&gt; G[Express Contract reserves funds,&lt;br/&gt;pays at projected time]
+    E --&gt; H[Standard SYMMIO withdrawal after cooldown]
+
+    F --&gt; I[SYMMIO reimburses provider after 12h]
+    G --&gt; I
+</code></pre>
+					<p>
+						<strong>Option A — Instant (~20 seconds):</strong> If enough liquidity exists right now across the Express and Virtual pools,
+						the user gets funds almost immediately. The Express Contract fronts the money, and after the 12-hour cooldown completes,
+						SYMMIO reimburses the provider.
+					</p>
+					<p>
+						<strong>Option A2 — Earliest-Available (between now and 12 hours):</strong> When instant liquidity isn't sufficient but the
+						Express Contract can project when enough funds will become available (based on other pending withdrawals finalizing), it
+						offers the user a specific earlier payout time. A user might wait 2 hours instead of 12. The Express Contract uses a 12-bucket
+						ring buffer representing hourly time slots to track expected inflows and reservations, preventing the same future liquidity
+						from being promised twice.
+					</p>
+					<p>
+						<strong>Option B — After Cooldown (12 hours):</strong> Always available as a guaranteed fallback. This is the standard SYMMIO
+						withdrawal — no provider capital needed.
+					</p>
+					<p>
+						The frontend shows the best available option. If instant is possible, show that. If not but earliest-available is, show that.
+						Otherwise, fall back to the standard 12-hour flow.
+					</p>
+					<h3 id="doc-express-deposit-instant-withdrawal-flow">Instant Withdrawal Flow</h3>
+					<pre><code class="language-mermaid">sequenceDiagram
+    participant User
+    participant Bot
+    participant SYMMIO Core
+    participant Express Contract
+    participant Virtual Contract
+
+    User-&gt;&gt;Bot: Request withdrawal options
+    Bot-&gt;&gt;Bot: Check liquidity, sign option
+    Bot-&gt;&gt;User: Option A (instant), Option B (cooldown)
+
+    User-&gt;&gt;SYMMIO Core: initiateWithdraw(parts, signed option)
+    SYMMIO Core-&gt;&gt;Express Contract: onWithdrawRequest()
+    Express Contract-&gt;&gt;Express Contract: Verify signature, lock funds
+    Express Contract-&gt;&gt;Virtual Contract: lockForWithdraw() (if virtual part)
+    Express Contract-&gt;&gt;SYMMIO Core: acceptWithdrawRequest()
+
+    Note over Bot: ~20 seconds security window
+    Bot-&gt;&gt;Bot: Risk check (anomaly detection API)
+    Bot-&gt;&gt;Express Contract: processWithdraw()
+    Express Contract-&gt;&gt;User: Transfer funds
+    Express Contract-&gt;&gt;Virtual Contract: releaseToUser() (if virtual part)
+
+    Note over SYMMIO Core: 12 hours later...
+    Bot-&gt;&gt;SYMMIO Core: finalizeWithdrawRequest()
+    SYMMIO Core-&gt;&gt;Express Contract: onWithdrawComplete()
+    Note over Express Contract: Reimburse liquidity pools
+</code></pre>
+					<h3 id="doc-express-deposit-components">Components</h3>
+					<p>
+						<strong>Express Contract</strong> (one per chain): The main coordinator. Manages two types of liquidity pools — a general pool
+						available to all users, and per-frontend pools funded by frontend operators. Validates bot-signed withdrawal options,
+						locks/reserves funds, and handles the full withdrawal lifecycle. For earliest-available withdrawals, the bucket-based
+						scheduling ensures the same future liquidity can't be promised to multiple users.
+					</p>
+					<p>
+						<strong>Virtual Contract</strong> (one per chain per frontend): Holds the liquidity funded by the express deposit fee
+						percentage. Locks funds when included in withdrawal requests, releases them to users on Express Contract instruction. Also
+						serves as a fallback when SYMMIO's own contract balance is insufficient for a standard after-cooldown withdrawal.
+					</p>
+					<p>
+						<strong>Bot</strong> (one globally): Off-chain orchestrator that provides the withdrawal options API, signs options with
+						replay-protected nonces, monitors events, performs risk assessment through an anomaly detection API, and schedules processing
+						calls at the right times.
+					</p>
+					<h3 id="doc-express-deposit-liquidity-priority">Liquidity Priority</h3>
+					<p>
+						When constructing instant withdrawal options, the system will draw from pools in this order: 1. Express Contract
+						frontend-specific balance (lowest system risk) 2. Virtual Contract frontend balance (auto-funded from deposits) 3. Express
+						Contract general balance (system-wide fallback)
+					</p>
+					<p>For after-cooldown withdrawals, SYMMIO's own balance is used first, with the Virtual Contract as fallback.</p>
+					<h3 id="doc-express-deposit-safety-guarantees">Safety Guarantees</h3>
+					<ul>
+						<li>
+							<strong>Permissionless fallback</strong>: If the bot goes down, users can process their own withdrawals after a tolerance
+							period. No one is ever permanently locked out of their funds.
+						</li>
+						<li>
+							<strong>Risk gating</strong>: The bot checks an anomaly detection API before processing instant withdrawals. Flagged users
+							get their withdrawal locked for admin review rather than auto-processed.
+						</li>
+						<li><strong>Replay protection</strong>: Every signed option includes a per-user nonce consumed on-chain.</li>
+						<li>
+							<strong>Option B always works</strong>: The after-cooldown withdrawal is a guaranteed fallback regardless of provider
+							state.
+						</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

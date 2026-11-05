@@ -7,18 +7,19 @@ pragma solidity >=0.8.18;
 import { LibMuonFundingRate } from "../../libraries/muon/LibMuonFundingRate.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
 import { LibQuoteFunding } from "../../libraries/LibQuoteFunding.sol";
 import { LibFundingRate } from "../../libraries/LibFundingRate.sol";
-import { QuoteStorage, Quote, QuoteStatus } from "../../storages/QuoteStorage.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
+import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
-import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { PairUpnlSig } from "../../storages/MuonStorage.sol";
 import { PositionType } from "../../storages/QuoteStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 /// @title FundingRateFacetImpl
@@ -27,6 +28,9 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 ///      1. Direct funding rate: Immediate price adjustment based on funding rate
 ///      2. Accumulated funding: Tracks funding over epochs and applies in bulk
 library FundingRateFacetImpl {
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
+
 	/// @notice Applies direct funding rate to open positions
 	/// @dev This adjusts the open price of positions based on the funding rate.
 	///      A positive rate on a LONG position increases openedPrice (hurts PartyA),
@@ -40,8 +44,7 @@ library FundingRateFacetImpl {
 
 		// Verify the signature contains valid unrealized PnL data
 		address signer = LibSigner.getSigner();
-		require(!MAStorage.layout().partyBLiquidationStatus[signer][partyA], "PartyBFacet: PartyB is in liquidation process");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		signer.requireNotLiquidating(partyA);
 		require(quoteIds.length == rates.length && quoteIds.length > 0, "ChargeFundingFacet: Length not match");
 
 		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, signer, partyA);
@@ -57,17 +60,13 @@ library FundingRateFacetImpl {
 		// Process each position
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			uint256 oldOpenedPrice = quote.openedPrice;
 
 			// Validate quote ownership and status
 			require(quote.partyA == partyA, "ChargeFundingFacet: Invalid quote");
 			require(quote.partyB == signer, "ChargeFundingFacet: Sender isn't partyB of quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"ChargeFundingFacet: Invalid state"
-			);
+			quote.requireOpenPosition();
 
 			// Ensure we're not mixing funding systems
 			require(
@@ -145,7 +144,7 @@ library FundingRateFacetImpl {
 		}
 
 		// Increment nonces for replay protection
-		LibAccount.increaseBothNonces(signer, partyA);
+		LibAccount.increaseBothUpnlCounters(signer, partyA);
 	}
 
 	/// @notice Updates the epoch duration for accumulated funding calculation
@@ -158,6 +157,7 @@ library FundingRateFacetImpl {
 		require(symbolIds.length == durations.length, "FundingRateFacet: Invalid length");
 
 		for (uint256 i = 0; i < symbolIds.length; i++) {
+			LibSymbolAdjustment.requireNotFrozen(symbolIds[i]);
 			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
 			uint256 timestampForEpoch = 0;
 
@@ -165,7 +165,7 @@ library FundingRateFacetImpl {
 				// Update weighted averages before changing epoch duration
 				LibFundingRate.updateAccumulatedRates(fundingFee);
 
-				// Snapshot the exact cumulative fee — no re-division of old timestamps
+				// Preserve the cumulative fee under the old epoch duration before scaling the current rates.
 				uint256 oldEpochCount = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 				fundingFee.snapshotLongFee += fundingFee.accumulatedLongRate * int256(oldEpochCount);
 				fundingFee.snapshotShortFee += fundingFee.accumulatedShortRate * int256(oldEpochCount);
@@ -192,6 +192,7 @@ library FundingRateFacetImpl {
 			// Update epoch duration
 			fundingFee.lastUpdatedEpoch = LibFundingRate.getEpochOfTimestamp(timestampForEpoch, durations[i]);
 			fundingFee.epochDuration = durations[i];
+			LibFundingRate.emitAccumulatedFundingStateUpdated(symbolIds[i], partyB, fundingFee);
 		}
 	}
 
@@ -212,8 +213,10 @@ library FundingRateFacetImpl {
 			"FundingRateFacet: Invalid length"
 		);
 
+		address partyB = LibSigner.getSigner();
 		for (uint256 i = 0; i < symbolIds.length; i++) {
-			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][LibSigner.getSigner()];
+			LibSymbolAdjustment.requireNotFrozen(symbolIds[i]);
+			FundingFee storage fundingFee = FundingStorage.layout().fundingFees[symbolIds[i]][partyB];
 
 			require(fundingFee.epochDuration > 0, "FundingRateFacet: Epoch duration not set");
 			LibFundingRate.updateAccumulatedRates(fundingFee);
@@ -226,6 +229,7 @@ library FundingRateFacetImpl {
 				fundingFee.startEpoch = LibFundingRate.getEpochOfTimestamp(block.timestamp, fundingFee.epochDuration);
 				fundingFee.startEpochTimeStamp = block.timestamp;
 			}
+			LibFundingRate.emitAccumulatedFundingStateUpdated(symbolIds[i], partyB, fundingFee);
 		}
 	}
 
@@ -276,39 +280,60 @@ library FundingRateFacetImpl {
 
 	/// @notice Applies accumulated funding fees to positions
 	/// @dev Uses the accumulated funding fee system with weighted averages
+	///      The bound solver skips Muon and UPNL solvency checks while it remains bindable.
+	///      Binding remains effective through pending unbind, until completion clears partyB.
 	/// @param partyA Trader address
 	/// @param partyB Market maker address
 	/// @param quoteIds Position IDs to charge
 	/// @param upnlSig Unrealized PnL signature for solvency checks
 	function chargeAccumulatedFundingFee(address partyA, address partyB, uint256[] memory quoteIds, PairUpnlSig memory upnlSig) internal {
 		require(FundingStorage.layout().accumulatedFundingActivated, "FundingRateFacet: New System Not Enabled");
-		LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.Funding);
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		// onlyPartyB allows any registered solver; only this pair's bound solver may skip verification.
+		bool requireMuonAndSolvencyChecks =
+			LibSigner.getSigner() != partyB || tradingLayout.bindState[partyA].partyB != partyB || !tradingLayout.isPartyBBindable[partyB];
+		if (requireMuonAndSolvencyChecks) {
+			LibMuonFundingRate.verifyPairUpnl(upnlSig, partyB, partyA, MuonFunction.Funding);
+		}
 
-		// Apply accumulated funding to each position
+		// Apply accumulated funding to each position. The signed UPNLs already include
+		// funding debt at the signature timestamp, so retain that exact amount for the
+		// post-charge solvency check even if execution crosses an epoch boundary.
+		int256 signedFundingFee;
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = QuoteStorage.layout().quotes[quoteIds[i]];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			require(quote.partyA == partyA, "FundingRateFacet: Invalid quote");
 			require(quote.partyB == partyB, "FundingRateFacet: Sender isn't partyB of quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"FundingRateFacet: Invalid state"
-			);
+			quote.requireOpenPosition();
+			if (requireMuonAndSolvencyChecks) {
+				require(
+					upnlSig.timestamp >= FundingStorage.layout().fundingFees[quote.symbolId][quote.partyB].lastUpdatedTimeStamp,
+					"FundingRateFacet: Outdated funding signature"
+				);
+				signedFundingFee += LibQuoteFunding.getAccumulatedFundingFeeAt(quoteIds[i], upnlSig.timestamp);
+			}
 
 			// Delegate to library function that handles the actual fee calculation
 			LibQuoteFunding.chargeAccumulatedFundingFee(quoteIds[i]);
 		}
 
-		// Verify solvency after all funding fees are applied
-		int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB, partyB, partyA);
-		int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
-			upnlSig.upnlPartyA,
-			AccountStorage.layout().allocatedBalances[partyA],
-			partyA
-		);
+		if (requireMuonAndSolvencyChecks) {
+			// Realization removes the signed funding debt from UPNL and transfers the
+			// execution-time fee through allocated balances.
+			int256 partyBAvailableBalance = LibAccount.partyBAvailableBalanceForLiquidation(upnlSig.upnlPartyB - signedFundingFee, partyB, partyA);
+			int256 partyAAvailableBalance = LibAccount.partyAAvailableBalanceForLiquidation(
+				upnlSig.upnlPartyA + signedFundingFee,
+				AccountStorage.layout().allocatedBalances[partyA],
+				partyA
+			);
 
-		require(partyAAvailableBalance >= 0, "FundingRateFacet: PartyA will be insolvent");
-		require(partyBAvailableBalance >= 0, "FundingRateFacet: PartyB will be insolvent");
+			require(partyAAvailableBalance >= 0, "FundingRateFacet: PartyA will be insolvent");
+			require(partyBAvailableBalance >= 0, "FundingRateFacet: PartyB will be insolvent");
+		}
+
+		if (quoteIds.length > 0) {
+			LibAccount.increaseBothUpnlCounters(partyB, partyA);
+		}
 	}
 }

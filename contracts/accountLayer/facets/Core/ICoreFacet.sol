@@ -13,6 +13,8 @@ interface ICoreFacetEvents {
 	event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
 	/// @notice Emitted when a sub-account is deleted
 	event SubAccountDeleted(address indexed account, address indexed owner, address indexed affiliate);
+	/// @notice Emitted when ownership of a sub-account is transferred
+	event SubAccountOwnershipTransferred(address indexed account, address indexed oldOwner, address indexed newOwner);
 	/// @notice Emitted when a new virtual account is created
 	event VirtualAccountCreated(address indexed account, address indexed parent);
 	/// @notice Emitted when a previously deleted virtual account is reused
@@ -41,6 +43,13 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @return The deterministic addresses of the created sub-accounts
 	function createSubAccounts(address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
 
+	/// @notice Creates one or more sub-accounts for a specified owner under the specified affiliate
+	/// @param owner The owner of the created sub-accounts
+	/// @param affiliate The affiliate address
+	/// @param accountsData Configuration for each sub-account to create
+	/// @return The deterministic addresses of the created sub-accounts
+	function createSubAccountsFor(address owner, address affiliate, SubAccountCreationData[] memory accountsData) external returns (address[] memory);
+
 	/// @notice Updates the display name of a sub-account
 	/// @param account The sub-account address
 	/// @param name The new name
@@ -54,6 +63,11 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @notice Deletes a sub-account that has no active VAs, positions, or balance
 	/// @param subAccount The sub-account address to delete
 	function deleteSubAccount(address subAccount) external;
+
+	/// @notice Transfers ownership of a sub-account to a new owner
+	/// @param subAccount The sub-account address to transfer
+	/// @param newOwner The new owner of the sub-account
+	function transferSubAccountOwnership(address subAccount, address newOwner) external;
 
 	// ==================== Virtual Account Management ====================
 
@@ -82,16 +96,6 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @param amount The amount of collateral to deposit and allocate
 	function depositAndAllocateForAccount(address account, uint256 amount) external;
 
-	/// @notice Deposits collateral with express rate split between Symmio and a virtual provider
-	/// @param account The account to deposit for
-	/// @param amount The total amount of collateral to deposit
-	function depositForAccountWithExpressRate(address account, uint256 amount) external;
-
-	/// @notice Deposits and allocates collateral with express rate split
-	/// @param account The account to deposit and allocate for
-	/// @param amount The total amount of collateral
-	function depositAndAllocateForAccountWithExpressRate(address account, uint256 amount) external;
-
 	// ==================== Call Execution ====================
 
 	/// @notice Executes an array of Symmio core calls on behalf of an account
@@ -100,9 +104,25 @@ interface ICoreFacet is ICoreFacetEvents, IAccountLayerErrors {
 	/// @return Array of return data from each call
 	function _call(address account, bytes[] calldata callDatas) external returns (bytes[] memory);
 
+	/// @notice Pre-funds the next virtual account and executes Symmio core calls in one transaction
+	/// @param account The sub-account to fund and execute calls for
+	/// @param isolationType The isolation type matching the sub-account's strategy
+	/// @param symbolId The symbol ID for the target virtual account
+	/// @param marginAmount The amount to transfer to the next VA
+	/// @param callDatas Array of encoded function calls
+	/// @return Array of return data from each call
+	function _callWithMargin(
+		address account,
+		VirtualAccountIsolationType isolationType,
+		uint256 symbolId,
+		uint256 marginAmount,
+		bytes[] calldata callDatas
+	) external returns (bytes[] memory);
+
 	// ==================== Hook Callback ====================
 
 	/// @notice Executes a whitelisted Symmio call during an active hook context
+	/// @dev If the call's Core selector is timelocked for the active account family, its exact calldata also needs an approval or mature schedule.
 	/// @param callData The encoded function call to execute
 	function executeForAccount(bytes calldata callData) external;
 

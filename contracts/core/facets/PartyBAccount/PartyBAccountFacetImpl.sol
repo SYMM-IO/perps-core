@@ -6,15 +6,18 @@ pragma solidity >=0.8.18;
 
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
+import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { SharedEvents } from "../../libraries/SharedEvents.sol";
 
 library PartyBAccountFacetImpl {
+	using LibPartyBState for address;
+
 	/// @notice Moves collateral from Party B's balance to allocated balance for a given Party A
 	function allocateForPartyB(uint256 amount, address partyA) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -22,18 +25,15 @@ library PartyBAccountFacetImpl {
 		address signer = LibSigner.getSigner();
 		require(!maLayout.crossModeEnabledForPartyB[signer] || partyA == address(0), "PartyBFacet: Cross partyB mode is active");
 		require(accountLayout.balances[signer] >= amount, "AccountFacet: Insufficient balance");
-		require(
-			!maLayout.partyBLiquidationStatus[signer][partyA] && !ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress,
-			"AccountFacet: PartyB isn't solvent"
-		);
+		signer.requireNotLiquidating(partyA);
 		accountLayout.balances[signer] -= amount;
-		accountLayout.partyBAllocatedBalances[signer][partyA] += amount;
+		LibAccount.increasePartyBAllocatedBalance(signer, partyA, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Moves collateral from Party B's allocated balance back to free balance after solvency check.
 	/// In cross mode, the signature and solvency check always use the cross bucket (address(0)).
 	/// For legacy per-partyA drains (cross mode + partyA != address(0)), only cross solvency (>= 0)
-	/// is required — these funds are stranded and don't back cross-pool positions.
+	/// is required because these funds are stranded and do not back cross-pool positions.
 	function deallocateForPartyB(uint256 amount, address partyA, SingleUpnlSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		address signer = LibSigner.getSigner();
@@ -46,22 +46,67 @@ library PartyBAccountFacetImpl {
 		LibMuon.verifyPartyBUpnl(upnlSig, signer, verifyPartyA, true, MuonFunction.AccountManagement);
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, verifyPartyA);
 
-		// For cross-mode PartyB, subtract settlement reserve from effective available balance.
-		// This prevents extracting funds owed to pending PartyA liquidation settlements
-		// (locked balances drop immediately in liquidatePositionsPartyA but PnL settlement is deferred).
-		if (isCrossMode) {
-			availableBalance -= int256(accountLayout.partyBLiquidationSettlementReserve[signer]);
-		}
-
 		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
 
 		// Legacy per-partyA drain only requires cross solvency (>= 0).
 		// Normal deallocation (isolated mode or cross bucket) requires availableBalance >= amount.
 		if (!isCrossMode || partyA == address(0)) {
 			require(uint256(availableBalance) >= amount, "AccountFacet: Will be liquidatable");
+			if (MAStorage.layout().strictDeallocationEnabledForPartyB[signer]) {
+				require(
+					accountLayout.partyBAllocatedBalances[signer][partyA] - amount >=
+						LibAccount.partyBDeallocateCvaLfRequirement(signer, verifyPartyA),
+					"AccountFacet: CVA and LF must remain allocated"
+				);
+			}
 		}
 
-		accountLayout.partyBAllocatedBalances[signer][partyA] -= amount;
+		LibAccount.decreasePartyBAllocatedBalance(signer, partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
+		accountLayout.balances[signer] += amount;
+		accountLayout.deallocateTimestamp[signer] = block.timestamp;
+	}
+
+	/// @notice Moves collateral from Party B's allocated balance back to free balance while reserving balance
+	/// for off-chain pending operations and enforcing the scaled retention floor.
+	/// @dev Mirrors deallocateForPartyB, with two additions: the availability check reserves the Muon-attested
+	/// pendingBalance, and (when strict deallocation is enabled for the partyB) the retention floor is the
+	/// stricter of the stored CVA + LF requirement and the Muon-attested scaledLockedBalance, plus gross funding debt.
+	function safeDeallocateForPartyB(uint256 amount, address partyA, SingleUpnlWithPendingBalanceSig memory upnlSig) internal {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		address signer = LibSigner.getSigner();
+		bool isCrossMode = MAStorage.layout().crossModeEnabledForPartyB[signer];
+
+		require(accountLayout.partyBAllocatedBalances[signer][partyA] >= amount, "AccountFacet: Insufficient allocated balance");
+
+		// In cross mode, always verify solvency against the cross bucket (address(0))
+		address verifyPartyA = isCrossMode ? address(0) : partyA;
+		LibMuon.verifyPartyBUpnlWithPendingBalance(upnlSig, signer, verifyPartyA, true, MuonFunction.RemoveMargin);
+		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, verifyPartyA);
+
+		require(availableBalance >= 0, "AccountFacet: Available balance is lower than zero");
+
+		// Legacy per-partyA drain only requires cross solvency (>= 0).
+		// Normal deallocation (isolated mode or cross bucket) requires availableBalance >= pendingBalance + amount.
+		if (!isCrossMode || partyA == address(0)) {
+			require(
+				uint256(availableBalance) >= upnlSig.pendingBalance + amount,
+				"AccountFacet: Insufficient balance considering pending allocations"
+			);
+			if (MAStorage.layout().strictDeallocationEnabledForPartyB[signer]) {
+				uint256 retention = LibAccount.partyBSafeDeallocateRequirement(
+					signer,
+					verifyPartyA,
+					upnlSig.scaledLockedBalance,
+					upnlSig.fundingDebt
+				);
+				require(
+					accountLayout.partyBAllocatedBalances[signer][partyA] - amount >= retention,
+					"AccountFacet: Locked balance and funding debt must remain allocated"
+				);
+			}
+		}
+
+		LibAccount.decreasePartyBAllocatedBalance(signer, partyA, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		accountLayout.balances[signer] += amount;
 		accountLayout.deallocateTimestamp[signer] = block.timestamp;
 	}
@@ -70,13 +115,12 @@ library PartyBAccountFacetImpl {
 	function transferAllocation(uint256 amount, address origin, address recipient, SingleUpnlSig memory upnlSig) internal {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		ClearingHouseStorage.Layout storage chLayout = ClearingHouseStorage.layout();
 		address signer = LibSigner.getSigner();
-		require(!maLayout.partyBLiquidationStatus[signer][origin], "PartyBFacet: PartyB isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[signer][recipient], "PartyBFacet: PartyB isn't solvent");
+		signer.requireNotLiquidatingAgainst(origin);
+		signer.requireNotLiquidatingAgainst(recipient);
 		require(!maLayout.liquidationStatus[origin], "PartyBFacet: Origin isn't solvent");
 		require(!maLayout.liquidationStatus[recipient], "PartyBFacet: Recipient isn't solvent");
-		require(!chLayout.crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB isn't solvent");
+		signer.requireNotCrossLiquidating();
 
 		// Not to be in cross partyB mode as when it's activated there is no point on transferAllocation
 		require(!maLayout.crossModeEnabledForPartyB[signer], "PartyBFacet: Cross partyB mode is active");
@@ -87,10 +131,16 @@ library PartyBAccountFacetImpl {
 		int256 availableBalance = LibAccount.partyBAvailableForQuote(upnlSig.upnl, signer, origin);
 		require(availableBalance >= 0, "PartyBFacet: Available balance is lower than zero");
 		require(uint256(availableBalance) >= amount, "PartyBFacet: Will be liquidatable");
+		if (maLayout.strictDeallocationEnabledForPartyB[signer]) {
+			require(
+				accountLayout.partyBAllocatedBalances[signer][origin] - amount >= LibAccount.partyBDeallocateCvaLfRequirement(signer, origin),
+				"PartyBFacet: CVA and LF must remain allocated"
+			);
+		}
 
-		accountLayout.partyBAllocatedBalances[signer][origin] -= amount;
+		LibAccount.decreasePartyBAllocatedBalance(signer, origin, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 		// allocate for recipient
-		accountLayout.partyBAllocatedBalances[signer][recipient] += amount;
+		LibAccount.increasePartyBAllocatedBalance(signer, recipient, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deposits from the caller's balance into the specified partyB's emergency reserve vault

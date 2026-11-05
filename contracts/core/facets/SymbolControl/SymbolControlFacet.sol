@@ -5,11 +5,15 @@
 pragma solidity >=0.8.18;
 
 import { Accessibility } from "../../utils/Accessibility.sol";
+import { LiquidationOvershootStorage } from "../../storages/LiquidationOvershootStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { ISymbolControlFacet } from "./ISymbolControlFacet.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LibLiquidationOvershoot } from "../../libraries/LibLiquidationOvershoot.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
+import { LibSymbol } from "../../libraries/LibSymbol.sol";
 
 contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Adds a new trading symbol (e.g., BTC/USD, ETH/USD) to the protocol with its trading parameters.
@@ -28,7 +32,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		uint256 maxLeverage,
 		uint256 fundingRateEpochDuration,
 		uint256 fundingRateWindowTime
-	) public onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	) public onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		require(fundingRateWindowTime < fundingRateEpochDuration / 2, "SymbolControlFacet: High window time");
 		require(tradingFee <= 1e18, "SymbolControlFacet: High default fee");
 		uint256 lastId = ++SymbolStorage.layout().lastId;
@@ -58,7 +62,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Batch adds multiple trading symbols with their category types in a single transaction for gas efficiency.
 	/// @param symbolsWithType Array of SymbolWithType structs containing symbol parameters and their category types.
-	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		for (uint256 i; i < symbolsWithType.length; i++) {
 			addSymbol(
 				symbolsWithType[i].name,
@@ -76,7 +80,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 
 	/// @notice Batch adds multiple trading symbols in a single transaction for gas efficiency.
 	/// @param symbols Array of Symbol structs containing the parameters for each symbol to add.
-	function addSymbols(Symbol[] memory symbols) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function addSymbols(Symbol[] memory symbols) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		for (uint256 i; i < symbols.length; i++) {
 			addSymbol(
 				symbols[i].name,
@@ -110,7 +114,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Enables or disables trading for a symbol. Invalid symbols cannot be used for new quotes.
 	/// @param symbolId The unique identifier of the symbol to update.
 	/// @param isValid True to enable trading on this symbol, false to disable new positions.
-	function setSymbolValidationState(uint256 symbolId, bool isValid) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function setSymbolValidationState(uint256 symbolId, bool isValid) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
 		emit SetSymbolValidationState(symbolId, symbolLayout.symbols[symbolId].isValid, isValid);
@@ -149,10 +153,78 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 		symbolLayout.symbols[symbolId].minAcceptablePortionLF = minAcceptablePortionLF;
 	}
 
+	/// @notice Sets the minimum LF rate against notional for the default or a specific symbol.
+	/// @dev Symbol 0 stores the live default. Setting a nonzero symbol creates an explicit override,
+	///      including when minAcceptableNotionalLFRate is zero.
+	/// @param symbolId Zero for the default, or an existing symbol ID for an override.
+	/// @param minAcceptableNotionalLFRate The minimum LF rate against notional, in 1e18 precision.
+	function setSymbolMinAcceptableNotionalLFRate(
+		uint256 symbolId,
+		uint256 minAcceptableNotionalLFRate
+	) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+
+		uint256 oldRate = LibSymbol.minAcceptableNotionalLFRate(symbolId);
+		symbolLayout.minAcceptableNotionalLFRates[symbolId] = minAcceptableNotionalLFRate;
+		if (symbolId != 0) {
+			symbolLayout.hasMinAcceptableNotionalLFRateOverride[symbolId] = true;
+		}
+
+		emit SetSymbolMinAcceptableNotionalLFRate(symbolId, oldRate, minAcceptableNotionalLFRate, symbolId != 0);
+	}
+
+	/// @notice Clears a symbol-specific notional LF rate so the symbol inherits the symbol-0 default again.
+	/// @param symbolId The existing nonzero symbol ID whose override will be cleared.
+	function clearSymbolMinAcceptableNotionalLFRateOverride(uint256 symbolId) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+
+		uint256 oldRate = LibSymbol.minAcceptableNotionalLFRate(symbolId);
+		delete symbolLayout.minAcceptableNotionalLFRates[symbolId];
+		delete symbolLayout.hasMinAcceptableNotionalLFRateOverride[symbolId];
+
+		emit SetSymbolMinAcceptableNotionalLFRate(symbolId, oldRate, LibSymbol.minAcceptableNotionalLFRate(symbolId), false);
+	}
+
+	/// @notice Sets a PartyB's default or symbol-specific close-to-liquidation overshoot rate.
+	/// @dev Symbol 0 stores the PartyB default. Setting a nonzero symbol creates an explicit override, including zero.
+	function setPartyBLiquidationOvershootRate(
+		address partyB,
+		uint256 symbolId,
+		uint256 rate
+	) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(MAStorage.layout().partyBStatus[partyB], "SymbolControlFacet: Address is not PartyB");
+		require(symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+		require(rate <= 1e18, "SymbolControlFacet: High overshoot rate");
+
+		LiquidationOvershootStorage.Layout storage overshootLayout = LiquidationOvershootStorage.layout();
+		uint256 oldRate = LibLiquidationOvershoot.rate(partyB, symbolId);
+		overshootLayout.rates[partyB][symbolId] = rate;
+		if (symbolId != 0) overshootLayout.hasOverride[partyB][symbolId] = true;
+
+		emit SetPartyBLiquidationOvershootRate(partyB, symbolId, oldRate, rate, symbolId != 0);
+	}
+
+	/// @notice Clears a PartyB's symbol-specific overshoot so it inherits the PartyB's symbol-0 default.
+	function clearPartyBLiquidationOvershootRateOverride(address partyB, uint256 symbolId) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(MAStorage.layout().partyBStatus[partyB], "SymbolControlFacet: Address is not PartyB");
+		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
+
+		LiquidationOvershootStorage.Layout storage overshootLayout = LiquidationOvershootStorage.layout();
+		uint256 oldRate = LibLiquidationOvershoot.rate(partyB, symbolId);
+		delete overshootLayout.rates[partyB][symbolId];
+		delete overshootLayout.hasOverride[partyB][symbolId];
+
+		emit SetPartyBLiquidationOvershootRate(partyB, symbolId, oldRate, LibLiquidationOvershoot.rate(partyB, symbolId), false);
+	}
+
 	/// @notice Updates the base trading fee for a specific symbol. This fee applies when no affiliate-specific fee exists.
 	/// @param symbolId The unique identifier of the symbol to update.
 	/// @param tradingFee The new base trading fee percentage (in 1e18 precision).
-	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function setSymbolTradingFee(uint256 symbolId, uint256 tradingFee) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		require(symbolId >= 1 && symbolId <= symbolLayout.lastId, "SymbolControlFacet: Invalid id");
 		emit SetSymbolTradingFee(symbolId, symbolLayout.symbols[symbolId].tradingFee, tradingFee);
@@ -172,7 +244,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	/// @notice Batch updates the category types for multiple symbols in a single transaction.
 	/// @param symbolIds Array of symbol identifiers to update.
 	/// @param symbolTypes Array of category identifiers corresponding to each symbol (must match symbolIds length).
-	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external onlyRole(LibAccessibility.SYMBOL_MANAGER_ROLE) {
+	function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external onlyRole(LibAccessibility.SYMBOL_LISTING_ROLE) {
 		require(symbolIds.length == symbolTypes.length, "SymbolControlFacet: Array length mismatch");
 		for (uint256 i = 0; i < symbolIds.length; i++) {
 			setSymbolTypeInternal(symbolIds[i], symbolTypes[i]);
@@ -194,7 +266,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function whitelistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBBlacklistedSymbols[partyB][id], "SymbolControlFacet: Blacklist conflict");
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = true;
@@ -220,7 +292,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function removeSymbolsFromWhitelist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			partyBControlLayout.partyBWhitelistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;
@@ -235,7 +307,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function blacklistSymbols(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			uint256 id = symbolIds[i];
 			require(!partyBControlLayout.partyBWhitelistedSymbols[partyB][id], "SymbolControlFacet: Whitelist conflict");
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = true;
@@ -252,7 +324,7 @@ contract SymbolControlFacet is Accessibility, ISymbolControlFacet {
 	function removeSymbolsFromBlacklist(address partyB, uint256[] calldata symbolIds) external {
 		symbolListingAuthorizationCheck(LibSigner.getSigner(), partyB);
 		PartyBControlStorage.Layout storage partyBControlLayout = PartyBControlStorage.layout();
-		for (uint256 i; i < symbolIds.length; ) {
+		for (uint256 i; i < symbolIds.length;) {
 			partyBControlLayout.partyBBlacklistedSymbols[partyB][symbolIds[i]] = false;
 			unchecked {
 				++i;

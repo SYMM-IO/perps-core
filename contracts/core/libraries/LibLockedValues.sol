@@ -4,21 +4,18 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import { LockedValues, Quote } from "../storages/QuoteStorage.sol";
 
 library LockedValuesOps {
-	using SafeMath for uint256;
-
 	/// @notice Adds the values of two LockedValues structs.
 	/// @param self The LockedValues struct to which values will be added.
 	/// @param a The LockedValues struct containing values to be added.
 	/// @return The updated LockedValues struct.
 	function add(LockedValues storage self, LockedValues memory a) internal returns (LockedValues storage) {
-		self.cva = self.cva.add(a.cva);
-		self.partyAmm = self.partyAmm.add(a.partyAmm);
-		self.partyBmm = self.partyBmm.add(a.partyBmm);
-		self.lf = self.lf.add(a.lf);
+		self.cva += a.cva;
+		self.partyAmm += a.partyAmm;
+		self.partyBmm += a.partyBmm;
+		self.lf += a.lf;
 		return self;
 	}
 
@@ -35,10 +32,10 @@ library LockedValuesOps {
 	/// @param a The LockedValues struct containing values to be subtracted.
 	/// @return The updated LockedValues struct.
 	function sub(LockedValues storage self, LockedValues memory a) internal returns (LockedValues storage) {
-		self.cva = self.cva.sub(a.cva);
-		self.partyAmm = self.partyAmm.sub(a.partyAmm);
-		self.partyBmm = self.partyBmm.sub(a.partyBmm);
-		self.lf = self.lf.sub(a.lf);
+		self.cva -= a.cva;
+		self.partyAmm -= a.partyAmm;
+		self.partyBmm -= a.partyBmm;
+		self.lf -= a.lf;
 		return self;
 	}
 
@@ -80,10 +77,10 @@ library LockedValuesOps {
 	/// @param a The scalar value to multiply by.
 	/// @return The updated LockedValues struct.
 	function mul(LockedValues storage self, uint256 a) internal returns (LockedValues storage) {
-		self.cva = self.cva.mul(a);
-		self.partyAmm = self.partyAmm.mul(a);
-		self.partyBmm = self.partyBmm.mul(a);
-		self.lf = self.lf.mul(a);
+		self.cva *= a;
+		self.partyAmm *= a;
+		self.partyBmm *= a;
+		self.lf *= a;
 		return self;
 	}
 
@@ -92,7 +89,7 @@ library LockedValuesOps {
 	/// @param a The scalar value to multiply by.
 	/// @return The updated LockedValues struct.
 	function mulMem(LockedValues memory self, uint256 a) internal pure returns (LockedValues memory) {
-		LockedValues memory lockedValues = LockedValues(self.cva.mul(a), self.lf.mul(a), self.partyAmm.mul(a), self.partyBmm.mul(a));
+		LockedValues memory lockedValues = LockedValues(self.cva * a, self.lf * a, self.partyAmm * a, self.partyBmm * a);
 		return lockedValues;
 	}
 
@@ -101,10 +98,10 @@ library LockedValuesOps {
 	/// @param a The scalar value to divide by.
 	/// @return The updated LockedValues struct.
 	function div(LockedValues storage self, uint256 a) internal returns (LockedValues storage) {
-		self.cva = self.cva.div(a);
-		self.partyAmm = self.partyAmm.div(a);
-		self.partyBmm = self.partyBmm.div(a);
-		self.lf = self.lf.div(a);
+		self.cva /= a;
+		self.partyAmm /= a;
+		self.partyBmm /= a;
+		self.lf /= a;
 		return self;
 	}
 
@@ -113,7 +110,7 @@ library LockedValuesOps {
 	/// @param a The scalar value to divide by.
 	/// @return The updated LockedValues struct.
 	function divMem(LockedValues memory self, uint256 a) internal pure returns (LockedValues memory) {
-		LockedValues memory lockedValues = LockedValues(self.cva.div(a), self.lf.div(a), self.partyAmm.div(a), self.partyBmm.div(a));
+		LockedValues memory lockedValues = LockedValues(self.cva / a, self.lf / a, self.partyAmm / a, self.partyBmm / a);
 		return lockedValues;
 	}
 }

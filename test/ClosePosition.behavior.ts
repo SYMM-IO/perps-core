@@ -1,4 +1,5 @@
 import { expect } from "chai"
+import { Interface } from "ethers"
 
 import type { QuoteStructOutput } from "../src/types/interfaces/ISymmio.js"
 import { initializeFixture } from "./Initialize.fixture.js"
@@ -7,7 +8,7 @@ import { OrderType, PositionType, QuoteStatus } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
-import { limitCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
+import { limitCloseRequestBuilder, marketBestEffortCloseRequestBuilder, marketCloseRequestBuilder } from "./models/requestModels/CloseRequest.js"
 import { limitFillCloseRequestBuilder, marketFillCloseRequestBuilder } from "./models/requestModels/FillCloseRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { AcceptCancelCloseRequestValidator } from "./models/validators/AcceptCancelCloseRequestValidator.js"
@@ -25,9 +26,13 @@ import {
 	pausePartyBOpenPositions,
 	unDecimal,
 } from "./utils/Common.js"
+import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 const WAD = 10n ** 18n
 const WAD_36 = 10n ** 36n
+const quoteFundingSettledInterface = new Interface([
+	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
+])
 
 export function shouldBehaveLikeClosePosition(): void {
 	let user: User, hedger: Hedger, hedger2: Hedger
@@ -136,15 +141,52 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		const partyAAllocatedBefore = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedBefore = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
+		const validator = new FillCloseRequestValidator()
+		const beforeOut = await validator.before(context, {
+			user,
+			hedger,
+			quoteId,
+		})
 
 		expect(partyAAllocatedBefore).to.be.gte(fundingFee)
 
-		await expect(
-			hedger.fillCloseRequest(quoteId, limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build()),
-		).to.not.be.reverted
+		const fillRequest = limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(closedPrice).price(closedPrice).build()
+		const closeTx = await context.partyBPositionActionsFacet
+			.connect(hedger.signer)
+			.fillCloseRequest(
+				quoteId,
+				fillRequest.filledAmount,
+				fillRequest.closedPrice,
+				await getDummyPairUpnlAndPriceSig(BigInt(fillRequest.price), BigInt(fillRequest.upnlPartyA), BigInt(fillRequest.upnlPartyB)),
+			)
+		const closeReceipt = await closeTx.wait()
+		const fundingEvents = (closeReceipt?.logs ?? []).flatMap(log => {
+			try {
+				const parsed = quoteFundingSettledInterface.parseLog({ topics: [...log.topics], data: log.data })
+				if (parsed?.name !== "QuoteFundingSettled") return []
+				return [parsed.args]
+			} catch {
+				return []
+			}
+		})
+		expect(fundingEvents).to.have.length(1)
+		expect(fundingEvents[0].quoteId).to.equal(quoteId)
+		expect(fundingEvents[0].symbolId).to.equal(quote.symbolId)
+		expect(fundingEvents[0].partyB).to.equal(hedger.address)
+		expect(fundingEvents[0].partyA).to.equal(user.address)
+		expect(fundingEvents[0].allocationKey).to.equal(user.address)
+		expect(fundingEvents[0].funding).to.equal(fundingFee)
 
 		const partyAAllocatedAfter = (await user.getBalanceInfo()).allocatedBalances
 		const partyBAllocatedAfter = (await hedger.getBalanceInfo(await user.getAddress())).allocatedBalances
+		await validator.after(context, {
+			user,
+			hedger,
+			quoteId,
+			closePrice: closedPrice,
+			fillAmount: filledAmount,
+			beforeOutput: beforeOut,
+		})
 
 		const pnl = ((closedPrice - quote.openedPrice) * filledAmount) / WAD
 		const netToPartyA = pnl - fundingFee
@@ -152,6 +194,49 @@ export function shouldBehaveLikeClosePosition(): void {
 
 		expect(partyAAllocatedAfter - partyAAllocatedBefore).to.equal(netToPartyA - closeFee)
 		expect(partyBAllocatedAfter - partyBAllocatedBefore).to.equal(-netToPartyA)
+	})
+
+	it("Should close when PartyB can cover the net settlement but not the gross funding leg", async function () {
+		await context.pauseControlFacet.connect(context.signers.admin).activateAccumulatedFunding()
+
+		const epochDuration = 3600
+		const latest = BigInt(await time.latest())
+		const aligned = (latest / BigInt(epochDuration) + 1n) * BigInt(epochDuration)
+		await time.setNextBlockTimestamp(Number(aligned))
+		await context.fundingRateFacet.connect(hedger2.signer).setEpochDurations([1], [epochDuration])
+		await context.fundingRateFacet.connect(hedger2.signer).setFundingFee([1], [-decimal(8n, 17)], [0], [decimal(1n)])
+
+		await context.accountFacet.connect(user.signer).allocate(decimal(250n))
+		const quoteId = await user.sendQuote(limitQuoteRequestBuilder().maxFundingRate(decimal(1000n)).build())
+		await hedger2.lockQuote(quoteId)
+		await hedger2.openPosition(quoteId)
+
+		const partyA = await user.getAddress()
+		const initialPartyBAllocation = (await hedger2.getBalanceInfo(partyA)).allocatedBalances
+		await context.partyBAccountFacet
+			.connect(hedger2.signer)
+			.deallocateForPartyB(initialPartyBAllocation - decimal(70n), partyA, await getDummySingleUpnlSig(0n))
+
+		await time.increase(epochDuration)
+		const quote = await context.viewFacetQuote.getQuote(quoteId)
+		const filledAmount = quote.quantity - quote.closedAmount
+		const closedPrice = decimal(1n, 17)
+		const fundingFee = (await context.viewFacetQuote.getQuoteFundingDebts([quoteId]))[0]
+		const netUpnlPartyA = -decimal(10n)
+
+		expect(fundingFee).to.equal(-decimal(80n))
+		expect((await hedger2.getBalanceInfo(partyA)).allocatedBalances).to.equal(decimal(70n))
+
+		await user.requestToClosePosition(quoteId, limitCloseRequestBuilder().quantityToClose(filledAmount).closePrice(closedPrice).build())
+
+		await expect(
+			context.partyBPositionActionsFacet
+				.connect(hedger2.signer)
+				.fillCloseRequest(quoteId, filledAmount, closedPrice, await getDummyPairUpnlAndPriceSig(closedPrice, netUpnlPartyA, -netUpnlPartyA)),
+		).to.not.be.reverted
+
+		expect((await hedger2.getBalanceInfo(partyA)).allocatedBalances).to.equal(decimal(80n))
+		expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.CLOSED)
 	})
 
 	it("Should fail on invalid partyA", async function () {
@@ -189,7 +274,7 @@ export function shouldBehaveLikeClosePosition(): void {
 		const hedgerAddress = await hedger.getAddress()
 
 		// Pause only this specific PartyB
-		await context.pauseControlFacet.connect(context.signers.admin).setPartyBOpenPositionsPaused(hedgerAddress, true)
+		await context.pauseControlFacet.connect(context.signers.admin).pausePartyBOpenPositionsFor(hedgerAddress)
 
 		// lockQuote should fail for the paused PartyB
 		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("PartyBFacet: PartyB open positions paused")
@@ -205,9 +290,33 @@ export function shouldBehaveLikeClosePosition(): void {
 		await expect(hedger2.lockQuote(quote3JustSent.id)).to.not.be.reverted
 
 		// Unpause and verify the original PartyB can lock quotes again
-		await context.pauseControlFacet.connect(context.signers.admin).setPartyBOpenPositionsPaused(hedgerAddress, false)
+		await context.pauseControlFacet.connect(context.signers.admin).unpausePartyBOpenPositionsFor(hedgerAddress)
 		const newQuote = await context.viewFacetQuote.getQuote(await user.sendQuote())
 		await expect(hedger.lockQuote(newQuote.id)).to.not.be.reverted
+	})
+
+	it("Should restrict an affiliate to closing positions only when affiliate shutdown is scheduled", async function () {
+		const affiliate = await context.accountManager.getAddress()
+		await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
+
+		await expect(user.sendQuote()).to.be.revertedWith("PartyAFacet: Affiliate shutdown scheduled")
+		await expect(hedger.lockQuote(quote3JustSent.id)).to.be.revertedWith("PartyBFacet: Affiliate shutdown scheduled")
+
+		await user.requestToClosePosition(quote1LongOpened.id, limitCloseRequestBuilder().build())
+		await expect(hedger.fillCloseRequest(quote1LongOpened.id, limitFillCloseRequestBuilder().build())).to.not.be.reverted
+
+		const closedQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+		expect(closedQuote.quoteStatus).to.equal(QuoteStatus.CLOSED)
+	})
+
+	it("Should block opening a quote that was locked before the affiliate shutdown was scheduled", async function () {
+		const affiliate = await context.accountManager.getAddress()
+		const lockedQuoteId = quote3JustSent.id
+		await hedger.lockQuote(lockedQuoteId)
+
+		await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
+
+		await expect(hedger.openPosition(lockedQuoteId)).to.be.revertedWith("PartyBFacet: Affiliate shutdown scheduled")
 	})
 
 	it("Should fail on invalid quoteId", async function () {
@@ -318,6 +427,35 @@ export function shouldBehaveLikeClosePosition(): void {
 			quantityToClose: quantityToClose,
 			beforeOutput: beforeOut,
 		})
+	})
+
+	it("Should request market best effort successfully", async function () {
+		const quantityToClose = await getQuoteQuantity(context, 1n)
+		await user.requestToClosePosition(1, marketBestEffortCloseRequestBuilder().quantityToClose(quantityToClose).closePrice(decimal(1n, 17)).build())
+
+		const quote = await context.viewFacetQuote.getQuote(1n)
+		expect(quote.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+		expect(quote.orderType).to.equal(OrderType.MARKET_BEST_EFFORT)
+		expect(quote.quantityToClose).to.equal(quantityToClose)
+	})
+
+	it("Should require a full ordinary best-effort fill until PartyA requests cancellation", async function () {
+		const quantityToClose = await getQuoteQuantity(context, 1n)
+		const partialAmount = quantityToClose / 2n
+		await user.requestToClosePosition(1, marketBestEffortCloseRequestBuilder().quantityToClose(quantityToClose).closePrice(decimal(1n)).build())
+
+		await expect(
+			hedger.fillCloseRequest(1, limitFillCloseRequestBuilder().filledAmount(partialAmount).closedPrice(decimal(1n)).build()),
+		).to.be.revertedWith("PartyBFacet: Invalid filledAmount")
+
+		await user.requestToCancelCloseRequest(1)
+		await hedger.fillCloseRequest(1, limitFillCloseRequestBuilder().filledAmount(partialAmount).closedPrice(decimal(1n)).build())
+
+		const quote = await context.viewFacetQuote.getQuote(1n)
+		expect(quote.quoteStatus).to.equal(QuoteStatus.OPENED)
+		expect(quote.closedAmount).to.equal(partialAmount)
+		expect(quote.quantityToClose).to.equal(0n)
+		expect(quote.requestedClosePrice).to.equal(0n)
 	})
 
 	it("Should expire close request", async function () {
@@ -730,6 +868,31 @@ export function shouldBehaveLikeClosePosition(): void {
 					quoteId: BigInt(1),
 					beforeOutput: beforeOut,
 				})
+			})
+
+			it("Should reset the remaining request when partyB partially fills during cancellation", async function () {
+				const quote = await context.viewFacetQuote.getQuote(1)
+				const filledAmount = quote.quantityToClose / 2n
+				const validator = new FillCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: 1n,
+				})
+
+				await hedger.fillCloseRequest(1, limitFillCloseRequestBuilder().filledAmount(filledAmount).closedPrice(quote.requestedClosePrice).build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: 1n,
+					closePrice: quote.requestedClosePrice,
+					fillAmount: filledAmount,
+					beforeOutput: beforeOut,
+				})
+
+				const updatedQuote = await context.viewFacetQuote.getQuote(1)
+				expect(updatedQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
+				expect(updatedQuote.quantityToClose).to.equal(0n)
 			})
 
 			it("Should force cancel close request", async function () {

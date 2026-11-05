@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A unified per-operation fee mechanism shared by solvers and registered relayers, backed by a consumable per-(payer, charger) allowance with timelocked reductions and a priority multiplier."
+		/>
+		<title>Operational Fees - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#why-unified">Why operational fees exist</a>
+				<a class="toc-link level-2" href="#setup-api">Setup API</a>
+				<a class="toc-link level-2" href="#trust-model">Trust model</a>
+				<a class="toc-link level-2" href="#fee-source">Fee source in perps-core</a>
+				<a class="toc-link level-2" href="#solvency">Solvency</a>
+				<a class="toc-link level-2" href="#timelocked-reductions">Timelocked reductions</a>
+				<a class="toc-link level-2" href="#priority-multiplier">Priority multiplier</a>
+				<a class="toc-link level-2" href="#gasless-grant">Gasless grant</a>
+				<a class="toc-link level-2" href="#charging-while-relaying">Charging while relaying</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Operational Fees</h1>
+							<p class="hero-copy">
+								Operational fees charge per-operation work through standing payer-to-charger allowances, separately from quote
+								pricing.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						v0.8.6 introduces a standing per-(payer, charger) operational-fee allowance. A charger can be a solver (PartyB) or a
+						registered relayer. Each charge draws from the named payer&rsquo;s Symmio collateral balance and decrements that allowance.
+					</p>
+					<p>
+						The allowance is remaining spend authority, like an ERC20 allowance. Approving <code>100</code> and charging
+						<code>30</code> leaves an allowance of <code>70</code>; approving <code>100</code> again replaces that remaining value with
+						<code>100</code>.
+					</p>
+					<p>
+						The same allowance can carry a simple priority multiplier. <code>10000</code> means normal priority; a higher value is an
+						off-chain scheduling signal that relayers and solvers may use when capacity is tight. It does not change the submitted fee.
+					</p>
+					<p>
+						The debit draws the payer&rsquo;s <strong>free balance first</strong>, then <strong>allocated margin as fallback</strong>.
+						Fees land in the charger&rsquo;s configured receiver account (defaulting to the charger itself). A charge reverts if the
+						resolved receiver is the payer, so a charger cannot route a payer&rsquo;s operational fee back into the same free-balance
+						bucket.
+					</p>
+					<p>
+						This is separate from the v0.8.6 solver <strong>rate</strong> fee, which is notional-based, per-quote, and stored in
+						<code>SolverFeeCaps</code>.
+					</p>
+					<p>
+						<strong>Upgrade note:</strong> the consumable allowance mapping uses the next storage-layout slot. Allowances written by the
+						previous cumulative-budget implementation are intentionally ignored, so payers must approve chargers again after the upgrade.
+					</p>
+
+					<h2 id="why-unified">Why operational fees exist</h2>
+					<p>
+						Some service costs are flat per-operation charges rather than notional-based trading fees. Operational fees give those costs a
+						dedicated path, outside open and close price semantics.
+					</p>
+
+					<h2 id="setup-api">Setup API</h2>
+					<p>
+						A registered PartyB is already an eligible charger. Governance must register any other service, such as a relayer, before a
+						payer can grant it an allowance:
+					</p>
+					<pre><code class="language-solidity">// FEE_ADMIN_ROLE; needed only for a non-PartyB service
+function registerOperationalFeeCharger(address charger) external;
+
+// The payer sets each charger's absolute remaining allowance.
+function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external;
+
+// The payer may set the allowances and off-chain priority signals together.
+function approveOperationalFeeWithMultiplier(
+    address[] calldata chargers,
+    uint256[] calldata amounts,
+    uint256[] calldata feeMultipliers
+) external;
+</code></pre>
+					<p>
+						Both approval methods are batch setters: each <code>amounts[i]</code> replaces the payer&rsquo;s remaining allowance for
+						<code>chargers[i]</code>; it is not an increment. Charges decrement this value. An increase applies immediately, while a
+						reduction follows the delay explained under <a href="#timelocked-reductions">Timelocked reductions</a>.
+					</p>
+					<p>Integrations can inspect eligibility and the payer&rsquo;s effective remaining allowance before charging:</p>
+					<pre><code class="language-solidity">function isOperationalFeeCharger(address charger) external view returns (bool);
+
+function getOperationalFeeAllowance(address payer, address charger)
+    external
+    view
+    returns (
+        uint256 allowance,
+        uint256 pendingAllowance,
+        uint256 reductionReadyAt,
+        uint256 feeMultiplier
+    );
+</code></pre>
+					<ul>
+						<li><code>allowance</code> is the effective remaining amount the charger may draw.</li>
+						<li>
+							<code>pendingAllowance</code> and <code>reductionReadyAt</code> describe a requested lower remaining allowance that is
+							still waiting for the timelock. Once ready, the view reports <code>min(allowance, pendingAllowance)</code> as the
+							effective <code>allowance</code> and returns zero for both pending fields.
+						</li>
+						<li><code>feeMultiplier</code> is the effective off-chain priority signal; the default is <code>10000</code>.</li>
+					</ul>
+					<p>There is no cumulative <code>charged</code> field. Integrations that need charge history should index the emitted event:</p>
+					<pre><code class="language-solidity">event OperationalFeeCharged(
+    address indexed payer,
+    address indexed charger,
+    address receiver,
+    uint256 amount
+);
+</code></pre>
+					<h2 id="trust-model">Trust model</h2>
+					<p>
+						The allowance grant is the consent. Core does not require the payer to sign each specific operation or quote; it only checks
+						<code>amount &lt;= allowance[payer][charger]</code> before collecting the fee, then decrements the allowance by
+						<code>amount</code>.
+					</p>
+					<p>The authority is bounded by four controls:</p>
+					<ol>
+						<li>
+							<strong>Registry</strong>: registered PartyBs are chargers by default. Non-PartyB services, such as relayers, must be
+							registered by governance (<code>FEE_ADMIN_ROLE</code>) before they can charge.
+						</li>
+						<li>
+							<strong>Remaining allowance</strong>: each payer grants independent spend authority to each charger, so one charger cannot
+							spend another charger&rsquo;s allowance.
+						</li>
+						<li>
+							<strong>Timelocked reductions + governance unregister</strong>: a payer can walk away after the delay; governance can
+							disable an explicitly registered service charger via <code>unregisterOperationalFeeCharger</code>.
+						</li>
+						<li>
+							<strong>Guards.</strong> The charge path makes no external calls, and the payer must not be suspended or under active
+							PartyA liquidation.
+						</li>
+					</ol>
+
+					<h2 id="fee-source">Fee source in perps-core</h2>
+					<p>
+						In perps-core, the fee source is the <code>payer</code> address passed to <code>chargeOperationalFee(payer, amount)</code>.
+						Core does not derive the payer from a quote, the signer, the relayed operation, or any account hierarchy.
+					</p>
+					<p>
+						For that named payer, core checks and consumes <code>allowance[payer][charger]</code>, debits
+						<code>balances[payer]</code> first, then falls back to <code>allocatedBalances[payer]</code> if free balance is not enough.
+						The charged amount is credited to the charger&rsquo;s configured receiver.
+					</p>
+					<p>That receiver is configured with:</p>
+					<pre><code class="language-solidity">function setOperationalFeeReceiver(address charger, address receiver) external;
+</code></pre>
+					<p>
+						The caller must be either the charger itself or an address holding <code>FEE_ADMIN_ROLE</code>, the same role that registers
+						chargers in the first place. Passing <code>address(0)</code> resets the receiver back to the charger. The receiver is resolved
+						at charge time, so a change only affects subsequent fees. <code>ViewFacet.getOperationalFeeReceiver(charger)</code> returns
+						the effective receiver.
+					</p>
+					<p>
+						Solver <strong>rate</strong> fees have parallel but independent default and per-tag settings:
+						<code>ControlFacet.setSolverFeeReceiver</code> and <code>setSolverFeeReceiverForTag</code>, gated by
+						<code>PARTY_B_MANAGER_ROLE</code> instead. Keeping the two mechanisms separate lets a solver route flat operational costs and
+						tagged per-notional trading revenue to different accounts. See <a href="../pages/solver-fees.html">Solver Fees</a>.
+					</p>
+
+					<p>
+						<strong>AccountLayer accounts.</strong> Users operating through SubAccounts or virtual accounts may want operational fees to
+						come from a parent SubAccount instead of the VA that appears in the signed operation. Perps-core will not resolve that
+						relationship. The solver or relayer should determine the intended payer before calling core, whether in service code or an
+						on-chain relayer contract, and pass that address to <code>chargeOperationalFee</code>. The SYMMIO-operated gasless relayer
+						bills the parent SubAccount first; when the parent&rsquo;s balance or allowance cannot cover an op&rsquo;s fee, that op is
+						charged to its own signer VA instead, provided the VA still exists and holds its own allowance and balance for the relayer.
+					</p>
+
+					<h3>Example: AccountLayer VA charged to a parent SubAccount</h3>
+					<p>
+						A user has a SubAccount <code>SA</code> and a virtual account <code>VA-BTC-Long</code>. The signed operation acts on the VA,
+						but the integration wants the fee to come from the parent SubAccount.
+					</p>
+					<ol>
+						<li>The user grants <code>allowance[SA][relayer] = N</code>.</li>
+						<li>A registered relayer receives a "remove margin from <code>VA-BTC-Long</code>" signed op.</li>
+						<li>
+							The relayer determines <code>VA-BTC-Long</code>&rsquo;s parent SubAccount before charging and calls
+							<code>chargeOperationalFee(SA, fee)</code>. The fee is drawn from <code>SA</code>&rsquo;s <strong>free</strong> balance;
+							no <code>VA-BTC-Long</code> margin is touched.
+						</li>
+						<li>The relayer submits <code>InstantLayer.executeBatch</code> for the signed operation.</li>
+					</ol>
+
+					<h2 id="solvency">Solvency</h2>
+					<p>
+						<code>chargeOperationalFee</code> is hierarchy-blind and signature-free: it always debits the named payer free-first, and the
+						allocated remainder (if any) is bounded by a <strong>balance-only guard</strong>. It never runs a full liquidatability check,
+						because the charge entrypoint carries no Muon upnl signature for the payer.
+					</p>
+					<p>
+						This relaxed check is intentional for operational fees. Solvers and relayers are trusted charging parties (registered PartyBs
+						or governance-registered services), these fees are expected to be small per-operation amounts, and the payer&rsquo;s allowance
+						caps future spend until the payer explicitly refreshes it. Core therefore checks that any allocated remainder exists, but does
+						not require a full liquidatability signature for this path.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Portion</th>
+									<th>Source</th>
+									<th>Solvency check</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Free balance</td>
+									<td><code>balances[payer]</code></td>
+									<td>None (not margin)</td>
+								</tr>
+								<tr>
+									<td>Allocated remainder</td>
+									<td><code>allocatedBalances[payer]</code></td>
+									<td>
+										<strong>Balance-only guard</strong> (<code>allocatedBalances[payer] &gt;= remainder</code>); no full
+										liquidatability check (no sig available)
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						This is the same treatment for every operational-fee charger, including a registered solver. The solver&rsquo;s separate
+						per-quote rate fee takes the opposite approach: it rides the execution call itself, bounded by the quote cap and a post-fee
+						solvency check on that execution. See
+						<a href="../pages/solver-fees.html#edge-cases">Solver Fees</a>.
+					</p>
+
+					<h2 id="timelocked-reductions">Timelocked reductions</h2>
+					<p>
+						Operational-fee allowance is the charger&rsquo;s remaining spend authority from a payer. Increasing the current live allowance
+						is immediate, so a user can top up a solver or relayer whenever more operational-fee room is needed.
+					</p>
+					<p>
+						Reducing or revoking the allowance is delayed. During that delay, the requested lower target is not yet effective: the live
+						allowance remains spendable and every charge continues to decrement it. This prevents a payer from approving an operation,
+						letting a trusted charger take on the work, and then revoking the allowance before the small operational fee can be collected.
+					</p>
+					<p>
+						Once the delay has passed, the reduction is handled through lazy evaluation. View calls report the lower effective allowance
+						automatically, and the next state-changing use of that allowance folds the pending value into storage before continuing.
+						Charges made during the delay continue to decrement the live allowance; applying the pending reduction uses the lower of the
+						live and pending values, so it can never replenish allowance already consumed. The user does not need a second transaction.
+					</p>
+					<p>
+						For example, suppose the live allowance is <code>100</code> and the payer schedules a reduction to <code>20</code>. If the
+						charger consumes <code>90</code> during the delay, the live allowance is <code>10</code>. At maturity the effective allowance
+						remains <code>min(10, 20) = 10</code>; the pending reduction never restores consumed allowance.
+					</p>
+
+					<h2 id="priority-multiplier">Priority multiplier</h2>
+					<p>
+						Each payer can attach a fee multiplier to a charger&rsquo;s allowance. The default is <code>10000</code>, or 1x. A higher
+						value is a priority signal for trusted chargers: if a relayer or solver cannot handle every request, it can prefer work from
+						payers who accepted a higher multiplier.
+					</p>
+					<p>
+						The multiplier does not replace the allowance. The allowance remains the hard limit on future spend, and the charger can never
+						draw more than the remaining approved amount. Core stores and reports the multiplier but does not multiply a submitted charge
+						or enforce a pricing formula; interpreting the signal is an off-chain charger policy.
+					</p>
+
+					<h2 id="gasless-grant">Gasless grant</h2>
+					<p>
+						Operational-fee approval is a normal core call. To grant an allowance without gas, the user signs an InstantLayer
+						<code>SignedOperation</code> targeting the approval call.
+					</p>
+					<p>
+						The approval itself can therefore be gasless. This does not make the off-chain relayer the charger:
+						<code>chargeOperationalFee</code> identifies the charger from raw <code>msg.sender</code>, while a core call routed through
+						InstantLayer arrives from AccountLayer. Core does not provide a bundled approve-charge-execute entrypoint.
+					</p>
+
+					<h2 id="charging-while-relaying">Charging while relaying</h2>
+					<p>
+						An EOA relayer can call <code>chargeOperationalFee</code> directly as a registered charger, then submit the signed operation,
+						but those are separate transactions and do not share atomic rollback. To collect and execute atomically, an integration needs
+						a bundling contract that is itself the registered and approved charger and that makes both calls in one transaction. In that
+						wrapper design, a later execution revert also reverts the earlier charge.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

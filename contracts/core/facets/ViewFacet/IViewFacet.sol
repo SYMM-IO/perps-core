@@ -4,7 +4,12 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { LiquidationDetail, LiquidationSettlementState } from "../../storages/AccountStorage.sol";
+import {
+	LiquidationDetail,
+	LiquidationSettlementState,
+	LiquidationPartyBSymbolKey,
+	LiquidationPartyBSymbolSnapshot
+} from "../../storages/AccountStorage.sol";
 import { CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { BindState } from "../../storages/TradingModeStorage.sol";
 import { VirtualExternalTransferRequest } from "../../storages/ExternalTransferStorage.sol";
@@ -13,11 +18,12 @@ import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSign
 import { WithdrawRequest } from "../../storages/WithdrawStorage.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
+import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
 
-interface IViewFacet {
+interface IViewFacet is IDiamondAccessControlView {
 	function pendingOwner() external view returns (address);
 
-	function owner() external view returns (address);
+	function getOwner() external view returns (address);
 
 	// Account
 	function balanceOf(address user) external view returns (uint256);
@@ -40,6 +46,29 @@ interface IViewFacet {
 
 	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
 
+	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256);
+
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance, uint256 fundingDebt) external view returns (uint256);
+
+	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256);
+
+	function maxRemovableMarginForPartyA(
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
+	) external view returns (uint256);
+
+	function maxRemovableMarginForPartyB(
+		address partyB,
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
+	) external view returns (uint256);
+
 	function isCrossPartyB(address partyB) external view returns (bool);
 
 	function isLegacyDeallocateDeprecated() external view returns (bool);
@@ -56,6 +85,10 @@ interface IViewFacet {
 
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256);
 
+	function upnlCounterOfPartyA(address partyA) external view returns (uint256);
+
+	function upnlCounterOfPartyB(address partyB, address partyA) external view returns (uint256);
+
 	function isSuspended(address user) external view returns (bool);
 
 	function getLiquidatedStateOfPartyA(address partyA) external view returns (LiquidationDetail memory);
@@ -65,6 +98,12 @@ interface IViewFacet {
 	function getInvalidBridgedAmountsPool() external view returns (address);
 
 	function getSettlementStates(address partyA, address[] memory partyBs) external view returns (LiquidationSettlementState[] memory);
+
+	function getPartyALiquidationSnapshots(
+		address partyA,
+		bytes calldata liquidationId,
+		LiquidationPartyBSymbolKey[] calldata keys
+	) external view returns (LiquidationPartyBSymbolSnapshot[] memory snapshots);
 
 	// Role
 	function hasRole(address user, bytes32 role) external view returns (bool);
@@ -80,7 +119,22 @@ interface IViewFacet {
 
 	function getDefaultFeeCollector() external view returns (address);
 
+	function getOperationalFeeReceiver(address charger) external view returns (address);
+
+	function getSolverFeeReceiver(address partyB) external view returns (address);
+
+	function getSolverFeeReceiverForTag(address partyB, bytes32 tag) external view returns (address);
+
+	function getOperationalFeeAllowance(
+		address payer,
+		address charger
+	) external view returns (uint256 allowance, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier);
+
+	function isOperationalFeeCharger(address charger) external view returns (bool);
+
 	function isCrossPartyBModeActivated() external view returns (bool);
+
+	function isLegacyPartyALiquidationDeprecated() external view returns (bool);
 
 	function isPartyALiquidated(address partyA) external view returns (bool);
 
@@ -99,6 +153,8 @@ interface IViewFacet {
 	function liquidatorShare() external view returns (uint256);
 
 	function liquidationTimeout() external view returns (uint256);
+
+	function liquidationStartPositionCount(address partyA) external view returns (uint256);
 
 	function partyBLiquidationTimestamp(address partyB, address partyA) external view returns (uint256);
 
@@ -122,6 +178,10 @@ interface IViewFacet {
 
 	function getMuonConfig() external view returns (uint256 upnlValidTime, uint256 priceValidTime);
 
+	/// @notice Returns the effective UPNL validity for a Muon function and whether it comes from an override.
+	/// @dev When isOverridden is false, upnlValidTime is the global value from getMuonConfig.
+	function getMuonFunctionUpnlValidTime(MuonFunction func) external view returns (uint256 upnlValidTime, bool isOverridden);
+
 	function getMuonIds() external view returns (uint256 muonAppId);
 
 	function pauseState()
@@ -136,12 +196,17 @@ interface IViewFacet {
 			bool internalTransferPaused,
 			bool externalTransferPaused,
 			bool emergencyMode,
-			bool partyBOpenPositionsPaused
+			bool partyBOpenPositionsPaused,
+			bool withdrawAdvancePaused
 		);
 
 	function getPartyBEmergencyStatus(address partyB) external view returns (bool isEmergency);
 
 	function isPartyBOpenPositionsPaused(address partyB) external view returns (bool isPaused);
+
+	function isAffiliateShutdownScheduled(address affiliate) external view returns (bool isScheduled);
+
+	function getAffiliateShutdownTime(address affiliate) external view returns (uint256 shutdownTime);
 
 	function getBalanceLimitPerUser() external view returns (uint256);
 
@@ -168,6 +233,8 @@ interface IViewFacet {
 	function getAffiliateFee(address affiliate, uint256 symbolId) external view returns (Fee memory);
 
 	function isADLEnabled(address partyB) external view returns (bool);
+
+	function isPartyBStrictDeallocationEnabled(address partyB) external view returns (bool);
 
 	function getSigner() external view returns (address);
 
@@ -206,13 +273,6 @@ interface IViewFacet {
 	function isLegacyFundingDeprecated() external view returns (bool);
 
 	function isAccumulatedFundingActivated() external view returns (bool);
-
-	function getMaxCloseAmountToLiquidation(
-		uint256 quoteId,
-		uint256 closedPrice,
-		uint256 marketPrice,
-		int256 upnlPartyA
-	) external view returns (uint256 maxCloseAmount, bool canCloseAll);
 
 	function partyAReimbursement(address partyA) external view returns (uint256);
 

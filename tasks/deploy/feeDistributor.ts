@@ -1,7 +1,16 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import { upsertDeploymentRecords } from "../utils/fs.js"
+import { DEPLOYMENT_LOG_FILE } from "./constants.js"
+import {
+	assertStandaloneDeploymentTaskAllowed,
+	checksumAddress,
+	deployProxyWithFallback,
+	getConnection,
+	getUpgradeAddresses,
+	requireArg,
+} from "./helpers.js"
 import { logger } from "./logger.js"
 
 export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the SymmioFeeDistributor")
@@ -21,12 +30,13 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 	})
 	.setAction(async () => ({
 		default: async ({ symmioAddress: rawSymmio, admin: rawAdmin, symmioShareReceiver: rawReceiver, symmioShare }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:feeDistributor")
 			const { ethers, upgrades } = await getConnection(hre)
 			logger.section("SymmioFeeDistributor Deployment")
 
-			const admin = checksumAddress(rawAdmin)
-			const symmioAddress = checksumAddress(rawSymmio)
-			const symmioShareReceiver = checksumAddress(rawReceiver)
+			const admin = checksumAddress(requireArg(rawAdmin, "admin"))
+			const symmioAddress = checksumAddress(requireArg(rawSymmio, "symmio-address"))
+			const symmioShareReceiver = checksumAddress(requireArg(rawReceiver, "symmio-share-receiver"))
 
 			const [deployer] = await ethers.getSigners()
 
@@ -37,8 +47,9 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 			const contract = await deployProxyWithFallback(hre, factory, [admin, symmioAddress, symmioShareReceiver, symmioShare], {
 				initializer: "initialize",
 				kind: "transparent",
+				label: "SymmioFeeDistributor",
+				proxyKey: "peripherals/FeeDistributor",
 			})
-			await contract.waitForDeployment()
 
 			const addresses = {
 				proxy: await contract.getAddress(),
@@ -51,6 +62,17 @@ export const feeDistributorTask = task("deploy:feeDistributor", "Deploys the Sym
 			if (addresses.admin) {
 				logger.deployed("SymmioFeeDistributor (Admin)", addresses.admin)
 			}
+			upsertDeploymentRecords(DEPLOYMENT_LOG_FILE, [
+				{
+					name: "SymmioFeeDistributorProxy",
+					address: addresses.proxy,
+					constructorArguments: [admin, symmioAddress, symmioShareReceiver, symmioShare],
+				},
+				...(addresses.implementation
+					? [{ name: "SymmioFeeDistributorImplementation", address: addresses.implementation, constructorArguments: [] }]
+					: []),
+				...(addresses.admin ? [{ name: "SymmioFeeDistributorAdmin", address: addresses.admin, constructorArguments: [] }] : []),
+			])
 
 			return contract
 		},

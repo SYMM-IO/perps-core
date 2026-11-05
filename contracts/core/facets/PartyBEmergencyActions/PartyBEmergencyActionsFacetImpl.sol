@@ -5,31 +5,50 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonPartyB } from "../../libraries/muon/LibMuonPartyB.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
+import { LibQuoteState } from "../../libraries/extensions/LibQuoteState.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 import { Symbol, SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, OrderType } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
 import { PairUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBEmergencyActionsFacetImpl {
-	/// @notice Closes a position fully during emergency mode, symbol delisting, or partyB emergency status
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
+
+	/// @notice Closes a position fully during a configured emergency or when adjustment rounding makes the quote unrestatable.
+	/// @dev The adjustment-dust exception applies only while the symbol is frozen. Muon must sign price and UPNLs in the quote's current stored basis;
+	///      Core does not scale the signature values.
 	function emergencyClosePosition(uint256 quoteId, PairUpnlAndPriceSig memory upnlSig) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		Symbol memory symbol = SymbolStorage.layout().symbols[quote.symbolId];
+		bool isAdjustmentDust = LibSymbolAdjustment.isFrozen(quote.symbolId) && LibSymbolAdjustment.isUnrestatableDueToAmountRounding(quote);
+		if (!isAdjustmentDust) LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+		bool affiliateShutdownScheduled = quote.affiliate != address(0) && GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] != 0;
 		require(
-			GlobalAppStorage.layout().emergencyMode || GlobalAppStorage.layout().partyBEmergencyStatus[quote.partyB] || !symbol.isValid,
+			GlobalAppStorage.layout().emergencyMode ||
+				GlobalAppStorage.layout().partyBEmergencyStatus[quote.partyB] ||
+				affiliateShutdownScheduled ||
+				!symbol.isValid ||
+				isAdjustmentDust,
 			"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted"
 		);
-		require(quote.quoteStatus == QuoteStatus.OPENED || quote.quoteStatus == QuoteStatus.CLOSE_PENDING, "PartyBFacet: Invalid state");
+		require(
+			quote.quoteStatus == QuoteStatus.OPENED ||
+				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
+				(isAdjustmentDust && quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING),
+			"PartyBFacet: Invalid state"
+		);
 		LibMuonPartyB.verifyPairUpnlAndPrice(upnlSig, quote.partyB, quote.partyA, quote.symbolId, MuonFunction.Trading);
 		uint256 filledAmount = LibQuote.quoteOpenAmount(quote);
 		quote.quantityToClose = filledAmount;
@@ -43,7 +62,7 @@ library PartyBEmergencyActionsFacetImpl {
 			"PartyBFacet: PartyB should be solvent"
 		);
 
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 		LibQuoteClose.closeQuote(quote.id, filledAmount, upnlSig.price);
 	}
 
@@ -57,20 +76,16 @@ library PartyBEmergencyActionsFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		address signer = LibSigner.getSigner();
 
 		require(quote.partyB == signer, "PartyBFacet: Sender isn't partyB of quote");
 		require(MAStorage.layout().adlEnabled[signer], "PartyBFacet: ADL disabled");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
-		require(!maLayout.partyBLiquidationStatus[quote.partyB][quote.partyA], "PartyBFacet: PartyB is liquidated");
+		signer.requireNotCrossLiquidating();
+		quote.partyB.requireNotLiquidatingAgainst(quote.partyA);
 		require(!maLayout.liquidationStatus[quote.partyA], "PartyAFacet: PartyA is in liquidation process");
 
-		require(
-			quote.quoteStatus == QuoteStatus.OPENED ||
-				quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-				quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-			"PartyBFacet: Invalid state"
-		);
+		quote.requireOpenPosition();
 
 		// Get quote related data
 		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
@@ -122,7 +137,7 @@ library PartyBEmergencyActionsFacetImpl {
 		);
 
 		//Update nonce
-		LibAccount.increaseBothNonces(quote.partyB, quote.partyA);
+		LibAccount.increaseBothUpnlCounters(quote.partyB, quote.partyA);
 
 		LibQuoteClose.closeQuote(quote.id, amount, price);
 		emit LibPartiesEvents.FillCloseRequest(quote.id, quote.partyA, quote.partyB, amount, price, quote.quoteStatus, adlCloseId);

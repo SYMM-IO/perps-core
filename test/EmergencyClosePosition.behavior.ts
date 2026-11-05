@@ -68,6 +68,39 @@ export function shouldBehaveLikeEmergencyClosePosition(): void {
 			)
 		})
 
+		describe("Affiliate shutdown scheduled", async function () {
+			beforeEach(async function () {
+				const affiliate = await context.accountManager.getAddress()
+				await context.controlFacet.connect(context.signers.admin).scheduleAffiliateShutdown(affiliate, (await getBlockTimestamp()) + 10n)
+			})
+
+			it("Should run successfully for a quote of the shutting down affiliate", async function () {
+				const validator = new EmergencyCloseRequestValidator()
+				const beforeOut = await validator.before(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(1),
+				})
+				await hedger.emergencyClosePosition(1, emergencyCloseRequestBuilder().build())
+				await validator.after(context, {
+					user: user,
+					hedger: hedger,
+					quoteId: BigInt(1),
+					price: decimal(1n),
+					beforeOutput: beforeOut,
+				})
+			})
+
+			it("Should stop allowing emergency close after the shutdown is cancelled", async function () {
+				const affiliate = await context.accountManager.getAddress()
+				await context.controlFacet.connect(context.signers.admin).cancelAffiliateShutdown(affiliate)
+
+				await expect(hedger.emergencyClosePosition(1, emergencyCloseRequestBuilder().build())).to.be.revertedWith(
+					"PartyBFacet: Operation not allowed. Either emergency mode must be active, party B must be in emergency status, or the symbol must be delisted",
+				)
+			})
+		})
+
 		describe("Emergency status for partyB activated", async function () {
 			beforeEach(async function () {
 				await context.pauseControlFacet.setPartyBEmergencyStatus([await hedger2.getAddress()], true)

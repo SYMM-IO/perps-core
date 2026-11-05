@@ -8,7 +8,12 @@ import type {
 	UnifiedQuoteSettlementDataStruct,
 	UnifiedSettlementSigStruct,
 } from "../../src/types/facets/Settlement/ISettlementFacet.js"
-import type { DeferredLiquidationSigStruct, PairUpnlAndPriceSigStruct, SingleUpnlSigStruct } from "../../src/types/interfaces/ISymmio.js"
+import type {
+	DeferredLiquidationSigStruct,
+	PairUpnlAndPriceSigStruct,
+	SingleUpnlSigStruct,
+	SingleUpnlWithPendingBalanceSigStruct,
+} from "../../src/types/interfaces/ISymmio.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { getBlockTimestamp } from "./Common.js"
 
@@ -26,12 +31,19 @@ export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUp
 	}
 }
 
-export async function getDummySingleUpnlWithPendingBalanceSig(upnl: bigint = 0n, pendingBalance: bigint = 0n): Promise<any> {
+export async function getDummySingleUpnlWithPendingBalanceSig(
+	upnl: bigint = 0n,
+	pendingBalance: bigint = 0n,
+	scaledLockedBalance: bigint = 0n,
+	fundingDebt: bigint = 0n,
+): Promise<SingleUpnlWithPendingBalanceSigStruct> {
 	return {
 		reqId: "0x",
 		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
+		fundingDebt: fundingDebt,
 		pendingBalance: pendingBalance,
+		scaledLockedBalance: scaledLockedBalance,
 		gatewaySignature: ethers.ZeroAddress,
 		sigs: {
 			signature: "0",

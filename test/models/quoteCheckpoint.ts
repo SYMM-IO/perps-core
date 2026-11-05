@@ -1,6 +1,8 @@
+import { QuoteStatus } from "./Enums.js"
+
 export class QuoteCheckpoint {
 	private static instance: QuoteCheckpoint | null = null
-	private _blockedQuotes: Map<string, boolean> = new Map<string, boolean>()
+	private readonly blockedQuotes = new Set<string>()
 
 	private constructor() {}
 
@@ -13,15 +15,24 @@ export class QuoteCheckpoint {
 	}
 
 	public addBlockedQuotes(quoteId: bigint): void {
-		this._blockedQuotes.set(quoteId.toString(), true)
+		this.blockedQuotes.add(quoteId.toString())
 	}
 
 	public deleteBlockedQuotes(quoteId: bigint): void {
-		this._blockedQuotes.set(quoteId.toString(), false)
+		this.blockedQuotes.delete(quoteId.toString())
 	}
 
-	public isBlockedQuote(quoteId: bigint): boolean | undefined {
-		console.log(this._blockedQuotes.keys())
-		return this._blockedQuotes.get(quoteId.toString())
+	public isBlockedQuote(quoteId: bigint): boolean {
+		return this.blockedQuotes.has(quoteId.toString())
+	}
+
+	public observeQuoteStatus(quoteId: bigint, status: QuoteStatus): void {
+		if ([QuoteStatus.CANCELED, QuoteStatus.CLOSED, QuoteStatus.EXPIRED, QuoteStatus.LIQUIDATED, QuoteStatus.LIQUIDATED_PENDING].includes(status)) {
+			this.deleteBlockedQuotes(quoteId)
+		}
+	}
+
+	public reset(): void {
+		this.blockedQuotes.clear()
 	}
 }

@@ -1,5 +1,4 @@
 # directories
-.yarn/
 **/.coverage_artifacts
 **/.coverage_cache
 **/.coverage_contracts
@@ -15,8 +14,6 @@
 # files
 **/.env
 *.log
-.pnp.*
 coverage.json
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+package-lock.json

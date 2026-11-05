@@ -41,6 +41,9 @@ library PledgeStorage {
 		/// @dev PartyBs must request and get approval before withdrawing pledge.
 		///      Prevents sudden removal of trust collateral.
 		mapping(address => PledgeWithdrawalRequest) pledgeWithdrawalRequests;
+		/// @notice Tokens managers allow for new pledge deposits. Unset entries are denied.
+		/// @dev Append-only: existing pledge balances and withdrawal requests retain their storage slots.
+		mapping(address => bool) whitelistedTokens;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -23,9 +23,11 @@ struct QuoteParams {
 
 /// @notice Library for decoding sendQuote calldata into a normalized QuoteParams struct
 library LibQuoteParams {
-	bytes4 internal constant SEND_QUOTE_SELECTOR = 0x7f2755b2;
-	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = 0x40f1310c;
-	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR = 0xa7f3b34b;
+	// Selectors are derived from the ISymmio declarations so they cannot silently drift from the core diamond.
+	// SEND_QUOTE_SELECTOR is the v0.8.6 solver-fee-caps variant; the legacy no-affiliate sendQuote was removed from core.
+	bytes4 internal constant SEND_QUOTE_SELECTOR = ISymmio.sendQuote.selector;
+	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_SELECTOR = ISymmio.sendQuoteWithAffiliate.selector;
+	bytes4 internal constant SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR = ISymmio.sendQuoteWithAffiliateAndData.selector;
 
 	/// @notice Decodes sendQuote calldata into a QuoteParams struct based on the function selector
 	function decodeQuoteParams(bytes calldata cd) external pure returns (QuoteParams memory) {
@@ -80,8 +82,10 @@ library LibQuoteParams {
 				uint256 partyAmm,
 				,
 				,
+				address affiliate,
+				ISymmio.SingleUpnlAndPriceSig memory sig,
 				,
-				ISymmio.SingleUpnlAndPriceSig memory sig
+
 			) = abi.decode(
 					cd[4:],
 					(
@@ -96,11 +100,13 @@ library LibQuoteParams {
 						uint256,
 						uint256,
 						uint256,
-						uint256,
-						ISymmio.SingleUpnlAndPriceSig
+						address,
+						ISymmio.SingleUpnlAndPriceSig,
+						bytes,
+						ISymmio.SolverFeeCaps
 					)
 				);
-			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, address(0));
+			return QuoteParams(symbolId, positionType, cva, lf, partyAmm, quantity, price, orderType, sig, affiliate);
 		} else if (selector == SEND_QUOTE_WITH_AFFILIATE_AND_DATA_SELECTOR) {
 			(
 				,

@@ -1,23 +1,39 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readData, writeData } from "../utils/fs.js"
+import { upsertDeploymentRecords } from "../utils/fs.js"
 import { DeploymentCheckpoint, createDeployedContract, saveCheckpoint } from "./checkpoint.js"
 import { SYMBOLMANAGER_DEPLOYMENT_FILE } from "./constants.js"
-import { checksumAddress, getConnection } from "./helpers.js"
+import { checkpointDeployment, recoverCheckpointContractDeployments } from "./deploymentRecovery.js"
+import { assertStandaloneDeploymentTaskAllowed, checksumAddress, getConnection } from "./helpers.js"
 import { setHyperEVMBigBlocks } from "./hyperevm.js"
 import { logger } from "./logger.js"
+import { confirmDeployment, send } from "./tx.js"
+import { deployContract, type VanityContext } from "./vanityDeploy.js"
 
 // Role hashes for the Symmio core Diamond that the SymbolManager needs in order
 // to proxy symbol CRUD + force-close-gap-ratio calls. Kept here as plain strings
 // so they match exactly what LibAccessibility.sol hashes at runtime.
 const CORE_ROLE_SYMBOL_MANAGER = "SYMBOL_MANAGER_ROLE"
+const CORE_ROLE_SYMBOL_LISTING = "SYMBOL_LISTING_ROLE"
 const CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN = "FORCE_CLOSE_GAP_RATIO_ADMIN_ROLE"
 
 // Operator roles on the SymbolManager contract itself (from SymmioSymbolManager.sol)
 const OPERATOR_ROLES_DEFAULT: readonly string[] = ["SYMBOL_ADDER_ROLE", "SYMBOL_REMOVER_ROLE"]
 
+/**
+ * These options are declared STRING_WITHOUT_DEFAULT, so omitting one passes `undefined`
+ * straight through to checksumAddress(), which fails with an opaque
+ * "Cannot read properties of undefined (reading 'toLowerCase')". Fail with the flag name.
+ */
+function requireArg(value: string | undefined, flag: string): string {
+	if (!value) throw new Error(`Missing required option --${flag}`)
+	return value
+}
+
 type DeploySymbolManagerArgs = {
+	/** Present when the owning deployment mines CREATE2 addresses; null for standalone runs. */
+	vanity?: VanityContext | null
 	symmioAddress: string
 	admin?: string
 	logData?: boolean
@@ -26,9 +42,10 @@ type DeploySymbolManagerArgs = {
 
 export async function deploySymbolManager(
 	hre: any,
-	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint }: DeploySymbolManagerArgs,
+	{ symmioAddress: rawSymmio, admin: rawAdmin, logData = true, checkpoint, vanity }: DeploySymbolManagerArgs,
 ) {
 	const { ethers } = await getConnection(hre)
+	await recoverCheckpointContractDeployments(checkpoint, ethers.provider, "contracts.symbolManager")
 	logger.section("SymmioSymbolManager Deployment")
 
 	const [deployer] = await ethers.getSigners()
@@ -42,16 +59,21 @@ export async function deploySymbolManager(
 	// Resume from checkpoint if we already deployed in a previous run
 	if (checkpoint?.contracts.symbolManager) {
 		const address = checkpoint.contracts.symbolManager.address
-		logger.info(`  ⏭ SymmioSymbolManager already deployed at ${address}`)
+		const [recordedSymmio = symmioAddress, recordedAdmin = admin] = checkpoint.contracts.symbolManager.constructorArgs || []
+		logger.reused("SymmioSymbolManager", address)
+		if (logData) writeSymbolManagerRecord(address, String(recordedSymmio), String(recordedAdmin))
 		return ethers.getContractAt("SymmioSymbolManager", address)
 	}
 
 	const factory = await ethers.getContractFactory("SymmioSymbolManager")
-	const contract = await factory.connect(deployer).deploy(symmioAddress, admin)
-	await contract.waitForDeployment()
-	await contract.deploymentTransaction()!.wait()
-
-	const address = await contract.getAddress()
+	const { address } = await deployContract(vanity || null, {
+		key: "peripherals/SymbolManager",
+		component: "contracts.symbolManager",
+		label: "SymmioSymbolManager",
+		factory: factory.connect(deployer),
+		constructorArgs: [symmioAddress, admin],
+		checkpoint,
+	})
 	logger.deployed("SymmioSymbolManager", address)
 
 	if (checkpoint) {
@@ -60,24 +82,15 @@ export async function deploySymbolManager(
 	}
 
 	if (logData) {
-		let deployedData: any[] = []
-		try {
-			deployedData = readData(SYMBOLMANAGER_DEPLOYMENT_FILE)
-		} catch (err) {
-			logger.debug(`Could not read existing JSON file: ${err}`)
-		}
-
-		deployedData.push({
-			name: "SymmioSymbolManager",
-			address,
-			constructorArguments: [symmioAddress, admin],
-		})
-
-		writeData(SYMBOLMANAGER_DEPLOYMENT_FILE, deployedData)
+		writeSymbolManagerRecord(address, symmioAddress, admin)
 		logger.debug("Deployed addresses written to JSON file")
 	}
 
-	return contract
+	return ethers.getContractAt("SymmioSymbolManager", address)
+}
+
+function writeSymbolManagerRecord(address: string, symmioAddress: string, admin: string): void {
+	upsertDeploymentRecords(SYMBOLMANAGER_DEPLOYMENT_FILE, [{ name: "SymmioSymbolManager", address, constructorArguments: [symmioAddress, admin] }])
 }
 
 export const symbolManagerTask = task("deploy:symbolManager", "Deploys the SymmioSymbolManager")
@@ -96,18 +109,25 @@ export const symbolManagerTask = task("deploy:symbolManager", "Deploys the Symmi
 	.addOption({ name: "logData", description: "Write the deployed address to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
 		default: async ({ symmioAddress, admin, logData }, hre) => {
-			const { ethers } = await getConnection(hre)
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:symbolManager")
+			const connection = await getConnection(hre)
+			const { ethers } = connection
 			const chainId = Number((await ethers.provider.getNetwork()).chainId)
 			// HyperEVM mainnet=999, testnet=998 — deploys need big blocks to land reliably
-			const isHyperEVM = chainId === 999 || chainId === 998
+			const isSimulatedNetwork = (connection as any).networkConfig?.type === "edr-simulated"
+			const isHyperEVM = !isSimulatedNetwork && (chainId === 999 || chainId === 998)
 
 			if (isHyperEVM) {
 				logger.info("HyperEVM detected — enabling big blocks for contract deployment...")
 				await setHyperEVMBigBlocks(hre, true)
 			}
 
+			let deploymentFailed = false
 			try {
-				return await deploySymbolManager(hre, { symmioAddress, admin, logData })
+				return await deploySymbolManager(hre, { symmioAddress: requireArg(symmioAddress, "symmio-address"), admin, logData })
+			} catch (error) {
+				deploymentFailed = true
+				throw error
 			} finally {
 				if (isHyperEVM) {
 					try {
@@ -115,7 +135,8 @@ export const symbolManagerTask = task("deploy:symbolManager", "Deploys the Symmi
 						await setHyperEVMBigBlocks(hre, false)
 					} catch (err: any) {
 						logger.error(`Failed to disable big blocks: ${err.message}`)
-						logger.error("Run 'npx hardhat hyperevm:disable-big-blocks --network hyperevm' manually.")
+						logger.error("Run './node_modules/.bin/hardhat hyperevm:disable-big-blocks --network hyperevm' manually.")
+						if (!deploymentFailed) throw err
 					}
 				}
 			}
@@ -147,7 +168,7 @@ export async function grantSymbolManagerDiamondRoles(hre: any, { symmioAddress: 
 	const viewFacet = await ethers.getContractAt("contracts/core/facets/ViewFacet/ViewFacet.sol:ViewFacet", symmioAddress)
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
 
-	const rolesToGrant = [CORE_ROLE_SYMBOL_MANAGER, CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN]
+	const rolesToGrant = [CORE_ROLE_SYMBOL_MANAGER, CORE_ROLE_SYMBOL_LISTING, CORE_ROLE_FORCE_CLOSE_GAP_RATIO_ADMIN]
 
 	let granted = 0
 	let skipped = 0
@@ -159,8 +180,7 @@ export async function grantSymbolManagerDiamondRoles(hre: any, { symmioAddress: 
 			continue
 		}
 		logger.info(`  Granting ${role} to SymbolManager on Symmio core...`)
-		const tx = await controlFacet.connect(deployer).grantRole(symbolManagerAddress, roleHash(role))
-		await tx.wait()
+		await send(controlFacet.connect(deployer).grantRole(symbolManagerAddress, roleHash(role)), `grant ${role} to SymbolManager`)
 		granted++
 	}
 
@@ -185,7 +205,11 @@ export const grantSymbolManagerDiamondRolesTask = task(
 		defaultValue: undefined,
 	})
 	.setAction(async () => ({
-		default: async ({ symmioAddress, symbolManagerAddress }, hre) => grantSymbolManagerDiamondRoles(hre, { symmioAddress, symbolManagerAddress }),
+		default: async ({ symmioAddress, symbolManagerAddress }, hre) =>
+			grantSymbolManagerDiamondRoles(hre, {
+				symmioAddress: requireArg(symmioAddress, "symmio-address"),
+				symbolManagerAddress: requireArg(symbolManagerAddress, "symbol-manager-address"),
+			}),
 	}))
 	.build()
 
@@ -197,6 +221,8 @@ type GrantOperatorRolesArgs = {
 	symbolManagerAddress: string
 	operator: string
 	roles?: readonly string[]
+	finalAdmin?: string
+	renounceTemporaryAdmin?: boolean
 }
 
 /**
@@ -206,34 +232,91 @@ type GrantOperatorRolesArgs = {
  */
 export async function grantSymbolManagerOperatorRoles(
 	hre: any,
-	{ symbolManagerAddress: rawSm, operator: rawOperator, roles = OPERATOR_ROLES_DEFAULT }: GrantOperatorRolesArgs,
+	{
+		symbolManagerAddress: rawSm,
+		operator: rawOperator,
+		roles = OPERATOR_ROLES_DEFAULT,
+		finalAdmin: rawFinalAdmin,
+		renounceTemporaryAdmin = false,
+	}: GrantOperatorRolesArgs,
 ) {
 	const { ethers } = await getConnection(hre)
 	const [deployer] = await ethers.getSigners()
 
 	const symbolManagerAddress = checksumAddress(rawSm)
 	const operator = checksumAddress(rawOperator)
+	const finalAdmin = rawFinalAdmin ? checksumAddress(rawFinalAdmin) : undefined
 
 	const sm = await ethers.getContractAt("SymmioSymbolManager", symbolManagerAddress)
 	const roleHash = (role: string) => ethers.keccak256(ethers.toUtf8Bytes(role))
+	const roleStates = await Promise.all(
+		roles.map(async role => ({
+			role,
+			already: await sm.hasRole(roleHash(role), operator),
+		})),
+	)
+	const missingRoles = roleStates.filter(state => !state.already).map(state => state.role)
+	const defaultAdminRole = await sm.DEFAULT_ADMIN_ROLE()
+	const deployerIsAdmin = await sm.hasRole(defaultAdminRole, deployer.address)
+	if (missingRoles.length > 0 && !deployerIsAdmin) {
+		logger.info("")
+		logger.info(`  ⚠ Deployer ${deployer.address} does not hold DEFAULT_ADMIN_ROLE on the SymbolManager,`)
+		logger.info(`    so it cannot grant operator roles. The admin must run this themselves:`)
+		logger.info("")
+		logger.info(`      ./node_modules/.bin/hardhat symbolManager:grantOperatorRoles \\`)
+		logger.info(`        --symbol-manager-address ${symbolManagerAddress} \\`)
+		logger.info(`        --operator ${operator} --network <network>`)
+		logger.info("")
+		logger.info(`    Roles still to grant: ${missingRoles.join(", ")}`)
+		return { granted: 0, skipped: roles.length - missingRoles.length, deferred: missingRoles.length, missingRoles }
+	}
 
 	let granted = 0
 	let skipped = 0
-	for (const role of roles) {
-		const already = await sm.hasRole(roleHash(role), operator)
+	for (const { role, already } of roleStates) {
 		if (already) {
 			logger.info(`  ⏭ ${role} already granted to ${operator}`)
 			skipped++
 			continue
 		}
 		logger.info(`  Granting ${role} to ${operator} on SymbolManager...`)
-		const tx = await sm.connect(deployer).grantRole(roleHash(role), operator)
-		await tx.wait()
+		await send(sm.connect(deployer).grantRole(roleHash(role), operator), `grant ${role} to ${operator}`)
 		granted++
 	}
 
+	if (finalAdmin && !(await sm.hasRole(defaultAdminRole, finalAdmin))) {
+		if (!deployerIsAdmin) {
+			throw new Error(`Cannot hand over SymbolManager admin: deployer ${deployer.address} does not hold DEFAULT_ADMIN_ROLE`)
+		}
+		logger.info(`  Granting DEFAULT_ADMIN_ROLE to final admin ${finalAdmin} on SymbolManager...`)
+		await send(sm.connect(deployer).grantRole(defaultAdminRole, finalAdmin), `grant SymbolManager DEFAULT_ADMIN_ROLE to ${finalAdmin}`)
+	}
+	if (renounceTemporaryAdmin && finalAdmin && finalAdmin.toLowerCase() !== deployer.address.toLowerCase()) {
+		if (!(await sm.hasRole(defaultAdminRole, finalAdmin))) {
+			throw new Error(`Refusing to renounce SymbolManager admin: final admin ${finalAdmin} does not hold DEFAULT_ADMIN_ROLE`)
+		}
+		if (await sm.hasRole(defaultAdminRole, deployer.address)) {
+			logger.info(`  Renouncing temporary deployer DEFAULT_ADMIN_ROLE on SymbolManager...`)
+			await send(sm.connect(deployer).renounceRole(defaultAdminRole, deployer.address), "renounce temporary SymbolManager DEFAULT_ADMIN_ROLE")
+		}
+	}
+	for (const { role } of roleStates) {
+		if (!(await sm.hasRole(roleHash(role), operator))) throw new Error(`SymbolManager operator ${operator} is missing ${role} after setup`)
+	}
+	if (finalAdmin && !(await sm.hasRole(defaultAdminRole, finalAdmin))) {
+		throw new Error(`SymbolManager final admin ${finalAdmin} is missing DEFAULT_ADMIN_ROLE after setup`)
+	}
+	if (
+		renounceTemporaryAdmin &&
+		finalAdmin &&
+		finalAdmin.toLowerCase() !== deployer.address.toLowerCase() &&
+		(await sm.hasRole(defaultAdminRole, deployer.address))
+	) {
+		throw new Error(`Temporary deployer ${deployer.address} still holds SymbolManager DEFAULT_ADMIN_ROLE after handover`)
+	}
+
 	logger.info(`  Operator roles: ${granted} granted, ${skipped} already had`)
-	return { granted, skipped }
+	return { granted, skipped, deferred: 0, missingRoles: [] as string[] }
 }
 
 export const grantSymbolManagerOperatorRolesTask = task(
@@ -253,6 +336,10 @@ export const grantSymbolManagerOperatorRolesTask = task(
 		defaultValue: undefined,
 	})
 	.setAction(async () => ({
-		default: async ({ symbolManagerAddress, operator }, hre) => grantSymbolManagerOperatorRoles(hre, { symbolManagerAddress, operator }),
+		default: async ({ symbolManagerAddress, operator }, hre) =>
+			grantSymbolManagerOperatorRoles(hre, {
+				symbolManagerAddress: requireArg(symbolManagerAddress, "symbol-manager-address"),
+				operator: requireArg(operator, "operator"),
+			}),
 	}))
 	.build()

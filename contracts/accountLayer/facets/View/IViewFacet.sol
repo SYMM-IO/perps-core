@@ -4,11 +4,14 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IDiamondAccessControlView } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
+
 import { SubAccountDetail, VirtualAccountDetail, VirtualAccountIsolationType, LegacyAccountInfo } from "../../storages/AccountStorage.sol";
-import { AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import { AffiliateDetail, AffiliateSelectorConfig, AffiliateState, Stakeholder } from "../../storages/AffiliateStorage.sol";
+import { SelectorTimelock, Schedule, TimelockApproval } from "../../storages/TimelockStorage.sol";
 
 /// @notice Read-only interface for accounts, affiliates, roles, and system state
-interface IViewFacet {
+interface IViewFacet is IDiamondAccessControlView {
 	// ==================== Sub-Account View Functions ====================
 
 	/// @notice Returns the full details of a sub-account
@@ -95,6 +98,9 @@ interface IViewFacet {
 	/// @notice Returns the current effective signer
 	function getSigner() external view returns (address);
 
+	/// @notice Returns the account family the current signer session is confined to, or address(0) when unconfined
+	function getSignerScope() external view returns (address);
+
 	/// @notice Returns the Symmio core address associated with an account
 	/// @param account The account address
 	function getRelatedCore(address account) external view returns (address);
@@ -103,6 +109,10 @@ interface IViewFacet {
 	/// @param account The account address
 	function ownerOf(address account) external view returns (address);
 
+	/// @notice Returns the affiliate for a live sub-account or virtual account
+	/// @param account The AccountLayer account address
+	function getAffiliateForAccount(address account) external view returns (address affiliate, bool exists);
+
 	/// @notice Returns the global nonce used for sub-account address generation
 	function globalNonce() external view returns (uint256);
 
@@ -110,6 +120,15 @@ interface IViewFacet {
 	function accountManagerImplementation() external view returns (bytes memory);
 
 	// ==================== Affiliate View Functions ====================
+
+	/// @notice Returns everything stored about an affiliate in a single call, including any pending fee update
+	/// @param affiliate The affiliate address
+	function getAffiliate(address affiliate) external view returns (AffiliateDetail memory);
+
+	/// @notice Returns the hook and allow-list configuration of an affiliate for the given selectors
+	/// @param affiliate The affiliate address
+	/// @param selectors The function selectors to look up
+	function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata selectors) external view returns (AffiliateSelectorConfig[] memory);
 
 	/// @notice Returns the registration state of an affiliate
 	/// @param affiliate The affiliate address
@@ -134,10 +153,6 @@ interface IViewFacet {
 	/// @notice Returns the Symmio share of fees for an affiliate
 	/// @param affiliate The affiliate address
 	function getAffiliateSymmioShare(address affiliate) external view returns (uint256);
-
-	/// @notice Returns the express deposit rate for an affiliate (fraction of 1e18)
-	/// @param affiliate The affiliate address
-	function getAffiliateExpressRate(address affiliate) external view returns (uint256);
 
 	/// @notice Checks whether a Symmio core address is whitelisted
 	/// @param core The Symmio core address
@@ -179,23 +194,45 @@ interface IViewFacet {
 
 	// ==================== Role Management ====================
 
-	/// @notice Checks whether a user has a specific role
-	/// @param user The user address
-	/// @param role The role identifier
-	function hasRole(address user, bytes32 role) external view returns (bool);
-
-	/// @notice Checks whether a user is a role admin for a specific role
-	/// @param user The user address
-	/// @param role The role identifier
-	function isRoleAdmin(address user, bytes32 role) external view returns (bool);
-
 	// ==================== Ownership ====================
 
 	/// @notice Returns the current diamond owner address
-	function owner() external view returns (address);
+	function getOwner() external view returns (address);
 
 	/// @notice Returns the pending owner address (for two-step ownership transfer)
 	function pendingOwner() external view returns (address);
+
+	// ==================== Timelock View Functions ====================
+
+	/// @notice Timelock on one selector of a root sub-account; unlocker == address(0) means not timelocked.
+	function getSelectorTimelock(address subAccount, bytes4 selector) external view returns (SelectorTimelock memory);
+
+	/// @notice True when every selector in a non-empty set is timelocked by unlocker with a delay of at least minDelay.
+	///         The solver's pre-hedge check.
+	/// @dev A zero unlocker or empty selectors array returns false.
+	function allTimelockedBy(address subAccount, address unlocker, uint256 minDelay, bytes4[] calldata selectors) external view returns (bool);
+
+	/// @notice Timelock nonce of a root sub-account; advances on every policy change, and schedules stamped with an older nonce are dead.
+	function timelockNonce(address subAccount) external view returns (uint32);
+
+	/// @notice The schedule for an op on the account's family (a virtual account resolves to its parent); one stamped
+	///         with an older nonce reads as empty.
+	function getSchedule(address account, bytes32 callDataHash) external view returns (Schedule memory);
+
+	/// @notice True once an approval digest has been consumed.
+	function isApprovalUsed(bytes32 approvalHash) external view returns (bool);
+
+	/// @notice EIP-712 domain separator for TimelockApproval signatures (name SymmioAccountLayerTimelock, version 1).
+	function timelockDomainSeparator() external view returns (bytes32);
+
+	/// @notice EIP-712 digest an unlocker signs for approval.
+	function hashTimelockApproval(TimelockApproval calldata approval) external view returns (bytes32);
+
+	/// @notice Lower bound for a selector delay; zero means no minimum.
+	function minTimelockDelay() external view returns (uint256);
+
+	/// @notice How long a schedule stays valid once its delay has passed: the configured value, or 10 minutes when unset.
+	function scheduleGracePeriod() external view returns (uint256);
 
 	// ==================== Pause Control ====================
 

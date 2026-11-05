@@ -31,10 +31,9 @@ RUN npm install --ignore-scripts
 # Pre-download solc compiler (cached unless hardhat config or tasks change)
 WORKDIR /app/symmio
 COPY hardhat.config.ts ./
-# tasks/ is required because hardhat.config.ts imports from it;
-# scripts/ is required because tasks/deploy/signatureVerifier.ts imports
-# from scripts/upgrade/utils/sharedConfig at module load.
-# Without these, the config fails to load and solc won't be downloaded.
+# tasks/ is required because hardhat.config.ts imports from it; without it the
+# config fails to load and solc won't be downloaded. scripts/ carries the
+# remaining standalone operator scripts, which are run inside the image.
 COPY tasks/ tasks/
 COPY scripts/ scripts/
 RUN ln -s /app/node_modules . \

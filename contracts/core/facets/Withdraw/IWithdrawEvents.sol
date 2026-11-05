@@ -31,4 +31,6 @@ interface IWithdrawEvents {
 	event WithdrawRejected(uint256 requestId, address user);
 
 	event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldown);
+
+	event WithdrawAdvanced(uint256 indexed requestId, address indexed user, uint256 amount);
 }

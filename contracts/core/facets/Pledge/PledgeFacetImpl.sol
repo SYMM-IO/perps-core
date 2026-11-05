@@ -15,6 +15,7 @@ library PledgeFacetImpl {
 		address signer = LibSigner.getSigner();
 
 		require(amount > 0, "AccountFacet: invalid amount");
+		require(pledgeLayout.whitelistedTokens[token], "PledgeFacet: Token is not whitelisted");
 
 		LibSafeERC20.safeTransferFrom(token, signer, address(this), amount);
 		pledgeLayout.pledgeDeposit[signer][token] += amount;

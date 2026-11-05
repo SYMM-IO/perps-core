@@ -6,8 +6,14 @@ pragma solidity >=0.8.18;
 
 import { LibDiamond } from "../../../diamond/libraries/LibDiamond.sol";
 import { LibMuon } from "../../libraries/muon/LibMuon.sol";
-import { LibSolvency } from "../../libraries/LibSolvency.sol";
-import { AccountStorage, LiquidationDetail, LiquidationSettlementState, ForceCloseDetail } from "../../storages/AccountStorage.sol";
+import {
+	AccountStorage,
+	LiquidationDetail,
+	LiquidationSettlementState,
+	LiquidationPartyBSymbolKey,
+	LiquidationPartyBSymbolSnapshot,
+	ForceCloseDetail
+} from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage, CrossLiquidationDetail, PartyATakeoverDetail } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage, BindState } from "../../storages/TradingModeStorage.sol";
 import { FundingStorage } from "../../storages/FundingStorage.sol";
@@ -16,14 +22,18 @@ import { WithdrawStorage, WithdrawRequest, WithdrawStatus } from "../../storages
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { MAStorage, EntityMetadata } from "../../storages/MAStorage.sol";
+import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 import { QuoteStorage, LockedValues, Fee } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { MuonStorage } from "../../storages/MuonStorage.sol";
 import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
-import { MigrationStorage } from "../../storages/MigrationStorage.sol";
 import { BridgeStorage, BridgeTransaction } from "../../storages/BridgeStorage.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
+import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
+import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
+import { LibSigner } from "../../libraries/LibSigner.sol";
 import { IViewFacet } from "./IViewFacet.sol";
 
 contract ViewFacet is IViewFacet {
@@ -37,7 +47,7 @@ contract ViewFacet is IViewFacet {
 
 	/// @notice Returns the owner of the diamond.
 	/// @return The address of the owner.
-	function owner() external view virtual returns (address) {
+	function getOwner() external view virtual returns (address) {
 		return LibDiamond.diamondStorage().contractOwner;
 	}
 
@@ -62,7 +72,7 @@ contract ViewFacet is IViewFacet {
 	/// @return pendingLockedPartyBmm The pending locked Party B maintenance margin.
 	/// @return partyAPositionsCount The number of positions held by Party A.
 	/// @return partyAPendingQuotesCount The number of pending quotes submitted by Party A.
-	/// @return partyANonces The nonces of Party A.
+	/// @return partyAUpnlCounters The upnl counter of Party A.
 	/// @return quoteIdsCount The total quote IDs associated with Party A.
 	function partyAStats(
 		address partyA
@@ -87,7 +97,7 @@ contract ViewFacet is IViewFacet {
 			accountLayout.pendingLockedBalances[partyA].partyBmm,
 			quoteLayout.partyAPositionsCount[partyA],
 			quoteLayout.partyAPendingQuotes[partyA].length,
-			accountLayout.partyANonces[partyA],
+			accountLayout.partyAUpnlCounters[partyA],
 			quoteLayout.quoteIdsOf[partyA].length
 		);
 	}
@@ -193,6 +203,92 @@ contract ViewFacet is IViewFacet {
 		return AccountStorage.layout().partyBAllocatedBalances[partyB][partyA];
 	}
 
+	/// @notice Returns the maximum amount Party A can deallocate for the supplied uPnL.
+	/// @dev Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxDeallocatableForPartyA(address partyA, int256 upnl) external view returns (uint256) {
+		return LibAccount.partyAMaxDeallocatable(upnl, partyA, 0);
+	}
+
+	/// @notice Returns the maximum amount Party A can safe-deallocate for the supplied uPnL, pending balance, and funding debt.
+	/// @dev pendingBalance is the value carried by SingleUpnlWithPendingBalanceSig, not pending locked quote collateral.
+	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxSafeDeallocatableForPartyA(address partyA, int256 upnl, uint256 pendingBalance, uint256 fundingDebt) external view returns (uint256) {
+		return LibAccount.partyAMaxRemovableMargin(upnl, partyA, pendingBalance, 0, fundingDebt);
+	}
+
+	/// @notice Returns the maximum amount Party B can deallocate from the requested allocation bucket for the supplied uPnL.
+	/// @dev Use partyA = address(0) for the active cross-mode bucket. Legacy per-PartyA buckets retain their drain semantics.
+	///      Excludes operational gates such as pause state and signature validity.
+	function maxDeallocatableForPartyB(address partyB, address partyA, int256 upnl) external view returns (uint256) {
+		return LibAccount.partyBMaxDeallocatable(upnl, partyB, partyA);
+	}
+
+	/// @notice Returns the maximum amount Party A can remove via safeDeallocate for the supplied Muon-attested values.
+	/// @dev pendingBalance, scaledLockedBalance, and fundingDebt are the values carried by SingleUpnlWithPendingBalanceSig.
+	///      Excludes operational gates such as pause state, cooldowns, and signature validity.
+	function maxRemovableMarginForPartyA(
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
+	) external view returns (uint256) {
+		return LibAccount.partyAMaxRemovableMargin(upnl, partyA, pendingBalance, scaledLockedBalance, fundingDebt);
+	}
+
+	/// @notice Returns the maximum amount Party B can remove via safeDeallocateForPartyB for the supplied Muon-attested values.
+	/// @dev Use partyA = address(0) for the active cross-mode bucket. The scaled-plus-funding-debt retention floor applies only when
+	///      strict deallocation is enabled for the partyB. Excludes operational gates such as pause state and signature validity.
+	function maxRemovableMarginForPartyB(
+		address partyB,
+		address partyA,
+		int256 upnl,
+		uint256 pendingBalance,
+		uint256 scaledLockedBalance,
+		uint256 fundingDebt
+	) external view returns (uint256) {
+		return LibAccount.partyBMaxRemovableMargin(upnl, partyB, partyA, pendingBalance, scaledLockedBalance, fundingDebt);
+	}
+
+	/// @notice Returns the effective account that receives a charger's operational fees.
+	/// @dev If no custom receiver is set, the charger itself receives operational fees.
+	function getOperationalFeeReceiver(address charger) external view returns (address) {
+		return LibAccount.getOperationalFeeReceiver(charger);
+	}
+
+	/// @notice Returns the effective account that receives a Party B's solver fees.
+	/// @dev If no custom receiver is set, the Party B itself receives solver fees.
+	function getSolverFeeReceiver(address partyB) external view returns (address) {
+		return LibAccount.getSolverFeeReceiver(partyB);
+	}
+
+	/// @notice Returns the effective account that receives a Party B's solver fees for one tag.
+	/// @dev A tag without an override falls back to the default solver fee receiver.
+	function getSolverFeeReceiverForTag(address partyB, bytes32 tag) external view returns (address) {
+		return LibAccount.getSolverFeeReceiver(partyB, tag);
+	}
+
+	function getOperationalFeeAllowance(
+		address payer,
+		address charger
+	) external view returns (uint256 allowance, uint256 pendingAllowance, uint256 reductionReadyAt, uint256 feeMultiplier) {
+		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
+		feeMultiplier = LibOperationalFee.effectiveFeeMultiplier(s);
+		if (s.reductionReadyAt != 0 && block.timestamp >= s.reductionReadyAt) {
+			allowance = LibOperationalFee.effectiveAllowance(s);
+			pendingAllowance = 0;
+			reductionReadyAt = 0;
+		} else {
+			allowance = s.allowance;
+			pendingAllowance = s.pendingAllowance;
+			reductionReadyAt = s.reductionReadyAt;
+		}
+	}
+
+	function isOperationalFeeCharger(address charger) external view returns (bool) {
+		return LibOperationalFee.isCharger(charger);
+	}
+
 	/// @notice Returns the balance of cross partyB (aggregated allocated balance).
 	/// @param partyB The address of Party B.
 	/// @return The aggregated allocated balance of cross partyB.
@@ -211,6 +307,12 @@ contract ViewFacet is IViewFacet {
 	/// @return A boolean indicating whether legacy deallocate is deprecated (true = must use safeDeallocate).
 	function isLegacyDeallocateDeprecated() external view returns (bool) {
 		return GlobalAppStorage.layout().legacyDeallocateDeprecated;
+	}
+
+	/// @notice Checks if legacy PartyA liquidation pricing is deprecated.
+	/// @return A boolean indicating whether legacy PartyA liquidation entrypoints are disabled.
+	function isLegacyPartyALiquidationDeprecated() external view returns (bool) {
+		return GlobalAppStorage.layout().legacyPartyALiquidationDeprecated;
 	}
 
 	/// @notice Returns the allocated balances of Party Bs for a specific Party A.
@@ -247,19 +349,42 @@ contract ViewFacet is IViewFacet {
 		return cooldownEnd > block.timestamp ? cooldownEnd : block.timestamp;
 	}
 
-	/// @notice Returns the nonce of Party A.
+	/// @notice Returns the upnl counter of Party A (the "nonce" embedded in Muon signatures).
+	/// @dev Alias kept for ABI compatibility; prefer upnlCounterOfPartyA. This is a version counter
+	///      of upnl inputs, not a per-use nonce.
 	/// @param partyA The address of Party A.
-	/// @return The nonce of Party A.
+	/// @return The upnl counter of Party A.
 	function nonceOfPartyA(address partyA) external view returns (uint256) {
-		return AccountStorage.layout().partyANonces[partyA];
+		return AccountStorage.layout().partyAUpnlCounters[partyA];
 	}
 
-	/// @notice Returns the nonce of Party B for a specific Party A.
+	/// @notice Returns the upnl counter of Party B for a specific Party A (the "nonce" embedded in Muon signatures).
+	/// @dev Alias kept for ABI compatibility; prefer upnlCounterOfPartyB. This is a version counter
+	///      of upnl inputs, not a per-use nonce.
 	/// @param partyB The address of Party B.
 	/// @param partyA The address of Party A.
-	/// @return The nonce of Party B for Party A in normal mode or cross partyB mode.
+	/// @return The upnl counter of Party B for Party A in normal mode or cross partyB mode.
 	function nonceOfPartyB(address partyB, address partyA) external view returns (uint256) {
-		return AccountStorage.layout().partyBNonces[partyB][partyA];
+		return AccountStorage.layout().partyBUpnlCounters[partyB][partyA];
+	}
+
+	/// @notice Returns the upnl counter of Party A embedded in Muon signatures.
+	/// @dev Canonical name for nonceOfPartyA: a version counter of upnl inputs, bumped by every
+	///      operation that changes PartyA's upnl and NOT consumed per signature use.
+	/// @param partyA The address of Party A.
+	/// @return The upnl counter of Party A.
+	function upnlCounterOfPartyA(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyAUpnlCounters[partyA];
+	}
+
+	/// @notice Returns the upnl counter of Party B for a specific Party A embedded in Muon signatures.
+	/// @dev Canonical name for nonceOfPartyB: a version counter of upnl inputs, bumped by every
+	///      operation that changes the pair's upnl and NOT consumed per signature use.
+	/// @param partyB The address of Party B.
+	/// @param partyA The address of Party A.
+	/// @return The upnl counter of Party B for Party A in normal mode or cross partyB mode.
+	function upnlCounterOfPartyB(address partyB, address partyA) external view returns (uint256) {
+		return AccountStorage.layout().partyBUpnlCounters[partyB][partyA];
 	}
 
 	/// @notice Checks whether a user is suspended.
@@ -298,6 +423,29 @@ contract ViewFacet is IViewFacet {
 			states[i] = AccountStorage.layout().settlementStates[partyA][partyBs[i]];
 		}
 		return states;
+	}
+
+	/// @notice Returns the recorded PartyB-symbol snapshots of a PartyA snapshot liquidation.
+	/// @dev Reads `liquidationPartyBSymbolSnapshots[partyA][liquidationId][partyB][symbolId]` for each key, preserving input order.
+	///      Unset entries return `isSet = false` with zero values; use `isSet` rather than zero values to detect them.
+	///      The requested `liquidationId` is read as-is, so the result does not prove that liquidation is still active.
+	///      There is no batch-size limit; callers bound the array to their RPC gas budget.
+	/// @param partyA The address of Party A.
+	/// @param liquidationId The signed liquidation identifier.
+	/// @param keys The (partyB, symbolId) pairs to look up.
+	/// @return snapshots One snapshot per key, where `snapshots[i]` corresponds to `keys[i]`.
+	function getPartyALiquidationSnapshots(
+		address partyA,
+		bytes calldata liquidationId,
+		LiquidationPartyBSymbolKey[] calldata keys
+	) external view returns (LiquidationPartyBSymbolSnapshot[] memory snapshots) {
+		mapping(address => mapping(uint256 => LiquidationPartyBSymbolSnapshot)) storage liquidationSnapshots = AccountStorage
+			.layout()
+			.liquidationPartyBSymbolSnapshots[partyA][liquidationId];
+		snapshots = new LiquidationPartyBSymbolSnapshot[](keys.length);
+		for (uint256 i = 0; i < keys.length; i++) {
+			snapshots[i] = liquidationSnapshots[keys[i].partyB][keys[i].symbolId];
+		}
 	}
 
 	/// @notice Returns an array of bridge transactions associated with a bridge.
@@ -432,6 +580,12 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().liquidationTimeout;
 	}
 
+	/// @notice Returns the open position count recorded when the PartyA's current liquidation started, or zero outside liquidation.
+	/// @param partyA The address of party A.
+	function liquidationStartPositionCount(address partyA) external view returns (uint256) {
+		return AccountStorage.layout().liquidationStartPositionCounts[partyA];
+	}
+
 	/// @notice Returns the liquidation timestamp of a party B for a given party A.
 	/// @param partyB The address of party B.
 	/// @param partyA The address of party A.
@@ -508,6 +662,16 @@ contract ViewFacet is IViewFacet {
 		priceValidTime = MuonStorage.layout().priceValidTime;
 	}
 
+	/// @notice Returns the effective UPNL validity period for a Muon function category.
+	/// @return upnlValidTime The nonzero override, or the global UPNL validity when no override is set.
+	/// @return isOverridden True when the returned value comes from a nonzero per-function override.
+	function getMuonFunctionUpnlValidTime(MuonFunction func) external view returns (uint256 upnlValidTime, bool isOverridden) {
+		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		upnlValidTime = muonLayout.upnlValidTimeByFunction[func];
+		isOverridden = upnlValidTime != 0;
+		if (!isOverridden) upnlValidTime = muonLayout.upnlValidTime;
+	}
+
 	/// @notice Retrieves the Muon application ID.
 	/// @return muonAppId The Muon application ID.
 	function getMuonIds() external view returns (uint256 muonAppId) {
@@ -524,6 +688,7 @@ contract ViewFacet is IViewFacet {
 	/// @return externalTransferPaused The external transfer pause state.
 	/// @return emergencyMode The emergency mode state.
 	/// @return partyBOpenPositionsPaused The pause state for party B opening positions and locking quotes.
+	/// @return withdrawAdvancePaused The pause state for early express-provider withdraw advances.
 	function pauseState()
 		external
 		view
@@ -536,7 +701,8 @@ contract ViewFacet is IViewFacet {
 			bool internalTransferPaused,
 			bool externalTransferPaused,
 			bool emergencyMode,
-			bool partyBOpenPositionsPaused
+			bool partyBOpenPositionsPaused,
+			bool withdrawAdvancePaused
 		)
 	{
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
@@ -549,7 +715,8 @@ contract ViewFacet is IViewFacet {
 			appLayout.internalTransferPaused,
 			ExternalTransferStorage.layout().externalTransferPaused,
 			appLayout.emergencyMode,
-			appLayout.partyBOpenPositionsPaused
+			appLayout.partyBOpenPositionsPaused,
+			appLayout.withdrawAdvancePaused
 		);
 	}
 
@@ -565,6 +732,20 @@ contract ViewFacet is IViewFacet {
 	/// @return isPaused True if the Party B is paused from opening new positions.
 	function isPartyBOpenPositionsPaused(address partyB) external view returns (bool isPaused) {
 		return GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB];
+	}
+
+	/// @notice Returns whether an affiliate is in close-only mode because a shutdown is scheduled.
+	/// @param affiliate The address of the affiliate.
+	/// @return isScheduled True if the affiliate has a scheduled shutdown.
+	function isAffiliateShutdownScheduled(address affiliate) external view returns (bool isScheduled) {
+		return GlobalAppStorage.layout().affiliateShutdownTime[affiliate] != 0;
+	}
+
+	/// @notice Returns the scheduled affiliate shutdown timestamp.
+	/// @param affiliate The address of the affiliate.
+	/// @return shutdownTime The timestamp after which ClearingHouse can close remaining affiliate positions, or zero if not scheduled.
+	function getAffiliateShutdownTime(address affiliate) external view returns (uint256 shutdownTime) {
+		return GlobalAppStorage.layout().affiliateShutdownTime[affiliate];
 	}
 
 	/// @notice Retrieves the balance limit per user.
@@ -661,7 +842,7 @@ contract ViewFacet is IViewFacet {
 	/// @notice Checks if being called from instant layer.
 	/// @return Whether the call is from instant layer.
 	function isCallFromInstantLayer() external view returns (bool) {
-		return GlobalAppStorage.layout().callFromInstantLayer;
+		return LibExecutionContext.isCallFromInstantLayer();
 	}
 
 	/// @notice Retrieves the ADL enabled status of a party B.
@@ -671,10 +852,16 @@ contract ViewFacet is IViewFacet {
 		return MAStorage.layout().adlEnabled[partyB];
 	}
 
+	/// @notice Returns whether a Party B must keep locked and pending CVA + LF allocated when deallocating.
+	/// @param partyB The Party B to query.
+	function isPartyBStrictDeallocationEnabled(address partyB) external view returns (bool) {
+		return MAStorage.layout().strictDeallocationEnabledForPartyB[partyB];
+	}
+
 	/// @notice Returns the effective signer address, falling back to msg.sender if no signer is set.
 	/// @return The signer address.
 	function getSigner() external view returns (address) {
-		return GlobalAppStorage.layout().signer == address(0) ? msg.sender : GlobalAppStorage.layout().signer;
+		return LibSigner.getSigner();
 	}
 
 	/// @notice Returns the effective fee for an affiliate, user, and symbol, using the full resolution priority:
@@ -909,23 +1096,5 @@ contract ViewFacet is IViewFacet {
 	/// @return The last external transfer ID.
 	function getLastExternalTransferId() external view returns (uint256) {
 		return ExternalTransferStorage.layout().lastExternalTransferId;
-	}
-
-	/// @notice Calculates the maximum close amount that keeps PartyA at the liquidation threshold.
-	/// @dev Use this to preview the result of `fillCloseRequestToLiquidation` before calling it.
-	///      This helps frontends determine if a partial close is possible and what amount will be filled.
-	/// @param quoteId The ID of the quote with a pending close request.
-	/// @param closedPrice The price at which the position would be closed.
-	/// @param marketPrice The current market price.
-	/// @param upnlPartyA The unrealized PnL of PartyA.
-	/// @return maxCloseAmount The maximum amount that can be closed while keeping PartyA solvent.
-	/// @return canCloseAll True if the full quantityToClose can be closed without making PartyA insolvent.
-	function getMaxCloseAmountToLiquidation(
-		uint256 quoteId,
-		uint256 closedPrice,
-		uint256 marketPrice,
-		int256 upnlPartyA
-	) external view returns (uint256 maxCloseAmount, bool canCloseAll) {
-		return LibSolvency.calculateMaxCloseAmountToLiquidation(quoteId, closedPrice, marketPrice, upnlPartyA);
 	}
 }

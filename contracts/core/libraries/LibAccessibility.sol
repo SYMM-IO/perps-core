@@ -13,10 +13,15 @@ library LibAccessibility {
 	bytes32 public constant EMERGENCY_ADMIN_ROLE = keccak256("EMERGENCY_ADMIN_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant PARTY_B_MANAGER_ROLE = keccak256("PARTY_B_MANAGER_ROLE");
+	bytes32 public constant PLEDGE_TOKEN_MANAGER_ROLE = keccak256("PLEDGE_TOKEN_MANAGER_ROLE");
+	bytes32 public constant PARTY_B_REGISTRAR_ROLE = keccak256("PARTY_B_REGISTRAR_ROLE");
 	bytes32 public constant AFFILIATE_MANAGER_ROLE = keccak256("AFFILIATE_MANAGER_ROLE");
+	bytes32 public constant AFFILIATE_REGISTRAR_ROLE = keccak256("AFFILIATE_REGISTRAR_ROLE");
+	bytes32 public constant ENTITY_METADATA_MANAGER_ROLE = keccak256("ENTITY_METADATA_MANAGER_ROLE");
 	bytes32 public constant DISPUTE_ROLE = keccak256("DISPUTE_ROLE");
 	bytes32 public constant SUSPENDED_FUNDS_WITHDRAWER_ROLE = keccak256("SUSPENDED_FUNDS_WITHDRAWER_ROLE");
 	bytes32 public constant PROTOCOL_CONFIG_ROLE = keccak256("PROTOCOL_CONFIG_ROLE");
+	bytes32 public constant PROTOCOL_LIMITS_ROLE = keccak256("PROTOCOL_LIMITS_ROLE");
 	bytes32 public constant BRIDGE_MANAGER_ROLE = keccak256("BRIDGE_MANAGER_ROLE");
 	bytes32 public constant FEE_ADMIN_ROLE = keccak256("FEE_ADMIN_ROLE");
 	bytes32 public constant COOLDOWN_ADMIN_ROLE = keccak256("COOLDOWN_ADMIN_ROLE");
@@ -25,9 +30,18 @@ library LibAccessibility {
 	bytes32 public constant INTEGRATION_ADMIN_ROLE = keccak256("INTEGRATION_ADMIN_ROLE");
 	bytes32 public constant UNSUSPENDER_ROLE = keccak256("UNSUSPENDER_ROLE");
 	bytes32 public constant SYMBOL_MANAGER_ROLE = keccak256("SYMBOL_MANAGER_ROLE");
+	bytes32 public constant SYMBOL_LISTING_ROLE = keccak256("SYMBOL_LISTING_ROLE");
 	bytes32 public constant WITHDRAW_SPEED_UP_ROLE = keccak256("WITHDRAW_SPEED_UP_ROLE");
-	bytes32 public constant WITHDRAW_FORCE_CANCEL_ROLE = keccak256("WITHDRAW_FORCE_CANCEL_ROLE");
-	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+	// Each role authorizes only its corresponding pause scope; resuming requires UNPAUSER_ROLE.
+	bytes32 public constant GLOBAL_PAUSER_ROLE = keccak256("GLOBAL_PAUSER_ROLE");
+	bytes32 public constant PARTY_A_PAUSER_ROLE = keccak256("PARTY_A_PAUSER_ROLE");
+	bytes32 public constant PARTY_B_PAUSER_ROLE = keccak256("PARTY_B_PAUSER_ROLE");
+	bytes32 public constant ACCOUNTING_PAUSER_ROLE = keccak256("ACCOUNTING_PAUSER_ROLE");
+	bytes32 public constant INTERNAL_TRANSFER_PAUSER_ROLE = keccak256("INTERNAL_TRANSFER_PAUSER_ROLE");
+	bytes32 public constant EXTERNAL_TRANSFER_PAUSER_ROLE = keccak256("EXTERNAL_TRANSFER_PAUSER_ROLE");
+	bytes32 public constant LIQUIDATION_PAUSER_ROLE = keccak256("LIQUIDATION_PAUSER_ROLE");
+	bytes32 public constant INSTANT_LAYER_PAUSER_ROLE = keccak256("INSTANT_LAYER_PAUSER_ROLE");
+	bytes32 public constant WITHDRAW_ADVANCE_PAUSER_ROLE = keccak256("WITHDRAW_ADVANCE_PAUSER_ROLE");
 	bytes32 public constant SUSPENDER_ROLE = keccak256("SUSPENDER_ROLE");
 	bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
 	bytes32 public constant SOFT_LIQUIDATOR_ROLE = keccak256("SOFT_LIQUIDATOR_ROLE");

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Changes from v0.8.5: pledge token whitelisting, a dedicated token manager role, and explicit token approval after upgrade."
+		/>
+		<title>Pledge Token Whitelist - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#what-changed">Changes from v0.8.5</a>
+				<a class="toc-link level-2" href="#new-api">New API and role</a>
+				<a class="toc-link level-2" href="#token-removal">Token removal</a>
+				<a class="toc-link level-2" href="#upgrade">Upgrade impact</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Pledge Token Whitelist</h1>
+							<p class="hero-copy">
+								v0.8.6 restricts new pledge deposits to explicitly approved tokens and gives token approval its own manager role.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="what-changed">Changes from v0.8.5</h2>
+					<p>
+						The <a href="../../v0.8.5/pages/pledge.html">v0.8.5 pledge lifecycle</a> already supports deposits, withdrawal requests,
+						approval, cancellation, and slashing. v0.8.6 adds a token whitelist to the deposit path.
+					</p>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Behavior</th>
+									<th>v0.8.5</th>
+									<th>v0.8.6</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Deposit admission</td>
+									<td>No token whitelist check before the ERC20 transfer.</td>
+									<td><code>depositPledge(token, amount)</code> rejects an unapproved token before calling it.</td>
+								</tr>
+								<tr>
+									<td>Initial token policy</td>
+									<td>No token approval step.</td>
+									<td>Every token starts disabled, including the trading collateral. Each address needs explicit approval.</td>
+								</tr>
+								<tr>
+									<td>Token management</td>
+									<td>No whitelist setter, getter, event, or dedicated role.</td>
+									<td><code>PLEDGE_TOKEN_MANAGER_ROLE</code> controls token approval and removal.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						A deposit into an unapproved token reverts with <code>PledgeFacet: Token is not whitelisted</code>. Setting the
+						protocol&rsquo;s trading collateral does not add that token to the pledge whitelist.
+					</p>
+					<h2 id="new-api">New API and role</h2>
+					<p>The Core diamond exposes two new functions and one event through <code>PledgeFacet</code>:</p>
+					<pre><code class="language-solidity">function setPledgeTokenWhitelist(address token, bool whitelisted) external;
+function isPledgeTokenWhitelisted(address token) external view returns (bool);
+event PledgeTokenWhitelistUpdated(address indexed token, bool whitelisted);</code></pre>
+					<p>
+						The setter requires <code>PLEDGE_TOKEN_MANAGER_ROLE</code>; the getter is public. The setter rejects the zero address, and
+						enabling a token requires deployed code. It emits <code>PledgeTokenWhitelistUpdated</code> on every successful call and
+						remains callable while accounting is paused. The existing role check also rejects calls with a configured signer context.
+					</p>
+					<p>
+						<code>PARTY_B_MANAGER_ROLE</code> does not authorize whitelist updates. It retains pledge withdrawal approval and slashing.
+						Granting the new role gives an operator no withdrawal or slashing authority.
+					</p>
+					<p>
+						Token approval is a compatibility decision: deposits still credit the requested amount in native token units. The whitelist
+						adds no balance-delta, transfer-fee, or rebase adjustment. Managers must review those token behaviors before approval.
+					</p>
+					<h2 id="token-removal">Token removal</h2>
+					<p>
+						Calling <code>setPledgeTokenWhitelist(token, false)</code> stops new deposits of that token. Existing balances and withdrawal
+						requests remain intact; removal adds no restriction to withdrawal requests, cancellation, approval, or slashing. Re-enabling
+						the token permits new deposits again.
+					</p>
+					<h2 id="upgrade">Upgrade impact</h2>
+					<p>
+						<code>PledgeStorage.whitelistedTokens</code> is appended after the existing balance and withdrawal-request mappings,
+						preserving their storage slots. Existing tokens are not automatically approved after the upgrade.
+					</p>
+					<ol>
+						<li>
+							Add the two new selectors and replace the existing <code>PledgeFacet</code> selectors with the updated facet. Integrations
+							must use the updated ABI to manage or read the whitelist; the <code>depositPledge</code> signature is unchanged.
+						</li>
+						<li>
+							Explicitly grant <code>keccak256("PLEDGE_TOKEN_MANAGER_ROLE")</code> to the intended operator through an authorized role
+							administrator. Existing <code>PARTY_B_MANAGER_ROLE</code> grants do not carry over. Fresh system deployments include the
+							new role in the protocol-admin role manifest.
+						</li>
+						<li>
+							Approve every reviewed token through the Core diamond and verify its status before resuming deposits. When the upgrade
+							authority also holds the new role, token approvals can follow the cut in the same authorized batch. Otherwise, coordinate
+							the cut and operator approvals while accounting is paused.
+						</li>
+					</ol>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

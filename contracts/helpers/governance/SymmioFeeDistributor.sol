@@ -4,13 +4,13 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
-import { SafeERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
+import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
 
 interface ISymmioCore {
 	function withdraw(uint256 amount) external;
@@ -24,7 +24,7 @@ interface ISymmioCore {
 /// @notice This contract manages the distribution of fees from the Symmio protocol to various stakeholders
 /// @dev This contract is upgradeable, pausable, and uses role-based access control
 contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessControlEnumerableUpgradeable, UUPSUpgradeable {
-	using SafeERC20Upgradeable for IERC20Upgradeable;
+	using SafeERC20 for IERC20;
 
 	/// @notice Represents a stakeholder with a receiver address and fee share
 	struct Stakeholder {
@@ -89,7 +89,6 @@ contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessContr
 
 		__Pausable_init();
 		__AccessControl_init();
-		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 
@@ -181,7 +180,7 @@ contract SymmioFeeDistributor is Initializable, PausableUpgradeable, AccessContr
 		uint256 len = stakeholders.length;
 		for (uint256 i = 0; i < len; i++) {
 			uint256 share = (stakeholders[i].share * amount) / 1e18;
-			IERC20Upgradeable(collateral).safeTransfer(stakeholders[i].receiver, share);
+			IERC20(collateral).safeTransfer(stakeholders[i].receiver, share);
 			emit FeeDistributed(stakeholders[i].receiver, share);
 		}
 		emit FeesClaimed(amount);

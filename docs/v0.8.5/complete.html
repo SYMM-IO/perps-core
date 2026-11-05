@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>Opening Symmio Core v0.8.5 documentation</title>
+		<script>
+			(() => {
+				const slugs = [
+					"account-layer",
+					"withdraw-system",
+					"virtual-funds",
+					"external-transfer",
+					"express-deposit",
+					"safe-deallocate",
+					"cross-party-b",
+					"oracle-less-trading",
+					"batch-positions",
+					"instant-layer-overview",
+					"instant-layer-partyb-integration",
+					"instant-layer-service-integration",
+					"clearing-house",
+					"soft-liquidation",
+					"adl-close",
+					"pledge",
+					"cross-mode-liquidation-settlement",
+					"liquidation-insurance",
+					"liquidation-escrow",
+					"accumulated-funding",
+					"aggregated-positions",
+					"affiliate-fees",
+					"symbol-types",
+					"custom-quote-data",
+					"muon-keys",
+					"hook-system",
+					"va-lifecycle-hooks",
+					"role-admin-system",
+					"two-step-ownership",
+					"event-changelog",
+					"migration",
+					"setup-task",
+				];
+				let target = "";
+				try {
+					target = decodeURIComponent(location.hash.slice(1));
+				} catch (_error) {}
+				const slug = slugs
+					.slice()
+					.sort((a, b) => b.length - a.length)
+					.find(item => target === `doc-${item}` || target.startsWith(`doc-${item}-`));
+				const fragment = slug && target !== `doc-${slug}` ? `#${encodeURIComponent(target)}` : "";
+				location.replace(slug ? `pages/${slug}.html${fragment}` : "index.html");
+			})();
+		</script>
+	</head>
+	<body>
+		<p><a href="index.html">Open the v0.8.5 chapter list</a></p>
+	</body>
+</html>

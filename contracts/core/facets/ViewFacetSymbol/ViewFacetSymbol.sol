@@ -4,14 +4,29 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { AggregatedDataStorage } from "../../storages/AggregatedDataStorage.sol";
 import { PartyBControlStorage } from "../../storages/PartyBControlStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
-import { QuoteStorage } from "../../storages/QuoteStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { QuoteStorage, Quote } from "../../storages/QuoteStorage.sol";
 import { SymbolStorage, Symbol, SymbolWithType } from "../../storages/SymbolStorage.sol";
+import {
+	SymbolAdjustmentStorage,
+	SymbolAdjustment,
+	AdjustmentState,
+	RestatementPhase,
+	RestatementInventoryCheckpoint,
+	RestatementInventoryTotals
+} from "../../storages/SymbolAdjustmentStorage.sol";
 import { IViewFacetSymbol, PartyBSymbolCount } from "./IViewFacetSymbol.sol";
+import { ISymbolAdjustmentFacet } from "../SymbolAdjustment/ISymbolAdjustmentFacet.sol";
+import { LibSymbol } from "../../libraries/LibSymbol.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
+import { LibQuoteAdjustment, QuoteAdjustmentData } from "../../libraries/LibQuoteAdjustment.sol";
+import { LibLiquidationOvershoot } from "../../libraries/LibLiquidationOvershoot.sol";
 
 contract ViewFacetSymbol is IViewFacetSymbol {
 	/// @notice Returns the details of a symbol by its ID.
@@ -64,7 +79,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 
 		Symbol[] memory symbols = new Symbol[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			symbols[i - start] = symbolLayout.symbols[i + 1];
 			unchecked {
 				++i;
@@ -84,7 +99,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 		SymbolWithType[] memory symbols = new SymbolWithType[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
 			unchecked {
@@ -92,6 +107,21 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 			}
 		}
 		return symbols;
+	}
+
+	/// @notice Returns the effective notional LF rate and whether it is a symbol-specific override.
+	/// @dev Symbol 0 returns the live default and always reports hasOverride as false.
+	function getSymbolMinAcceptableNotionalLFRate(uint256 symbolId) external view returns (uint256 rate, bool hasOverride) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId <= symbolLayout.lastId, "ViewFacetSymbol: Invalid id");
+		return (LibSymbol.minAcceptableNotionalLFRate(symbolId), LibSymbol.hasMinAcceptableNotionalLFRateOverride(symbolId));
+	}
+
+	/// @notice Returns a PartyB's effective close-to-liquidation overshoot rate and override state.
+	function getPartyBLiquidationOvershootRate(address partyB, uint256 symbolId) external view returns (uint256 rate, bool hasOverride) {
+		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
+		require(symbolId <= symbolLayout.lastId, "ViewFacetSymbol: Invalid id");
+		return (LibLiquidationOvershoot.rate(partyB, symbolId), LibLiquidationOvershoot.hasOverride(partyB, symbolId));
 	}
 
 	/// @notice Returns the connected party Bs of Party A.
@@ -121,7 +151,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 		Symbol[] memory symbols = new Symbol[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
 				symbols[i - start] = symbol;
@@ -145,7 +175,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 		SymbolWithType[] memory symbols = new SymbolWithType[](size);
 		uint256 end = start + size;
-		for (uint256 i = start; i < end; ) {
+		for (uint256 i = start; i < end;) {
 			Symbol memory symbol = symbolLayout.symbols[i + 1];
 			if (LibConnections.isSymbolAllowedForPartyA(partyA, symbol.symbolId) && symbol.isValid) {
 				symbols[i - start] = _toSymbolWithType(symbol, symbolLayout.symbolTypes[symbol.symbolId]);
@@ -224,7 +254,7 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		address[] memory connectedPartyBs = accountLayout.connectedPartyBs[partyA];
 		PartyBSymbolCount[] memory result = new PartyBSymbolCount[](connectedPartyBs.length);
 
-		for (uint256 i = 0; i < connectedPartyBs.length; ) {
+		for (uint256 i = 0; i < connectedPartyBs.length;) {
 			address partyB = connectedPartyBs[i];
 			result[i] = PartyBSymbolCount({ partyB: partyB, symbolCount: aggregatedLayout.partyAActiveSymbolsPerPartyB[partyA][partyB].length });
 			unchecked {
@@ -233,5 +263,174 @@ contract ViewFacetSymbol is IViewFacetSymbol {
 		}
 
 		return result;
+	}
+
+	/// @notice Returns the global optimistic-lock sequence incremented by every successful liquidation start.
+	function getLiquidationStartNonce() external view returns (uint256) {
+		return MAStorage.layout().liquidationStartNonce;
+	}
+
+	function getSymbolAdjustment(uint256 symbolId) external view returns (SymbolAdjustment memory) {
+		return SymbolAdjustmentStorage.layout().adjustments[symbolId];
+	}
+
+	function getCumulativeFactor(uint256 symbolId) external view returns (uint256) {
+		return LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+	}
+
+	/// @notice Returns the factor that confirmation would activate or direct restatement would select for the current scheduled adjustment.
+	/// @dev Muon uses this value only for the active-factor route; getCumulativeFactor intentionally returns only confirmed trading state.
+	function getProspectiveCumulativeFactor(uint256 symbolId) external view returns (uint256) {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return _prospectiveCumulativeFactor(symbolId, adjustment);
+	}
+
+	/// @notice Previews every quote field using the open window, scheduled prospective, or confirmed active factor and reverts on unsafe rounding.
+	function previewQuoteAdjustment(
+		uint256 symbolId,
+		uint256 quoteId
+	) external view returns (ISymbolAdjustmentFacet.QuoteAdjustmentPreview memory preview) {
+		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
+		require(quote.symbolId == symbolId, "ViewFacetSymbol: Wrong symbol");
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		uint256 factor =
+			adjustment.restating
+				? adjustment.restatementFactor
+				: adjustment.state == AdjustmentState.SCHEDULED
+					? _prospectiveCumulativeFactor(symbolId, adjustment)
+					: LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		require(factor != 0, "ViewFacetSymbol: Cumulative factor underflow");
+		require(factor != 1e18, "ViewFacetSymbol: No adjustment factor");
+		return _previewQuote(quote, factor);
+	}
+
+	function isSymbolFrozen(uint256 symbolId) external view returns (bool) {
+		return LibSymbolAdjustment.isFrozen(symbolId);
+	}
+
+	/// @notice Returns the highest quote ID invalidated for pending execution by the symbol's latest physical restatement.
+	function getPendingQuoteIdCutoff(uint256 symbolId) external view returns (uint256) {
+		return LibSymbolAdjustment.pendingQuoteIdCutoff(symbolId);
+	}
+
+	/// @notice Returns whether a PENDING, LOCKED, or CANCEL_PENDING quote belongs to an older physical basis.
+	function isPendingQuoteStale(uint256 quoteId) external view returns (bool) {
+		return LibSymbolAdjustment.isPendingQuoteStale(QuoteStorage.layout().quotes[quoteId]);
+	}
+
+	function getRestatementState(uint256 symbolId) external view returns (bool restating, uint256 epoch) {
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return (adjustment.restating, adjustment.restatementEpoch);
+	}
+
+	/// @notice Returns restatement flags and epochs in the same order as the supplied symbol IDs.
+	/// @dev Unset symbols return false and epoch 0, matching getRestatementState.
+	function getRestatementStates(uint256[] calldata symbolIds) external view returns (bool[] memory restating, uint256[] memory epochs) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		restating = new bool[](symbolIds.length);
+		epochs = new uint256[](symbolIds.length);
+		for (uint256 i = 0; i < symbolIds.length;) {
+			SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolIds[i]];
+			restating[i] = adjustment.restating;
+			epochs[i] = adjustment.restatementEpoch;
+			unchecked {
+				++i;
+			}
+		}
+	}
+
+	function getRestatementFundingProgress(
+		uint256 symbolId
+	)
+		external
+		view
+		returns (RestatementPhase phase, uint256 pendingPartyBCount, uint256 fundingCutoffTimestamp, uint256 fundingRestorationTimestamp)
+	{
+		SymbolAdjustment storage adjustment = SymbolAdjustmentStorage.layout().adjustments[symbolId];
+		return (
+			adjustment.restatementPhase,
+			adjustment.pendingFundingPartyBCount,
+			adjustment.fundingCutoffTimestamp,
+			adjustment.fundingRestorationTimestamp
+		);
+	}
+
+	function isRestatementFundingCheckpointed(uint256 symbolId, address partyB) external view returns (bool) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		return adjustment.restating && adjustmentLayout.fundingRateCheckpoints[symbolId][partyB].restatementEpoch == adjustment.restatementEpoch;
+	}
+
+	function getQuoteRestatedEpoch(uint256 quoteId) external view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().quoteRestatedEpoch[quoteId];
+	}
+
+	/// @notice Returns the last restatement epoch in which a quote's old-basis funding was settled by the funding-only pass.
+	function getQuoteFundingSettledEpoch(uint256 quoteId) external view returns (uint256) {
+		return SymbolAdjustmentStorage.layout().quoteFundingSettledEpoch[quoteId];
+	}
+
+	/// @notice Returns the old-basis quantities whose funding still has to be settled before any quote may be rewritten.
+	function getRestatementFundingSettlementProgress(
+		uint256 symbolId
+	) external view returns (uint256 epoch, bool fundingSettlementRequired, uint256 remainingLong, uint256 remainingShort) {
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		RestatementInventoryTotals storage fundingTotals = adjustmentLayout.restatementFundingSettlementTotals[symbolId];
+		return (adjustment.restatementEpoch, adjustment.fundingSettlementRequired, fundingTotals.remainingLong, fundingTotals.remainingShort);
+	}
+
+	/// @notice Returns the current restatement inventory for one PartyB and the symbol-wide remaining quantities.
+	function getRestatementInventoryProgress(
+		uint256 symbolId,
+		address partyB
+	)
+		external
+		view
+		returns (
+			uint256 epoch,
+			bool prepared,
+			uint256 partyBRemainingLong,
+			uint256 partyBRemainingShort,
+			uint256 totalRemainingLong,
+			uint256 totalRemainingShort
+		)
+	{
+		SymbolAdjustmentStorage.Layout storage adjustmentLayout = SymbolAdjustmentStorage.layout();
+		SymbolAdjustment storage adjustment = adjustmentLayout.adjustments[symbolId];
+		RestatementInventoryCheckpoint storage checkpoint = adjustmentLayout.restatementInventoryCheckpoints[symbolId][partyB];
+		RestatementInventoryTotals storage totals = adjustmentLayout.restatementInventoryTotals[symbolId];
+		epoch = adjustment.restatementEpoch;
+		prepared = adjustment.restating && checkpoint.restatementEpoch == epoch;
+		if (prepared) {
+			partyBRemainingLong = checkpoint.remainingLong;
+			partyBRemainingShort = checkpoint.remainingShort;
+		}
+		totalRemainingLong = totals.remainingLong;
+		totalRemainingShort = totals.remainingShort;
+	}
+
+	function _prospectiveCumulativeFactor(uint256 symbolId, SymbolAdjustment storage adjustment) internal view returns (uint256) {
+		uint256 activeFactor = LibSymbolAdjustment.activeCumulativeFactor(symbolId);
+		if (adjustment.state != AdjustmentState.SCHEDULED) return activeFactor;
+		return Math.mulDiv(activeFactor, adjustment.factor, 1e18);
+	}
+
+	function _previewQuote(Quote storage quote, uint256 factor) internal pure returns (ISymbolAdjustmentFacet.QuoteAdjustmentPreview memory preview) {
+		Quote memory quoteSnapshot = quote;
+		QuoteAdjustmentData memory result = LibQuoteAdjustment.preview(quoteSnapshot, factor);
+		return
+			ISymbolAdjustmentFacet.QuoteAdjustmentPreview({
+				factor: result.factor,
+				quantity: result.quantity,
+				openedPrice: result.openedPrice,
+				initialOpenedPrice: result.initialOpenedPrice,
+				requestedOpenPrice: result.requestedOpenPrice,
+				marketPrice: result.marketPrice,
+				closedAmount: result.closedAmount,
+				avgClosedPrice: result.avgClosedPrice,
+				quantityToClose: result.quantityToClose,
+				requestedClosePrice: result.requestedClosePrice
+			});
 	}
 }

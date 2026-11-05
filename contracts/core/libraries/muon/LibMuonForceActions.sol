@@ -16,7 +16,7 @@ library LibMuonForceActions {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 
 		// == SignatureCheck( ==
-		require(block.timestamp <= sig.timestamp + muonLayout.upnlValidTime, "LibMuon: Expired signature");
+		LibMuon.verifyUpnlTimestamp(sig.timestamp, func);
 		// == ) ==
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -25,8 +25,8 @@ library LibMuonForceActions {
 				address(this),
 				partyB,
 				partyA,
-				LibAccount.getPartyBSignatureNonce(partyB, partyA, false),
-				AccountStorage.layout().partyANonces[partyA],
+				LibAccount.getPartyBSignatureUpnlCounter(partyB, partyA, false),
+				AccountStorage.layout().partyAUpnlCounters[partyA],
 				sig.upnlPartyB,
 				sig.upnlPartyA,
 				symbolId,

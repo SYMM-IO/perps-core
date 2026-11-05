@@ -1,9 +1,16 @@
 import { task } from "hardhat/config"
 import { ArgumentType } from "hardhat/types/arguments"
 
-import { readData, writeData } from "../utils/fs.js"
+import { upsertDeploymentRecords } from "../utils/fs.js"
 import { DEPLOYMENT_LOG_FILE } from "./constants.js"
-import { checksumAddress, deployProxyWithFallback, getConnection, getUpgradeAddresses } from "./helpers.js"
+import {
+	assertStandaloneDeploymentTaskAllowed,
+	checksumAddress,
+	deployProxyWithFallback,
+	getConnection,
+	getUpgradeAddresses,
+	requireArg,
+} from "./helpers.js"
 import { logger } from "./logger.js"
 
 export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAccount")
@@ -17,11 +24,12 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 	.addOption({ name: "logData", description: "Write the deployed addresses to a data file", type: ArgumentType.BOOLEAN, defaultValue: true })
 	.setAction(async () => ({
 		default: async ({ symmioAddress: rawSymmio, admin: rawAdmin, logData }, hre) => {
+			await assertStandaloneDeploymentTaskAllowed(hre, "deploy:multiAccount")
 			const { ethers, upgrades } = await getConnection(hre)
 			logger.section("MultiAccount Deployment")
 
-			const admin = checksumAddress(rawAdmin)
-			const symmioAddress = checksumAddress(rawSymmio)
+			const admin = checksumAddress(requireArg(rawAdmin, "admin"))
+			const symmioAddress = checksumAddress(requireArg(rawSymmio, "symmio-address"))
 
 			const [deployer] = await ethers.getSigners()
 
@@ -32,8 +40,11 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 			// Deploy MultiAccount as upgradeable
 			const Factory = await ethers.getContractFactory("MultiAccount")
 			logger.debug("Admin:", admin, "Symmio:", symmioAddress)
-			const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress, SymmioPartyA.bytecode], { initializer: "initialize" })
-			await contract.waitForDeployment()
+			const contract = await deployProxyWithFallback(hre, Factory, [admin, symmioAddress, SymmioPartyA.bytecode], {
+				initializer: "initialize",
+				label: "MultiAccount",
+				proxyKey: "peripherals/MultiAccount",
+			})
 
 			const addresses = {
 				proxy: await contract.getAddress(),
@@ -48,35 +59,15 @@ export const multiaccountTask = task("deploy:multiAccount", "Deploys the MultiAc
 			}
 
 			if (logData) {
-				// Read existing data
-				let deployedData = []
-				try {
-					deployedData = readData(DEPLOYMENT_LOG_FILE)
-				} catch (err) {
-					logger.debug(`Could not read existing JSON file: ${err}`)
-				}
-
-				// Append new data
-				deployedData.push(
+				upsertDeploymentRecords(DEPLOYMENT_LOG_FILE, [
 					{
 						name: "MultiAccountProxy",
 						address: await contract.getAddress(),
 						constructorArguments: [admin, symmioAddress, SymmioPartyA.bytecode],
 					},
-					{
-						name: "MultiAccountAdmin",
-						address: addresses.admin,
-						constructorArguments: [],
-					},
-					{
-						name: "MultiAccountImplementation",
-						address: addresses.implementation,
-						constructorArguments: [],
-					},
-				)
-
-				// Write updated data back to JSON file
-				writeData(DEPLOYMENT_LOG_FILE, deployedData)
+					...(addresses.admin ? [{ name: "MultiAccountAdmin", address: addresses.admin, constructorArguments: [] }] : []),
+					...(addresses.implementation ? [{ name: "MultiAccountImplementation", address: addresses.implementation, constructorArguments: [] }] : []),
+				])
 				logger.debug("Deployed addresses written to JSON file")
 			}
 

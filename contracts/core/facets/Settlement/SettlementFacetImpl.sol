@@ -30,13 +30,28 @@ library SettlementFacetImpl {
 	}
 
 	/// @notice Unified settlement that works for both crossPartyB and normal partyB modes
+	/// @dev Muon verification is skipped only when the caller is settling its own book and
+	///      every partyA in the signature is bound to it (oracle-less trading mode).
 	function settleUpnlUnified(
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices
 	) internal returns (uint256[] memory newPartyAsAllocatedBalances) {
-		bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
-		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.Settlement);
-		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false);
+		TradingModeStorage.Layout storage tradingLayout = TradingModeStorage.layout();
+		address signer = LibSigner.getSigner();
+		bool allPartyAsBound = signer == sig.partyB && tradingLayout.isPartyBBindable[signer];
+		if (allPartyAsBound) {
+			for (uint256 i = 0; i < sig.partyAs.length; i++) {
+				if (tradingLayout.bindState[sig.partyAs[i]].partyB != signer) {
+					allPartyAsBound = false;
+					break;
+				}
+			}
+		}
+		if (!allPartyAsBound) {
+			bool isCrossPartyB = MAStorage.layout().crossModeEnabledForPartyB[sig.partyB];
+			LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, isCrossPartyB, MuonFunction.Settlement);
+		}
+		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, false, true, allPartyAsBound);
 	}
 
 	/// @notice Settles a cross-mode PartyB's uPNL from OTHER solvent counterparties during PartyA liquidation.
@@ -63,6 +78,8 @@ library SettlementFacetImpl {
 		}
 
 		LibMuonUnifiedSettlement.verifyUnifiedSettlement(sig, true, MuonFunction.Settlement);
-		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true);
+		uint256 partyBBalanceBefore = accountLayout.partyBAllocatedBalances[sig.partyB][address(0)];
+		(newPartyAsAllocatedBalances, ) = LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false, false);
+		require(accountLayout.partyBAllocatedBalances[sig.partyB][address(0)] >= partyBBalanceBefore, "SettlementFacet: PartyB balance decreased");
 	}
 }

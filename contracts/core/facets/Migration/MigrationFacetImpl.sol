@@ -14,9 +14,21 @@ import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage, Quote, QuoteStatus, PositionType } from "../../storages/QuoteStorage.sol";
 import { FundingStorage, FundingFee } from "../../storages/FundingStorage.sol";
 import { MigrationStorage } from "../../storages/MigrationStorage.sol";
+import { AggregatedDataStorage, PartiesAggregatedFunding } from "../../storages/AggregatedDataStorage.sol";
+import { MAStorage } from "../../storages/MAStorage.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
+import { IMigrationFacet } from "./IMigrationFacet.sol";
 
 library MigrationFacetImpl {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
+
+	struct AggregateFundingResyncResult {
+		int256 oldPartyAFunding;
+		int256 oldPartyBFunding;
+		int256 oldGlobalFunding;
+		int256 newGlobalFunding;
+	}
 
 	/// @notice Backfills v0.8.5 quote-derived state for existing quotes
 	/// @dev This function is idempotent - calling it multiple times with the same quote IDs will not cause issues.
@@ -28,7 +40,7 @@ library MigrationFacetImpl {
 	///      - partyBPositionsCount[partyB][address(0)] total positions counter
 	///      - connectedPartyBs / isConnectedPartyB via LibConnections.addConnection (bounded by maxPartyAConnectionLimit)
 	/// @param quoteIds Array of quote IDs to migrate
-	/// @return quotesMigrated Number of quotes actually migrated (excluding already migrated or invalid quotes)
+	/// @return quotesMigrated Number of migrated quotes, excluding previously migrated or invalid quotes
 	function migrateQuotes(uint256[] calldata quoteIds) internal returns (uint256 quotesMigrated) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
@@ -48,7 +60,8 @@ library MigrationFacetImpl {
 				quote.quoteStatus == QuoteStatus.PENDING || quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING
 			) {
 				// Backfill reserved open fees for pending/locked quotes
-				LibAccount.reserveOpenTradingFee(quote.partyA, LibQuote.getOpenTradingFee(quoteId));
+				uint256 reservedFee = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));
+				LibAccount.reserveOpenTradingFee(quote.partyA, reservedFee);
 				migrationLayout.quoteMigrated[quoteId] = true;
 				quotesMigrated++;
 				continue;
@@ -100,28 +113,28 @@ library MigrationFacetImpl {
 		// Skip if already initialized (non-zero value)
 		if (quote.accumulatedPaidFunding != 0) return;
 
-		// Update accumulated rates to current epoch
-		LibFundingRate.updateAccumulatedRates(fundingFee);
+		// Calculate the current cumulative fee for this position type lazily,
+		// without rolling the symbol/PartyB funding state
+		uint256 epochsSinceLastUpdate = LibFundingRate.getEpochsSinceLastUpdate(fundingFee);
+		uint256 epochsBeforeLastUpdate = fundingFee.lastUpdatedEpoch - fundingFee.startEpoch;
 
-		// Calculate the current accumulated fee that would be used for this position type
-		int256 rate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
-
-		// Set the accumulatedPaidFunding to snapshot + current rate * epochs since start
-		// This means when funding is charged later, it will be calculated relative to this baseline
+		int256 accumulatedRate = quote.positionType == PositionType.LONG ? fundingFee.accumulatedLongRate : fundingFee.accumulatedShortRate;
+		int256 currentRate = quote.positionType == PositionType.LONG ? fundingFee.currentLongRate : fundingFee.currentShortRate;
 		int256 snapshot = quote.positionType == PositionType.LONG ? fundingFee.snapshotLongFee : fundingFee.snapshotShortFee;
-		uint256 epochsSinceStart = LibFundingRate.getEpochsSinceStart(fundingFee);
-		quote.accumulatedPaidFunding = snapshot + rate * int256(epochsSinceStart);
+
+		// Set the accumulatedPaidFunding baseline; funding charged later is relative to this
+		quote.accumulatedPaidFunding = snapshot + (accumulatedRate * int256(epochsBeforeLastUpdate)) + (currentRate * int256(epochsSinceLastUpdate));
 	}
 
 	/// @notice Migrates partyB locked/pending locked values to the cross bucket (address(0))
 	/// @dev This aggregates per-partyA locked and pending locked balances into the cross bucket.
 	///      Should be called during the v0.8.4 -> v0.8.5 upgrade while the system is paused.
-	///      Allocated balances are NOT aggregated — the cross bucket is an independent pool.
+	///      Allocated balances are not aggregated because the cross bucket is an independent pool.
 	///      This function is idempotent - already migrated partyA pairs are skipped.
 	///      Can be called in multiple batches if the partyAs array is too large for a single transaction.
 	/// @param partyB The partyB to migrate
 	/// @param partyAs Array of partyA addresses that have balances with this partyB
-	/// @return partyAsProcessed Number of partyAs actually processed (excluding already migrated)
+	/// @return partyAsProcessed Number of PartyA entries processed, excluding previously migrated pairs
 	function migrateCrossLockedValues(address partyB, address[] calldata partyAs) internal returns (uint256 partyAsProcessed) {
 		MigrationStorage.Layout storage migrationLayout = MigrationStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -141,5 +154,42 @@ library MigrationFacetImpl {
 			migrationLayout.crossLockedValuesMigrated[partyB][partyA] = true;
 			partyAsProcessed++;
 		}
+	}
+
+	/// @notice Applies one precomputed PartyA/PartyB/symbol/side weighted paid-funding repair.
+	/// @dev Expected pair values reject stale off-chain calculations. The global PartyB value is changed only by this pair's correction.
+	function resyncAggregateFunding(
+		IMigrationFacet.AggregateFundingGroup calldata group
+	) internal returns (AggregateFundingResyncResult memory result) {
+		require(!MAStorage.layout().liquidationStatus[group.partyA], "MigrationFacet: PartyA is in liquidation");
+		group.partyB.requireNotLiquidating(group.partyA);
+
+		AggregatedDataStorage.Layout storage aggregatedLayout = AggregatedDataStorage.layout();
+		PartiesAggregatedFunding storage partyAFunding = aggregatedLayout.partyAAggregatedFundingPerPartyB[group.partyA][group.partyB][
+			group.symbolId
+		][group.positionType];
+		PartiesAggregatedFunding storage partyBFunding = aggregatedLayout.partyBAggregatedFundingPerPartyA[group.partyB][group.partyA][
+			group.symbolId
+		][group.positionType];
+		PartiesAggregatedFunding storage globalFunding = aggregatedLayout.partyBAggregatedFunding[group.partyB][group.symbolId][group.positionType];
+		result.oldPartyAFunding = partyAFunding.weightedPaidFunding;
+		result.oldPartyBFunding = partyBFunding.weightedPaidFunding;
+		result.oldGlobalFunding = globalFunding.weightedPaidFunding;
+
+		// A repeated completed repair is a safe no-op even though its expected-old values are now stale.
+		if (result.oldPartyAFunding == group.newFunding && result.oldPartyBFunding == group.newFunding) {
+			result.newGlobalFunding = result.oldGlobalFunding;
+			return result;
+		}
+
+		require(result.oldPartyAFunding == group.expectedPartyAFunding, "MigrationFacet: PartyA funding changed");
+		require(result.oldPartyBFunding == group.expectedPartyBFunding, "MigrationFacet: PartyB funding changed");
+		result.newGlobalFunding = result.oldGlobalFunding - result.oldPartyBFunding + group.newFunding;
+
+		partyAFunding.weightedPaidFunding = group.newFunding;
+		partyBFunding.weightedPaidFunding = group.newFunding;
+		globalFunding.weightedPaidFunding = result.newGlobalFunding;
+
+		LibAccount.increaseBothUpnlCounters(group.partyB, group.partyA);
 	}
 }

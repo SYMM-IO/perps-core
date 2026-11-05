@@ -5,7 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { IExternalTransferRelayer } from "../../core/interfaces/IExternalTransferRelayer.sol";
-import { AccessControlEnumerable } from "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IAccountFacet } from "../../core/facets/Account/IAccountFacet.sol";
@@ -27,8 +27,8 @@ contract ExternalTransferRelayer is IExternalTransferRelayer, AccessControlEnume
 	/// @param admin The address that receives DEFAULT_ADMIN_ROLE and SETTER_ROLE
 	constructor(address admin) {
 		if (admin == address(0)) revert InvalidAddress();
-		_setupRole(DEFAULT_ADMIN_ROLE, admin);
-		_setupRole(SETTER_ROLE, admin);
+		_grantRole(DEFAULT_ADMIN_ROLE, admin);
+		_grantRole(SETTER_ROLE, admin);
 	}
 
 	/// @notice Handles an external transfer by approving and depositing collateral into the target

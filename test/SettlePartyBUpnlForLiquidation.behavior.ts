@@ -27,8 +27,8 @@ import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/Sig
  *   hedger settleAmount = +50 (must pay user's profit from quoteB)
  *   hedger2 settleAmount = -500 (receives user's loss from quoteA)
  *
- * When hedger deallocates to 0 using inflated uPNL:
- *   After CVA return (22), hedger balance = 22 < settleAmount (50) → shortfall
+ * In the shortfall scenario, hedger deallocates to the CVA/LF backing floor and price falls to 0.1:
+ *   After CVA return (22), hedger balance = 72 < settleAmount (90) → shortfall
  *   The new require reverts, forcing liquidator to call settlePartyBUpnlForLiquidation first.
  */
 export function shouldBehaveLikeSettlePartyBUpnlForLiquidation(): void {
@@ -158,27 +158,30 @@ export function shouldBehaveLikeSettlePartyBUpnlForLiquidation(): void {
 				hedger2Addr = await hedger2.getAddress()
 				user2Addr = await user2.getAddress()
 
-				// Deallocate hedger's cross bucket to 0 using inflated uPNL
-				const crossBalance = (await hedger.getBalanceInfoCrossPartyB()).allocatedBalances
-				if (crossBalance > 0n) {
+				// Deallocate only the amount above the mandatory CVA/LF backing floor.
+				const crossBalanceInfo = await hedger.getBalanceInfoCrossPartyB()
+				const requiredBacking =
+					crossBalanceInfo.lockedCva + crossBalanceInfo.lockedLf + crossBalanceInfo.pendingLockedCva + crossBalanceInfo.pendingLockedLf
+				const maxDeallocate = crossBalanceInfo.allocatedBalances - requiredBacking
+				if (maxDeallocate > 0n) {
 					await context.partyBAccountFacet
 						.connect(hedger.signer)
-						.deallocateForPartyB(crossBalance, ZeroAddress, await getDummySingleUpnlSig(decimal(50000n)))
+						.deallocateForPartyB(maxDeallocate, ZeroAddress, await getDummySingleUpnlSig(decimal(50000n)))
 				}
 
-				// Verify cross balance is now 0
+				// Verify the protected backing remains allocated.
 				const afterDealloc = (await hedger.getBalanceInfoCrossPartyB()).allocatedBalances
-				expect(afterDealloc).to.equal(0n)
+				expect(afterDealloc).to.equal(requiredBacking)
 
-				// Liquidate user at price=0.5e18 → triggers dispute because hedger can't pay
-				await user.liquidateAndSetSymbolPrices([1n], [decimal(5n, 17)], [quoteA, quoteB])
+				// At price 0.1, the 90-unit receivable still exceeds backing plus returned CVA.
+				await user.liquidateAndSetSymbolPrices([1n], [decimal(1n, 17)], [quoteA, quoteB])
 				await user.liquidatePositions([quoteA, quoteB])
 
 				// Resolve the dispute (admin confirms correct amounts, clears disputed flag)
-				// hedger settleAmount = +50e18, hedger2 settleAmount = -500e18
+				// hedger settleAmount = +90e18, hedger2 settleAmount = -900e18
 				await context.partyALiquidationFacet
 					.connect(context.signers.admin)
-					.resolveLiquidationDispute(userAddr, [hedgerAddr, hedger2Addr], [decimal(50n), -decimal(500n)], false)
+					.resolveLiquidationDispute(userAddr, [hedgerAddr, hedger2Addr], [decimal(90n), -decimal(900n)], false)
 			})
 
 			it("Should revert settlePartyALiquidation when cross partyB has insufficient balance", async function () {
@@ -186,7 +189,7 @@ export function shouldBehaveLikeSettlePartyBUpnlForLiquidation(): void {
 				await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedger2Addr])
 
 				// Settle hedger (cross) — should REVERT
-				// hedger balance = 0, after CVA return = 22, but settleAmount = 50 → 22 < 50
+				// hedger balance = 50, after CVA return = 72, but settleAmount = 90 → 72 < 90
 				await expect(
 					context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedgerAddr]),
 				).to.be.revertedWith("LiquidationFacet: Settle cross partyB uPNL first")
@@ -202,11 +205,11 @@ export function shouldBehaveLikeSettlePartyBUpnlForLiquidation(): void {
 				).to.be.revertedWith("LiquidationFacet: Settle cross partyB uPNL first")
 
 				// Realize hedger's uPNL from quoteC (user2 LONG, hedger SHORT)
-				// At price 0.5: hedger profits 50 from this position
-				// upnlPartyB = +50e18 (hedger's total cross uPNL from quoteC)
-				const quoteData: UnifiedQuoteSettlementDataStruct[] = [{ quoteId: quoteC, currentPrice: decimal(5n, 17), partyAIndex: 0n }]
-				const sig = await getDummyUnifiedSettlementSig(hedgerAddr, decimal(50n), [], [user2Addr], [0n], quoteData)
-				await context.settlementFacet.connect(context.signers.liquidator).settlePartyBUpnlForLiquidation(userAddr, sig, [decimal(5n, 17)])
+				// At price 0.1: hedger profits 90 from this position
+				// upnlPartyB = +90e18 (hedger's total cross uPNL from quoteC)
+				const quoteData: UnifiedQuoteSettlementDataStruct[] = [{ quoteId: quoteC, currentPrice: decimal(1n, 17), partyAIndex: 0n }]
+				const sig = await getDummyUnifiedSettlementSig(hedgerAddr, decimal(90n), [], [user2Addr], [0n], quoteData)
+				await context.settlementFacet.connect(context.signers.liquidator).settlePartyBUpnlForLiquidation(userAddr, sig, [decimal(1n, 17)])
 
 				// Verify hedger's cross balance increased
 				const crossBalanceAfterSettle = (await hedger.getBalanceInfoCrossPartyB()).allocatedBalances

@@ -1,9 +1,24 @@
 <!doctype html>
-<html>
+<html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>InstantLayer EIP-712 Demo (no framework)</title>
 		<style>
+			:root {
+				color-scheme: dark;
+				--bg: #0b0b0c;
+				--surface: #121214;
+				--line: #2b2b2f;
+				--ink: #f2efea;
+				--muted: #9d9994;
+				--accent: #ef7872;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
 			body {
 				font-family:
 					ui-sans-serif,
@@ -13,52 +28,150 @@
 					Roboto,
 					Helvetica,
 					Arial;
-				padding: 20px;
+				min-height: 100vh;
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+			}
+
+			.demo-shell {
+				width: min(760px, calc(100% - 32px));
+				min-width: 0;
+				margin: 0 auto;
+				padding: clamp(40px, 8vw, 88px) 0;
+			}
+
+			.demo-kicker {
+				margin: 0 0 12px;
+				color: var(--accent);
+				font:
+					600 11px/1.2 ui-monospace,
+					SFMono-Regular,
+					Menlo,
+					monospace;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+			}
+
+			h1 {
+				max-width: 18ch;
+				margin: 0;
+				font-size: clamp(32px, 6vw, 54px);
+				letter-spacing: -0.045em;
+				line-height: 0.98;
+				overflow-wrap: anywhere;
+			}
+
+			.demo-intro {
+				max-width: 60ch;
+				margin: 18px 0 32px;
+				color: var(--muted);
+				line-height: 1.6;
+			}
+
+			.demo-actions {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 12px;
+				padding: 18px;
+				border: 1px solid var(--line);
+				background: var(--surface);
 			}
 
 			button {
-				padding: 8px 14px;
+				min-height: 44px;
+				padding: 10px 14px;
+				border: 1px solid var(--line);
+				border-radius: 4px;
+				background: transparent;
+				color: var(--ink);
+				font-weight: 650;
 				cursor: pointer;
 			}
 
-			.row {
-				margin: 10px 0;
+			button:hover:not(:disabled) {
+				border-color: var(--accent);
+			}
+
+			button:focus-visible {
+				outline: 2px solid var(--accent);
+				outline-offset: 3px;
+			}
+
+			button:disabled {
+				cursor: not-allowed;
+				opacity: 0.42;
 			}
 
 			code {
-				background: #f4f4f4;
+				background: #1b1b1e;
 				padding: 2px 6px;
 				border-radius: 4px;
+				overflow-wrap: anywhere;
 			}
 
 			.mono {
 				font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 			}
+
+			.demo-status {
+				grid-column: 1 / -1;
+				min-height: 22px;
+				margin: 2px 0 0;
+				color: var(--muted);
+				font-size: 12px;
+			}
+
+			.demo-log {
+				min-height: 180px;
+				margin: 18px 0 0;
+				padding: 16px;
+				border: 1px solid var(--line);
+				background: #080809;
+				color: #c8c4be;
+				font-size: 12px;
+				line-height: 1.55;
+				white-space: pre-wrap;
+			}
+
+			.demo-log:empty::before {
+				content: "Connection and transaction output will appear here.";
+				color: #6f6b67;
+			}
+
+			@media (max-width: 560px) {
+				.demo-actions {
+					grid-template-columns: minmax(0, 1fr);
+				}
+			}
 		</style>
 	</head>
 
 	<body>
-		<h2>InstantLayer → sendQuoteWithAffiliate (EIP-712)</h2>
+		<main class="demo-shell">
+			<p class="demo-kicker">Developer helper</p>
+			<h1>InstantLayer EIP-712 batch demo</h1>
+			<p class="demo-intro">
+				Connect a wallet, confirm the active chain, then sign and execute the configured <code>sendQuoteWithAffiliate</code> batch.
+			</p>
 
-		<div class="row">
-			<button id="connect">Connect Wallet</button>
-			<span id="who" class="mono"></span>
-		</div>
+			<section class="demo-actions" aria-label="Wallet demo steps">
+				<button id="connect">1. Connect wallet</button>
+				<button id="executeBatch" disabled>2. Sign and execute batch</button>
+				<p id="who" class="mono demo-status" aria-live="polite">Wallet not connected.</p>
+			</section>
 
-		<div class="row">
-			<button id="executeBatch">Sign & Execute Batch</button>
-		</div>
-
-		<!-- <div class="row">
+			<!-- <div class="row">
 			<button id="executeTemplate">Sign & Execute Batch using Template</button>
 		</div> -->
 
-		<pre id="log" class="mono" style="white-space: pre-wrap"></pre>
+			<pre id="log" class="mono demo-log" aria-live="polite"></pre>
+		</main>
 
 		<!-- Ethers v6 ESM (CDN) -->
 		<script type="module">
-			import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.min.js";
 			import { BASE_TYPES, PartyAFacetAbi, InstantLayerAbi, FN_SIGNATURE } from "./constants.js";
+			import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.min.js";
 
 			// ===========================
 			// 🔧 CONFIG — FILL THESE IN
@@ -268,17 +381,38 @@
 			// UI events
 			// ===========================
 			let context = null;
-			document.getElementById("connect").onclick = async () => {
+			const connectButton = document.getElementById("connect");
+			const executeButton = document.getElementById("executeBatch");
+			const whoEl = document.getElementById("who");
+			connectButton.onclick = async () => {
+				connectButton.disabled = true;
+				connectButton.textContent = "Connecting…";
 				try {
-					context = await connectWallet();
+					context = await connectWallet({
+						onAccountsChanged: accounts => {
+							if (accounts.length) return;
+							context = null;
+							executeButton.disabled = true;
+							whoEl.textContent = "Wallet disconnected.";
+						},
+					});
+					executeButton.disabled = false;
 				} catch (e) {
+					context = null;
+					executeButton.disabled = true;
+					whoEl.textContent = "Wallet connection failed.";
 					log("Connect error:", e.message ?? e);
+				} finally {
+					connectButton.disabled = false;
+					connectButton.textContent = context ? "Wallet connected" : "1. Connect wallet";
 				}
 			};
 
-			document.getElementById("executeBatch").onclick = async () => {
+			executeButton.onclick = async () => {
+				if (!context) return;
+				executeButton.disabled = true;
+				executeButton.textContent = "Waiting for wallet…";
 				try {
-					if (!context) context = await connectWallet();
 					const { provider, signer, who, chainId } = context;
 
 					// --------------------------
@@ -338,8 +472,6 @@
 					// 5) Call InstantLayer.executeBatch
 					const instant = new ethers.Contract(INSTANT_LAYER_ADDR, InstantLayerAbi, signer);
 
-			
-
 					const OPERATOR_ROLE = await instant.OPERATOR_ROLE();
 					let tx = await instant.grantRole(OPERATOR_ROLE, who);
 					await tx.wait();
@@ -351,6 +483,9 @@
 				} catch (e) {
 					console.error(e);
 					log("ERROR:", e.reason ?? e.message ?? String(e));
+				} finally {
+					executeButton.disabled = !context;
+					executeButton.textContent = "2. Sign and execute batch";
 				}
 			};
 			// document.getElementById("executeTemplate").onclick = async () => {

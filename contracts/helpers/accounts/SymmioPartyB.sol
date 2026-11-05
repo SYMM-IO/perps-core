@@ -4,17 +4,25 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SignatureChecker } from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 interface ISymmio {
-	function isCallFromInstantLayer() external view returns (bool);
+	function hasRole(address user, bytes32 role) external view returns (bool);
+
 	function adlClose(uint256 quoteId, uint256 amount, uint256 price) external;
+
+	function setFundingFee(
+		uint256[] calldata symbolIds,
+		int256[] calldata longFees,
+		int256[] calldata shortFees,
+		int256[] calldata marketPrices
+	) external;
 }
 
 /// @notice PartyB (solver/hedger) contract that manages positions and executes calls against Symmio
@@ -24,12 +32,21 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 	bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 	bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
+	bytes32 public constant MULTICAST_WHITELIST_ROLE = keccak256("MULTICAST_WHITELIST_ROLE");
+	/// @dev The Symmio CORE diamond's INSTANT_LAYER_ROLE. The InstantLayer holds this role on core, so checking the
+	///      direct caller against it authorizes only the real InstantLayer -- not arbitrary code running during a batch.
+	bytes32 private constant CORE_INSTANT_LAYER_ROLE = keccak256("INSTANT_LAYER_ROLE");
+	uint8 private constant FUNDING_SKIP_STALE_NONCE = 0;
+	uint8 private constant FUNDING_SKIP_EXPIRED_DEADLINE = 1;
 
-	// Storage layout matches v0.8.4 SymmioPartyB for upgrade compatibility
-	address public symmioAddress; // slot N+0
-	mapping(bytes4 => bool) public restrictedSelectors; // slot N+1
-	mapping(address => bool) public multicastWhitelist; // slot N+2
-	address public signer; // slot N+3 (was _guardCounter in v0.8.4, always 0 after tx)
+	/// @dev OpenZeppelin 5 inherited modules use ERC-7201 namespaces and therefore do not consume PartyB's linear storage slots.
+	///      For fresh proxies, the fields below establish PartyB's initial storage layout. This implementation is not compatible with
+	///      PartyB proxies deployed using OpenZeppelin 4. After deployment, preserve these fields and append new state only.
+	address public symmioAddress;
+	mapping(bytes4 => bool) public restrictedSelectors;
+	mapping(address => bool) public multicastWhitelist;
+	address public signer;
+	mapping(uint256 => uint256) public fundingNonce; // symbolId => last accepted funding update nonce
 
 	/// @custom:oz-upgrades-unsafe-allow constructor
 	constructor() {
@@ -42,11 +59,11 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	function initialize(address admin, address symmioAddress_) public initializer {
 		__Pausable_init();
 		__AccessControl_init();
-		__UUPSUpgradeable_init();
 
 		_grantRole(DEFAULT_ADMIN_ROLE, admin);
 		_grantRole(TRUSTED_ROLE, admin);
 		_grantRole(MANAGER_ROLE, admin);
+		_grantRole(MULTICAST_WHITELIST_ROLE, admin);
 		symmioAddress = symmioAddress_;
 	}
 
@@ -55,6 +72,13 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @notice Emitted when an `adlClose` attempt reverts for a quote, including the raw revert data
 	/// @dev The raw data is the ABI-encoded revert payload (e.g., `Error(string)` / `Panic(uint256)` / custom error)
 	event ADLSkip(uint256 quoteId, uint256 amount, uint256 price, bytes revertData);
+
+	/// @notice Emitted when a funding update is skipped instead of forwarded to Symmio
+	/// @param symbolIds The symbols whose funding updates were skipped
+	/// @param nonces The solver engine funding nonces supplied for the skipped symbols
+	/// @param deadline The timestamp after which the update is no longer valid
+	/// @param reason Skip reason: 0 = stale nonce, 1 = expired deadline
+	event FundingFeeUpdateSkipped(uint256[] symbolIds, uint256[] nonces, uint256 deadline, uint8 reason);
 
 	/// @notice Emitted when the Symmio address is updated
 	event SetSymmioAddress(address oldSymmioAddress, address newSymmioAddress);
@@ -83,7 +107,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @notice Allows or disallows Party B to call a method from a specific contract
 	/// @param addr The address to set the state for
 	/// @param state The state to set for the address
-	function setMulticastWhitelist(address addr, bool state) external onlyRole(MANAGER_ROLE) {
+	function setMulticastWhitelist(address addr, bool state) external onlyRole(MULTICAST_WHITELIST_ROLE) {
 		require(addr != address(this), "SymmioPartyB: Invalid address");
 		multicastWhitelist[addr] = state;
 		emit SetMulticastWhitelist(addr, state);
@@ -93,7 +117,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @param token The address of the ERC20 token
 	/// @param amount The amount of tokens to approve
 	function _approve(address token, uint256 amount) external onlyRole(TRUSTED_ROLE) whenNotPaused {
-		require(IERC20Upgradeable(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
+		require(IERC20(token).approve(symmioAddress, amount), "SymmioPartyB: Not approved");
 	}
 
 	/* ──────────────────────────────── ADL ──────────────────────────────── */
@@ -109,7 +133,9 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		require(amounts.length == len && prices.length == len, "SymmioPartyB: Array length mismatch");
 		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
 		require(
-			hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+			hasRole(MANAGER_ROLE, msg.sender) ||
+				hasRole(TRUSTED_ROLE, msg.sender) ||
+				ISymmio(symmioAddress).hasRole(msg.sender, CORE_INSTANT_LAYER_ROLE),
 			"SymmioPartyB: Invalid access"
 		);
 
@@ -134,7 +160,9 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 				_checkRole(MANAGER_ROLE, msg.sender);
 			} else {
 				require(
-					hasRole(MANAGER_ROLE, msg.sender) || hasRole(TRUSTED_ROLE, msg.sender) || ISymmio(symmioAddress).isCallFromInstantLayer(),
+					hasRole(MANAGER_ROLE, msg.sender) ||
+						hasRole(TRUSTED_ROLE, msg.sender) ||
+						ISymmio(symmioAddress).hasRole(msg.sender, CORE_INSTANT_LAYER_ROLE),
 					"SymmioPartyB: Invalid access"
 				);
 			}
@@ -152,10 +180,121 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 		}
 	}
 
-	/// @notice Executes multiple calls to the Symmio contract
+	/// @notice Sets Symmio funding fees unless the update is expired or a symbol's nonce is older than its last accepted funding nonce.
+	/// @dev Expired and lower nonce symbol updates are skipped without reverting. Equal nonce updates are accepted so the
+	///      engine can replace or retry the latest funding update without breaking the surrounding PartyB template.
+	function setFundingFee(
+		uint256[] calldata symbolIds,
+		int256[] calldata longFees,
+		int256[] calldata shortFees,
+		int256[] calldata marketPrices,
+		uint256[] calldata nonces,
+		uint256 deadline
+	) external whenNotPaused {
+		require(symmioAddress != address(0), "SymmioPartyB: Invalid address");
+		require(
+			hasRole(MANAGER_ROLE, msg.sender) ||
+				hasRole(TRUSTED_ROLE, msg.sender) ||
+				ISymmio(symmioAddress).hasRole(msg.sender, CORE_INSTANT_LAYER_ROLE),
+			"SymmioPartyB: Invalid access"
+		);
+
+		uint256 len = symbolIds.length;
+		if (block.timestamp > deadline) {
+			emit FundingFeeUpdateSkipped(symbolIds, nonces, deadline, FUNDING_SKIP_EXPIRED_DEADLINE);
+			return;
+		}
+		require(
+			longFees.length == len && shortFees.length == len && marketPrices.length == len && nonces.length == len,
+			"SymmioPartyB: Array length mismatch"
+		);
+
+		uint256 staleCount;
+		for (uint256 i = 0; i < len;) {
+			if (nonces[i] < fundingNonce[symbolIds[i]]) staleCount++;
+			unchecked {
+				i++;
+			}
+		}
+
+		if (staleCount == len) {
+			emit FundingFeeUpdateSkipped(symbolIds, nonces, deadline, FUNDING_SKIP_STALE_NONCE);
+			return;
+		}
+		if (staleCount == 0) {
+			for (uint256 i = 0; i < len;) {
+				fundingNonce[symbolIds[i]] = nonces[i];
+				unchecked {
+					i++;
+				}
+			}
+			ISymmio(symmioAddress).setFundingFee(symbolIds, longFees, shortFees, marketPrices);
+			return;
+		}
+
+		uint256 acceptedCount = len - staleCount;
+		uint256[] memory skippedSymbolIds = new uint256[](staleCount);
+		uint256[] memory skippedNonces = new uint256[](staleCount);
+		uint256[] memory acceptedSymbolIds = new uint256[](acceptedCount);
+		int256[] memory acceptedLongFees = new int256[](acceptedCount);
+		int256[] memory acceptedShortFees = new int256[](acceptedCount);
+		int256[] memory acceptedMarketPrices = new int256[](acceptedCount);
+		uint256 skippedIndex;
+		uint256 acceptedIndex;
+
+		for (uint256 i = 0; i < len;) {
+			uint256 symbolId;
+			uint256 nonce;
+			int256 longFee;
+			int256 shortFee;
+			int256 marketPrice;
+			assembly ("memory-safe") {
+				let itemOffset := mul(i, 32)
+				symbolId := calldataload(add(symbolIds.offset, itemOffset))
+				nonce := calldataload(add(nonces.offset, itemOffset))
+				longFee := calldataload(add(longFees.offset, itemOffset))
+				shortFee := calldataload(add(shortFees.offset, itemOffset))
+				marketPrice := calldataload(add(marketPrices.offset, itemOffset))
+			}
+			if (nonce < fundingNonce[symbolId]) {
+				skippedSymbolIds[skippedIndex] = symbolId;
+				skippedNonces[skippedIndex] = nonce;
+				skippedIndex++;
+			} else {
+				fundingNonce[symbolId] = nonce;
+				acceptedSymbolIds[acceptedIndex] = symbolId;
+				acceptedLongFees[acceptedIndex] = longFee;
+				acceptedShortFees[acceptedIndex] = shortFee;
+				acceptedMarketPrices[acceptedIndex] = marketPrice;
+				acceptedIndex++;
+			}
+			unchecked {
+				i++;
+			}
+		}
+
+		emit FundingFeeUpdateSkipped(skippedSymbolIds, skippedNonces, deadline, FUNDING_SKIP_STALE_NONCE);
+		ISymmio(symmioAddress).setFundingFee(acceptedSymbolIds, acceptedLongFees, acceptedShortFees, acceptedMarketPrices);
+	}
+
+	/// @notice Executes multiple calls to Symmio; entries targeting this PartyB's `setFundingFee`
+	///         selector are routed back to self so the nonce-gate runs.
 	/// @param _callDatas An array of call data to be used for the calls
 	function _call(bytes[] calldata _callDatas) external whenNotPaused {
-		for (uint8 i; i < _callDatas.length; i++) _executeCall(symmioAddress, _callDatas[i]);
+		for (uint8 i; i < _callDatas.length; i++) {
+			bytes calldata cd = _callDatas[i];
+			if (cd.length >= 4 && bytes4(cd[:4]) == this.setFundingFee.selector) {
+				(bool success, bytes memory resultData) = address(this).delegatecall(cd);
+				if (!success) {
+					if (resultData.length == 0) revert("SymmioPartyB: Execution reverted");
+					assembly {
+						revert(add(resultData, 32), mload(resultData))
+					}
+				}
+			} else {
+				_executeCall(symmioAddress, cd);
+			}
+		}
 	}
 
 	/// @notice Executes multiple calls to specified destination addresses
@@ -171,7 +310,7 @@ contract SymmioPartyB is Initializable, PausableUpgradeable, AccessControlUpgrad
 	/// @param token The address of the ERC20 token
 	/// @param amount The amount of tokens to withdraw
 	function withdrawERC20(address token, uint256 amount) external onlyRole(MANAGER_ROLE) {
-		require(IERC20Upgradeable(token).transfer(msg.sender, amount), "SymmioPartyB: Not transferred");
+		require(IERC20(token).transfer(msg.sender, amount), "SymmioPartyB: Not transferred");
 	}
 
 	/// @notice Pauses the contract

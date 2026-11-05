@@ -5,7 +5,6 @@
 pragma solidity >=0.8.18;
 
 import { IPartiesEvents, QuoteStatus } from "../../interfaces/IPartiesEvents.sol";
-import { SingleUpnlSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyBQuoteActionsEvents is IPartiesEvents {
 	event LockQuote(address partyB, uint256 quoteId);

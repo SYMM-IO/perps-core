@@ -14,7 +14,8 @@ import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibPartiesEvents } from "../../libraries/LibPartiesEvents.sol";
 
 contract PartyBEmergencyActionsFacet is Accessibility, Pausable, IPartyBEmergencyActionsFacet {
-	/// @notice Allows Party B to emergency close a position for the specified quote.
+	/// @notice Allows Party B to fully close a position during a configured emergency or when adjustment rounding makes it unrestatable.
+	/// @dev The adjustment-dust exception applies while the symbol is frozen. The Muon signature must use the quote's current stored basis.
 	/// @param quoteId The ID of the quote for which the position is emergency closed.
 	/// @param upnlSig The Muon signature containing the unrealized profit and loss (UPNL) and the closing price.
 	function emergencyClosePosition(

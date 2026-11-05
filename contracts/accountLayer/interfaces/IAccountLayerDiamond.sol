@@ -9,8 +9,26 @@ import { SubAccountCreationData, SubAccountDetail } from "../storages/AccountSto
 /// @notice Subset of the AccountLayer diamond interface used by AccountManager for cross-facet calls
 interface IAccountLayerDiamond {
 	/// @notice Sets the global signer for protocol-level operations
+	/// @dev Always opens an unconfined session, and clears any scope left by setSignerScoped.
 	/// @param _signer The new signer address
 	function setSigner(address _signer) external;
+
+	/// @notice Sets the global signer and confines the session to a single account family
+	/// @dev Required when executing on behalf of a delegate: the owner-level signer alone would
+	///      satisfy onlyAccountOwner for every sub-account the owner holds.
+	/// @param _signer The new signer address
+	/// @param _scope Canonical sub-account to confine the session to (address(0) for unconfined)
+	function setSignerScoped(address _signer, address _scope) external;
+
+	/// @notice Installs the effective signer for this transaction, or clears it with zero.
+	/// @param signerOrZero Signer to install, or address(0) to end the signer scope.
+	function setTransientSigner(address signerOrZero) external;
+
+	/// @notice Installs the effective signer for this transaction, confined to one account family.
+	/// @dev Transient counterpart of setSignerScoped, used when executing on behalf of a delegate.
+	/// @param signerOrZero Signer to install, or address(0) to end the signer scope.
+	/// @param scope Canonical sub-account to confine the session to (address(0) for unconfined)
+	function setTransientSignerScoped(address signerOrZero, address scope) external;
 
 	/// @notice Creates sub-accounts under an affiliate
 	/// @param affiliate The affiliate address

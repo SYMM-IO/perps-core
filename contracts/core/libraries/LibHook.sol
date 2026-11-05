@@ -4,20 +4,20 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
-import { SharedEvents } from "./SharedEvents.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 import { ISymmioHook } from "../interfaces/ISymmioHook.sol";
 
 /// @title LibHook
-/// @notice Library for safely calling hooks with signer protection
-/// @dev Clears the signer before calling hooks to prevent hooks from impersonating users
+/// @notice Library for safely calling hooks with signer and execution-context protection
+/// @dev Clears signer and InstantLayer privileges before calling untrusted hooks.
 library LibHook {
 	/// @dev Reverts when a hook fails.
 	error HookReverted(address hook, bytes4 selector, uint256 quoteId, bytes reason);
 
-	/// @notice Safely calls a hook with signer cleared
-	/// @dev Clears signer before call to prevent impersonation attacks, restores after
+	/// @notice Safely calls a hook with signer and InstantLayer privileges cleared.
+	/// @dev Both scopes are restored before returning. A hook revert still reverts the parent
+	///      operation with the existing HookReverted error and EVM rollback semantics.
 	/// @param hook The hook contract address
 	/// @param data The encoded function call data
 	/// @param quoteId The quote ID for event emission on failure
@@ -25,18 +25,20 @@ library LibHook {
 		if (hook == address(0)) return;
 
 		// Save and clear signer before external call to prevent hook from impersonating user
-		address previousSigner = GlobalAppStorage.layout().signer;
-		GlobalAppStorage.layout().signer = address(0);
+		(address previousSigner, bool wasTransientScoped) = LibExecutionContext.clearSignerForExternalCall();
+		uint256 executionContext = LibExecutionContext.suspendExecutionContextForExternalCall();
 
 		(bool success, bytes memory reason) = hook.call(data);
+
+		// Restore both scopes before handling the result. This keeps the boundary explicit
+		// even though a later revert would also roll every persistent/transient write back.
+		LibExecutionContext.restoreExecutionContextAfterExternalCall(executionContext);
+		LibExecutionContext.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 
 		// NOTE: We intentionally revert on hook failures for now to avoid inconsistency
 		if (!success) {
 			revert HookReverted(hook, bytes4(data), quoteId, reason);
 		}
-
-		// Restore signer after hook call
-		GlobalAppStorage.layout().signer = previousSigner;
 	}
 
 	/// @notice Calls onCancelQuote on both affiliate and system hooks.

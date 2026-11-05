@@ -5,13 +5,16 @@
 pragma solidity >=0.8.18;
 
 import { EntityMetadata } from "../../storages/MAStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { IExecutionContextEvents } from "../ExecutionContext/IExecutionContextEvents.sol";
 
-interface IControlEvents {
+interface IControlEvents is IExecutionContextEvents {
 	event RoleGranted(bytes32 role, address user);
 	event RoleRevoked(bytes32 role, address user);
 	event RoleAdminAdded(bytes32 role, address admin);
 	event RoleAdminRemoved(bytes32 role, address admin);
 	event SetMuonConfig(uint256 upnlValidTime, uint256 priceValidTime);
+	event SetMuonFunctionUpnlValidTime(MuonFunction indexed func, uint256 upnlValidTime);
 	event SetMuonIds(uint256 muonAppId);
 	event SetCollateral(address collateral);
 	event AddSymbol(
@@ -25,6 +28,12 @@ interface IControlEvents {
 		uint256 fundingRateWindowTime
 	);
 	event SetFeeCollector(address affiliate, address oldFeeCollector, address newFeeCollector);
+	event OperationalFeeChargerRegistered(address indexed charger);
+	event OperationalFeeChargerUnregistered(address indexed charger);
+	event OperationalFeeReductionDelaySet(uint256 oldDelay, uint256 newDelay);
+	event SetOperationalFeeReceiver(address indexed charger, address indexed receiver);
+	event SetSolverFeeReceiver(address indexed partyB, address indexed receiver);
+	event SetSolverFeeReceiverForTag(address indexed partyB, address indexed receiver, bytes32 indexed tag);
 	event SetAffiliateFeeForUser(
 		address affiliate,
 		address user,
@@ -45,6 +54,13 @@ interface IControlEvents {
 		uint256 minAcceptableQuoteValue,
 		uint256 minAcceptablePortionLF
 	);
+	event SetSymbolMinAcceptableNotionalLFRate(
+		uint256 indexed symbolId,
+		uint256 oldMinAcceptableNotionalLFRate,
+		uint256 newMinAcceptableNotionalLFRate,
+		bool hasOverride
+	);
+	event SetPartyBLiquidationOvershootRate(address indexed partyB, uint256 indexed symbolId, uint256 oldRate, uint256 newRate, bool hasOverride);
 	event SetSymbolTradingFee(uint256 symbolId, uint256 oldTradingFee, uint256 tradingFee);
 	event SetSymbolMaxLeverage(uint256 symbolId, uint256 oldMaxLeverage, uint256 maxLeverage);
 	event SetDeallocateCooldown(uint256 oldDeallocateCooldown, uint256 newDeallocateCooldown);
@@ -76,6 +92,7 @@ interface IControlEvents {
 	event PauseInternalTransfer();
 	event PauseExternalTransfer();
 	event PauseInstantLayer();
+	event PauseWithdrawAdvance();
 	event ActiveEmergencyMode();
 	event UnpauseGlobal();
 	event UnpauseLiquidation();
@@ -86,6 +103,7 @@ interface IControlEvents {
 	event UnpauseInternalTransfer();
 	event UnpauseExternalTransfer();
 	event UnpauseInstantLayer();
+	event UnpauseWithdrawAdvance();
 	event DeactiveEmergencyMode();
 	event SetLiquidationTimeout(uint256 oldLiquidationTimeout, uint256 newLiquidationTimeout);
 	event SetSuspendedAddress(address user, bool isSuspended);
@@ -93,10 +111,13 @@ interface IControlEvents {
 	event SetBalanceLimitPerUser(uint256 balanceLimitPerUser);
 	event SetCrossPartyBModeActivated(bool oldValue, bool newValue);
 	event SetLegacyDeallocateDeprecated(bool oldValue, bool newValue);
+	event SetLegacyPartyALiquidationDeprecated(bool oldValue, bool newValue);
 	event RegisterPartyB(address partyB);
 	event DeregisterPartyB(address partyB, uint256 index);
 	event RegisterAffiliate(address affiliate);
 	event DeregisterAffiliate(address affiliate);
+	event ScheduleAffiliateShutdown(address indexed affiliate, uint256 shutdownTime);
+	event CancelAffiliateShutdown(address indexed affiliate);
 	event AddBridge(address bridge);
 	event RemoveBridge(address bridge);
 	event SetLiquidationInsuranceVaultParams(address insuranceVault, uint256 maxLiquidationProfit);
@@ -111,6 +132,7 @@ interface IControlEvents {
 	event RemoveRelayerForExternalTransferTarget(address target);
 	event RegisterHook(address affiliate, address hook);
 	event SetADLEnabled(address partyB, bool enabled);
+	event SetPartyBStrictDeallocation(address indexed partyB, bool enabled);
 	event SetEntityMetadata(address entity, EntityMetadata metadata);
 	event SetMaxPartyAConnectionLimit(uint256 maxLimit);
 	event SetMaxWithdrawParts(uint256 maxWithdrawParts);
@@ -123,7 +145,6 @@ interface IControlEvents {
 	event SetMinWithdrawCooldown(uint256 lastMinWithdrawCooldown, uint256 newMinWithdrawCooldown);
 	event SetPureVirtualCancelBlackout(uint256 oldBlackout, uint256 newBlackout);
 	event LegacyWithdrawalDeprecated();
-	event SignerSet(address signer);
 	event SetMinAffiliateFee(uint256 oldMinAffiliateFee, uint256 newMinAffiliateFee);
 	event SetSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector);
 	event SetPartyBBindable(address partyB, bool bindable);

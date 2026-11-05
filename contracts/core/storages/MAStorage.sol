@@ -145,6 +145,33 @@ library MAStorage {
 		///      isolated per-PartyA allocations. When true, uses address(0) for allocation
 		///      mappings and has different liquidation flow via ClearingHouse.
 		mapping(address => bool) crossModeEnabledForPartyB;
+		/// @notice Optional receiver for a charger's operational fees
+		/// @dev address(0) means operational fees are credited to the charger itself.
+		///      Generalized from per-PartyB to per-charger in v0.8.6.
+		mapping(address => address) operationalFeeReceivers;
+		/// @notice Registry of non-PartyB addresses authorized to charge the standing operational fee.
+		/// @dev Registered PartyBs are operational-fee chargers by default; this registry is for services such as relayers.
+		mapping(address => bool) operationalFeeChargers;
+		/// @notice Timelock (seconds) before a requested operational-fee allowance reduction takes effect.
+		/// @dev Instant raises bypass this; only reductions/revokes are delayed. Protects a solver that
+		///      already hedged from a revoke front-run. Set by COOLDOWN_ADMIN_ROLE (a timing knob, like the other cooldowns).
+		uint256 operationalFeeReductionDelay;
+		/// @notice Whether Party B must keep its locked and pending CVA + LF backed by allocated collateral when deallocating.
+		/// @dev Disabled by default for backward compatibility. Configured per Party B by PARTY_B_MANAGER_ROLE.
+		mapping(address => bool) strictDeallocationEnabledForPartyB;
+		/// @notice Optional receiver for a Party B's solver fees
+		/// @dev address(0) means solver fees are credited to the Party B itself. Mirrors `operationalFeeReceivers`,
+		///      but kept separate so a solver can route trading revenue and operational costs to different accounts.
+		///      Set by the Party B itself or by PARTY_B_MANAGER_ROLE.
+		mapping(address => address) solverFeeReceivers;
+		/// @notice Optional solver fee receiver overrides keyed by Party B and arbitrary bytes32 tag.
+		/// @dev A zero receiver clears the override and falls back to `solverFeeReceivers`, then to the Party B itself.
+		///      The tag is caller-chosen; short labels can be right-padded ASCII, longer ones hashed off-chain.
+		mapping(address => mapping(bytes32 => address)) solverFeeReceiversByTag;
+		/// @notice Monotonic sequence incremented whenever a new PartyA, isolated PartyB, or cross PartyB liquidation starts.
+		/// @dev Symbol Adjustment uses this as a global optimistic lock: Operations reads it with its off-chain liquidation
+		///      snapshot and supplies the expected value to startRestatement. Appended for storage-layout compatibility.
+		uint256 liquidationStartNonce;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

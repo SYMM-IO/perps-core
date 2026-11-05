@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Affiliates can now set custom open and close fees at four priority levels: per user+symbol, per user default, per symbol, or affiliate-wide default. The close fee is factored into solvency checks after position closure. Also adds fillCloseRequestToLiquidation — when a normal close would push…"
+		/>
+		<title>Custom open/close fee for affiliates - Symmio Core v0.8.5</title>
+		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
+		<script>
+			// Applied before first paint so a saved light preference does not flash dark.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../../v0.8.6/assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../../v0.8.6/assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.5">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.5</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Toggle color theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#doc-affiliate-fees-close-fee-in-solvency-checks">Close fee in solvency checks</a>
+				<a class="toc-link level-3" href="#doc-affiliate-fees-fllcloserequesttoliquidation">FllCloseRequestToLiquidation</a>
+			</div>
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Custom open/close fee for affiliates</h1>
+							<p class="hero-copy">
+								Before this update, platform fees were only charged on <strong>open</strong> and were defined by the
+								<code>tradingFee</code> parameter of a symbol. Now, we have additional close fee for closing positions and more
+								flexible fee structure.
+							</p>
+						</div>
+					</div>
+				</header>
+				<article class="doc-article" id="full-document">
+					<p>
+						The <code>tradingFee</code> parameter acts as a default fee, while affiliates can set fee ratios for themselves on both
+						<strong>open</strong> and <strong>close sides</strong>.
+					</p>
+					<p>
+						Also the affiliates can set a fee ratio for all positions or set fees per symbol or set fees per symbol and user. The priority
+						for fee used in a position should be like this:
+					</p>
+					<ol>
+						<li>Affiliate defined fee for user and symbol (<code>affiliateFeeForUser[affiliate][user][symbolId]</code>)</li>
+						<li>Affiliate defined default fee for user (<code>affiliateFeeForUser[affiliate][user][0]</code> - symbolId 0 = default)</li>
+						<li>Affiliate defined fee for symbol (<code>affiliateFee[affiliate][symbolId]</code>)</li>
+						<li>Affiliate defined default fee for all symbols (<code>affiliateFee[affiliate][0]</code> - symbolId 0 = default)</li>
+						<li>Symmio default fee which is there in the symbol struct (<code>symbols[symbolId].tradingFee</code>)</li>
+					</ol>
+					<p>
+						<strong>Note:</strong> For both <code>affiliateFee</code> and <code>affiliateFeeForUser</code>, symbolId 0 is used as the
+						default fee when no symbol-specific fee is set.
+					</p>
+					<p>To support this, the following methods have been added in the control facet:</p>
+					<pre><code class="language-solidity">// Set custom affiliate fee per user and symbol (supports batch operations):
+function setAffiliateFeeForUser(
+    address affiliate,
+    address[] calldata users,
+    uint256[] calldata symbolIds,
+    uint256[] calldata openFees,
+    uint256[] calldata closeFees
+) external;
+
+// Set affiliate fee per symbol (supports batch operations, use symbolId 0 for default):
+function setAffiliateFee(
+    address affiliate,
+    uint256[] calldata symbolIds,
+    uint256[] calldata openFees,
+    uint256[] calldata closeFees
+) external;
+
+// Set minimum affiliate fee threshold:
+function setMinAffiliateFee(uint256 minAffiliateFee) external;
+</code></pre>
+					<p>
+						The methods can be called either by the affiliate manager or by the affiliates themselves. In the latter case, frontends may
+						need to update their contract to support these function calls through their contract (restricted to admin privileges only).
+					</p>
+					<p>
+						Before this feature, in order to support multiple fees for multiple frontends, we had to duplicate symbols with the exact same
+						name and configuration, differing only in their tradingFees. After upgrading to version 0.8.5 and coordinating the changes
+						with all partners, the old duplicate symbols will be removed.
+					</p>
+					<h2 id="doc-affiliate-fees-close-fee-in-solvency-checks">Close fee in solvency checks</h2>
+					<p>
+						With the introduction of close fees, the solvency checking logic has been updated to account for this new fee when determining
+						if PartyA will remain solvent after closing a position. The close fee is deducted from PartyA's available balance in the
+						solvency calculation:
+					</p>
+					<pre><code class="language-solidity">// In getAvailableBalanceAfterClosePosition
+uint256 closeFee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
+partyAAvailableBalance -= int256(closeFee);
+</code></pre>
+					<p>This is applied in all code paths that check solvency after close:</p>
+					<ul>
+						<li>fillCloseRequest</li>
+						<li>fillCloseRequestToLiquidation (new)</li>
+						<li>Force close operations</li>
+						<li>Batch close operations</li>
+					</ul>
+					<p>Fill close request to liquidation threshold.</p>
+					<h3 id="doc-affiliate-fees-fllcloserequesttoliquidation"><strong>FllCloseRequestToLiquidation</strong></h3>
+					<p>
+						A new method <strong>fillCloseRequestToLiquidation</strong> has been added for PartyB (solvers/hedgers) to handle edge cases
+						where fillCloseRequest would revert due to PartyA insolvency after close.
+					</p>
+					<p>
+						<strong>The problem:</strong> A user may appear solvent based on their upnl, but become insolvent after the close operation
+						due to the difference between market price and closed price. With the introduction of close fees, this edge case becomes more
+						likely since the fee adds another factor that can push PartyA into insolvency. When this happens, fillCloseRequest reverts
+						with "LibSolvency: Available balance is lower than zero", leaving positions stuck in CLOSE_PENDING status.
+					</p>
+					<p>
+						<strong>The solution:</strong> fillCloseRequestToLiquidation calculates and executes the maximum close amount that brings
+						PartyA exactly to the liquidation threshold (available balance = 0). After this partial close, a small market move would make
+						PartyA liquidatable.
+					</p>
+					<pre><code class="language-solidity">unction fillCloseRequestToLiquidation(
+        uint256 quoteId,
+        uint256 closedPrice,
+        PairUpnlAndPriceSig memory upnlSig
+) external returns (uint256 filledAmount)
+</code></pre>
+					<p>Usage:</p>
+					<p>
+						Solvers can use this method for all LIMIT close requests. It behaves identically to fillCloseRequest when PartyA is solvent,
+						but handles the edge case where the close operation would push PartyA into insolvency by performing a partial close instead of
+						reverting.
+					</p>
+					<p>Key behaviors:</p>
+					<ul>
+						<li>Only works with LIMIT orders (MARKET orders must be filled completely)</li>
+						<li>If full close is safe, it closes the full quantityToClose</li>
+						<li>If full close would make PartyA insolvent, it calculates a partial amount</li>
+						<li>
+							Reverts with "Full close keeps PartyA insolvent" if PartyA is so deeply insolvent that even a beneficial close can't help
+							(PartyA should be liquidated instead)
+						</li>
+						<li>Reverts with "Cannot close any amount" if PartyA is already insolvent and closing would make it worse</li>
+					</ul>
+					<p><strong>View function:</strong></p>
+					<p>A corresponding view function is available to preview the result before submitting a transaction:</p>
+					<pre><code class="language-solidity">function getMaxCloseAmountToLiquidation(
+        uint256 quoteId,
+        uint256 closedPrice,
+        uint256 marketPrice,
+        int256 upnlPartyA
+) external view returns (uint256 maxCloseAmount, bool canCloseAll);
+</code></pre>
+					<p>This returns:</p>
+					<ul>
+						<li>maxCloseAmount: The amount that will be filled</li>
+						<li>canCloseAll: Whether the full quantityToClose can be filled without insolvency</li>
+					</ul>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer"><span>Symmio Core v0.8.5 documentation.</span></footer>
+	</body>
+</html>

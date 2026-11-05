@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 interface IPledgeEvents {
+	event PledgeTokenWhitelistUpdated(address indexed token, bool whitelisted);
 	event PledgeCollateralDeposited(address indexed user, address indexed token, uint256 amount);
 	event PledgeWithdrawRequested(address indexed user, address indexed token, uint256 amount, address recipient);
 	event PledgeWithdrawApproved(address indexed user, address indexed token, uint256 amount);

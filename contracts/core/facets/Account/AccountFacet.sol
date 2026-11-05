@@ -8,11 +8,11 @@ import { Accessibility } from "../../utils/Accessibility.sol";
 import { Pausable } from "../../utils/Pausable.sol";
 import { IAccountFacet } from "./IAccountFacet.sol";
 import { AccountFacetImpl } from "./AccountFacetImpl.sol";
-import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { SharedEvents } from "../../libraries/SharedEvents.sol";
+import { OperationalFeeStorage, AllowanceState } from "../../storages/OperationalFeeStorage.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
+import { LibOperationalFee } from "../../libraries/LibOperationalFee.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 
@@ -67,7 +67,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		_virtualDepositFor(user, amount);
 		AccountFacetImpl.allocate(user, amount);
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
-		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows either PartyA or PartyB to withdraw a specified amount of collateral, provided that the withdrawal cooldown period has elapsed.
@@ -78,7 +77,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(signer, signer, amount);
 	}
 
-	/// @notice Allows either Party A or Party B to withdraw a specified amount of collateral and transfer it to another user, provided that the withdrawal cooldown period has elapsed.
+	/// @notice Allows PartyA or PartyB to withdraw collateral to another user after the withdrawal cooldown elapses.
 	/// @param user The recipient address for the withdrawal.
 	/// @param amount The precise amount of collateral to be withdrawn, specified in collateral decimals.
 	function withdrawTo(address user, uint256 amount) external whenNotAccountingPaused notSuspended(LibSigner.getSigner()) {
@@ -86,7 +85,8 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(LibSigner.getSigner(), user, amount);
 	}
 
-	/// @notice Allows the SUSPENDED_FUNDS_WITHDRAWER_ROLE to transfer the internal balance of a suspended user to a recipient address (no token transfer occurs).
+	/// @notice Allows SUSPENDED_FUNDS_WITHDRAWER_ROLE to transfer a suspended user's internal balance
+	///         to a recipient without transferring tokens.
 	/// @param user The suspended user whose funds will be moved.
 	/// @param recipient The destination address that will receive the funds.
 	/// @param amount The amount to withdraw, specified in collateral decimals.
@@ -112,7 +112,7 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit DeallocateSuspendedUser(msg.sender, user, amount, newAllocatedBalance);
 	}
 
-	/// @notice Allows Party A to allocate a specified amount of collateral. Allocated amounts are which user can actually trade on.
+	/// @notice Allows PartyA to allocate collateral. The allocated balance is available for trading.
 	/// @param amount The precise amount of collateral to be allocated, specified in 18 decimals.
 	function allocate(
 		uint256 amount
@@ -120,7 +120,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address signer = LibSigner.getSigner();
 		AccountFacetImpl.allocate(signer, amount);
 		emit AllocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party A to deposit a specified amount of collateral and immediately allocate it.
@@ -136,7 +135,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Deposit(signer, signer, amount);
 		emit Deposit(signer, signer, amount, false);
 		emit AllocatePartyA(signer, amountWith18Decimals, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Deposits collateral on behalf of another user and immediately allocates it for trading.
@@ -150,7 +148,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Deposit(signer, user, amount);
 		emit Deposit(signer, user, amount, false);
 		emit AllocatePartyA(user, amountWith18Decimals, AccountStorage.layout().allocatedBalances[user]);
-		emit SharedEvents.BalanceChangePartyA(user, amountWith18Decimals, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Allows Party A to deallocate a specified amount of collateral.
@@ -161,13 +158,12 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.deallocate(amount, upnlSig);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Allows Party A to deallocate a specified amount of collateral with pending balance check.
 	/// @dev This function considers off-chain pending operations (like solver orders) that need reserved funds.
 	/// @param amount The precise amount of collateral to be deallocated, specified in 18 decimals.
-	/// @param upnlSig The Muon signature for SingleUpnlWithPendingBalanceSig containing upnl and pendingBalance.
+	/// @param upnlSig The Muon signature containing UPNL, funding debt, pending balance, and the scaled locked balance.
 	function safeDeallocate(
 		uint256 amount,
 		SingleUpnlWithPendingBalanceSig memory upnlSig
@@ -176,7 +172,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.safeDeallocate(amount, upnlSig);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Deallocates collateral without requiring a Muon UPNL signature, only when the user has no open or pending positions.
@@ -186,7 +181,6 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 
 		AccountFacetImpl.zeroUpnlDeallocate(amount, signer);
 		emit DeallocatePartyA(signer, amount, AccountStorage.layout().allocatedBalances[signer]);
-		emit SharedEvents.BalanceChangePartyA(signer, amount, SharedEvents.BalanceChangeType.DEALLOCATE);
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user allocated balance.
@@ -198,13 +192,37 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		address user,
 		uint256 amount
 	) external whenNotInternalTransferPaused userNotPartyB(user) notSuspended(LibSigner.getSigner()) notSuspended(user) notLiquidatedPartyA(user) {
+		_internalTransfer(user, amount);
+	}
+
+	/// @notice Transfers the sender's deposited balance to the user allocated balance, same as internalTransfer.
+	/// @dev Restricted to BALANCE_SETTLER_ROLE and not stopped by pauseInternalTransfer(). Global and accounting pauses still apply.
+	/// @dev The recipient user cannot be partyB.
+	/// @dev PartyA should not be in the liquidation process.
+	/// @param user The address of the user to whom the amount will be allocated.
+	/// @param amount The amount to transfer and allocate in 18 decimals.
+	function internalTransferToAllocatedBalance(
+		address user,
+		uint256 amount
+	)
+		external
+		onlyRoleAllowProxy(LibAccessibility.BALANCE_SETTLER_ROLE)
+		whenNotAccountingPaused
+		userNotPartyB(user)
+		notSuspended(LibSigner.getSigner())
+		notSuspended(user)
+		notLiquidatedPartyA(user)
+	{
+		_internalTransfer(user, amount);
+	}
+
+	function _internalTransfer(address user, uint256 amount) private {
 		address signer = LibSigner.getSigner();
 
 		AccountFacetImpl.internalTransfer(user, amount);
 		emit InternalTransfer(signer, user, AccountStorage.layout().allocatedBalances[user], amount);
 		emit Withdraw(signer, user, LibAccount.toCollateralDecimals(amount));
 		emit AllocatePartyA(user, amount, AccountStorage.layout().allocatedBalances[user]);
-		emit SharedEvents.BalanceChangePartyA(user, amount, SharedEvents.BalanceChangeType.ALLOCATE);
 	}
 
 	/// @notice Transfers the sender's deposited balance to the user's balance (not allocated balance).
@@ -221,5 +239,50 @@ contract AccountFacet is Accessibility, Pausable, IAccountFacet {
 		emit Withdraw(signer, signer, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals);
 		emit Deposit(signer, user, amountInCollateralDecimals, false);
+	}
+
+	/// @notice Charge a standing operational fee from `payer`'s balance. Caller (msg.sender) is the charger.
+	/// @dev Free-first then allocated; the allocated portion is guarded by balance only (no oracle sig here).
+	///      Payer guards (suspended / under-liquidation) live in LibOperationalFee.charge so the solver path
+	///      enforces them too. No reentrancy guard: the charge path is pure storage + events with no external
+	///      call, so it cannot be re-entered (consistent with this facet's other balance methods).
+	function chargeOperationalFee(address payer, uint256 amount) external whenNotAccountingPaused {
+		LibOperationalFee.charge(payer, msg.sender, amount);
+	}
+
+	function _setOperationalFeeAllowance(address payer, address charger, uint256 amount) private {
+		LibOperationalFee.setAllowance(payer, charger, amount);
+		AllowanceState storage s = OperationalFeeStorage.layout().allowances[payer][charger];
+		if (s.reductionReadyAt != 0 && s.pendingAllowance == amount) {
+			emit OperationalFeeAllowanceReductionRequested(payer, charger, amount, s.reductionReadyAt);
+		} else {
+			emit OperationalFeeAllowanceSet(payer, charger, amount);
+		}
+	}
+
+	/// @notice ERC20-approve-style: set each charger's remaining operational-fee allowance to an absolute amount.
+	/// @dev Batch so a payer can approve multiple chargers (e.g. a solver and a relayer) in one tx.
+	///      Per charger: a raise (or equal) applies instantly; a reduction is timelocked (see LibOperationalFee).
+	function approveOperationalFee(address[] calldata chargers, uint256[] calldata amounts) external {
+		require(chargers.length == amounts.length, "AccountFacet: Length mismatch");
+		address payer = LibSigner.getSigner();
+		for (uint256 i = 0; i < chargers.length; i++) {
+			_setOperationalFeeAllowance(payer, chargers[i], amounts[i]);
+		}
+	}
+
+	/// @notice Set allowance and the charger's priority multiplier in one call. 10000 is the normal 1x multiplier.
+	function approveOperationalFeeWithMultiplier(
+		address[] calldata chargers,
+		uint256[] calldata amounts,
+		uint256[] calldata feeMultipliers
+	) external {
+		require(chargers.length == amounts.length && chargers.length == feeMultipliers.length, "AccountFacet: Length mismatch");
+		address payer = LibSigner.getSigner();
+		for (uint256 i = 0; i < chargers.length; i++) {
+			_setOperationalFeeAllowance(payer, chargers[i], amounts[i]);
+			LibOperationalFee.setFeeMultiplier(payer, chargers[i], feeMultipliers[i]);
+			emit OperationalFeeMultiplierSet(payer, chargers[i], feeMultipliers[i]);
+		}
 	}
 }

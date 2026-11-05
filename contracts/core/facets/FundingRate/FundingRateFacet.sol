@@ -95,6 +95,8 @@ contract FundingRateFacet is Accessibility, Pausable, IFundingRateFacet {
 	}
 
 	/// @notice Charges accumulated funding fees for a given Party A's positions with Party B.
+	/// @dev If the effective caller is partyB, Party A is bound to it, and it remains bindable,
+	///      upnlSig is ignored. All other callers require a valid Muon signature and solvency checks.
 	/// @param partyA The address of Party A.
 	/// @param partyB The address of Party B.
 	/// @param quoteIds An array of quote IDs to charge accumulated funding for.

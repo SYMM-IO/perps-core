@@ -8,7 +8,6 @@ import { LibDiamond } from "../diamond/libraries/LibDiamond.sol";
 import { IDiamondLoupe } from "../diamond/facets/DiamondLoup/IDiamondLoupe.sol";
 import { IDiamondCut } from "../diamond/facets/DiamondCut/IDiamondCut.sol";
 import { IERC165 } from "../diamond/interfaces/IERC165.sol";
-import { AccountLayerStorage } from "./storages/AccountLayerStorage.sol";
 import { AccountStorage } from "./storages/AccountStorage.sol";
 import { AffiliateStorage } from "./storages/AffiliateStorage.sol";
 import { LibAccountLayerAccessibility } from "./libraries/LibAccountLayerAccessibility.sol";

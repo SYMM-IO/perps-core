@@ -4,35 +4,51 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { IExecutionContextFacet } from "../ExecutionContext/IExecutionContextFacet.sol";
 import { IControlEvents } from "./IControlEvents.sol";
+import { IDiamondAccessControl } from "../../../diamond/interfaces/IDiamondAccessControl.sol";
 import { EntityMetadata } from "../../storages/MAStorage.sol";
+import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
-interface IControlFacet is IControlEvents {
+/// @notice Compatibility control ABI spanning the core diamond's control-compatible facets.
+interface IControlFacet is IControlEvents, IExecutionContextFacet, IDiamondAccessControl {
+	error IncompatibleSignatureVerifier();
+
 	function transferOwnership(address owner) external;
 
 	function cancelOwnershipTransfer() external;
 
 	function acceptOwnership() external;
 
-	function setAdmin(address user) external;
-
-	function grantRole(address user, bytes32 role) external;
-
-	function revokeRole(address user, bytes32 role) external;
-
-	function addRoleAdmin(bytes32 role, address admin) external;
-
-	function removeRoleAdmin(bytes32 role, address admin) external;
-
 	function registerPartyB(address partyB) external;
 
 	function deregisterPartyB(address partyB, uint256 index) external;
+
+	function registerOperationalFeeCharger(address charger) external;
+
+	function unregisterOperationalFeeCharger(address charger) external;
+
+	function setOperationalFeeReductionDelay(uint256 delay) external;
+
+	function setOperationalFeeReceiver(address charger, address receiver) external;
+
+	function setSolverFeeReceiver(address partyB, address receiver) external;
+
+	function setSolverFeeReceiverForTag(address partyB, bytes32 tag, address receiver) external;
 
 	function registerAffiliate(address affiliate) external;
 
 	function deregisterAffiliate(address affiliate) external;
 
+	function scheduleAffiliateShutdown(address affiliate, uint256 shutdownTime) external;
+
+	function cancelAffiliateShutdown(address affiliate) external;
+
 	function setMuonConfig(uint256 upnlValidTime, uint256 priceValidTime) external;
+
+	/// @notice Sets or clears the UPNL signature validity override for one Muon function category.
+	/// @dev Zero means unset and makes verification use setMuonConfig's global UPNL validity.
+	function setMuonFunctionUpnlValidTime(MuonFunction func, uint256 upnlValidTime) external;
 
 	function setMuonIds(uint256 muonAppId) external;
 
@@ -88,6 +104,8 @@ interface IControlFacet is IControlEvents {
 
 	function setADLEnabled(address partyB, bool enabled) external;
 
+	function setPartyBStrictDeallocation(address partyB, bool enabled) external;
+
 	function setCallFromInstantLayer(bool callFromInstantLayer) external;
 
 	function setInstantOpenMode(bool instantOpenMode) external;
@@ -105,6 +123,8 @@ interface IControlFacet is IControlEvents {
 	function setMinAffiliateFee(uint256 minAffiliateFee) external;
 
 	function setDefaultFeeCollector(address feeCollector) external;
+
+	function setEntityMetadata(address entity, EntityMetadata memory metadata) external;
 
 	function setAffiliateMetadata(address affiliate, EntityMetadata memory metadata) external;
 
@@ -135,8 +155,6 @@ interface IControlFacet is IControlEvents {
 	function setSoftLiquidationPenaltyCollector(address softLiquidationPenaltyCollector) external;
 
 	function setPartyBBindable(address partyB, bool bindable) external;
-
-	function setLegacyDeallocateDeprecated(bool deprecated) external;
 
 	function setCrossPartyBModeActivated(bool activated) external;
 

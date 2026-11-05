@@ -4,9 +4,19 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { Quote } from "../../storages/QuoteStorage.sol";
+import { Quote, SolverFeeState } from "../../storages/QuoteStorage.sol";
 
 interface IViewFacetQuote {
+	/// @notice A quote represented in the venue basis selected by the active factor or frozen restatement window.
+	/// @dev `quote` is for valuation and external hedging; Core execution still expects the raw stored quote returned by getQuote.
+	struct VenueQuoteView {
+		Quote quote;
+		uint256 factorApplied;
+		uint256 restatementEpoch;
+		bool storedInVenueUnits;
+		bool symbolFrozen;
+	}
+
 	struct Bitmap {
 		uint256 size;
 		BitmapElement[] elements;
@@ -18,6 +28,12 @@ interface IViewFacetQuote {
 	}
 
 	function getQuote(uint256 quoteId) external view returns (Quote memory);
+
+	function getQuoteInVenueUnits(uint256 quoteId) external view returns (VenueQuoteView memory);
+
+	function getQuotesInVenueUnits(uint256[] calldata quoteIds) external view returns (VenueQuoteView[] memory);
+
+	function getSolverFeeState(uint256 quoteId) external view returns (SolverFeeState memory);
 
 	function getQuotesByParent(uint256 quoteId, uint256 size) external view returns (Quote[] memory);
 
@@ -56,4 +72,16 @@ interface IViewFacetQuote {
 	function getQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256[] memory debts);
 
 	function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256 sum);
+
+	/// @notice Previews the uncapped close-to-liquidation plan, including configured overshoot and remaining-value fallback.
+	/// @dev `maxSolverFee` is the fee quoted for the full pending `quantityToClose`; execution applies the same rate to maxFillAmount.
+	/// @return maxCloseAmount The executable uncapped amount after any zero-rate remaining-value fallback.
+	/// @return canCloseAll True when the full requested close fits inside the configured allowance; PartyA need not remain solvent.
+	function getMaxCloseAmountToLiquidation(
+		uint256 quoteId,
+		uint256 closedPrice,
+		uint256 marketPrice,
+		int256 upnlPartyA,
+		uint256 maxSolverFee
+	) external view returns (uint256 maxCloseAmount, bool canCloseAll);
 }

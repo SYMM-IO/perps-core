@@ -5,16 +5,19 @@
 pragma solidity >=0.8.18;
 
 import { QuoteStorage, Quote, LockedValues, QuoteStatus } from "../storages/QuoteStorage.sol";
-import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
 import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "./LibExecutionContext.sol";
 import { MAStorage } from "../storages/MAStorage.sol";
 import { LibAccount } from "./LibAccount.sol";
 import { LibConnections } from "./LibConnections.sol";
+import { LibPartyBState } from "./extensions/LibPartyBState.sol";
 import { LibSigner } from "./LibSigner.sol";
 import { LockedValuesOps } from "./LibLockedValues.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 
 library LibPartyBQuoteActions {
 	using LockedValuesOps for LockedValues;
+	using LibPartyBState for address;
 
 	/// @notice Locks a pending quote for Party B, validating whitelist, symbol restrictions, and solvency.
 	function lockQuote(uint256 quoteId) internal {
@@ -25,6 +28,13 @@ library LibPartyBQuoteActions {
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
 		require(quote.quoteStatus == QuoteStatus.PENDING, "PartyBFacet: Invalid state");
+		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
+		LibSymbolAdjustment.requirePendingQuoteCurrent(quote);
+		require(MAStorage.layout().affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
+		require(
+			quote.affiliate == address(0) || GlobalAppStorage.layout().affiliateShutdownTime[quote.affiliate] == 0,
+			"PartyBFacet: Affiliate shutdown scheduled"
+		);
 		require(block.timestamp <= quote.deadline, "PartyBFacet: Quote is expired");
 		require(quoteId <= quoteLayout.lastId, "PartyBFacet: Invalid quoteId");
 		require(LibConnections.isSymbolAllowedForPartyB(signer, quote.symbolId), "PartyBFacet: symbol is not whitelisted");
@@ -32,8 +42,7 @@ library LibPartyBQuoteActions {
 			LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
 			"PartyBFacet: Symbol not allowed due to connection restrictions"
 		);
-		require(!MAStorage.layout().partyBLiquidationStatus[signer][quote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[signer].inProgress, "PartyBFacet: PartyB is in cross liquidation process");
+		signer.requireNotLiquidating(quote.partyA);
 		bool isValidPartyB;
 		if (quote.partyBsWhiteList.length == 0) {
 			require(signer != quote.partyA, "PartyBFacet: PartyA can't be partyB too");
@@ -51,8 +60,8 @@ library LibPartyBQuoteActions {
 		quote.quoteStatus = QuoteStatus.LOCKED;
 		quote.partyB = signer;
 
-		// lock funds for partyB — skip in instantOpenMode (will be written directly to lockedBalances)
-		if (!GlobalAppStorage.layout().instantOpenMode) {
+		// Lock funds for PartyB unless instantOpenMode writes them directly to lockedBalances.
+		if (!LibExecutionContext.isInstantOpenMode()) {
 			LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
 			quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
 		}

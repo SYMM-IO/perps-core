@@ -32,8 +32,8 @@ library MigrationStorage {
 		/// @dev Maps partyB => partyA => migrated. migrateCrossLockedValues() aggregates:
 		///      - partyBLockedBalances[partyB][partyA] → partyBLockedBalances[partyB][address(0)]
 		///      - partyBPendingLockedBalances[partyB][partyA] → partyBPendingLockedBalances[partyB][address(0)]
-		///      Allocated balances are NOT aggregated — the cross bucket is an independent pool.
-		///      Can be called in batches — already-migrated pairs are skipped.
+		///      Allocated balances are not aggregated because the cross bucket is an independent pool.
+		///      Calls may use batches; already-migrated pairs are skipped.
 		mapping(address => mapping(address => bool)) crossLockedValuesMigrated;
 	}
 

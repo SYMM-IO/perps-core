@@ -86,7 +86,8 @@ library WithdrawFacetImpl {
 			isPureVirtual: isPureVirtual,
 			providerData: data,
 			totalAmount: locals.totalAmount,
-			totalVirtualAmount: locals.totalVirtualAmount
+			totalVirtualAmount: locals.totalVirtualAmount,
+			advancedAmount: 0
 		});
 
 		withdrawLayout.withdrawRequests[signer][currentId] = withdrawRequest;
@@ -207,15 +208,20 @@ library WithdrawFacetImpl {
 		}
 
 		if (hasExpressPart) {
-			if (totalExpressAmount > 0) {
-				LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, totalExpressAmount);
-				withdrawLayout.withdrawLockedBalance -= totalExpressAmount;
+			uint256 remainingExpress = totalExpressAmount - withdrawRequest.advancedAmount;
+			if (remainingExpress > 0) {
+				LibSafeERC20.safeTransfer(collateral, withdrawRequest.provider, remainingExpress);
+				withdrawLayout.withdrawLockedBalance -= remainingExpress;
 			}
+			withdrawLayout.finalizingInProgress = true;
 			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onWithdrawComplete, (withdrawRequest)));
+			withdrawLayout.finalizingInProgress = false;
 		}
 
 		if (withdrawRequest.isPureVirtual) {
+			withdrawLayout.finalizingInProgress = true;
 			LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onWithdrawComplete, (withdrawRequest)));
+			withdrawLayout.finalizingInProgress = false;
 		}
 
 		withdrawRequest.status = WithdrawStatus.COMPLETED;
@@ -233,6 +239,27 @@ library WithdrawFacetImpl {
 		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to accept withdrawal");
 
 		withdrawRequest.status = WithdrawStatus.PROVIDER_ACCEPTED;
+	}
+
+	/// @notice Provider advances locked collateral early, before cooldown expires.
+	///         Used by express providers with credit lines to front funds to users.
+	function advanceWithdraw(address user, uint256 requestId, uint256 amount) internal {
+		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+
+		require(!withdrawLayout.finalizingInProgress, "WithdrawFacet : Cannot advance during finalize callback");
+
+		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
+
+		require(withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED, "WithdrawFacet : Invalid withdraw request status");
+		require(msg.sender == withdrawRequest.provider, "WithdrawFacet : Not allowed to advance withdrawal");
+
+		uint256 expressAmount = _totalExpressAmount(withdrawRequest);
+		require(withdrawRequest.advancedAmount + amount <= expressAmount, "WithdrawFacet : Advance exceeds express amount");
+
+		withdrawRequest.advancedAmount += amount;
+		LibSafeERC20.safeTransfer(appLayout.collateral, msg.sender, amount);
+		withdrawLayout.withdrawLockedBalance -= amount;
 	}
 
 	/// @notice Provider rejects a pending withdrawal request, refunding the user's balance
@@ -281,32 +308,10 @@ library WithdrawFacetImpl {
 		}
 	}
 
-	/// @notice Force-cancels a withdrawal before cooldown expiry, refunding and notifying providers
-	function forceCancelWithdraw(address user, uint256 requestId) internal {
-		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
-
-		require(
-			withdrawRequest.status == WithdrawStatus.PENDING ||
-				withdrawRequest.status == WithdrawStatus.PROVIDER_ACCEPTED ||
-				withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED,
-			"WithdrawFacet : Invalid withdraw request status"
-		);
-		require(block.timestamp < withdrawRequest.cooldownEndTime, "WithdrawFacet : Withdraw cooldown already over");
-
-		_unlockAndRefund(withdrawRequest);
-		withdrawRequest.status = WithdrawStatus.CANCELLED;
-
-		if (withdrawRequest.provider != address(0)) {
-			if (withdrawRequest.isPureVirtual) {
-				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IVirtualProvider.onForceWithdrawCancel, (withdrawRequest)));
-			} else {
-				LibSafeCall.safeExternalCall(withdrawRequest.provider, abi.encodeCall(IExpressProvider.onForceWithdrawCancel, (withdrawRequest)));
-			}
-		}
-	}
-
 	/// @notice Provider accepts a cancellation request, refunding the user and marking as CANCELLED
 	function acceptWithdrawCancelRequest(address user, uint256 requestId) internal {
+		require(!WithdrawStorage.layout().finalizingInProgress, "WithdrawFacet : Cannot accept cancel during finalize callback");
+
 		WithdrawRequest storage withdrawRequest = _getWithdrawRequest(user, requestId);
 
 		require(withdrawRequest.status == WithdrawStatus.CANCEL_REQUESTED, "WithdrawFacet : Invalid withdraw request status");
@@ -373,6 +378,19 @@ library WithdrawFacetImpl {
 	// Internal helper utils
 	// ----------------------
 
+	/// @notice Sums the express-only portion of a request: parts served by an express provider that are not virtual.
+	/// @dev This is the only amount an express provider may advance against and be reimbursed for at finalize.
+	///      Classic parts (no provider) and virtual parts are excluded, so an express provider can never advance
+	///      against funds it does not service. Mirrors the express-only accumulation in finalizeWithdrawRequest.
+	function _totalExpressAmount(WithdrawRequest storage withdrawRequest) internal view returns (uint256 total) {
+		for (uint256 i = 0; i < withdrawRequest.parts.length; i++) {
+			WithdrawReceiverPart storage part = withdrawRequest.parts[i];
+			if (part.expressProvider != address(0) && part.virtualProvider == address(0)) {
+				total += part.amount;
+			}
+		}
+	}
+
 	/// @notice Retrieves a withdrawal request by user and ID, validating that the ID exists
 	function _getWithdrawRequest(address user, uint256 requestId) internal view returns (WithdrawRequest storage) {
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -382,7 +400,7 @@ library WithdrawFacetImpl {
 		return withdrawLayout.withdrawRequests[user][requestId];
 	}
 
-	/// @notice Unlocks the withdrawal locked balance and refunds the user's internal balance
+	/// @notice Unlocks and refunds the non-advanced portion of a withdrawal.
 	function _unlockAndRefund(WithdrawRequest storage withdrawRequest) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		WithdrawStorage.Layout storage withdrawLayout = WithdrawStorage.layout();
@@ -390,9 +408,11 @@ library WithdrawFacetImpl {
 
 		uint256 collateralDecimals = IERC20Metadata(appLayout.collateral).decimals();
 
-		withdrawLayout.withdrawLockedBalance -= (withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount);
+		uint256 unlockAmount = withdrawRequest.totalAmount - withdrawRequest.totalVirtualAmount - withdrawRequest.advancedAmount;
+		withdrawLayout.withdrawLockedBalance -= unlockAmount;
 
-		uint256 amountWith18 = _to18Decimals(withdrawRequest.totalAmount, collateralDecimals);
+		uint256 refundAmount = withdrawRequest.totalAmount - withdrawRequest.advancedAmount;
+		uint256 amountWith18 = _to18Decimals(refundAmount, collateralDecimals);
 		accountLayout.balances[withdrawRequest.user] += amountWith18;
 	}
 

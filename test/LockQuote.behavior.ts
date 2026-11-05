@@ -224,10 +224,19 @@ export function shouldBehaveLikeLockQuote(): void {
 		})
 
 		it("Should expire quote during unlock", async function () {
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
 			const userAddress = await user.getAddress()
 			const pendingBefore = await context.viewFacetQuote.getPartyAPendingQuotes(userAddress)
 			await time.increase(1000)
 			await hedger.unlockQuote(1)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
+				beforeOutput: beforeOut,
+			})
 			let q: QuoteStruct = await context.viewFacetQuote.getQuote(1)
 			expect(q.quoteStatus).to.be.equal(QuoteStatus.EXPIRED)
 			// Verify quote removed from pending quotes after expiry
@@ -236,13 +245,78 @@ export function shouldBehaveLikeLockQuote(): void {
 			expect(pendingAfter.map(q => q.toString())).to.not.include("1")
 		})
 
-		it("Should run successfully", async function () {
+		it("Should remain pending when unlock mines exactly at the deadline", async function () {
+			const quote = await context.viewFacetQuote.getQuote(1n)
+			const deadline = BigInt(quote.deadline)
 			const validator = new UnlockQuoteValidator()
-			const beforeOut = await validator.before(context, { user: user })
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+
+			await time.setNextBlockTimestamp(deadline)
+			await hedger.unlockQuote(1)
+			const transactionBlockTimestamp = BigInt(await time.latest())
+			expect(transactionBlockTimestamp).to.equal(deadline)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp,
+				beforeOutput: beforeOut,
+			})
+
+			expect((await context.viewFacetQuote.getQuote(1n)).quoteStatus).to.equal(QuoteStatus.PENDING)
+		})
+
+		it("Should keep PartyB disconnected when another locked quote remains", async function () {
+			await hedger.lockQuote(2)
+			const userAddress = await user.getAddress()
+			const hedgerAddress = await hedger.getAddress()
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(false)
+
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
 			await hedger.unlockQuote(1)
 			await validator.after(context, {
-				user: user,
-				quoteId: BigInt(1),
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
+				beforeOutput: beforeOut,
+			})
+
+			expect(await context.viewFacetQuote.getPartyBPendingQuotes(hedgerAddress, userAddress)).to.deep.equal([2n])
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(false)
+		})
+
+		it("Should keep PartyB connected when another opened position remains", async function () {
+			await hedger.lockQuote(2)
+			await hedger.openPosition(2)
+			const userAddress = await user.getAddress()
+			const hedgerAddress = await hedger.getAddress()
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(true)
+
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+			await hedger.unlockQuote(1)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
+				beforeOutput: beforeOut,
+			})
+
+			expect(await context.viewFacetSymbol.isConnectedPartyB(userAddress, hedgerAddress)).to.equal(true)
+		})
+
+		it("Should run successfully", async function () {
+			const validator = new UnlockQuoteValidator()
+			const beforeOut = await validator.before(context, { user, hedger, quoteId: 1n })
+			await hedger.unlockQuote(1)
+			await validator.after(context, {
+				user,
+				hedger,
+				quoteId: 1n,
+				transactionBlockTimestamp: BigInt(await time.latest()),
 				beforeOutput: beforeOut,
 			})
 		})

@@ -10,20 +10,24 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
-import { decimal } from "./utils/Common.js"
+import { decimal, getBlockTimestamp } from "./utils/Common.js"
 import { migratePartyBToCross } from "./utils/CrossPartyB.js"
 import { getDummySingleUpnlSig, getDummyUnifiedSettlementSig } from "./utils/SignatureUtils.js"
+
+const partyALiquidationSettlementInterface = new ethers.Interface([
+	"event SettlePartyALiquidation(address partyA, address[] partyBs, address[] allocationKeys, int256[] amounts, uint256[] cvaAmounts, bytes liquidationId)",
+])
 
 /**
  * Tests for cross-mode PartyB settlement reserve.
  *
  * Vulnerability: After liquidatePositionsPartyA closes positions with a cross-mode PartyB,
- * the PartyB's cross bucket locked balances decrease immediately but the settlement PnL is
- * deferred. This inflates the available balance, allowing PartyB to deallocate funds that
+ * the PartyB's cross bucket locked balances decrease immediately but positive settlement PnL
+ * remains deferred. This inflates the available balance, allowing PartyB to reuse funds that
  * are owed to the pending liquidation settlement.
  *
  * Fix: Track a conservative reserve = max(0, actualAmount) across pending liquidation
- * settlements. Subtract this reserve from effective available balance during deallocation.
+ * settlements. Subtract this reserve from shared cross-bucket availability checks.
  */
 export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 	let context: RunContext
@@ -96,8 +100,8 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			expect(reserve).to.equal(decimal(50n))
 		})
 
-		it("Should not create reserve for isolated-mode PartyB", async function () {
-			// hedger2 (isolated) also has a settlement with user, but no reserve
+		it("Should not create reserve when PartyB does not owe PartyA", async function () {
+			// hedger2 also has a settlement with user, but user lost against hedger2.
 			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedger2Addr)
 			expect(reserve).to.equal(0n)
 		})
@@ -117,6 +121,69 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			).to.not.be.reverted
 		})
 
+		it("Should prevent cross-mode PartyB from locking quotes with reserved settlement funds", async function () {
+			const crossBalance = await hedger.getBalanceInfoCrossPartyB()
+			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
+			const rawAvailable = crossBalance.allocatedBalances + decimal(50n) - crossBalance.totalLockedPartyB - crossBalance.totalPendingLockedPartyB
+			const effectiveAvailable = rawAvailable - reserve
+			const requiredForPartyB = decimal(200n)
+
+			expect(rawAvailable).to.equal(decimal(225n))
+			expect(reserve).to.equal(decimal(50n))
+			expect(effectiveAvailable).to.equal(decimal(175n))
+			expect(rawAvailable).to.be.gte(requiredForPartyB)
+			expect(effectiveAvailable).to.be.lt(requiredForPartyB)
+
+			const quoteD = await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([hedgerAddr])
+					.cva(decimal(60n))
+					.lf(decimal(10n))
+					.partyAmm(decimal(10n))
+					.partyBmm(decimal(130n))
+					.build(),
+			)
+
+			await expect(
+				context.partyBQuoteActionsFacet.connect(hedger.signer).lockQuote(quoteD, await getDummySingleUpnlSig(decimal(50n))),
+			).to.be.revertedWith("PartyBFacet: insufficient available balance")
+		})
+
+		it("Should allow cross-mode PartyB to lock quotes within non-reserved available balance", async function () {
+			const quoteD = await user2.sendQuote(
+				limitQuoteRequestBuilder()
+					.partyBWhiteList([hedgerAddr])
+					.cva(decimal(50n))
+					.lf(decimal(10n))
+					.partyAmm(decimal(10n))
+					.partyBmm(decimal(100n))
+					.build(),
+			)
+
+			await expect(context.partyBQuoteActionsFacet.connect(hedger.signer).lockQuote(quoteD, await getDummySingleUpnlSig(decimal(50n)))).to.not.be
+				.reverted
+		})
+
+		it("Should include reserve when checking cross-mode PartyB liquidation eligibility", async function () {
+			const crossBalance = await hedger.getBalanceInfoCrossPartyB()
+			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
+			const rawBeforeUpnl = crossBalance.allocatedBalances - crossBalance.lockedCva - crossBalance.lockedLf
+			const rawTarget = reserve / 2n
+			const upnl = rawTarget - rawBeforeUpnl
+
+			expect(reserve).to.equal(decimal(50n))
+			expect(rawBeforeUpnl + upnl).to.equal(rawTarget)
+			expect(rawBeforeUpnl - reserve + upnl).to.equal(-rawTarget)
+
+			await context.controlFacet
+				.connect(context.signers.admin)
+				.grantRole(context.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+			await expect(
+				context.clearingHouseFacet.connect(context.signers.liquidator).liquidateCrossPartyB(hedgerAddr, "0x1234", upnl, await getBlockTimestamp()),
+			).to.emit(context.clearingHouseFacet, "LiquidateCrossPartyB")
+		})
+
 		it("Should clear reserve after settlement completes", async function () {
 			// Settle hedger2 first (isolated)
 			await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedger2Addr])
@@ -127,7 +194,32 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			await context.settlementFacet.connect(context.signers.liquidator).settlePartyBUpnlForLiquidation(userAddr, sig, [decimal(5n, 17)])
 
 			// Settle hedger (cross) -- completes the liquidation
-			await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedgerAddr])
+			const crossSettleTx = await context.partyALiquidationFacet.connect(context.signers.liquidator).settlePartyALiquidation(userAddr, [hedgerAddr])
+			const crossSettleReceipt = await crossSettleTx.wait()
+			const extendedSettlementEvents = (crossSettleReceipt?.logs ?? []).flatMap(log => {
+				try {
+					const parsed = partyALiquidationSettlementInterface.parseLog({ topics: log.topics as string[], data: log.data })
+					if (parsed?.name !== "SettlePartyALiquidation") return []
+					return [
+						{
+							partyA: parsed.args.partyA as string,
+							partyBs: [...parsed.args.partyBs] as string[],
+							allocationKeys: [...parsed.args.allocationKeys] as string[],
+							cvaAmounts: [...parsed.args.cvaAmounts] as bigint[],
+						},
+					]
+				} catch {
+					return []
+				}
+			})
+			expect(extendedSettlementEvents).to.deep.equal([
+				{
+					partyA: userAddr,
+					partyBs: [hedgerAddr],
+					allocationKeys: [ZeroAddress],
+					cvaAmounts: [0n],
+				},
+			])
 
 			// Reserve should be cleared
 			const reserve = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
@@ -188,6 +280,145 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			await expect(
 				context.partyBAccountFacet.connect(hedger.signer).deallocateForPartyB(decimal(170n), ZeroAddress, await getDummySingleUpnlSig(decimal(50n))),
 			).to.not.be.reverted
+		})
+	})
+
+	describe("PartyA takeover after a partial position batch", function () {
+		for (const direction of ["positive", "negative"] as const) {
+			it(`clears a disconnected PartyB's ${direction} settlement without disconnecting another PartyA`, async function () {
+				const userAddr = await user.getAddress()
+				const hedgerAddr = await hedger.getAddress()
+				const hedger2Addr = await hedger2.getAddress()
+				const firstQuote = direction === "positive" ? quoteB : quoteA
+				const remainingQuote = direction === "positive" ? quoteA : quoteB
+				const settledPartyB = direction === "positive" ? hedgerAddr : hedger2Addr
+				const price = decimal(5n, 17)
+				const clearingHouse = context.clearingHouseFacet.connect(context.signers.liquidator)
+				await context.controlFacet.grantRole(context.signers.liquidator.address, ethers.id("CLEARING_HOUSE_ROLE"))
+				await user.liquidateAndSetSymbolPrices([1n], [price], [quoteA, quoteB])
+				await user.liquidatePositions([firstQuote])
+				expect(await context.viewFacetQuote.partyBPositionsCount(settledPartyB, userAddr)).to.equal(0n)
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, settledPartyB)).to.equal(false)
+
+				await clearingHouse.takeoverPartyALiquidation(userAddr)
+				await clearingHouse.liquidatePositionsForClearingHouse(userAddr, [remainingQuote], [price])
+				const reserveBefore = await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)
+				expect(reserveBefore).to.equal(direction === "positive" ? decimal(50n) : 0n)
+				await expect(clearingHouse.settlePartyATakeover(userAddr, [])).to.be.revertedWith("ClearingHouseFacet: Unsettled PartyB remaining")
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, settledPartyB)).to.equal(false)
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(reserveBefore)
+
+				await clearingHouse.settlePartyATakeover(userAddr, [settledPartyB])
+				expect(await context.viewFacetSymbol.getConnectedPartyBs(userAddr)).to.be.empty
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedgerAddr)).to.equal(false)
+				expect(await context.viewFacetSymbol.isConnectedPartyB(userAddr, hedger2Addr)).to.equal(false)
+				expect(await context.viewFacetSymbol.isConnectedPartyB(await user2.getAddress(), hedgerAddr)).to.equal(true)
+				expect(await context.viewFacet.getPartyBLiquidationSettlementReserve(hedgerAddr)).to.equal(0n)
+				expect((await context.viewFacet.getSettlementStates(userAddr, [settledPartyB]))[0].pending).to.equal(false)
+				expect(await context.viewFacet.isPartyALiquidated(userAddr)).to.equal(false)
+				expect((await context.viewFacet.getPartyATakeoverDetails(userAddr)).inProgress).to.equal(false)
+			})
+		}
+	})
+
+	describe("Mode switch after isolated liquidation settlement", function () {
+		async function setupIsolatedPositiveSettlement() {
+			const scenarioContext = await loadFixture(initializeFixture)
+
+			const scenarioUser = new User(scenarioContext, scenarioContext.signers.user)
+			await scenarioUser.setup()
+			await scenarioUser.setBalances(decimal(5000n), decimal(1000n), decimal(300n))
+			const scenarioUserAddr = await scenarioUser.getAddress()
+
+			const scenarioHedger = new Hedger(scenarioContext, scenarioContext.signers.hedger)
+			await scenarioHedger.setup()
+			await scenarioHedger.setBalances(decimal(10000n), decimal(10000n))
+			const scenarioHedgerAddr = await scenarioHedger.getAddress()
+
+			const scenarioHedger2 = new Hedger(scenarioContext, scenarioContext.signers.hedger2)
+			await scenarioHedger2.setup()
+			await scenarioHedger2.setBalances(decimal(10000n), decimal(10000n))
+			const scenarioHedger2Addr = await scenarioHedger2.getAddress()
+
+			const losingQuote = await scenarioUser.sendQuote(
+				limitQuoteRequestBuilder().quantity(decimal(1000n)).partyBWhiteList([scenarioHedger2Addr]).build(),
+			)
+			await scenarioHedger2.lockQuote(losingQuote)
+			await scenarioHedger2.openPosition(losingQuote, limitOpenRequestBuilder().filledAmount(decimal(1000n)).price(decimal(1n)).build())
+
+			const positiveSettlementQuote = await scenarioUser.sendQuote(
+				limitQuoteRequestBuilder().positionType(PositionType.SHORT).partyBWhiteList([scenarioHedgerAddr]).build(),
+			)
+			await scenarioHedger.lockQuote(positiveSettlementQuote)
+			await scenarioHedger.openPosition(positiveSettlementQuote)
+
+			expect(await scenarioContext.viewFacet.isCrossPartyB(scenarioHedgerAddr)).to.equal(false)
+
+			await scenarioUser.liquidateAndSetSymbolPrices([1n], [decimal(5n, 17)], [losingQuote, positiveSettlementQuote])
+			await scenarioUser.liquidatePositions([losingQuote, positiveSettlementQuote])
+
+			return { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr }
+		}
+
+		it("Should settle when an isolated-created positive settlement later becomes cross-mode", async function () {
+			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(decimal(50n))
+
+			await scenarioContext.controlFacet.connect(scenarioContext.signers.admin).setCrossPartyBModeActivated(true)
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).allocateForPartyB(decimal(100n), ZeroAddress)
+
+			await expect(
+				scenarioContext.partyALiquidationFacet
+					.connect(scenarioContext.signers.liquidator)
+					.settlePartyALiquidation(scenarioUserAddr, [scenarioHedgerAddr]),
+			).to.not.be.reverted
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(0n)
+		})
+
+		it("Should let takeover clear an isolated-created positive settlement after PartyB becomes cross-mode", async function () {
+			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(decimal(50n))
+
+			await scenarioContext.controlFacet.connect(scenarioContext.signers.admin).setCrossPartyBModeActivated(true)
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).allocateForPartyB(decimal(100n), ZeroAddress)
+			await scenarioContext.controlFacet
+				.connect(scenarioContext.signers.admin)
+				.grantRole(scenarioContext.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+			await scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).takeoverPartyALiquidation(scenarioUserAddr)
+			// Both hedger (positive settlement) and hedger2 (negative settlement) are pending; takeover must
+			// clear every pending settlement in a single call, otherwise the completeness gate reverts.
+			await expect(
+				scenarioContext.clearingHouseFacet
+					.connect(scenarioContext.signers.liquidator)
+					.settlePartyATakeover(scenarioUserAddr, [scenarioHedgerAddr, scenarioContext.signers.hedger2.address]),
+			).to.not.be.reverted
+
+			expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(scenarioHedgerAddr)).to.equal(0n)
+		})
+
+		it("Should revert takeover settlement when a pending PartyB is omitted", async function () {
+			const { scenarioContext, scenarioUserAddr, scenarioHedger, scenarioHedgerAddr } = await setupIsolatedPositiveSettlement()
+
+			await scenarioContext.controlFacet.connect(scenarioContext.signers.admin).setCrossPartyBModeActivated(true)
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()
+			await scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).allocateForPartyB(decimal(100n), ZeroAddress)
+			await scenarioContext.controlFacet
+				.connect(scenarioContext.signers.admin)
+				.grantRole(scenarioContext.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+
+			await scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).takeoverPartyALiquidation(scenarioUserAddr)
+
+			// hedger2 also has a pending settlement; omitting it would strand that state once
+			// liquidationDetails is deleted, so the call must revert.
+			await expect(
+				scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).settlePartyATakeover(scenarioUserAddr, [scenarioHedgerAddr]),
+			).to.be.revertedWith("ClearingHouseFacet: Unsettled PartyB remaining")
 		})
 	})
 

@@ -15,57 +15,63 @@ import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 
 contract PauseControlFacet is Accessibility, IPauseControlFacet {
 	/// @notice Pauses all protocol operations globally. No trading, deposits, or withdrawals will be possible.
-	function pauseGlobal() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseGlobal() external onlyRole(LibAccessibility.GLOBAL_PAUSER_ROLE) {
 		GlobalAppStorage.layout().globalPaused = true;
 		emit PauseGlobal();
 	}
 
 	/// @notice Pauses all liquidation operations. Positions cannot be liquidated while paused.
-	function pauseLiquidation() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseLiquidation() external onlyRole(LibAccessibility.LIQUIDATION_PAUSER_ROLE) {
 		GlobalAppStorage.layout().liquidationPaused = true;
 		emit PauseLiquidation();
 	}
 
 	/// @notice Pauses accounting operations including deposits, withdrawals, allocations, and deallocations.
-	function pauseAccounting() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseAccounting() external onlyRole(LibAccessibility.ACCOUNTING_PAUSER_ROLE) {
 		GlobalAppStorage.layout().accountingPaused = true;
 		emit PauseAccounting();
 	}
 
 	/// @notice Pauses all Party A (trader) actions including sending quotes, closing positions, and other trading operations.
-	function pausePartyAActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyAActions() external onlyRole(LibAccessibility.PARTY_A_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyAActionsPaused = true;
 		emit PausePartyAActions();
 	}
 
 	/// @notice Pauses all Party B (market maker/hedger) actions including accepting quotes and filling positions.
-	function pausePartyBActions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyBActions() external onlyRole(LibAccessibility.PARTY_B_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBActionsPaused = true;
 		emit PausePartyBActions();
 	}
 
 	/// @notice Restricts Party B to closing positions only; opening positions and locking quotes are blocked.
-	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pausePartyBOpenPositions() external onlyRole(LibAccessibility.PARTY_B_PAUSER_ROLE) {
 		GlobalAppStorage.layout().partyBOpenPositionsPaused = true;
 		emit PausePartyBOpenPositions();
 	}
 
 	/// @notice Pauses internal transfers between accounts within the protocol.
-	function pauseInternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseInternalTransfer() external onlyRole(LibAccessibility.INTERNAL_TRANSFER_PAUSER_ROLE) {
 		GlobalAppStorage.layout().internalTransferPaused = true;
 		emit PauseInternalTransfer();
 	}
 
 	/// @notice Pauses external transfers to addresses outside the protocol (e.g., to other protocols or wallets).
-	function pauseExternalTransfer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseExternalTransfer() external onlyRole(LibAccessibility.EXTERNAL_TRANSFER_PAUSER_ROLE) {
 		ExternalTransferStorage.layout().externalTransferPaused = true;
 		emit PauseExternalTransfer();
 	}
 
 	/// @notice Pauses instant layer operations for bound PartyAs.
-	function pauseInstantLayer() external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	function pauseInstantLayer() external onlyRole(LibAccessibility.INSTANT_LAYER_PAUSER_ROLE) {
 		GlobalAppStorage.layout().instantLayerPaused = true;
 		emit PauseInstantLayer();
+	}
+
+	/// @notice Pauses early withdrawal advances from registered express providers.
+	function pauseWithdrawAdvance() external onlyRole(LibAccessibility.WITHDRAW_ADVANCE_PAUSER_ROLE) {
+		GlobalAppStorage.layout().withdrawAdvancePaused = true;
+		emit PauseWithdrawAdvance();
 	}
 
 	/// @notice Activates emergency mode which enables emergency withdrawals and restricts normal protocol operations.
@@ -128,6 +134,12 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		emit UnpauseInstantLayer();
 	}
 
+	/// @notice Resumes early withdrawal advances from registered express providers.
+	function unpauseWithdrawAdvance() external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		GlobalAppStorage.layout().withdrawAdvancePaused = false;
+		emit UnpauseWithdrawAdvance();
+	}
+
 	/// @notice Deactivates emergency mode, returning the protocol to normal operations and disabling emergency withdrawals.
 	function deactiveEmergencyMode() external onlyRole(LibAccessibility.EMERGENCY_ADMIN_ROLE) {
 		GlobalAppStorage.layout().emergencyMode = false;
@@ -150,15 +162,22 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 		AccountStorage.layout().suspendedAddresses[user] = false;
 	}
 
-	/// @notice Pauses or unpauses a specific Party B from opening new positions (lockQuote + openPosition).
+	/// @notice Pauses a specific Party B from opening new positions (lockQuote + openPosition).
 	/// @dev Unlike deregisterPartyB, this keeps partyBStatus=true so the PartyB can still close positions,
 	///      deallocate funds, and receive correct fund routing in ClearingHouse distributions.
-	/// @param partyB The address of the Party B to pause/unpause.
-	/// @param status True to block new position opening, false to allow.
-	function setPartyBOpenPositionsPaused(address partyB, bool status) external onlyRole(LibAccessibility.PAUSER_ROLE) {
+	/// @param partyB The address of the Party B to pause.
+	function pausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.PARTY_B_PAUSER_ROLE) {
 		require(partyB != address(0), "PauseControlFacet: Zero address");
-		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = status;
-		emit SetPartyBOpenPositionsPausedForPartyB(partyB, status);
+		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = true;
+		emit SetPartyBOpenPositionsPausedForPartyB(partyB, true);
+	}
+
+	/// @notice Allows a previously paused Party B to open new positions again.
+	/// @param partyB The address of the Party B to unpause.
+	function unpausePartyBOpenPositionsFor(address partyB) external onlyRole(LibAccessibility.UNPAUSER_ROLE) {
+		require(partyB != address(0), "PauseControlFacet: Zero address");
+		GlobalAppStorage.layout().partyBOpenPositionsPausedPerPartyB[partyB] = false;
+		emit SetPartyBOpenPositionsPausedForPartyB(partyB, false);
 	}
 
 	/// @notice Sets the emergency status for multiple Party B addresses, enabling or disabling their emergency mode operations.
@@ -170,6 +189,22 @@ contract PauseControlFacet is Accessibility, IPauseControlFacet {
 			GlobalAppStorage.layout().partyBEmergencyStatus[partyBs[i]] = status;
 			emit SetPartyBEmergencyStatus(partyBs[i], status);
 		}
+	}
+
+	/// @notice Enables or disables the legacy deallocate function. When deprecated, users must use safeDeallocate.
+	/// @param deprecated True to deprecate legacy deallocate (requiring safeDeallocate), false to allow legacy deallocate.
+	function setLegacyDeallocateDeprecated(bool deprecated) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyDeallocateDeprecated(appLayout.legacyDeallocateDeprecated, deprecated);
+		appLayout.legacyDeallocateDeprecated = deprecated;
+	}
+
+	/// @notice Enables or disables legacy PartyA liquidation pricing. When deprecated, liquidators must use signed PartyB-symbol state.
+	/// @param deprecated True to deprecate legacy PartyA liquidation entrypoints, false to allow them.
+	function setLegacyPartyALiquidationDeprecated(bool deprecated) external onlyRole(LibAccessibility.MIGRATION_ROLE) {
+		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
+		emit SetLegacyPartyALiquidationDeprecated(appLayout.legacyPartyALiquidationDeprecated, deprecated);
+		appLayout.legacyPartyALiquidationDeprecated = deprecated;
 	}
 
 	/// @notice Deprecates the legacy withdrawal mechanism, forcing users to use the new withdrawal system.

@@ -131,7 +131,8 @@ library AccountStorage {
 		/// @dev Maps SubAccount => nonce. Next VA address = _generateVirtualAccountAddress(parent, nonce).
 		mapping(address => uint256) subAccountVirtualNonces;
 		/// @notice Authorized signer for protocol-level operations
-		/// @dev Used for operations requiring protocol authorization.
+		/// @dev Persistent signer used by existing AccountManager integrations. InstantLayer
+		///      execution uses LibAccountLayerSigner's transient override.
 		address globalSigner;
 		/// @notice Bytecode for AccountManager deployment
 		/// @dev AccountManagers are full contracts deployed per affiliate via CREATE2.
@@ -141,9 +142,17 @@ library AccountStorage {
 		bytes32 initAccountManagerCodeHash;
 		/// @notice PartyBs that closed positions with a VA while in cross liquidation.
 		/// @dev Maps VA address => set of partyBs with pending cross liq distributions.
-		/// Used to defer VA deletion until distributeForClearingHouse has credited the VA's share,
+		/// Used to defer VA deletion until applyClearingHouseSettlement has credited the VA's share,
 		/// even when the final hook fires with a different partyB.
 		mapping(address => EnumerableSet.AddressSet) vaPendingCrossLiqPartyBs;
+		/// @notice Account family the current signer session is confined to, or zero when unconfined.
+		/// @dev Set alongside globalSigner by callers that act on behalf of a delegate rather than the
+		///      owner. globalSigner answers "who is acting"; this answers "on which account they may act".
+		///      Without it, onlyAccountOwner passes for every account the owner holds, so a delegation
+		///      granted over one sub-account would reach its siblings. Holds the canonical sub-account:
+		///      virtual accounts resolve to their parent, so a scope covers a sub-account and its VAs --
+		///      exactly the family a delegation grant covers. Always cleared with the signer.
+		address scopedAccount;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

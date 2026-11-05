@@ -6,15 +6,20 @@ pragma solidity >=0.8.18;
 
 import { MAStorage } from "../storages/MAStorage.sol";
 import { AccountStorage } from "../storages/AccountStorage.sol";
-import { ClearingHouseStorage } from "../storages/ClearingHouseStorage.sol";
-import { QuoteStorage, Quote, PositionType, QuoteStatus } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, PositionType } from "../storages/QuoteStorage.sol";
 import { SettlementSig, QuoteSettlementData, UnifiedSettlementSig, UnifiedQuoteSettlementData } from "../storages/MuonStorage.sol";
 import { LibQuote } from "./LibQuote.sol";
+import { LibQuoteState } from "./extensions/LibQuoteState.sol";
 import { LibAccount } from "./LibAccount.sol";
+import { LibPartyBState } from "./extensions/LibPartyBState.sol";
+import { LibSymbolAdjustment } from "./LibSymbolAdjustment.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibSigner } from "./LibSigner.sol";
 
 library LibSettlement {
+	using LibPartyBState for address;
+	using LibQuoteState for Quote;
+
 	/// @notice Settles unrealized PnL by adjusting opened prices for quotes between Party A and multiple Party Bs.
 	/// @return newPartyBsAllocatedBalances The updated allocated balances for each Party B after settlement.
 	function settleUpnl(
@@ -40,7 +45,7 @@ library LibSettlement {
 			privilegedMode || quoteLayout.partyBOpenPositions[signer][partyA].length > 0,
 			"LibSettlement: Sender should have a position with partyA"
 		);
-		LibAccount.increasePartyANonce(partyA);
+		LibAccount.increasePartyAUpnlCounter(partyA);
 
 		int256[] memory settleAmounts = new int256[](settleSig.upnlPartyBs.length);
 		address[] memory partyBs = new address[](settleSig.upnlPartyBs.length);
@@ -49,14 +54,10 @@ library LibSettlement {
 		for (uint256 i = 0; i < settleSig.quotesSettlementsData.length; i++) {
 			QuoteSettlementData memory data = settleSig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			uint256 oldOpenedPrice = quote.openedPrice;
 			require(quote.partyA == partyA, "LibSettlement: PartyA is invalid");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"LibSettlement: Invalid state"
-			);
+			quote.requireOpenPosition();
 			require(data.partyBUpnlIndex <= settleSig.upnlPartyBs.length, "LibSettlement: Invalid partyBUpnlIndex in signature");
 			require(
 				partyBs[data.partyBUpnlIndex] == address(0) || partyBs[data.partyBUpnlIndex] == quote.partyB,
@@ -77,11 +78,7 @@ library LibSettlement {
 				LibAccount.partyBAvailableBalanceForLiquidation(settleSig.upnlPartyBs[i], partyB, partyA) >= 0,
 				"LibSettlement: PartyB should be solvent"
 			);
-			require(!MAStorage.layout().partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation process");
-			require(
-				!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress,
-				"LibSettlement: PartyB is in cross liquidation process"
-			);
+			partyB.requireNotLiquidating(partyA);
 
 			if (!privilegedMode && signer != partyB) {
 				require(
@@ -90,7 +87,7 @@ library LibSettlement {
 				);
 				MAStorage.layout().lastUpnlSettlementTimestamp[signer][partyB][partyA] = block.timestamp;
 			}
-			LibAccount.increasePartyBNonce(partyB, partyA);
+			LibAccount.increasePartyBUpnlCounter(partyB, partyA);
 
 			int256 settlementAmount = settleAmounts[i];
 
@@ -99,20 +96,26 @@ library LibSettlement {
 
 			totalSettlementAmount += settlementAmount;
 			if (settlementAmount >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][allocKey] -= uint256(settlementAmount);
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyBAllocatedBalance(
+					partyB,
+					allocKey,
+					uint256(settlementAmount),
+					SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT
+				);
 			} else {
-				accountLayout.partyBAllocatedBalances[partyB][allocKey] += uint256(-settlementAmount);
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyBAllocatedBalance(
+					partyB,
+					allocKey,
+					uint256(-settlementAmount),
+					SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
+				);
 			}
 			newPartyBsAllocatedBalances[i] = accountLayout.partyBAllocatedBalances[partyB][allocKey];
 		}
 		if (totalSettlementAmount >= 0) {
-			accountLayout.allocatedBalances[partyA] += uint256(totalSettlementAmount);
-			emit SharedEvents.BalanceChangePartyA(partyA, uint256(totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+			LibAccount.increasePartyAAllocatedBalance(partyA, uint256(totalSettlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN);
 		} else {
-			accountLayout.allocatedBalances[partyA] -= uint256(-totalSettlementAmount);
-			emit SharedEvents.BalanceChangePartyA(partyA, uint256(-totalSettlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+			LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-totalSettlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT);
 		}
 	}
 
@@ -121,12 +124,16 @@ library LibSettlement {
 	/// @param sig The unified settlement signature containing quote data and UPNLs
 	/// @param updatedPrices Array of new prices to set as openedPrice for each quote
 	/// @param privilegedMode When true, bypasses caller position checks and settlement cooldowns (used by force close and liquidation flows)
+	/// @param skipSolvencyChecks When true, skips the upnl-based solvency requires (oracle-less bound mode, where the
+	///        sig's upnl values are caller-supplied and unverified). Liquidation-state guards always run.
 	/// @return newPartyAsAllocatedBalances Array of new allocated balances for each partyA
 	/// @return settleAmountsPerPartyA Array of settlement amounts for each partyA (positive = partyA gains)
 	function settleUpnlUnified(
 		UnifiedSettlementSig memory sig,
 		uint256[] memory updatedPrices,
-		bool privilegedMode
+		bool privilegedMode,
+		bool applyPartyBLiquidationReserve,
+		bool skipSolvencyChecks
 	) public returns (uint256[] memory newPartyAsAllocatedBalances, int256[] memory settleAmountsPerPartyA) {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -163,29 +170,41 @@ library LibSettlement {
 		}
 
 		// 4. Validate partyB not in cross liquidation
-		require(!ClearingHouseStorage.layout().crossLiquidationDetails[partyB].inProgress, "LibSettlement: PartyB is in cross liquidation process");
+		partyB.requireNotCrossLiquidating();
 
 		// 5. Validate partyB solvency based on mode
-		if (isCrossPartyB) {
-			require(LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0)) >= 0, "LibSettlement: PartyB is insolvent");
-		} else {
-			for (uint256 i = 0; i < sig.partyAs.length; i++) {
+		if (!skipSolvencyChecks) {
+			if (isCrossPartyB) {
 				require(
-					LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyBPerPartyA[i], partyB, sig.partyAs[i]) >= 0,
-					"LibSettlement: PartyB is insolvent for partyA"
+					LibAccount.partyBAvailableBalanceForLiquidation(sig.upnlPartyB, partyB, address(0), applyPartyBLiquidationReserve) >= 0,
+					"LibSettlement: PartyB is insolvent"
 				);
+			} else {
+				for (uint256 i = 0; i < sig.partyAs.length; i++) {
+					require(
+						LibAccount.partyBAvailableBalanceForLiquidation(
+							sig.upnlPartyBPerPartyA[i],
+							partyB,
+							sig.partyAs[i],
+							applyPartyBLiquidationReserve
+						) >= 0,
+						"LibSettlement: PartyB is insolvent for partyA"
+					);
+				}
 			}
 		}
 
 		// 6. Validate all partyAs are solvent and not in liquidation, update nonces
 		for (uint256 i = 0; i < sig.partyAs.length; i++) {
 			address partyA = sig.partyAs[i];
-			require(
-				LibAccount.partyAAvailableBalanceForLiquidation(sig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
-				"LibSettlement: PartyA is insolvent"
-			);
+			if (!skipSolvencyChecks) {
+				require(
+					LibAccount.partyAAvailableBalanceForLiquidation(sig.upnlPartyAs[i], accountLayout.allocatedBalances[partyA], partyA) >= 0,
+					"LibSettlement: PartyA is insolvent"
+				);
+			}
 			require(!maLayout.liquidationStatus[partyA], "LibSettlement: PartyA is in liquidation");
-			require(!maLayout.partyBLiquidationStatus[partyB][partyA], "LibSettlement: PartyB is in liquidation with partyA");
+			partyB.requireNotLiquidatingAgainst(partyA);
 		}
 
 		// 7. Process quotes and calculate settlement amounts per partyA
@@ -194,18 +213,14 @@ library LibSettlement {
 		for (uint256 i = 0; i < sig.quotesSettlementsData.length; i++) {
 			UnifiedQuoteSettlementData memory data = sig.quotesSettlementsData[i];
 			Quote storage quote = quoteLayout.quotes[data.quoteId];
+			LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 			uint256 oldOpenedPrice = quote.openedPrice;
 
 			// Validate quote
 			require(quote.partyB == partyB, "LibSettlement: Invalid partyB for quote");
 			require(data.partyAIndex < sig.partyAs.length, "LibSettlement: Invalid partyAIndex");
 			require(quote.partyA == sig.partyAs[data.partyAIndex], "LibSettlement: Invalid partyA for quote");
-			require(
-				quote.quoteStatus == QuoteStatus.OPENED ||
-					quote.quoteStatus == QuoteStatus.CLOSE_PENDING ||
-					quote.quoteStatus == QuoteStatus.CANCEL_CLOSE_PENDING,
-				"LibSettlement: Invalid quote state"
-			);
+			quote.requireOpenPosition();
 
 			// Validate price range
 			_validatePriceInRange(quote.openedPrice, data.currentPrice, updatedPrices[i]);
@@ -220,8 +235,6 @@ library LibSettlement {
 
 		// 8. Apply settlements per partyA
 		newPartyAsAllocatedBalances = new uint256[](sig.partyAs.length);
-		int256 partyBNetDelta;
-
 		for (uint256 i = 0; i < sig.partyAs.length; i++) {
 			address partyA = sig.partyAs[i];
 			int256 settlementAmount = settleAmountsPerPartyA[i];
@@ -236,44 +249,58 @@ library LibSettlement {
 			}
 
 			// Update nonces
-			LibAccount.increaseBothNonces(partyB, partyA);
+			LibAccount.increaseBothUpnlCounters(partyB, partyA);
 
-			// Emit partyB balance change events per partyA
-			if (settlementAmount >= 0) {
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
-			} else {
-				emit SharedEvents.BalanceChangePartyB(partyB, partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
-			}
-
-			// For cross partyB, accumulate delta and apply once after loop to avoid intermediate underflow
-			if (isCrossPartyB) {
-				partyBNetDelta -= settlementAmount;
-			} else {
+			if (!isCrossPartyB) {
 				if (settlementAmount >= 0) {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] -= uint256(settlementAmount);
+					LibAccount.decreasePartyBAllocatedBalance(
+						partyB,
+						partyA,
+						uint256(settlementAmount),
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT
+					);
 				} else {
-					accountLayout.partyBAllocatedBalances[partyB][partyA] += uint256(-settlementAmount);
+					LibAccount.increasePartyBAllocatedBalance(
+						partyB,
+						partyA,
+						uint256(-settlementAmount),
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
+					);
 				}
 			}
 
 			// Update partyA balance
 			if (settlementAmount >= 0) {
-				accountLayout.allocatedBalances[partyA] += uint256(settlementAmount);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_IN);
+				LibAccount.increasePartyAAllocatedBalance(partyA, uint256(settlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN);
 			} else {
-				accountLayout.allocatedBalances[partyA] -= uint256(-settlementAmount);
-				emit SharedEvents.BalanceChangePartyA(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.REALIZED_PNL_OUT);
+				LibAccount.decreasePartyAAllocatedBalance(partyA, uint256(-settlementAmount), SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT);
 			}
 
 			newPartyAsAllocatedBalances[i] = accountLayout.allocatedBalances[partyA];
 		}
 
-		// Apply accumulated cross partyB balance delta once
+		// Apply cross-pool credits before debits so offsetting settlements cannot cause an intermediate underflow.
+		// Each mutation emits the shared address(0) bucket key and its own reason from LibAccount.
 		if (isCrossPartyB) {
-			if (partyBNetDelta >= 0) {
-				accountLayout.partyBAllocatedBalances[partyB][address(0)] += uint256(partyBNetDelta);
-			} else {
-				accountLayout.partyBAllocatedBalances[partyB][address(0)] -= uint256(-partyBNetDelta);
+			for (uint256 i = 0; i < sig.partyAs.length; i++) {
+				if (settleAmountsPerPartyA[i] < 0) {
+					LibAccount.increasePartyBAllocatedBalance(
+						partyB,
+						address(0),
+						uint256(-settleAmountsPerPartyA[i]),
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_IN
+					);
+				}
+			}
+			for (uint256 i = 0; i < sig.partyAs.length; i++) {
+				if (settleAmountsPerPartyA[i] >= 0) {
+					LibAccount.decreasePartyBAllocatedBalance(
+						partyB,
+						address(0),
+						uint256(settleAmountsPerPartyA[i]),
+						SharedEvents.BalanceChangeType.SETTLEMENT_PNL_OUT
+					);
+				}
 			}
 		}
 	}

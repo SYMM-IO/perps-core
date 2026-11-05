@@ -91,6 +91,16 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 				).to.be.revertedWith("PartyBFacet: Sender isn't partyB of quote")
 			})
 
+			it("fails when the symbol is frozen for adjustment", async function () {
+				const quoteId = await openWith(hedger)
+				const quote = await context.viewFacetQuote.getQuote(quoteId)
+				const now = await getBlockTimestamp()
+				await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote.symbolId, decimal(4n), now - 1n)
+				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
+					"LibSymbolAdjustment: Symbol is frozen",
+				)
+			})
+
 			it("fails on zero amount", async function () {
 				const quoteId = await openWith(hedger)
 				const quoteBefore = await context.viewFacetQuote.getQuote(quoteId)
@@ -167,7 +177,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 					.liquidatePartyB(await hedger.getAddress(), await user.getAddress(), await getDummySingleUpnlSig(decimal(-100n)))
 
 				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
-					"PartyBFacet: PartyB is liquidated",
+					"PartyBState: PartyB is in liquidation",
 				)
 			})
 
@@ -192,7 +202,7 @@ export function shouldBehaveLikePartyBEmergencyActionsFacet(): void {
 					.liquidateCrossPartyB(await hedger.getAddress(), "0x01", decimal(-500000n), await getBlockTimestamp())
 
 				await expect(context.partyBEmergencyActionsFacet.connect(hedger.signer).adlClose(quoteId, decimal(10n), decimal(1n))).to.be.revertedWith(
-					"PartyBFacet: PartyB is in cross liquidation process",
+					"PartyBState: PartyB is in cross liquidation",
 				)
 			})
 		})

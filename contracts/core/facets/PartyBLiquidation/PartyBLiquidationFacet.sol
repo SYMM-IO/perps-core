@@ -29,13 +29,14 @@ contract PartyBLiquidationFacet is Pausable, Accessibility, IPartyBLiquidationFa
 		onlyRole(LibAccessibility.PARTYB_LIQUIDATOR_ROLE)
 	{
 		emit LiquidatePartyB(msg.sender, partyB, partyA, AccountStorage.layout().partyBAllocatedBalances[partyB][partyA], upnlSig.upnl);
-		PartyBLiquidationFacetImpl.liquidatePartyB(partyB, partyA, upnlSig);
+		PartyBLiquidationFacetImpl.startPartyBLiquidation(partyB, partyA, upnlSig);
 	}
 
 	/// @notice Liquidates positions of Party B for a given Party A.
 	/// @param partyB The address of Party B whose positions are being liquidated.
 	/// @param partyA The address of Party A related to the liquidation.
-	/// @param priceSig The Muon signature containing the quote price data.
+	/// @param priceSig The Muon signature containing quote prices. During an open restatement, prices are venue-basis values
+	///                 signed strictly after the window started; Core converts them per quote before closing.
 	function liquidatePositionsPartyB(
 		address partyB,
 		address partyA,

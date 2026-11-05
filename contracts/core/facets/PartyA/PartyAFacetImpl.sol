@@ -5,25 +5,27 @@
 pragma solidity >=0.8.18;
 
 import { LibMuonPartyA } from "../../libraries/muon/LibMuonPartyA.sol";
+import { LibSymbolAdjustment } from "../../libraries/LibSymbolAdjustment.sol";
 import { LibAccount } from "../../libraries/LibAccount.sol";
 import { LibQuote } from "../../libraries/LibQuote.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibAccessibility } from "../../libraries/LibAccessibility.sol";
 import { SharedEvents } from "../../libraries/SharedEvents.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
-import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues, PositionType, OrderType, SolverFeeCaps } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { SymbolStorage } from "../../storages/SymbolStorage.sol";
 import { AffiliateStorage } from "../../storages/AffiliateStorage.sol";
 import { Fee } from "../../storages/QuoteStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
+import { LibExecutionContext } from "../../libraries/LibExecutionContext.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LockedValuesOps } from "../../libraries/LibLockedValues.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
-import { ISymmioHook } from "../../interfaces/ISymmioHook.sol";
 import { LibHook } from "../../libraries/LibHook.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { LibSymbol } from "../../libraries/LibSymbol.sol";
 
 library PartyAFacetImpl {
 	using LockedValuesOps for LockedValues;
@@ -43,7 +45,8 @@ library PartyAFacetImpl {
 		uint256 deadline,
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
-		bytes memory data
+		bytes memory data,
+		SolverFeeCaps memory solverFeeCaps
 	) internal {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
@@ -52,12 +55,14 @@ library PartyAFacetImpl {
 		AffiliateStorage.Layout storage affiliateLayout = AffiliateStorage.layout();
 		address signer = LibSigner.getSigner();
 
+		require(orderType != OrderType.MARKET_BEST_EFFORT, "PartyAFacet: MARKET_BEST_EFFORT is close-only");
 		require(!LibAccessibility.hasRole(signer, LibAccessibility.LIQUIDATOR_ROLE), "PartyAFacet: Liquidator can't be partyA");
 		require(
 			quoteLayout.partyAPendingQuotes[signer].length < maLayout.pendingQuotesValidLength,
 			"PartyAFacet: Number of pending quotes out of range"
 		);
 		require(symbolLayout.symbols[symbolId].isValid, "PartyAFacet: Symbol is not valid");
+		LibSymbolAdjustment.requireNotFrozen(symbolId);
 		require(deadline >= block.timestamp, "PartyAFacet: Low deadline");
 
 		LockedValues memory lockedValues = LockedValues(cva, lf, partyAmm, partyBmm);
@@ -65,6 +70,7 @@ library PartyAFacetImpl {
 			lockedValues.lf >= (symbolLayout.symbols[symbolId].minAcceptablePortionLF * lockedValues.totalForPartyA()) / 1e18,
 			"PartyAFacet: LF is not enough"
 		);
+		require(lockedValues.lf >= LibSymbol.requiredNotionalLF(symbolId, quantity, price), "PartyAFacet: Notional LF is not enough");
 
 		require(lockedValues.totalForPartyA() >= symbolLayout.symbols[symbolId].minAcceptableQuoteValue, "PartyAFacet: Quote value is low");
 		for (uint8 i = 0; i < partyBsWhiteList.length; i++) {
@@ -79,6 +85,12 @@ library PartyAFacetImpl {
 		} else {
 			LibMuonPartyA.verifyPartyAUpnlAndPrice(upnlSig, signer, symbolId, MuonFunction.Trading);
 		}
+
+		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
+		require(
+			affiliate == address(0) || GlobalAppStorage.layout().affiliateShutdownTime[affiliate] == 0,
+			"PartyAFacet: Affiliate shutdown scheduled"
+		);
 
 		Fee memory fee;
 		if (affiliateLayout.affiliateFeeForUser[affiliate][signer][symbolId].isSet) {
@@ -103,10 +115,8 @@ library PartyAFacetImpl {
 				"PartyAFacet: insufficient available balance"
 			);
 		}
-		require(maLayout.affiliateStatus[affiliate] || affiliate == address(0), "PartyAFacet: Invalid affiliate");
-
-		// lock funds the in middle of way — skip in instantOpenMode (will be written directly to lockedBalances)
-		bool _instantOpenMode = GlobalAppStorage.layout().instantOpenMode;
+		// Add funds to pendingLockedBalances unless instantOpenMode writes them directly to lockedBalances.
+		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
 		if (!_instantOpenMode) {
 			accountLayout.pendingLockedBalances[signer].add(lockedValues);
 		}
@@ -153,14 +163,15 @@ library PartyAFacetImpl {
 			quoteLayout.partyAPendingQuotes[signer].push(currentId);
 		}
 		quoteLayout.quotes[currentId] = quote;
+		quoteLayout.solverFeeStates[currentId].openRateCap = solverFeeCaps.openRateCap;
+		quoteLayout.solverFeeStates[currentId].closeRateCap = solverFeeCaps.closeRateCap;
 
-		uint256 feeAmount = LibQuote.getOpenTradingFee(currentId);
+		uint256 feeAmount = LibQuote.getReservedOpenTradingFee(quoteLayout.quotes[currentId], quantity);
 		require(accountLayout.allocatedBalances[signer] >= feeAmount, "PartyAFacet: Insufficient allocated balance for fee");
-		accountLayout.allocatedBalances[signer] -= feeAmount;
+		LibAccount.decreasePartyAAllocatedBalance(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		if (!_instantOpenMode) {
 			LibAccount.reserveOpenTradingFee(signer, feeAmount);
 		}
-		emit SharedEvents.BalanceChangePartyA(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 	}
 
 	/// @notice Cancels a pending quote immediately or requests cancellation for a locked quote

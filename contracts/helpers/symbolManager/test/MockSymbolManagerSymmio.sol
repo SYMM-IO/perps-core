@@ -8,6 +8,8 @@ import { ISymmio } from "../interfaces/ISymmio.sol";
 contract MockSymbolManagerSymmio is ISymmio {
 	mapping(uint256 => Symbol) public mockSymbols;
 	mapping(uint256 => uint256) private symbolForceCloseGapRatios;
+	mapping(uint256 => uint256) private symbolMinAcceptableNotionalLFRates;
+	mapping(uint256 => bool) private symbolMinAcceptableNotionalLFRateOverrides;
 	Symbol[] public symbolList;
 
 	function setMockSymbol(uint256 symbolId, Symbol memory symbol) public {
@@ -46,6 +48,23 @@ contract MockSymbolManagerSymmio is ISymmio {
 	function setSymbolAcceptableValues(uint256 symbolId, uint256 minAcceptableQuoteValue, uint256 minAcceptablePortionLF) external {
 		mockSymbols[symbolId].minAcceptableQuoteValue = minAcceptableQuoteValue;
 		mockSymbols[symbolId].minAcceptablePortionLF = minAcceptablePortionLF;
+	}
+
+	function setSymbolMinAcceptableNotionalLFRate(uint256 symbolId, uint256 minAcceptableNotionalLFRate) external {
+		symbolMinAcceptableNotionalLFRates[symbolId] = minAcceptableNotionalLFRate;
+		if (symbolId != 0) {
+			symbolMinAcceptableNotionalLFRateOverrides[symbolId] = true;
+		}
+	}
+
+	function clearSymbolMinAcceptableNotionalLFRateOverride(uint256 symbolId) external {
+		delete symbolMinAcceptableNotionalLFRates[symbolId];
+		delete symbolMinAcceptableNotionalLFRateOverrides[symbolId];
+	}
+
+	function getSymbolMinAcceptableNotionalLFRate(uint256 symbolId) external view returns (uint256 rate, bool hasOverride) {
+		hasOverride = symbolId != 0 && symbolMinAcceptableNotionalLFRateOverrides[symbolId];
+		rate = hasOverride ? symbolMinAcceptableNotionalLFRates[symbolId] : symbolMinAcceptableNotionalLFRates[0];
 	}
 
 	function setSymbolFundingState(uint256 symbolId, uint256 fundingRateEpochDuration, uint256 fundingRateWindowTime) external {

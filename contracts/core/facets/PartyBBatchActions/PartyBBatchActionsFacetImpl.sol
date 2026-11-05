@@ -6,10 +6,11 @@ pragma solidity >=0.8.18;
 
 import { LibMuonPartyBBatchActions } from "../../libraries/muon/LibMuonPartyBBatchActions.sol";
 import { LibSolvency } from "../../libraries/LibSolvency.sol";
+import { LibSolverFee } from "../../libraries/LibSolverFee.sol";
 import { LibPartyBPositionsActions } from "../../libraries/LibPartyBPositionsActions.sol";
-import { QuoteStorage, Quote, PositionType, OrderType, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
+import { LibPartyBState } from "../../libraries/extensions/LibPartyBState.sol";
+import { QuoteStorage, Quote, QuoteStatus, LockedValues } from "../../storages/QuoteStorage.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
-import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { TradingModeStorage } from "../../storages/TradingModeStorage.sol";
 import { LibConnections } from "../../libraries/LibConnections.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
@@ -25,13 +26,7 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBBatchActionsFacetImpl {
 	using LockedValuesOps for LockedValues;
-
-	// NOTE: Solidity v0.8.18 doesn't support emitting events via qualified identifiers
-	// like `emit IPartiesEvents.OpenPosition(...)`. To keep event signatures consistent
-	// with `IPartiesEvents`, we redeclare the required events here and emit them unqualified.
-	event AcceptCancelRequest(uint256 quoteId, QuoteStatus quoteStatus);
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice); // for backward compatibility
-	event OpenPosition(uint256 quoteId, address partyA, address partyB, uint256 filledAmount, uint256 openedPrice, LockedValues lockedValues);
+	using LibPartyBState for address;
 
 	/// @notice Opens multiple positions in a single transaction with shared solvency verification
 	function openPositions(
@@ -57,6 +52,11 @@ library PartyBBatchActionsFacetImpl {
 		// Check symbol restrictions for all quotes
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[i]];
+			require(maLayout.affiliateStatus[quote.affiliate] || quote.affiliate == address(0), "PartyBFacet: Invalid affiliate");
+			require(
+				quote.affiliate == address(0) || appLayout.affiliateShutdownTime[quote.affiliate] == 0,
+				"PartyBFacet: Affiliate shutdown scheduled"
+			);
 			require(
 				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
 				"PartyBFacet: Symbol not allowed due to connection restrictions"
@@ -76,18 +76,14 @@ library PartyBBatchActionsFacetImpl {
 
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuote.partyA], "PartyBFacet: PartyA isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[firstQuote.partyB][firstQuote.partyA], "PartyBFacet: PartyB isn't solvent");
-		require(
-			!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuote.partyB].inProgress,
-			"PartyBFacet: PartyB is in cross liquidation process"
-		);
+		firstQuote.partyB.requireNotLiquidating(firstQuote.partyA);
 
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuote.partyB, firstQuote.partyA, quoteIds, MuonFunction.Trading);
 		}
 
-		LibAccount.increaseBothNonces(firstQuote.partyB, firstQuote.partyA);
+		LibAccount.increaseBothUpnlCounters(firstQuote.partyB, firstQuote.partyA);
 
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
@@ -100,8 +96,7 @@ library PartyBBatchActionsFacetImpl {
 			}
 			// Emitting events here in the impl is against our standards in these contracts,
 			// but given that this contract is getting too large and we can't return the ids, we are allowing it here.
-			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i]);
-			emit LibPartiesEvents.OpenPosition(quoteIds[i], quote.partyA, quote.partyB, filledAmounts[i], openedPrices[i], quote.lockedValues);
+			LibPartiesEvents.emitOpenPosition(quote, quoteIds[i], filledAmounts[i], openedPrices[i]);
 			if (newId != 0) {
 				Quote storage newQuote = QuoteStorage.layout().quotes[newId];
 				if (newQuote.quoteStatus == QuoteStatus.PENDING) {
@@ -123,6 +118,7 @@ library PartyBBatchActionsFacetImpl {
 							tradingFee: newQuote.tradingFee,
 							deadline: newQuote.deadline,
 							affiliate: newQuote.affiliate,
+							solverFeeCaps: LibSolverFee.caps(QuoteStorage.layout().solverFeeStates[newId]),
 							data: newQuote.data
 						})
 					);
@@ -132,7 +128,7 @@ library PartyBBatchActionsFacetImpl {
 			}
 		}
 		if (requireMuonAndSolvencyChecks) {
-			LibSolvency.isSolventAfterOpenPosition(
+			LibSolvency.requireSolventAfterOpenPosition(
 				quoteIds,
 				filledAmounts,
 				upnlSig.prices,
@@ -168,7 +164,7 @@ library PartyBBatchActionsFacetImpl {
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
 			LibMuonPartyBBatchActions.verifyPairUpnlAndPrices(upnlSig, firstQuotePartyB, firstQuotePartyA, quoteIds, MuonFunction.Trading);
-			LibSolvency.isSolventAfterClosePosition(
+			LibSolvency.requireSolventAfterClosePosition(
 				quoteIds,
 				filledAmounts,
 				closedPrices,
@@ -182,13 +178,9 @@ library PartyBBatchActionsFacetImpl {
 
 		// Solvency checks
 		require(!maLayout.liquidationStatus[firstQuotePartyA], "PartyBFacet: PartyA isn't solvent");
-		require(!maLayout.partyBLiquidationStatus[firstQuotePartyB][firstQuotePartyA], "PartyBFacet: PartyB isn't solvent");
-		require(
-			!ClearingHouseStorage.layout().crossLiquidationDetails[firstQuotePartyB].inProgress,
-			"PartyBFacet: PartyB is in cross liquidation process"
-		);
+		firstQuotePartyB.requireNotLiquidating(firstQuotePartyA);
 
-		LibAccount.increaseBothNonces(firstQuotePartyB, firstQuotePartyA);
+		LibAccount.increaseBothUpnlCounters(firstQuotePartyB, firstQuotePartyA);
 
 		quoteStatuses = new QuoteStatus[](quoteIds.length);
 		closeIds = new uint256[](quoteIds.length);

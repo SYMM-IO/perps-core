@@ -256,7 +256,18 @@ export function shouldBehaveLikeForceClosePosition(): void {
 					0n, // upnlPartyB
 					0n, // upnlPartyA
 				)
-				await user.forceClosePosition(quote2ShortOpened.id, dummySig)
+				const allocatedBeforeLiquidation = (await hedger.getBalanceInfo(userAddress)).allocatedBalances
+				const tx = await context.forceActionsFacet.connect(context.signers.user).forceClosePosition(quote2ShortOpened.id, dummySig)
+				const receipt = await tx.wait()
+				const liquidationEvent = (receipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = context.forceActionsFacet.interface.parseLog(log)
+						return parsed?.name === "LiquidatePartyB" ? [parsed] : []
+					} catch {
+						return []
+					}
+				})[0]
+				expect(liquidationEvent.args.partyBAllocatedBalance).to.equal(allocatedBeforeLiquidation)
 
 				// PartyB should be marked as liquidated with zero allocation
 				let balanceInfo: BalanceInfo = await hedger.getBalanceInfo(userAddress)
@@ -313,6 +324,56 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				},
 				beforeOutput: beforeOut,
 			})
+		})
+
+		it("Should fail forceClosePosition while symbol is frozen", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				decimal(2n), // currentPrice
+				decimal(2n), // averagePrice
+				quote2ShortOpened.symbolId, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
+			)
+
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote2ShortOpened.symbolId, decimal(4n), now - 1n)
+
+			await expect(user.forceClosePosition(quote2ShortOpened.id, dummySig)).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
+		})
+
+		it("Should fail finalizeForceClose when a symbol adjustment freezes the symbol between init and finalize", async function () {
+			const sigTimes = await prepareSigTimes(100n)
+			const gapRatio2 = await context.viewFacetSymbol.forceCloseGapRatio(quote2ShortOpened.symbolId)
+			const dummySig = await getDummyHighLowPriceSig(
+				sigTimes[0], // startTime
+				sigTimes[1], // endTime
+				BigInt(quote2ShortOpened.requestedClosePrice) + unDecimal(BigInt(quote2ShortOpened.requestedClosePrice) * BigInt(gapRatio2)) - decimal(1n), // lowest
+				decimal(3n), // highest
+				decimal(2n), // currentPrice
+				decimal(2n), // averagePrice
+				quote2ShortOpened.symbolId, // symbolId
+				0n, // upnlPartyB
+				0n, // upnlPartyA
+			)
+
+			// Step 1: initialize force close while the symbol is still unfrozen — succeeds.
+			await context.forceCloseStepsFacet.initializeForceClose(quote2ShortOpened.id, dummySig)
+
+			// Straddle the window: a corporate action gets scheduled with a past-effective timestamp,
+			// freezing the symbol immediately, in between init and finalize.
+			const now = await getBlockTimestamp()
+			await context.symbolAdjustmentFacet.connect(context.signers.admin).scheduleAdjustment(quote2ShortOpened.symbolId, decimal(4n), now - 1n)
+
+			// Step 3: finalizeForceClose must now revert because the symbol is frozen.
+			await expect(
+				context.forceCloseStepsFacet.finalizeForceClose(quote2ShortOpened.id, await getDummyPairUpnlAndPriceSig(decimal(2n), 0n, 0n)),
+			).to.be.revertedWith("LibSymbolAdjustment: Symbol is frozen")
 		})
 
 		it("increments partyA and partyB nonces on solvent forceClosePosition", async function () {
@@ -564,6 +625,44 @@ export function shouldBehaveLikeForceClosePosition(): void {
 				expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
 			})
 
+			it("reports the pre-liquidation allocation in the three-step flow", async function () {
+				const sigTimes = await prepareSigTimes(100n)
+				const partyAAddress = await user.getAddress()
+				const liquidatingSig = await getDummyHighLowPriceSig(
+					sigTimes[0],
+					sigTimes[1],
+					decimal(1n),
+					decimal(12n),
+					decimal(5n),
+					decimal(10n),
+					quote1LongOpened.symbolId,
+					-decimal(5000n),
+					decimal(5000n),
+				)
+				const allocatedBeforeLiquidation = (await hedger.getBalanceInfo(partyAAddress)).allocatedBalances
+
+				await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, liquidatingSig)
+				const tx = await context.forceCloseStepsFacet.finalizeForceClose(
+					quote1LongOpened.id,
+					await getDummyPairUpnlAndPriceSig(
+						BigInt(liquidatingSig.currentPrice),
+						BigInt(liquidatingSig.upnlPartyA),
+						BigInt(liquidatingSig.upnlPartyB),
+					),
+				)
+				const receipt = await tx.wait()
+				const liquidationEvent = (receipt?.logs ?? []).flatMap(log => {
+					try {
+						const parsed = context.forceCloseStepsFacet.interface.parseLog(log)
+						return parsed?.name === "LiquidatePartyB" ? [parsed] : []
+					} catch {
+						return []
+					}
+				})[0]
+
+				expect(liquidationEvent.args.partyBAllocatedBalance).to.equal(allocatedBeforeLiquidation)
+			})
+
 			it("uses reserve vault to keep partyB solvent during force close", async function () {
 				const sigTimes = await prepareSigTimes(100n)
 				const hedgerAddress = await hedger.getAddress()
@@ -773,10 +872,11 @@ export function shouldBehaveLikeForceClosePosition(): void {
 
 				describe("ForceCloseDetail", function () {
 					describe("ForceCloseDetail flags initialization", function () {
-						it("sets inProgress, closePrice and partyBAvailableAfterClose correctly on initializeForceClose", async function () {
+						it("sets inProgress, closeId, closePrice and partyBAvailableAfterClose correctly on initializeForceClose", async function () {
 							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
 
 							const detail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const closeId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
 
 							expectedClosePrice = calculateExpectedClosePriceForForceCloseWithAvg(
 								quote1LongOpened,
@@ -790,6 +890,7 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							expect(detail.timestamp).to.be.gt(0n)
 							expect(detail.quoteId).to.equal(quote1LongOpened.id)
 							expect(detail.partyBState).to.equal(PartyBForceCloseState.NONE)
+							expect(detail.closeId).to.equal(closeId)
 						})
 
 						it("should revert initializeForceClose when partyA would be insolvent", async function () {
@@ -797,6 +898,193 @@ export function shouldBehaveLikeForceClosePosition(): void {
 							await expect(context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)).to.be.revertedWith(
 								"PartyAFacet: PartyA will be insolvent",
 							)
+						})
+					})
+
+					describe("ForceCloseDetail lifecycle isolation", function () {
+						it("rejects an initialized close price after cancellation and a replacement close request", async function () {
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+
+							const staleDetail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const originalCloseId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
+
+							await user.requestToCancelCloseRequest(quote1LongOpened.id)
+							await hedger.acceptCancelCloseRequest(quote1LongOpened.id)
+
+							const canceledQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const detailAfterCancellation = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							expect(canceledQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
+							expect(detailAfterCancellation.inProgress).to.equal(true)
+							expect(detailAfterCancellation.closeId).to.equal(originalCloseId)
+
+							const replacementQuantity = (await getQuoteQuantity(context, quote1LongOpened.id)) / 2n
+							const replacementRequestedPrice = decimal(20n)
+							await user.requestToClosePosition(
+								quote1LongOpened.id,
+								limitCloseRequestBuilder()
+									.quantityToClose(replacementQuantity)
+									.closePrice(replacementRequestedPrice)
+									.deadline((await getBlockTimestamp()) + 1000n)
+									.build(),
+							)
+
+							const replacementQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const replacementCloseId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
+							expect(replacementCloseId).to.be.greaterThan(originalCloseId)
+							expect(replacementQuote.quantityToClose).to.equal(replacementQuantity)
+							expect(replacementQuote.requestedClosePrice).to.equal(replacementRequestedPrice)
+							expect(staleDetail.closePrice).to.not.equal(replacementRequestedPrice)
+							expect(staleDetail.closeId).to.not.equal(replacementCloseId)
+
+							await expect(
+								context.forceCloseStepsFacet.settleUpnlForForceClose(quote1LongOpened.id, settlementSig, [updatePrice]),
+							).to.be.revertedWith("ForceActionsFacet: Invalid state")
+							await expect(
+								context.forceCloseStepsFacet.finalizeForceClose(
+									quote1LongOpened.id,
+									await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, 0n),
+								),
+							).to.be.revertedWith("ForceActionsFacet: Invalid state")
+
+							const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+							expect(quoteAfter.quantityToClose).to.equal(replacementQuantity)
+							expect(quoteAfter.requestedClosePrice).to.equal(replacementRequestedPrice)
+							expect(quoteAfter.closedAmount).to.equal(replacementQuote.closedAmount)
+							expect(quoteAfter.avgClosedPrice).to.equal(replacementQuote.avgClosedPrice)
+							expect(detailAfter.closePrice).to.equal(staleDetail.closePrice)
+							expect(detailAfter.inProgress).to.equal(true)
+						})
+
+						it("rejects an initialized close price after expiry and a replacement close request", async function () {
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+
+							const staleDetail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							const originalCloseId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
+							const expiringQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+
+							await time.setNextBlockTimestamp(BigInt(expiringQuote.deadline) + 1n)
+							await context.partyAFacet.connect(user.signer).expireQuote([quote1LongOpened.id])
+
+							const expiredQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const detailAfterExpiry = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							expect(expiredQuote.quoteStatus).to.equal(QuoteStatus.OPENED)
+							expect(detailAfterExpiry.inProgress).to.equal(true)
+							expect(detailAfterExpiry.closeId).to.equal(originalCloseId)
+
+							const replacementQuantity = (await getQuoteQuantity(context, quote1LongOpened.id)) / 4n
+							const replacementRequestedPrice = decimal(30n)
+							await user.requestToClosePosition(
+								quote1LongOpened.id,
+								limitCloseRequestBuilder()
+									.quantityToClose(replacementQuantity)
+									.closePrice(replacementRequestedPrice)
+									.deadline((await getBlockTimestamp()) + 1000n)
+									.build(),
+							)
+
+							const replacementQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const replacementCloseId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
+							expect(replacementCloseId).to.be.greaterThan(originalCloseId)
+							expect(replacementQuote.quantityToClose).to.equal(replacementQuantity)
+							expect(replacementQuote.requestedClosePrice).to.equal(replacementRequestedPrice)
+							expect(staleDetail.closePrice).to.not.equal(replacementRequestedPrice)
+							expect(staleDetail.closeId).to.not.equal(replacementCloseId)
+
+							await expect(
+								context.forceCloseStepsFacet.finalizeForceClose(
+									quote1LongOpened.id,
+									await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, 0n),
+								),
+							).to.be.revertedWith("ForceActionsFacet: Invalid state")
+
+							const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							expect(quoteAfter.quoteStatus).to.equal(QuoteStatus.CLOSE_PENDING)
+							expect(quoteAfter.quantityToClose).to.equal(replacementQuantity)
+							expect(quoteAfter.requestedClosePrice).to.equal(replacementRequestedPrice)
+							expect(quoteAfter.closedAmount).to.equal(replacementQuote.closedAmount)
+							expect(quoteAfter.avgClosedPrice).to.equal(replacementQuote.avgClosedPrice)
+						})
+
+						it("rejects continuation while the bound close request is cancel-pending", async function () {
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+							const closeId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
+
+							await user.requestToCancelCloseRequest(quote1LongOpened.id)
+
+							const cancelPendingQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							expect(cancelPendingQuote.quoteStatus).to.equal(QuoteStatus.CANCEL_CLOSE_PENDING)
+							expect(await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)).to.equal(closeId)
+							await expect(
+								context.forceCloseStepsFacet.finalizeForceClose(
+									quote1LongOpened.id,
+									await getDummyPairUpnlAndPriceSig(BigInt(highLowSig.currentPrice), 0n, 0n),
+								),
+							).to.be.revertedWith("ForceActionsFacet: Invalid state")
+						})
+
+						it("allows the replacement close request after it is initialized with a fresh snapshot", async function () {
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, highLowSig)
+							const staleDetail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+
+							await user.requestToCancelCloseRequest(quote1LongOpened.id)
+							await hedger.acceptCancelCloseRequest(quote1LongOpened.id)
+
+							const replacementQuantity = (await getQuoteQuantity(context, quote1LongOpened.id)) / 2n
+							const replacementRequestedPrice = decimal(2n)
+							await user.requestToClosePosition(
+								quote1LongOpened.id,
+								limitCloseRequestBuilder()
+									.quantityToClose(replacementQuantity)
+									.closePrice(replacementRequestedPrice)
+									.deadline((await getBlockTimestamp()) + 1000n)
+									.build(),
+							)
+
+							const replacementQuote = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const replacementCloseId = await context.viewFacetQuote.getQuoteCloseId(quote1LongOpened.id)
+							const sigTimes = await prepareSigTimes(100n)
+							const gapRatio = await context.viewFacetSymbol.forceCloseGapRatio(replacementQuote.symbolId)
+							const replacementHighLowSig = await getDummyHighLowPriceSig(
+								sigTimes[0],
+								sigTimes[1],
+								replacementRequestedPrice,
+								replacementRequestedPrice + unDecimal(replacementRequestedPrice * BigInt(gapRatio)) + decimal(1n),
+								decimal(3n),
+								decimal(3n),
+								replacementQuote.symbolId,
+								0n,
+								0n,
+							)
+
+							await context.forceCloseStepsFacet.initializeForceClose(quote1LongOpened.id, replacementHighLowSig)
+							const replacementDetail = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							expect(replacementDetail.closePrice).to.not.equal(staleDetail.closePrice)
+							expect(replacementDetail.closeId).to.equal(replacementCloseId)
+
+							const tx = await context.forceCloseStepsFacet.finalizeForceClose(
+								quote1LongOpened.id,
+								await getDummyPairUpnlAndPriceSig(BigInt(replacementHighLowSig.currentPrice), 0n, 0n),
+							)
+							await expect(tx)
+								.to.emit(context.forceCloseStepsFacet, "ForceClosePosition")
+								.withArgs(
+									quote1LongOpened.id,
+									quote1LongOpened.partyA,
+									quote1LongOpened.partyB,
+									replacementQuantity,
+									replacementDetail.closePrice,
+									QuoteStatus.OPENED,
+									replacementCloseId,
+								)
+
+							const quoteAfter = await context.viewFacetQuote.getQuote(quote1LongOpened.id)
+							const detailAfter = await context.viewFacet.forceCloseDetails(quote1LongOpened.id)
+							expect(quoteAfter.closedAmount).to.equal(replacementQuantity)
+							expect(quoteAfter.avgClosedPrice).to.equal(replacementDetail.closePrice)
+							expect(detailAfter.inProgress).to.equal(false)
+							expect(detailAfter.closeId).to.equal(0n)
 						})
 					})
 

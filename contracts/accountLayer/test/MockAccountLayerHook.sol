@@ -194,6 +194,45 @@ contract MockAccountLayerHook {
 				})
 			);
 		}
+
+		// Execute callback if configured
+		if (shouldExecuteForAccount[selector] && accountLayer != address(0)) {
+			bytes memory callData = executeForAccountCallData[selector];
+			if (callData.length > 0) {
+				ICoreFacetCallback(accountLayer).executeForAccount(callData);
+				executeForAccountCallCount++;
+				lastExecuteForAccountSuccess = true;
+			}
+		}
+	}
+
+	/**
+	 * @notice Hook called when a sub-account ownership is transferred
+	 * @param subAccount The sub-account address being transferred
+	 * @param oldOwner The previous owner of the sub-account
+	 * @param newOwner The new owner of the sub-account
+	 */
+	function onSubAccountOwnershipTransfer(address subAccount, address oldOwner, address newOwner) external {
+		bytes4 selector = this.onSubAccountOwnershipTransfer.selector;
+
+		if (shouldRevert[selector]) {
+			revert(revertMessages[selector]);
+		}
+
+		accountHookCalled[subAccount] = true;
+		lastAccountForSelector[selector] = subAccount;
+		selectorCallCount[selector]++;
+
+		if (recordCalls) {
+			hookCalls.push(
+				HookCall({
+					selector: selector,
+					data: abi.encode(subAccount, oldOwner, newOwner),
+					timestamp: block.timestamp,
+					callCount: selectorCallCount[selector]
+				})
+			);
+		}
 	}
 
 	/**
@@ -221,6 +260,17 @@ contract MockAccountLayerHook {
 					callCount: selectorCallCount[selector]
 				})
 			);
+		}
+
+		// Execute callback if configured. Keeping this available on onCall lets tests exercise
+		// the same executeForAccount route from an already-funded account family.
+		if (shouldExecuteForAccount[selector] && accountLayer != address(0)) {
+			bytes memory callData = executeForAccountCallData[selector];
+			if (callData.length > 0) {
+				ICoreFacetCallback(accountLayer).executeForAccount(callData);
+				executeForAccountCallCount++;
+				lastExecuteForAccountSuccess = true;
+			}
 		}
 	}
 
@@ -251,7 +301,7 @@ contract MockAccountLayerHook {
 	/**
 	 * @notice Enables or disables call recording
 	 * @param _recordCalls Whether to record calls
-	 * @dev Disable for gas optimization in certain tests
+	 * @dev Disable call recording to reduce gas use in tests that do not inspect recorded calls.
 	 */
 	function setRecordCalls(bool _recordCalls) external {
 		recordCalls = _recordCalls;
@@ -307,6 +357,7 @@ contract MockAccountLayerHook {
 		selectorCallCount[this.onVirtualAccountCreation.selector] = 0;
 		selectorCallCount[this.onVirtualAccountDeletion.selector] = 0;
 		selectorCallCount[this.onSubAccountDeletion.selector] = 0;
+		selectorCallCount[this.onSubAccountOwnershipTransfer.selector] = 0;
 		selectorCallCount[this.onCall.selector] = 0;
 	}
 
@@ -410,6 +461,7 @@ contract MockAccountLayerHook {
 	 * @return onVirtualAccountCreationCount Number of virtual account creation hooks
 	 * @return onVirtualAccountDeletionCount Number of virtual account deletion hooks
 	 * @return onSubAccountDeletionCount Number of sub-account deletion hooks
+	 * @return onSubAccountOwnershipTransferCount Number of sub-account ownership transfer hooks
 	 * @return onCallCount Number of call hooks
 	 */
 	function getAllCallCounts()
@@ -420,6 +472,7 @@ contract MockAccountLayerHook {
 			uint256 onVirtualAccountCreationCount,
 			uint256 onVirtualAccountDeletionCount,
 			uint256 onSubAccountDeletionCount,
+			uint256 onSubAccountOwnershipTransferCount,
 			uint256 onCallCount
 		)
 	{
@@ -428,6 +481,7 @@ contract MockAccountLayerHook {
 			selectorCallCount[this.onVirtualAccountCreation.selector],
 			selectorCallCount[this.onVirtualAccountDeletion.selector],
 			selectorCallCount[this.onSubAccountDeletion.selector],
+			selectorCallCount[this.onSubAccountOwnershipTransfer.selector],
 			selectorCallCount[this.onCall.selector]
 		);
 	}

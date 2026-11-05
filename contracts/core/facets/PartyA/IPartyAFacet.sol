@@ -5,26 +5,10 @@
 pragma solidity >=0.8.18;
 
 import { IPartyAEvents } from "./IPartyAEvents.sol";
-import { PositionType, OrderType } from "../../storages/QuoteStorage.sol";
+import { PositionType, OrderType, SolverFeeCaps } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 interface IPartyAFacet is IPartyAEvents {
-	function sendQuote(
-		address[] memory partyBsWhiteList,
-		uint256 symbolId,
-		PositionType positionType,
-		OrderType orderType,
-		uint256 price,
-		uint256 quantity,
-		uint256 cva,
-		uint256 lf,
-		uint256 partyAmm,
-		uint256 partyBmm,
-		uint256 maxFundingRate,
-		uint256 deadline,
-		SingleUpnlAndPriceSig memory upnlSig
-	) external;
-
 	function sendQuoteWithAffiliate(
 		address[] memory partyBsWhiteList,
 		uint256 symbolId,
@@ -57,6 +41,24 @@ interface IPartyAFacet is IPartyAEvents {
 		address affiliate,
 		SingleUpnlAndPriceSig memory upnlSig,
 		bytes memory data
+	) external returns (uint256 quoteId);
+
+	function sendQuote(
+		address[] memory partyBsWhiteList,
+		uint256 symbolId,
+		PositionType positionType,
+		OrderType orderType,
+		uint256 price,
+		uint256 quantity,
+		uint256 cva,
+		uint256 lf,
+		uint256 partyAmm,
+		uint256 partyBmm,
+		uint256 deadline,
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data,
+		SolverFeeCaps memory solverFeeCaps
 	) external returns (uint256 quoteId);
 
 	function expireQuote(uint256[] memory expiredQuoteIds) external;

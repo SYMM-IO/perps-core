@@ -9,25 +9,34 @@ import { IMarginFacet } from "./IMarginFacet.sol";
 import { AccountLayerAccessibility } from "../../utils/AccountLayerAccessibility.sol";
 import { AccountLayerPausable } from "../../utils/AccountLayerPausable.sol";
 import { AccountLayerReentrancyGuard } from "../../utils/AccountLayerReentrancyGuard.sol";
-import { AccountStorage, VirtualAccountIsolationType, SubAccountIsolationType } from "../../storages/AccountStorage.sol";
+import { AccountLayerTimelocked } from "../../utils/AccountLayerTimelocked.sol";
+import { AccountStorage, VirtualAccountIsolationType } from "../../storages/AccountStorage.sol";
 import { LibAccountLayerUtils } from "../../libraries/LibAccountLayerUtils.sol";
+import { LibAccountLayerMargin } from "../../libraries/LibAccountLayerMargin.sol";
+import { LibAccountLayerSigner } from "../../libraries/LibAccountLayerSigner.sol";
 import { ISymmio } from "../../interfaces/ISymmio.sol";
 
 /// @notice Facet for transferring margin between sub-accounts and virtual accounts
-contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard {
+contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPausable, AccountLayerReentrancyGuard, AccountLayerTimelocked {
 	using EnumerableSet for EnumerableSet.AddressSet;
 
 	/// @notice Transfers deposited balance from a parent sub-account to a virtual account's allocated balance
 	/// @param virtualAccount The virtual account to add margin to
-	/// @param amount The amount to transfer via internalTransfer
-	function addMargin(address virtualAccount, uint256 amount) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+	/// @param amount The amount to transfer via internalTransferToAllocatedBalance
+	function addMargin(
+		address virtualAccount,
+		uint256 amount
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) timelocked(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
 		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
 
-		LibAccountLayerUtils.executeWithSigner(parent, abi.encodeWithSelector(ISymmio.internalTransfer.selector, virtualAccount, amount));
+		LibAccountLayerUtils.executeWithSigner(
+			parent,
+			abi.encodeWithSelector(ISymmio.internalTransferToAllocatedBalance.selector, virtualAccount, amount)
+		);
 
 		emit AddMargin(virtualAccount, parent, amount);
 	}
@@ -37,35 +46,14 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	/// @param subAccount The parent sub-account
 	/// @param isolationType The isolation type matching the sub-account's strategy
 	/// @param symbolId The symbol ID for the target virtual account
-	/// @param amount The amount to transfer via internalTransfer
+	/// @param amount The amount to transfer via internalTransferToAllocatedBalance
 	function addMarginToNextVA(
 		address subAccount,
 		VirtualAccountIsolationType isolationType,
 		uint256 symbolId,
 		uint256 amount
-	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
-		if (amount == 0) revert ZeroAmount();
-
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
-		SubAccountIsolationType subIsolation = ahLayout.subAccounts[subAccount].isolationType;
-
-		bool validIsolation = false;
-		if (subIsolation == SubAccountIsolationType.POSITION) {
-			validIsolation = isolationType == VirtualAccountIsolationType.POSITION;
-		} else if (subIsolation == SubAccountIsolationType.MARKET) {
-			validIsolation = isolationType == VirtualAccountIsolationType.MARKET;
-		} else if (subIsolation == SubAccountIsolationType.MARKET_DIRECTION) {
-			validIsolation = isolationType == VirtualAccountIsolationType.MARKET_LONG || isolationType == VirtualAccountIsolationType.MARKET_SHORT;
-		}
-
-		if (!validIsolation) revert InvalidIsolationType();
-
-		address predictedVA = _predictNextVirtualAccountAddress(subAccount, isolationType, symbolId);
-
-		LibAccountLayerUtils.executeWithSigner(subAccount, abi.encodeWithSelector(ISymmio.internalTransfer.selector, predictedVA, amount));
-
-		emit AddMargin(predictedVA, subAccount, amount);
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) timelocked(subAccount) {
+		LibAccountLayerMargin.addMarginToNextVA(subAccount, isolationType, symbolId, amount);
 	}
 
 	/// @notice Deallocates and transfers margin from a virtual account back to its parent sub-account
@@ -76,7 +64,7 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		address virtualAccount,
 		uint256 amount,
 		ISymmio.SingleUpnlSig memory upnlSig
-	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) {
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) timelocked(virtualAccount) {
 		if (amount == 0) revert ZeroAmount();
 
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
@@ -89,11 +77,37 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 		emit RemoveMargin(virtualAccount, parent, amount);
 	}
 
+	/// @notice Deallocates via core safeDeallocate and transfers margin from a virtual account back to its parent sub-account
+	/// @dev Same routing as removeMargin, but forwards to core safeDeallocate, which reserves the Muon-attested
+	/// pendingBalance and enforces the scaled retention floor plus gross funding debt
+	/// @param virtualAccount The virtual account to remove margin from
+	/// @param amount The amount to deallocate and transfer
+	/// @param upnlSig The Muon signature carrying UPNL, funding debt, pending balance, and scaledLockedBalance
+	function safeRemoveMargin(
+		address virtualAccount,
+		uint256 amount,
+		ISymmio.SingleUpnlWithPendingBalanceSig memory upnlSig
+	) external whenNotPaused nonReentrant onlyAccountOwner(virtualAccount) timelocked(virtualAccount) {
+		if (amount == 0) revert ZeroAmount();
+
+		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
+		if (!ahLayout.virtualAccounts[virtualAccount].isExists) revert NotVirtualAccount();
+		address parent = ahLayout.virtualAccounts[virtualAccount].parentAccount;
+
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.safeDeallocate.selector, amount, upnlSig));
+		LibAccountLayerUtils.executeWithSigner(virtualAccount, abi.encodeWithSelector(ISymmio.internalTransferToBalance.selector, parent, amount));
+
+		emit RemoveMargin(virtualAccount, parent, amount);
+	}
+
 	/// @notice Recovers funds from a lost virtual account address back to its parent sub-account
 	/// @dev Used when a VA address has funds but was never formally created or was orphaned
 	/// @param subAccount The parent sub-account to recover funds to
 	/// @param nonce The nonce used to derive the lost virtual account address
-	function emergencyRecoverMargin(address subAccount, uint256 nonce) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) {
+	function emergencyRecoverMargin(
+		address subAccount,
+		uint256 nonce
+	) external whenNotPaused nonReentrant onlyAccountOwner(subAccount) timelocked(subAccount) {
 		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
 		if (!ahLayout.subAccounts[subAccount].isExists) revert AccountDoesNotExist();
 
@@ -124,46 +138,10 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 
 	// ==================== Internal Functions ====================
 
-	function _predictNextVirtualAccountAddress(
-		address subAccount,
-		VirtualAccountIsolationType isolationType,
-		uint256 symbolId
-	) private view returns (address) {
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-
-		if (ahLayout.subAccounts[subAccount].singleVAMode) {
-			address existingVA = ahLayout.activeVAByKey[subAccount][isolationType][symbolId];
-			if (existingVA != address(0) && ahLayout.virtualAccounts[existingVA].isExists) {
-				return existingVA;
-			}
-		}
-
-		address[] storage pool = ahLayout.deletedVirtualAccountsPool[subAccount][isolationType][symbolId];
-		if (pool.length > 0) {
-			return pool[pool.length - 1];
-		}
-
-		uint256 nextNonce = ahLayout.subAccountVirtualNonces[subAccount] + 1;
-		return LibAccountLayerUtils.generateVirtualAccountAddress(subAccount, nextNonce);
-	}
-
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
-		AccountStorage.Layout storage ahLayout = AccountStorage.layout();
-		address previousSigner = ahLayout.globalSigner;
-		ahLayout.globalSigner = address(0);
-
-		ISymmio(symmio).setSigner(signer);
-		(bool success, bytes memory result) = symmio.call(callData);
-		ISymmio(symmio).setSigner(address(0));
-
-		ahLayout.globalSigner = previousSigner;
-
-		if (!success) {
-			assembly {
-				revert(add(result, 32), mload(result))
-			}
-		}
-
+		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		bytes memory result = LibAccountLayerUtils.executeWithSignerOnCore(symmio, signer, callData);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
 		return result;
 	}
 }

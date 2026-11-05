@@ -11,7 +11,7 @@ import { IPartyAFacet } from "./IPartyAFacet.sol";
 import { LibSigner } from "../../libraries/LibSigner.sol";
 import { LibQuoteClose } from "../../libraries/LibQuoteClose.sol";
 import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
-import { QuoteStorage, Quote, QuoteStatus, PositionType, OrderType } from "../../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, PositionType, OrderType, SolverFeeCaps } from "../../storages/QuoteStorage.sol";
 import { SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
 
 contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
@@ -69,7 +69,8 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			deadline,
 			affiliate,
 			upnlSig,
-			""
+			"",
+			SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 })
 		);
 
 		quoteId = QuoteStorage.layout().lastId;
@@ -92,6 +93,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 				tradingFee: quote.tradingFee,
 				deadline: deadline,
 				affiliate: affiliate,
+				solverFeeCaps: SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 }),
 				data: ""
 			})
 		);
@@ -150,7 +152,8 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			deadline,
 			affiliate,
 			upnlSig,
-			data
+			data,
+			SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 })
 		);
 
 		quoteId = QuoteStorage.layout().lastId;
@@ -173,12 +176,13 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 				tradingFee: quote.tradingFee,
 				deadline: deadline,
 				affiliate: affiliate,
+				solverFeeCaps: SolverFeeCaps({ openRateCap: 0, closeRateCap: 0 }),
 				data: data
 			})
 		);
 	}
 
-	/// @notice Send a Quote to the protocol. The quote status will be pending.
+	/// @notice Send a Quote to the protocol with custom data and immutable solver fee caps. The quote status will be pending.
 	/// @param partyBsWhiteList List of party B addresses allowed to act on this quote.
 	/// @param symbolId Each symbol within the system possesses a unique identifier, for instance, BTCUSDT carries its own distinct ID
 	/// @param positionType Can be SHORT or LONG (0 or 1)
@@ -190,9 +194,11 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/// @param lf Liquidation Fee paid to the liquidator user
 	/// @param partyAmm The partyA Maintenance Margin value behind the position
 	/// @param partyBmm The partyB Maintenance Margin value behind the position
-	/// @param maxFundingRate Unused, kept for backward compatibility. Funding caps are postponed to a later version.
 	/// @param deadline Expiration timestamp for the quote request
+	/// @param affiliate The affiliate of this quote
 	/// @param upnlSig The Muon signature for user upnl and symbol price
+	/// @param data Optional custom data attached to the quote
+	/// @param solverFeeCaps User-approved solver fee caps for the quote
 	function sendQuote(
 		address[] memory partyBsWhiteList,
 		uint256 symbolId,
@@ -204,17 +210,19 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 		uint256 lf,
 		uint256 partyAmm,
 		uint256 partyBmm,
-		uint256 maxFundingRate,
 		uint256 deadline,
-		SingleUpnlAndPriceSig memory upnlSig
+		address affiliate,
+		SingleUpnlAndPriceSig memory upnlSig,
+		bytes memory data,
+		SolverFeeCaps memory solverFeeCaps
 	)
 		external
 		whenInstantModeIsNotActive(LibSigner.getSigner())
 		whenNotPartyAActionsPaused
 		notLiquidatedPartyA(LibSigner.getSigner())
 		notSuspended(LibSigner.getSigner())
+		returns (uint256 quoteId)
 	{
-		maxFundingRate; // silence unused variable warning
 		PartyAFacetImpl.sendQuote(
 			partyBsWhiteList,
 			symbolId,
@@ -227,12 +235,13 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 			partyAmm,
 			partyBmm,
 			deadline,
-			address(0),
+			affiliate,
 			upnlSig,
-			""
+			data,
+			solverFeeCaps
 		);
 
-		uint256 quoteId = QuoteStorage.layout().lastId;
+		quoteId = QuoteStorage.layout().lastId;
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		LibSendQuoteEvents.emitSendQuoteEvents(
 			LibSendQuoteEvents.SendQuoteEventParams({
@@ -251,8 +260,9 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 				partyBmm: quote.lockedValues.partyBmm,
 				tradingFee: quote.tradingFee,
 				deadline: deadline,
-				affiliate: address(0),
-				data: ""
+				affiliate: affiliate,
+				solverFeeCaps: solverFeeCaps,
+				data: data
 			})
 		);
 	}
@@ -291,7 +301,7 @@ contract PartyAFacet is Accessibility, Pausable, IPartyAFacet {
 	/// @param quoteId The ID of the quote associated with the position to be closed.
 	/// @param closePrice The closing price for the position. For limit orders, the exact price; for market orders, a price threshold.
 	/// @param quantityToClose The quantity of the position to be closed.
-	/// @param orderType Can be LIMIT or MARKET with the same logic as in sendQuote
+	/// @param orderType LIMIT, MARKET, or the close-only MARKET_BEST_EFFORT mode
 	/// @param deadline Expiration timestamp for the close request
 	function requestToClosePosition(
 		uint256 quoteId,

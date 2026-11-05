@@ -1,0 +1,243 @@
+// SPDX-License-Identifier: SYMM-Core-Business-Source-License-1.1
+// This contract is licensed under the SYMM Core Business Source License 1.1
+// Copyright (c) 2023 Symmetry Labs AG
+// For more information, see https://docs.symm.io/legal-disclaimer/license
+pragma solidity >=0.8.18;
+
+import { AffiliateConfig } from "../../types/ConfigTypes.sol";
+import { AffiliateCredit } from "../../types/CreditTypes.sol";
+import { WithdrawInfo } from "../../types/WithdrawTypes.sol";
+
+import { IViewFacet } from "./IViewFacet.sol";
+
+import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
+
+import { GlobalStorage } from "../../storages/GlobalStorage.sol";
+import { PoolStorage } from "../../storages/PoolStorage.sol";
+import { FeeStorage } from "../../storages/FeeStorage.sol";
+import { ValidatorStorage } from "../../storages/ValidatorStorage.sol";
+import { CreditLineStorage } from "../../storages/CreditLineStorage.sol";
+
+/// @title ViewFacet
+/// @notice Read-only facet exposing all state getters for the ExpressProvider diamond.
+contract ViewFacet is IViewFacet {
+	// ── Core addresses ──
+
+	function symmio() external view returns (address) {
+		return GlobalStorage.layout().symmio;
+	}
+
+	function collateral() external view returns (address) {
+		return address(GlobalStorage.layout().collateral);
+	}
+
+	function accountLayer() external view returns (address) {
+		return GlobalStorage.layout().accountLayer;
+	}
+
+	// ── Pool balances ──
+
+	function generalBalance() external view returns (uint256) {
+		return PoolStorage.layout().generalBalance;
+	}
+
+	function lockedGeneralBalance() external view returns (uint256) {
+		return PoolStorage.layout().lockedGeneralBalance;
+	}
+
+	function affiliateBalances(address affiliate) external view returns (uint256) {
+		return PoolStorage.layout().affiliateBalances[affiliate];
+	}
+
+	function lockedAffiliateBalances(address affiliate) external view returns (uint256) {
+		return PoolStorage.layout().lockedAffiliateBalances[affiliate];
+	}
+
+	function generalBadDebt() external view returns (uint256) {
+		return PoolStorage.layout().generalBadDebt;
+	}
+
+	function paused() external view returns (bool) {
+		return GlobalStorage.layout().paused;
+	}
+
+	// ── Per-user state ──
+
+	function nonces(address user) external view returns (uint256) {
+		return GlobalStorage.layout().nonces[user];
+	}
+
+	function getWithdrawInfo(address user, uint256 requestId) external view returns (WithdrawInfo memory) {
+		return GlobalStorage.layout().withdrawInfos[user][requestId];
+	}
+
+	function accelerateNonce(address user, uint256 requestId) external view returns (uint256) {
+		return GlobalStorage.layout().accelerateNonces[user][requestId];
+	}
+
+	// ── Security ──
+
+	function securityWindow() external view returns (uint256) {
+		return GlobalStorage.layout().securityWindow;
+	}
+
+	function tolerancePeriod() external view returns (uint256) {
+		return GlobalStorage.layout().tolerancePeriod;
+	}
+
+	// ── Fees ──
+
+	function affiliateConfigs(address affiliate) external view returns (uint256 feeRate, uint256 operatorFee) {
+		AffiliateConfig storage cfg = FeeStorage.layout().affiliateConfigs[affiliate];
+		return (cfg.feeRate, cfg.operatorFee);
+	}
+
+	function collectedFees(address affiliate) external view returns (uint256) {
+		return FeeStorage.layout().collectedFees[affiliate];
+	}
+
+	function collectedOperatorFees(address affiliate) external view returns (uint256) {
+		return FeeStorage.layout().collectedOperatorFees[affiliate];
+	}
+
+	function pendingFees(address user, uint256 requestId) external view returns (uint256) {
+		return FeeStorage.layout().pendingFees[user][requestId];
+	}
+
+	function pendingOperatorFees(address user, uint256 requestId) external view returns (uint256) {
+		return FeeStorage.layout().pendingOperatorFees[user][requestId];
+	}
+
+	// ── Validators ──
+
+	function minValidatorSignatures(address affiliate) external view returns (uint256) {
+		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
+		uint256 val = v.minValidatorSignatures[affiliate];
+		if (val > 0) return val;
+		return v.minValidatorSignatures[address(0)];
+	}
+
+	function validatorApprovalTimeout(address affiliate) external view returns (uint256) {
+		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
+		uint256 val = v.validatorApprovalTimeout[affiliate];
+		if (val > 0) return val;
+		return v.validatorApprovalTimeout[address(0)];
+	}
+
+	function isValidator(address affiliate, address validator) external view returns (bool) {
+		ValidatorStorage.Layout storage v = ValidatorStorage.layout();
+		return v.validators[affiliate][validator] || v.validators[address(0)][validator];
+	}
+
+	// ── Access control ──
+
+	function hasRole(address user, bytes32 role) external view returns (bool) {
+		return LibAccessControl.hasRole(user, role);
+	}
+
+	function isRoleAdmin(address user, bytes32 role) external view returns (bool) {
+		return LibAccessControl.isRoleAdmin(user, role);
+	}
+
+	/// @dev Compatibility adapter for the original ExpressProvider selector.
+	function hasRole(bytes32 role, address account) external view returns (bool) {
+		return LibAccessControl.hasRole(account, role);
+	}
+
+	// ── Credit line ──
+
+	function creditLineSignatureVerifier() external view returns (address) {
+		return CreditLineStorage.layout().signatureVerifier;
+	}
+
+	function creditLineMuonAppId() external view returns (uint256) {
+		return CreditLineStorage.layout().muonAppId;
+	}
+
+	function creditLineMuonFreshnessWindow() external view returns (uint256) {
+		return CreditLineStorage.layout().muonFreshnessWindow;
+	}
+
+	function creditLineProtocolMaxDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].protocolMaxDebt;
+	}
+
+	function creditLineProtocolMaxDebtBps(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].protocolMaxDebtBps;
+	}
+
+	function creditLineAffiliateMaxDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].affiliateMaxDebt;
+	}
+
+	function creditLineAffiliateMaxDebtBps(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].affiliateMaxDebtBps;
+	}
+
+	function creditLineReservedDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].reservedDebt;
+	}
+
+	function creditLineActiveDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].activeDebt;
+	}
+
+	function creditLineTotalDebt(address affiliate) external view returns (uint256) {
+		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
+		return ac.reservedDebt + ac.activeDebt;
+	}
+
+	function creditLineRequestDebt(address affiliate, address user, uint256 requestId) external view returns (uint256) {
+		bytes32 key = keccak256(abi.encodePacked(user, requestId));
+		return CreditLineStorage.layout().affiliates[affiliate].requestDebt[key];
+	}
+
+	function creditLineRequestActivated(address affiliate, address user, uint256 requestId) external view returns (bool) {
+		bytes32 key = keccak256(abi.encodePacked(user, requestId));
+		return CreditLineStorage.layout().affiliates[affiliate].requestActivated[key];
+	}
+
+	function creditLinePaused(address affiliate) external view returns (bool) {
+		return CreditLineStorage.layout().affiliates[affiliate].paused;
+	}
+
+	function creditLineBlacklisted(address affiliate, address user) external view returns (bool) {
+		return CreditLineStorage.layout().affiliates[affiliate].blacklisted[user];
+	}
+
+	function creditLineBadDebt(address affiliate) external view returns (uint256) {
+		return CreditLineStorage.layout().affiliates[affiliate].badDebt;
+	}
+
+	// ── Cap-change fee / throttle ──
+
+	function capChangeFeeConfig() external view returns (address feeToken, uint256 feeAmount, address feeReceiver) {
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		return (cl.capChangeFeeToken, cl.capChangeFeeAmount, cl.capChangeFeeReceiver);
+	}
+
+	function capChangeQuotaConfig() external view returns (uint256 maxFreePerWindow, uint256 windowDuration) {
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		return (cl.capChangeMaxFreePerWindow, cl.capChangeWindowDuration);
+	}
+
+	function capChangeAffiliateState(
+		address affiliate
+	) external view returns (uint256 count, uint256 epochStart, uint256 remainingFree, uint256 nextResetAt) {
+		CreditLineStorage.Layout storage cl = CreditLineStorage.layout();
+		AffiliateCredit storage ac = cl.affiliates[affiliate];
+		count = ac.capChangeCount;
+		epochStart = ac.capChangeEpochStart;
+		uint256 windowDuration = cl.capChangeWindowDuration;
+		uint256 maxFree = cl.capChangeMaxFreePerWindow;
+		// If the window has elapsed, the next call resets the counter, so the full quota is available.
+		bool epochElapsed = windowDuration == 0 || block.timestamp >= epochStart + windowDuration;
+		if (epochElapsed) {
+			remainingFree = maxFree;
+			nextResetAt = windowDuration == 0 ? 0 : block.timestamp + windowDuration;
+		} else {
+			remainingFree = maxFree > count ? maxFree - count : 0;
+			nextResetAt = epochStart + windowDuration;
+		}
+	}
+}

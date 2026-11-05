@@ -22,7 +22,8 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		emit ForceCancelQuote(quoteId, QuoteStatus.CANCELED);
 	}
 
-	/// @notice Forces the cancellation of the close request associated with the specified quote when partyB is not responsive for a certain amount of time (ForceCancelCloseCooldown).
+	/// @notice Forces cancellation of a quote's close request when PartyB does not respond before
+	///         ForceCancelCloseCooldown elapses.
 	/// @param quoteId The ID of the quote for which the close request should be canceled.
 	function forceCancelCloseRequest(uint256 quoteId) external notLiquidated(quoteId) whenNotPartyAActionsPaused {
 		ForceActionsFacetImpl.forceCancelCloseRequest(quoteId);
@@ -52,18 +53,10 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 		Quote memory quote = quoteLayout.quotes[quoteId];
-		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
 		address partyA = quote.partyA;
 
-		ForceActionsFacetImpl.settleUPNL(quoteId, settleSig, updatedPrices);
-		newPartyBsAllocatedBalances[0] = accountLayout.partyBAllocatedBalances[quote.partyB][quote.partyA];
-		emit SettleUpnl(
-			settleSig.quotesSettlementsData,
-			updatedPrices,
-			msg.sender,
-			accountLayout.allocatedBalances[partyA],
-			newPartyBsAllocatedBalances
-		);
+		uint256[] memory newPartyBsAllocatedBalances = ForceActionsFacetImpl.settleUPNL(quoteId, settleSig, updatedPrices);
+		emit SettleUpnl(settleSig.quotesSettlementsData, updatedPrices, partyA, accountLayout.allocatedBalances[partyA], newPartyBsAllocatedBalances);
 
 		_forceClose(quoteId, sig);
 	}
@@ -74,11 +67,13 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 	function _forceClose(uint256 quoteId, HighLowPriceSig memory sig) private {
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
 		Quote memory quote = quoteLayout.quotes[quoteId];
-		uint256[] memory newPartyBsAllocatedBalances = new uint256[](1);
 		address partyA = quote.partyA;
 		address partyB = quote.partyB;
 
-		(uint256 closePrice, int256 upnlPartyB, bool succeed) = ForceActionsFacetImpl.forceClose(quoteId, sig);
+		(uint256 closePrice, int256 upnlPartyB, bool succeed, uint256 partyBAllocatedBalanceBeforeLiquidation) = ForceActionsFacetImpl.forceClose(
+			quoteId,
+			sig
+		);
 		if (succeed) {
 			emit ForceClosePosition(
 				quoteId,
@@ -90,8 +85,7 @@ contract ForceActionsFacet is Accessibility, Pausable, IPartiesEvents, IForceAct
 				quoteLayout.closeIds[quoteId]
 			);
 		} else {
-			newPartyBsAllocatedBalances[0] = AccountStorage.layout().partyBAllocatedBalances[quote.partyB][partyA];
-			emit LiquidatePartyB(msg.sender, partyB, partyA, newPartyBsAllocatedBalances[0], upnlPartyB);
+			emit LiquidatePartyB(msg.sender, partyB, partyA, partyBAllocatedBalanceBeforeLiquidation, upnlPartyB);
 		}
 	}
 }

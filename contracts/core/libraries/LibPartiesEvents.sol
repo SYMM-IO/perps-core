@@ -4,7 +4,7 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
-import { QuoteStatus, OrderType, PositionType, LockedValues } from "../storages/QuoteStorage.sol";
+import { QuoteStorage, Quote, QuoteStatus, OrderType, PositionType, LockedValues } from "../storages/QuoteStorage.sol";
 
 /**
  * @notice Event definitions used by PartyB batch actions (adl flows, close requests).
@@ -68,4 +68,44 @@ library LibPartiesEvents {
 		LockedValues lockedValues
 	);
 	event ADLClose(uint256 quoteId, uint256 amount, uint256 price);
+
+	// Mirrors IPartiesEvents, including its indexed layout, so facets share one emit helper.
+	event PartyALiquidationOvershootUsed(
+		uint256 indexed quoteId,
+		address indexed partyA,
+		address indexed partyB,
+		uint256 symbolId,
+		uint256 rate,
+		uint256 allowedShortfall,
+		uint256 actualShortfall
+	);
+
+	function emitOpenPosition(Quote storage quote, uint256 quoteId, uint256 filledAmount, uint256 openedPrice) internal {
+		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice);
+		emit OpenPosition(quoteId, quote.partyA, quote.partyB, filledAmount, openedPrice, quote.lockedValues);
+	}
+
+	function emitFillCloseRequest(
+		QuoteStorage.Layout storage quoteLayout,
+		Quote storage quote,
+		uint256 quoteId,
+		uint256 filledAmount,
+		uint256 closedPrice
+	) internal {
+		uint256 closeId = quoteLayout.closeIds[quoteId];
+		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, closeId);
+		emit FillCloseRequest(quoteId, quote.partyA, quote.partyB, filledAmount, closedPrice, quote.quoteStatus, closeId, quote.lockedValues);
+	}
+
+	/// @notice Emits PartyALiquidationOvershootUsed when an overshoot close left PartyA below zero; no-op for a zero shortfall.
+	function emitPartyALiquidationOvershootUsedIfAny(
+		Quote storage quote,
+		uint256 quoteId,
+		uint256 rate,
+		uint256 allowedShortfall,
+		uint256 actualShortfall
+	) internal {
+		if (actualShortfall == 0) return;
+		emit PartyALiquidationOvershootUsed(quoteId, quote.partyA, quote.partyB, quote.symbolId, rate, allowedShortfall, actualShortfall);
+	}
 }

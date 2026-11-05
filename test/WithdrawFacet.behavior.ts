@@ -59,7 +59,6 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("WITHDRAW_SPEED_UP_ROLE"))
 		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("PROVIDER_ADMIN_ROLE"))
-		await context.controlFacet.connect(context.signers.admin).grantRole(context.signers.admin.address, roleHash("WITHDRAW_FORCE_CANCEL_ROLE"))
 	})
 
 	describe("Provider Register", function () {
@@ -451,27 +450,6 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
 		})
 
-		it("Should force cancel classic withdraw", async function () {
-			await userDeposit("100")
-			const parts = await buildParts(["50", "20"])
-
-			await context.controlFacet.connect(context.signers.admin).grantRole(await context.signers.user.getAddress(), roleHash("BALANCE_SETTLER_ROLE"))
-			await context.accountFacet.connect(context.signers.user).allocate(ethers.parseEther("1"))
-			await context.accountFacet.connect(context.signers.user).zeroUpnlDeallocate(ethers.parseEther("1"))
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-
-			const balanceBefore = await context.viewFacet.balanceOf(user.address)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-
-			// Balance should be restored
-			const balanceAfter = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfter).to.equal(balanceBefore + ethers.parseEther("70"))
-		})
 		it("Should finalize withdraw immediately when user never deallocated", async function () {
 			await userDeposit("100")
 			const parts = [await buildPart("50")]
@@ -488,6 +466,109 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(withdrawRequest.status).to.equal(WithdrawStatus.COMPLETED)
+		})
+	})
+
+	describe("Pause Coverage", function () {
+		async function setupAcceptedExpressWithdraw() {
+			const MockExpressProvider = await ethers.getContractFactory("contracts/core/test/MockExpressProvider.sol:ExpressProvider")
+			const provider = await MockExpressProvider.deploy(context.diamond)
+			await provider.waitForDeployment()
+			const providerAddress = await provider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(providerAddress)
+			await context.collateral.transfer(providerAddress, ethers.parseUnits("1000", 18))
+
+			await userDeposit("100")
+			const parts = [await buildPart("50", { expressProvider: providerAddress })]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			await provider.acceptWithdrawRequest(user.address, 1)
+
+			return { provider, providerAddress }
+		}
+
+		it("Should block withdrawal value paths while accounting is paused", async function () {
+			const { provider, providerAddress } = await setupAcceptedExpressWithdraw()
+			const secondWithdrawParts = await buildParts(["10"])
+			const userBalanceBefore = await context.viewFacet.balanceOf(user.address)
+			const providerBalanceBefore = await context.collateral.balanceOf(providerAddress)
+
+			await time.increase(1000)
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(secondWithdrawParts, false, "0x")).to.be.revertedWith(
+				"Pausable: Accounting paused",
+			)
+			await expect(provider.advanceWithdraw(user.address, 1, ethers.parseUnits("10", 18))).to.be.revertedWith("Pausable: Accounting paused")
+			await expect(provider.finalizeWithdrawRequest(user.address, 1)).to.be.revertedWith("Pausable: Accounting paused")
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			expect(withdrawRequest.advancedAmount).to.equal(0n)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(userBalanceBefore)
+			expect(await context.collateral.balanceOf(providerAddress)).to.equal(providerBalanceBefore)
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(1n)
+		})
+
+		it("Should block withdrawal value paths while globally paused", async function () {
+			const { provider, providerAddress } = await setupAcceptedExpressWithdraw()
+			const secondWithdrawParts = await buildParts(["10"])
+			const userBalanceBefore = await context.viewFacet.balanceOf(user.address)
+			const providerBalanceBefore = await context.collateral.balanceOf(providerAddress)
+
+			await time.increase(1000)
+			await context.pauseControlFacet.connect(context.signers.admin).pauseGlobal()
+
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(secondWithdrawParts, false, "0x")).to.be.revertedWith(
+				"Pausable: Global paused",
+			)
+			await expect(provider.advanceWithdraw(user.address, 1, ethers.parseUnits("10", 18))).to.be.revertedWith("Pausable: Global paused")
+			await expect(provider.finalizeWithdrawRequest(user.address, 1)).to.be.revertedWith("Pausable: Global paused")
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			expect(withdrawRequest.advancedAmount).to.equal(0n)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(userBalanceBefore)
+			expect(await context.collateral.balanceOf(providerAddress)).to.equal(providerBalanceBefore)
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(1n)
+		})
+
+		it("Should keep classic cancellation available as an accounting-pause unwind path", async function () {
+			await userDeposit("100")
+			const parts = [await buildPart("25")]
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore - ethers.parseUnits("25", 18))
+
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+			await expect(context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)).not.to.be.reverted
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore)
+		})
+
+		it("Should keep provider rejection available as an accounting-pause unwind path", async function () {
+			const MockExpressProvider = await ethers.getContractFactory("contracts/core/test/MockExpressProvider.sol:ExpressProvider")
+			const provider = await MockExpressProvider.deploy(context.diamond)
+			await provider.waitForDeployment()
+			const providerAddress = await provider.getAddress()
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(providerAddress)
+			await context.collateral.transfer(providerAddress, ethers.parseUnits("1000", 18))
+
+			await userDeposit("100")
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
+			await context.withdrawFacet
+				.connect(context.signers.user)
+				.initiateWithdraw([await buildPart("25", { expressProvider: providerAddress })], false, "0x")
+
+			await context.pauseControlFacet.connect(context.signers.admin).pauseAccounting()
+			await expect(provider.rejectWithdrawRequest(user.address, 1)).not.to.be.reverted
+
+			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(withdrawRequest.status).to.equal(WithdrawStatus.PROVIDER_REJECTED)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore)
 		})
 	})
 
@@ -969,138 +1050,6 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			)
 		})
 
-		it("Should force cancel withdraw before cooldown", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			await triggerCooldown()
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-			await virtualProvider.acceptWithdrawRequest(user.address, 1)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-		})
-
-		it("Should fail to force cancel withdraw with wrong request Id", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-			await virtualProvider.acceptWithdrawRequest(user.address, 1)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 2)).to.revertedWith(
-				"WithdrawFacet : Invalid withdraw request ID",
-			)
-		})
-
-		it("Should fail to force cancel withdraw with invalid status", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-			await virtualProvider.acceptWithdrawRequest(user.address, 1)
-			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).to.revertedWith(
-				"WithdrawFacet : Invalid withdraw request status",
-			)
-		})
-
-		it("Should fail to force cancel withdraw after cooldown", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-			await virtualProvider.acceptWithdrawRequest(user.address, 1)
-			await time.increase(1000)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).to.revertedWith(
-				"WithdrawFacet : Withdraw cooldown already over",
-			)
-		})
-
-		it("Should fail to force cancel withdraw without role", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-			await virtualProvider.acceptWithdrawRequest(user.address, 1)
-
-			await expect(context.withdrawFacet.connect(context.signers.user).forceCancelWithdraw(user.address, 1)).to.revertedWith(
-				"Accessibility: Must have role",
-			)
-		})
-
-		it("Should force cancel withdraw on PENDING status", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			await triggerCooldown()
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-
-			// Don't accept - status is still PENDING
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-		})
-
-		it("Should restore user balance after force cancel", async function () {
-			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
-
-			receiver1 = context.signers.user.address
-			await triggerCooldown()
-			const vpAddress = await virtualProvider.getAddress()
-			const parts = await buildParts(["50", "20"], {
-				virtualProvider: vpAddress,
-			})
-
-			const balanceBefore = await context.viewFacet.balanceOf(user.address)
-
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-			await virtualProvider.acceptWithdrawRequest(user.address, 1)
-
-			const balanceAfterWithdraw = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfterWithdraw).to.equal(balanceBefore - ethers.parseEther("70"))
-
-			await context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)
-
-			const balanceAfterCancel = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfterCancel).to.equal(balanceBefore)
-		})
-
 		it("Should cancel pure virtual outside blackout period", async function () {
 			await virtualProvider.virtualDepositFor(context.diamond, user.address, ethers.parseEther("100"))
 
@@ -1302,6 +1251,74 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
+		it("Should finalize provider-accepted withdraw with only the non-advanced remainder", async function () {
+			await userDeposit("100")
+			const epAddress = await expressProvider.getAddress()
+			const advancedAmount = ethers.parseUnits("30", 18)
+
+			const parts = await buildParts(["50", "20"], {
+				expressProvider: epAddress,
+			})
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
+			await expressProvider.acceptWithdrawRequest(user.address, 1)
+			await expressProvider.advanceWithdraw(user.address, 1, advancedAmount)
+
+			const acceptedRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(acceptedRequest.status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+			expect(acceptedRequest.advancedAmount).to.equal(advancedAmount)
+
+			const pending = await context.viewFacet.getPendingWithdrawRequests(user.address, 1, 10)
+			expect(pending.length).to.equal(1)
+			expect(pending[0].status).to.equal(WithdrawStatus.PROVIDER_ACCEPTED)
+
+			await time.increase(1000)
+			const expressBalanceBefore = await context.collateral.balanceOf(epAddress)
+
+			await expect(expressProvider.finalizeWithdrawRequest(user.address, 1)).not.to.reverted
+
+			const expressBalanceAfter = await context.collateral.balanceOf(epAddress)
+			expect(expressBalanceAfter - expressBalanceBefore).to.equal(ethers.parseUnits("40", 18))
+
+			const finalRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
+		})
+
+		it("Should cap advanceWithdraw at the express-only amount in a mixed classic+express request", async function () {
+			await userDeposit("100")
+			const epAddress = await expressProvider.getAddress()
+
+			// Mixed request: one classic part (50, no provider) + one express part (50, EP).
+			// totalAmount = 100, express-only = 50.
+			const classicPart = await buildPart("50")
+			const expressPart = await buildPart("50", { expressProvider: epAddress })
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw([classicPart, expressPart], false, "0x")
+			await expressProvider.acceptWithdrawRequest(user.address, 1)
+
+			// Advancing more than the express-only portion (50) must revert even though it is <= totalAmount (100).
+			// Otherwise the provider seizes the user's classic funds and bricks finalize.
+			await expect(expressProvider.advanceWithdraw(user.address, 1, ethers.parseUnits("80", 18))).to.be.revertedWith(
+				"WithdrawFacet : Advance exceeds express amount",
+			)
+		})
+
+		it("Should allow advanceWithdraw up to the express-only amount in a mixed request", async function () {
+			await userDeposit("100")
+			const epAddress = await expressProvider.getAddress()
+
+			const classicPart = await buildPart("50")
+			const expressPart = await buildPart("50", { expressProvider: epAddress })
+
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw([classicPart, expressPart], false, "0x")
+			await expressProvider.acceptWithdrawRequest(user.address, 1)
+
+			await expect(expressProvider.advanceWithdraw(user.address, 1, ethers.parseUnits("50", 18))).not.to.be.reverted
+
+			const acceptedRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
+			expect(acceptedRequest.advancedAmount).to.equal(ethers.parseUnits("50", 18))
+		})
+
 		it("Should reject withdraw if provider wants", async function () {
 			await userDeposit("100")
 			const epAddress = await expressProvider.getAddress()
@@ -1342,6 +1359,37 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 
 			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
 			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
+		})
+
+		it("Should block provider reentrant cancel acceptance during finalize", async function () {
+			await userDeposit("100")
+
+			const MaliciousProvider = await ethers.getContractFactory("contracts/core/test/MaliciousAdvanceProvider.sol:MaliciousAdvanceProvider")
+			const maliciousProvider = await MaliciousProvider.deploy(context.diamond)
+			await maliciousProvider.waitForDeployment()
+			const maliciousProviderAddress = await maliciousProvider.getAddress()
+
+			await context.controlFacet.connect(context.signers.admin).registerExpressProvider(maliciousProviderAddress)
+
+			const benignParts = [await buildPart("50", { expressProvider: maliciousProviderAddress })]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(benignParts, false, "0x")
+
+			const attackParts = [await buildPart("50", { expressProvider: maliciousProviderAddress })]
+			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(attackParts, false, "0x")
+			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(2)
+
+			const balanceBeforeFinalize = await context.viewFacet.balanceOf(user.address)
+			await maliciousProvider.setCancelAttack(true)
+			await time.increase(1000)
+
+			await expect(context.withdrawFacet.finalizeWithdrawRequest(user.address, 2)).not.to.reverted
+
+			expect(await maliciousProvider.cancelAcceptedCount()).to.equal(0n)
+			expect(await maliciousProvider.cancelRejectedCount()).to.equal(1n)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBeforeFinalize)
+
+			const finalRequest = await context.viewFacet.getWithdrawRequests(user.address, 2)
+			expect(finalRequest.status).to.equal(WithdrawStatus.COMPLETED)
 		})
 
 		it("Should fail to accept cancel withdraw with invalid id", async function () {
@@ -1393,67 +1441,6 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			await expect(context.withdrawFacet.connect(context.signers.admin).acceptWithdrawCancelRequest(user.address, 1)).to.revertedWith(
 				"WithdrawFacet : Not allowed to accept cancel",
 			)
-		})
-
-		it("Should force cancel withdraw with express provider", async function () {
-			await userDeposit("100")
-			await triggerCooldown()
-			const epAddress = await expressProvider.getAddress()
-
-			const parts = [
-				await buildPart("50", {
-					expressProvider: epAddress,
-				}),
-				await buildPart("20"),
-			]
-
-			const balanceBefore = await context.viewFacet.balanceOf(user.address)
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-
-			await expressProvider.acceptWithdrawRequest(user.address, 1)
-
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-
-			// Balance should be fully restored
-			const balanceAfter = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfter).to.equal(balanceBefore)
-		})
-
-		it("Should force cancel express withdraw on CANCEL_REQUESTED status", async function () {
-			await userDeposit("100")
-			await triggerCooldown()
-			const epAddress = await expressProvider.getAddress()
-
-			const parts = [
-				await buildPart("50", {
-					expressProvider: epAddress,
-				}),
-				await buildPart("20"),
-			]
-
-			const balanceBefore = await context.viewFacet.balanceOf(user.address)
-			await context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")
-
-			await expressProvider.acceptWithdrawRequest(user.address, 1)
-
-			// User requests cancel - status becomes CANCEL_REQUESTED for express
-			await context.withdrawFacet.connect(context.signers.user).requestCancelWithdraw(1)
-
-			const withdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(withdrawRequest.status).to.equal(WithdrawStatus.CANCEL_REQUESTED)
-
-			// Admin can force cancel even in CANCEL_REQUESTED status
-			await expect(context.withdrawFacet.connect(context.signers.admin).forceCancelWithdraw(user.address, 1)).not.reverted
-
-			const updatedWithdrawRequest = await context.viewFacet.getWithdrawRequests(user.address, 1)
-			expect(updatedWithdrawRequest.status).to.equal(WithdrawStatus.CANCELLED)
-
-			// Balance should be fully restored
-			const balanceAfter = await context.viewFacet.balanceOf(user.address)
-			expect(balanceAfter).to.equal(balanceBefore)
 		})
 	})
 

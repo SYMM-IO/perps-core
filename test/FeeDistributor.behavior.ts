@@ -209,7 +209,7 @@ export function shouldBehaveLikeFeeDistributor() {
 
 			it("Should revert when paused", async function () {
 				await feeDistributor.connect(pauser).pause()
-				await expect(feeDistributor.connect(collector).claimFee(100)).to.be.revertedWith("Pausable: paused")
+				await expect(feeDistributor.connect(collector).claimFee(100)).to.be.revertedWithCustomError(feeDistributor, "EnforcedPause")
 			})
 		})
 

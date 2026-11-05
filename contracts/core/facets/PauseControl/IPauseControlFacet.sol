@@ -25,6 +25,8 @@ interface IPauseControlFacet is IControlEvents {
 
 	function pauseInstantLayer() external;
 
+	function pauseWithdrawAdvance() external;
+
 	function activeEmergencyMode() external;
 
 	function unpauseGlobal() external;
@@ -45,15 +47,23 @@ interface IPauseControlFacet is IControlEvents {
 
 	function unpauseInstantLayer() external;
 
+	function unpauseWithdrawAdvance() external;
+
 	function deactiveEmergencyMode() external;
 
 	function suspendedAddress(address user) external;
 
 	function unsuspendedAddress(address user) external;
 
-	function setPartyBOpenPositionsPaused(address partyB, bool status) external;
+	function pausePartyBOpenPositionsFor(address partyB) external;
+
+	function unpausePartyBOpenPositionsFor(address partyB) external;
 
 	function setPartyBEmergencyStatus(address[] memory partyBs, bool status) external;
+
+	function setLegacyDeallocateDeprecated(bool deprecated) external;
+
+	function setLegacyPartyALiquidationDeprecated(bool deprecated) external;
 
 	function deprecateLegacyWithdrawal() external;
 
