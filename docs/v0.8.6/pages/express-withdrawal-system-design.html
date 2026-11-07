@@ -835,13 +835,12 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 						before anything is locked and before any provider is asked to act, with two rules.
 					</p>
 					<p>
-						<strong>Express is the master.</strong> Core resolves the express provider first, across all parts, then walks the parts
-						again. In a request that has an express provider, every part that names only a virtual provider is reassigned to it:
-						<code>expressProvider</code> becomes the request&rsquo;s express provider and <code>virtualProvider</code> becomes
-						<code>address(0)</code>. The part is stored in that shape, so from then on it is an ordinary express part: counted in the
-						express amount, advanceable, paid by the provider and reimbursed at finalize, and carried in the finalize callback. The
-						virtual provider named in the original part plays no role in a mixed request. Pure-virtual requests still route to their
-						virtual provider, parts that name both providers keep both, and a second express provider still reverts.
+						<strong>No virtual-only part next to an express part.</strong> Core resolves the express provider first, across all parts,
+						then walks the parts again. In a request that has an express provider, a part that names only a virtual provider is rejected
+						with <code>WithdrawFacet : Virtual-only part not allowed with express</code>. The express provider is the provider of the
+						whole request and the virtual provider named on such a part would never be called, so the shape cannot be delivered by anyone.
+						Pure-virtual requests still route to their virtual provider, parts that name both providers keep both, express-plus-classic
+						requests are unchanged, and a second express provider still reverts.
 					</p>
 					<p>
 						<strong>Receivers that core pays are decoded now.</strong> For every part without a virtual provider, that is every part core
@@ -857,17 +856,15 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 						inside <code>finalizeWithdrawRequest</code>, by the transfer itself. A receiver that was not twenty bytes long, or decoded to
 						zero, passed initiate and the provider&rsquo;s acceptance; finalize then reverted on every attempt, the user&rsquo;s
 						collateral stayed locked, and a provider waiting for its reimbursement in the finalize callback never received it. Suspension
-						was the only exit. Likewise, a request with an express part and a virtual-only part left the virtual part unpaid: it was not
-						in the express amount, could not be advanced against, and the virtual provider it named was never the request&rsquo;s
-						provider, so finalize skipped it while the user had locked that amount. Failures that no check at initiate can foresee, such
-						as a receiver contract that later rejects tokens, still end in a suspension, which keeps the provider whole for what it
-						advanced.
+						was the only exit. Likewise, a request with an express part and a virtual-only part was accepted and left the virtual part
+						unpaid: it was not in the express amount, could not be advanced against, and the virtual provider it named was never the
+						request&rsquo;s provider, so finalize skipped it while the user had locked that amount. Failures that no check at initiate can
+						foresee, such as a receiver contract that later rejects tokens, still end in a suspension, which keeps the provider whole for
+						what it advanced.
 					</aside>
 					<p>
-						Because the stored parts are the express shape, an express bot signs its offer over the parts as stored; an offer signed over
-						the original virtual shape fails the parts-hash check, and such a request can be cancelled and re-created. Frontends that
-						build mixed requests should present the virtual-only part as delivered by the express provider and include it in the
-						provider&rsquo;s capacity check.
+						Frontends and bots that build a request with an express part must give every other part either the same express provider or no
+						provider at all; a cross-chain delivery through a virtual provider is a separate, pure-virtual request.
 					</p>
 
 					<h3 id="security-window">Security window</h3>
@@ -2483,9 +2480,8 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 						and ExpressProvider computes the same amount from parts whose <code>expressProvider == address(this)</code> and
 						<code>virtualProvider == address(0)</code>; classic parts cannot inflate the advance. The bot should still set
 						<code>virtualProvider</code> to zero on every part assigned to this provider. A virtual-only part mixed into an Express-master
-						request is reassigned to the express provider by core at initiate (see
-						<a href="#part-validation">Part validation at initiate</a>), so it is inside this provider&rsquo;s transfer loop and must be
-						sized into the offer.
+						request is rejected by core at initiate (see <a href="#part-validation">Part validation at initiate</a>), so no part this
+						provider skips can exist on an accepted request.
 					</p>
 					<h3 id="liquidity-fragmentation">Liquidity fragmentation</h3>
 					<p>

@@ -103,14 +103,14 @@ library WithdrawFacetImpl {
 	}
 
 	/// @notice Validates and aggregates withdrawal parts, tracking provider and amount totals
-	/// @dev The express provider, when present, is the master of the whole request: a part that names only a
-	///      virtual provider is reassigned to the express provider and paid by it like any other express part.
-	///      Parts are memory references, so the reassignment is what gets stored on the request.
+	/// @dev A request is single-provider. When an express provider is present it is the provider of the whole
+	///      request, so a part that names only a virtual provider has nobody to deliver it; such a request is
+	///      rejected here, before anything is locked.
 	function _processWithdrawParts(
 		WithdrawReceiverPart[] memory parts,
 		WithdrawStorage.Layout storage withdrawLayout
 	) private view returns (InitiateWithdrawLocals memory locals) {
-		// EXPRESS MASTER: resolve it first so virtual-only parts can be routed to it below.
+		// EXPRESS PROVIDER: resolve it first so a virtual-only part can be rejected below.
 		for (uint256 i = 0; i < parts.length; i++) {
 			address expressProvider = parts[i].expressProvider;
 			if (expressProvider == address(0)) continue;
@@ -130,13 +130,9 @@ library WithdrawFacetImpl {
 			bool isExpress = part.expressProvider != address(0);
 			bool isVirtual = part.virtualProvider != address(0);
 
-			if (locals.hasExpress && !isExpress && isVirtual) {
-				// Express is the master of a mixed request: it pays this part, so it is stored as an express part.
-				part.expressProvider = locals.expressProvider;
-				part.virtualProvider = address(0);
-				isExpress = true;
-				isVirtual = false;
-			}
+			// A virtual-only part next to an express part would be routed to nobody: the express provider is the
+			// request's provider and the virtual provider is never called. Reject the shape at initiate.
+			require(!(locals.hasExpress && !isExpress && isVirtual), "WithdrawFacet : Virtual-only part not allowed with express");
 
 			locals.totalAmount += part.amount;
 

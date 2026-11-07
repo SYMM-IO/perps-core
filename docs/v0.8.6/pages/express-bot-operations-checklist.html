@@ -1071,8 +1071,8 @@ What-if: same withdrawal as WINDOWED instead of STANDARD?
 					<p>
 						Mixed-request boundary: core caps <code>advanceWithdraw</code> by express, non-virtual parts, and this provider computes its
 						amount from parts assigned to its own address with <code>virtualProvider == address(0)</code>. Classic parts therefore cannot
-						inflate this provider&rsquo;s advance. Do not put virtual-only parts under an Express-master request because this
-						provider&rsquo;s transfer loop intentionally skips them.
+						inflate this provider&rsquo;s advance. Core rejects a virtual-only part under an Express-master request at initiate, so this
+						provider&rsquo;s transfer loop never meets one.
 					</p>
 					<pre data-diagram-size="712 519"><code class="language-mermaid">flowchart TD
     P[Parts Array] --&gt; C1{expressProvider == this?}
@@ -3511,8 +3511,8 @@ Step 4c: Post-payout rollback (suspend after PROCESSED, rare):
 					</div>
 					<p>
 						Classic/non-Express parts can coexist because core and this provider both limit the advance to Express non-virtual parts.
-						Still keep <code>virtualProvider == address(0)</code> on each Express part, and do not offer virtual-only parts under an
-						Express-master request because this provider skips them.
+						Still keep <code>virtualProvider == address(0)</code> on each Express part; a virtual-only part under an Express-master
+						request is rejected by core at initiate.
 					</p>
 					<h3 id="multi-part-fee-cascading">Multi-part fee cascading</h3>
 					<pre data-diagram-size="791 289"><code class="language-mermaid">flowchart LR

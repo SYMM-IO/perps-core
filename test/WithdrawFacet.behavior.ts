@@ -1173,6 +1173,24 @@ export function shouldBehaveLikeWithdrawFacet(): void {
 			)
 		})
 
+		it("Should fail to initiate withdraw with a virtual-only part next to an express part", async function () {
+			const MockVirtualProvider = await ethers.getContractFactory("contracts/core/test/MockVirtualProvider.sol:VirtualProvider")
+			const mixedVirtualProvider = await MockVirtualProvider.deploy(context.diamond)
+			await mixedVirtualProvider.waitForDeployment()
+			const vpAddress = await mixedVirtualProvider.getAddress()
+			await context.controlFacet.connect(context.signers.admin).registerVirtualProvider(vpAddress)
+
+			await userDeposit("100")
+			const epAddress = await expressProvider.getAddress()
+			const parts = [await buildPart("50", { expressProvider: epAddress }), await buildPart("20", { virtualProvider: vpAddress })]
+
+			const balanceBefore = await context.viewFacet.balanceOf(user.address)
+			await expect(context.withdrawFacet.connect(context.signers.user).initiateWithdraw(parts, false, "0x")).to.revertedWith(
+				"WithdrawFacet : Virtual-only part not allowed with express",
+			)
+			expect(await context.viewFacet.balanceOf(user.address)).to.equal(balanceBefore)
+		})
+
 		it("Should fail to initiate withdraw with non-registered provider", async function () {
 			await userDeposit("100")
 			const epAddress = await expressProvider.getAddress()
