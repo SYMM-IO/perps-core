@@ -2186,6 +2186,11 @@
     },
     {
         "inputs": [],
+        "name": "RequestDebtStillLive",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "SecurityWindowTooLow",
         "type": "error"
     },

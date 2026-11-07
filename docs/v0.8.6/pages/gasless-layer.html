@@ -482,9 +482,20 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<p>
 						The relayer never submits an operational-fee amount. Gasless Layer reads each operation selector, applies an explicit
 						<code>selectorFeeConfigs</code> value when configured, and otherwise uses <code>defaultSelectorFee</code>. Wallet operations
-						sum the prices of their inner call selectors. Core then applies the payer&rsquo;s approved multiplier for the Gasless Layer
-						charger.
+						sum the prices of their inner call selectors. Gasless Layer then applies the payer&rsquo;s multiplier for its charger slot,
+						taken from an <code>approveOperationalFeeWithMultiplier</code> operation in the same batch or from the stored payer slot, in
+						basis points of <code>FEE_MULTIPLIER_BASE = 10000</code>. The multiplier is a priority signal only:
+						<code>GaslessOperationalFeeLib</code> floors every value at <code>10000</code> when the approval operation is decoded and when
+						the payer slot is loaded into the settlement plan, so an unset zero and any sub-1x value are charged at exactly 1x, and values
+						above 1x raise the fee proportionally. Frontends that quote fees should floor the multiplier at 1x in their preview, and
+						existing payer slots with a sub-1x multiplier are read as 1x from the upgrade on.
 					</p>
+					<aside class="callout callout-note">
+						<strong>Why the floor exists.</strong> The first v0.8.6 build computed <code>baseFee * multiplier / 10000</code> at both read
+						points and mapped only a zero multiplier to 1x, so a payer that signed a multiplier of 1 paid <code>baseFee / 10000</code>,
+						rounded down, for an operation the relayer still paid gas for. The field keeps its encoding and range; only its effect below
+						1x changed.
+					</aside>
 					<p>
 						The first <code>dailyFreeOpsLimit</code> operations for a billing account in each UTC day waive their base fee. A zero limit
 						means there is no free quota. After the quota, <code>revertWhenFreeQuotaExhausted</code> either blocks the relay or lets

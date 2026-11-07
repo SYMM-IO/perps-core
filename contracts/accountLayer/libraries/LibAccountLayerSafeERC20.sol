@@ -20,12 +20,12 @@ library LibAccountLayerSafeERC20 {
 	/// @param amount The amount to transfer
 	function safeTransfer(address token, address to, uint256 amount) internal {
 		// Save and clear signer before external call
-		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 
 		IERC20(token).safeTransfer(to, amount);
 
 		// Restore signer after external call
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 
 	/// @notice Safely transfers tokens from another address with signer cleared
@@ -35,12 +35,12 @@ library LibAccountLayerSafeERC20 {
 	/// @param amount The amount to transfer
 	function safeTransferFrom(address token, address from, address to, uint256 amount) internal {
 		// Save and clear signer before external call
-		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 
 		IERC20(token).safeTransferFrom(from, to, amount);
 
 		// Restore signer after external call
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 
 	/// @notice Safely increases allowance with signer cleared
@@ -49,11 +49,11 @@ library LibAccountLayerSafeERC20 {
 	/// @param amount The amount to increase allowance by
 	function safeIncreaseAllowance(address token, address spender, uint256 amount) internal {
 		// Save and clear signer before external call
-		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 
 		IERC20(token).safeIncreaseAllowance(spender, amount);
 
 		// Restore signer after external call
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 }

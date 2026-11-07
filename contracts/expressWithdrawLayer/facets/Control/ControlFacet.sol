@@ -9,6 +9,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 import { AffiliateConfig } from "../../types/ConfigTypes.sol";
 import { AffiliateCredit } from "../../types/CreditTypes.sol";
+import { Status } from "../../types/WithdrawTypes.sol";
 
 import { LibAccessControl } from "../../libraries/LibAccessControl.sol";
 import { LibCreditLine } from "../../libraries/LibCreditLine.sol";
@@ -391,6 +392,9 @@ contract ControlFacet is IControlFacet, Pausable, ReentrancyGuard {
 	///         `reservedDebt` or `activeDebt` by the exact amount, consistent with activation state.
 	function clearRequestDebt(address affiliate, address user, uint256 requestId) external {
 		LibDiamond.enforceIsContractOwner();
+		// A PROCESSED request still settles its debt inside core's finalize callback; clearing it now would make
+		// every finalize of that request revert with NoDebtForRequest and leave the provider unreimbursed.
+		if (GlobalStorage.layout().withdrawInfos[user][requestId].status == Status.PROCESSED) revert LibErrors.RequestDebtStillLive();
 		AffiliateCredit storage ac = CreditLineStorage.layout().affiliates[affiliate];
 		bytes32 key = keccak256(abi.encodePacked(user, requestId));
 		uint256 amount = ac.requestDebt[key];

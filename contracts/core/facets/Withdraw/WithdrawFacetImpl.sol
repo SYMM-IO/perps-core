@@ -103,10 +103,25 @@ library WithdrawFacetImpl {
 	}
 
 	/// @notice Validates and aggregates withdrawal parts, tracking provider and amount totals
+	/// @dev The express provider, when present, is the master of the whole request: a part that names only a
+	///      virtual provider is reassigned to the express provider and paid by it like any other express part.
+	///      Parts are memory references, so the reassignment is what gets stored on the request.
 	function _processWithdrawParts(
 		WithdrawReceiverPart[] memory parts,
 		WithdrawStorage.Layout storage withdrawLayout
 	) private view returns (InitiateWithdrawLocals memory locals) {
+		// EXPRESS MASTER: resolve it first so virtual-only parts can be routed to it below.
+		for (uint256 i = 0; i < parts.length; i++) {
+			address expressProvider = parts[i].expressProvider;
+			if (expressProvider == address(0)) continue;
+			if (!locals.hasExpress) {
+				locals.expressProvider = expressProvider;
+				locals.hasExpress = true;
+			} else {
+				require(locals.expressProvider == expressProvider, "WithdrawFacet : Multiple express providers not allowed");
+			}
+		}
+
 		for (uint256 i = 0; i < parts.length; i++) {
 			WithdrawReceiverPart memory part = parts[i];
 
@@ -115,17 +130,15 @@ library WithdrawFacetImpl {
 			bool isExpress = part.expressProvider != address(0);
 			bool isVirtual = part.virtualProvider != address(0);
 
-			locals.totalAmount += part.amount;
-
-			// EXPRESS HANDLING
-			if (isExpress) {
-				if (!locals.hasExpress) {
-					locals.expressProvider = part.expressProvider;
-					locals.hasExpress = true;
-				} else {
-					require(locals.expressProvider == part.expressProvider, "WithdrawFacet : Multiple express providers not allowed");
-				}
+			if (locals.hasExpress && !isExpress && isVirtual) {
+				// Express is the master of a mixed request: it pays this part, so it is stored as an express part.
+				part.expressProvider = locals.expressProvider;
+				part.virtualProvider = address(0);
+				isExpress = true;
+				isVirtual = false;
 			}
+
+			locals.totalAmount += part.amount;
 
 			// VIRTUAL REGISTRATION CHECK
 			if (isVirtual) {
@@ -133,6 +146,9 @@ library WithdrawFacetImpl {
 				locals.totalVirtualAmount += part.amount;
 			} else {
 				require(part.chainId == int256(block.chainid), "WithdrawFacet : Invalid chainId for non-virtual part");
+				// Tokens leave this contract for a non-virtual part, so its receiver must already be a usable address;
+				// finding out at finalize would strand a request the provider may have advanced against.
+				require(_bytesToAddress(part.receiver) != address(0), "WithdrawFacet : Invalid receiver");
 			}
 
 			// PURE VIRTUAL HANDLING (only if no express anywhere)

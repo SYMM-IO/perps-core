@@ -58,7 +58,7 @@ library LibSettlement {
 			uint256 oldOpenedPrice = quote.openedPrice;
 			require(quote.partyA == partyA, "LibSettlement: PartyA is invalid");
 			quote.requireOpenPosition();
-			require(data.partyBUpnlIndex <= settleSig.upnlPartyBs.length, "LibSettlement: Invalid partyBUpnlIndex in signature");
+			require(data.partyBUpnlIndex < settleSig.upnlPartyBs.length, "LibSettlement: Invalid partyBUpnlIndex in signature");
 			require(
 				partyBs[data.partyBUpnlIndex] == address(0) || partyBs[data.partyBUpnlIndex] == quote.partyB,
 				"LibSettlement: Invalid upnlPartyBs list"

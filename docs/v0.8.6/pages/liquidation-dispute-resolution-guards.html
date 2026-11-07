@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="resolveLiquidationDispute accepted a PartyA that was not under liquidation and PartyBs without a pending settlement bucket, writing amounts and reserve contributions that nothing would settle. Both are now required."
+		/>
+		<title>Liquidation Dispute Resolution Guards - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#writes">What a resolution writes</a>
+				<a class="toc-link level-2" href="#the-gap">Writes outside a liquidation</a>
+				<a class="toc-link level-2" href="#guards">The guards</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Liquidation Dispute Resolution Guards</h1>
+							<p class="hero-copy">
+								A dispute resolution writes settlement amounts and reserve contributions. It now requires the PartyA to be under
+								liquidation and every listed PartyB to hold a pending settlement bucket.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="writes">What a resolution writes</h2>
+					<p>
+						When a PartyA liquidation is disputed, the dispute role calls <code>resolveLiquidationDispute</code> with the PartyBs and the
+						amounts it has verified. For each PartyB the call overwrites the planned <code>actualAmount</code> of its settlement bucket
+						and re-synchronises the PartyB&rsquo;s liquidation settlement reserve, the amount a cross-mode PartyB keeps unavailable until
+						the settlement is paid (see <a href="cross-partyb-liquidation-reserve.html">Cross-PartyB Liquidation Reserve Enforcement</a>).
+						It also records the liquidator action timestamp and sets or clears the disputed flag.
+					</p>
+
+					<h2 id="the-gap">Writes outside a liquidation</h2>
+					<p>
+						None of that was conditional on a liquidation being open, or on the bucket existing. A call for a PartyA that was not
+						liquidated set a disputed flag and an action timestamp on an empty liquidation record. A call naming a PartyB that had no
+						pending bucket created one in all but the <code>pending</code> flag: an <code>actualAmount</code> that no settlement would
+						ever pay, and a reserve contribution that reduced the PartyB&rsquo;s cross availability until a later liquidation of the same
+						pair overwrote it.
+					</p>
+					<p>
+						The role is trusted, so this is protection against an operator mistake rather than against an attacker, but the effect of the
+						mistake was a silently inconsistent reserve.
+					</p>
+
+					<h2 id="guards">The guards</h2>
+					<pre><code>require(liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
+require(settlementStates[partyA][partyB].pending, "LiquidationFacet: PartyB is not in settlement");</code></pre>
+					<p>
+						The first is checked once; the second for every PartyB in the list, before anything is written. A resolution that lists an
+						already-settled PartyB therefore reverts as a whole, matching what <code>settlePartyALiquidation</code> does with the same
+						input. Amounts and the disputed flag are otherwise written exactly as before, and the planned amounts of unlisted PartyBs are
+						untouched.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

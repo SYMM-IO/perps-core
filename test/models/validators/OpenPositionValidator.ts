@@ -7,6 +7,7 @@ import {
 	getTradingFeeForQuotes,
 	getTradingFeeForQuoteWithFilledAmount,
 	getOpenTradingFeeForQuoteWithFilledAmount,
+	getQuoteTradingFeeWithAmount,
 } from "../../utils/Common.js"
 import { logger } from "../../utils/LoggerUtils.js"
 import { expectToBeApproximately } from "../../utils/SafeMath.js"
@@ -199,6 +200,13 @@ export class OpenPositionValidator implements TransactionValidator {
 		const reservedOpenFee = await getOpenTradingFeeForQuoteWithFilledAmount(context, oldQuote.id!, arg.fillAmount)
 		const executedOpenFee = await getTradingFeeForQuoteWithFilledAmount(context, newQuote.id!, arg.fillAmount)
 		const openFeeDelta = executedOpenFee > reservedOpenFee ? executedOpenFee - reservedOpenFee : reservedOpenFee - executedOpenFee
+		// The parent, filled and child reservations are each floored separately; a partial open returns the unit the parent's
+		// reservation exceeds the two parts by to PartyA, so the child keeps exactly the reservation its own formula produces.
+		const reservationRemainder = partially
+			? getQuoteTradingFeeWithAmount(oldQuote, oldQuote.quantity, false) -
+				reservedOpenFee -
+				getQuoteTradingFeeWithAmount(oldQuote, oldQuote.quantity - arg.fillAmount, false)
+			: 0n
 		if (oldQuote.quoteStatus == BigInt(QuoteStatus.CANCEL_PENDING) || arg.newQuoteTargetStatus === QuoteStatus.CANCELED) {
 			expect(newBalanceInfoPartyA.totalPendingLockedPartyA).to.be.equal(
 				(oldBalanceInfoPartyA.totalPendingLockedPartyA - oldLockedValuesPartyA).toString(),
@@ -207,7 +215,7 @@ export class OpenPositionValidator implements TransactionValidator {
 			expectToBeApproximately(newBalanceInfoPartyA.totalPendingLockedPartyA, oldBalanceInfoPartyA.totalPendingLockedPartyA - partialLockedValues)
 		}
 		expectToBeApproximately(newBalanceInfoPartyA.totalLockedPartyA, oldBalanceInfoPartyA.totalLockedPartyA + partialWithPriceLockedValuesPartyA)
-		let expectedAllocatedBalance = oldBalanceInfoPartyA.allocatedBalances
+		let expectedAllocatedBalance = oldBalanceInfoPartyA.allocatedBalances + reservationRemainder
 		if (executedOpenFee > reservedOpenFee) expectedAllocatedBalance -= openFeeDelta
 		else expectedAllocatedBalance += openFeeDelta
 		if (arg.newQuoteTargetStatus == QuoteStatus.CANCELED) {

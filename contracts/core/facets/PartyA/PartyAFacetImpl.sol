@@ -64,6 +64,9 @@ library PartyAFacetImpl {
 		require(symbolLayout.symbols[symbolId].isValid, "PartyAFacet: Symbol is not valid");
 		LibSymbolAdjustment.requireNotFrozen(symbolId);
 		require(deadline >= block.timestamp, "PartyAFacet: Low deadline");
+		// Locked values alone can pass every check below with a zero quantity; such a position has no notional,
+		// cannot be priced, and would make every close and liquidation division revert.
+		require(quantity > 0, "PartyAFacet: Zero quantity");
 
 		LockedValues memory lockedValues = LockedValues(cva, lf, partyAmm, partyBmm);
 		require(

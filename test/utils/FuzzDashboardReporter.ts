@@ -13,7 +13,7 @@ import type {
 	FuzzSetupInfo,
 	FuzzStopSignal,
 } from "../models/FuzzLogTypes.js"
-import { FUZZ_CORNER_OPERATIONS, type FuzzCornerOperation } from "../models/FuzzLogTypes.js"
+import { ALL_FUZZ_CORNER_OPERATIONS, type FuzzCornerOperation } from "../models/FuzzLogTypes.js"
 import type { FuzzOperationCoverage } from "./FuzzOperationCoverage.js"
 import {
 	FUZZ_ORDER_TYPES,
@@ -179,7 +179,7 @@ function emptyOperationCoverage(): FuzzOperationCoverage {
 	return {
 		totals: zeroOperationCounts(),
 		byOperation: Object.fromEntries(
-			FUZZ_CORNER_OPERATIONS.map(operation => [operation, zeroOperationCounts()]),
+			ALL_FUZZ_CORNER_OPERATIONS.map(operation => [operation, zeroOperationCounts()]),
 		) as FuzzOperationCoverage["byOperation"],
 	}
 }
@@ -199,7 +199,7 @@ function copyOperationCoverage(coverage: FuzzOperationCoverage): FuzzOperationCo
 	return {
 		totals: { ...coverage.totals },
 		byOperation: Object.fromEntries(
-			FUZZ_CORNER_OPERATIONS.map(operation => [operation, { ...coverage.byOperation[operation] }]),
+			ALL_FUZZ_CORNER_OPERATIONS.map(operation => [operation, { ...coverage.byOperation[operation] }]),
 		) as FuzzOperationCoverage["byOperation"],
 	}
 }
@@ -404,7 +404,7 @@ class JsonFuzzDashboardRecorder implements FuzzDashboardRecorder {
 		FuzzQuoteStatusName,
 		QuoteStateMilestone | null
 	>
-	private readonly cornerMilestones = Object.fromEntries(FUZZ_CORNER_OPERATIONS.map(operation => [operation, null])) as Record<
+	private readonly cornerMilestones = Object.fromEntries(ALL_FUZZ_CORNER_OPERATIONS.map(operation => [operation, null])) as Record<
 		FuzzCornerOperation,
 		CornerMilestone | null
 	>
@@ -830,7 +830,7 @@ class JsonFuzzDashboardRecorder implements FuzzDashboardRecorder {
 			// The configured targets, so a reader does not need its own copy of the runner's catalogues.
 			targets: {
 				quoteStates: [...FUZZ_QUOTE_STATUS_NAMES],
-				cornerOperations: [...FUZZ_CORNER_OPERATIONS],
+				cornerOperations: [...ALL_FUZZ_CORNER_OPERATIONS],
 			},
 			timeline: this.timeline.map(checkpoint => ({
 				...checkpoint,

@@ -332,6 +332,7 @@ export async function runFuzzSimulation(options: FuzzRunnerOptions = {}): Promis
 		const context = await initializeFixture()
 		manager = new TestManager(context, false, "direct", event => fuzzLogger.onModelEvent(event), actionTimeoutMs)
 		context.manager = manager
+		manager.conservationSeed = seed
 		await manager.start()
 		await context.controlFacet.connect(context.signers.admin).setBalanceLimitPerUser(decimal(10_000_000n))
 		await configureFuzzLayers(context)

@@ -114,6 +114,14 @@ library LibSolvency {
 		}
 	}
 
+	/// @dev CVA + LF released by closing `filledAmount` of `quote`. A zero-quantity position stored before
+	///      sendQuote rejected them has nothing to prorate and releases all of its locks.
+	function _unlockedCvaLfOnClose(Quote storage quote, uint256 filledAmount) private view returns (uint256) {
+		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+		if (openAmount == 0) return quote.lockedValues.cva + quote.lockedValues.lf;
+		return Math.mulDiv(filledAmount, quote.lockedValues.cva, openAmount) + Math.mulDiv(filledAmount, quote.lockedValues.lf, openAmount);
+	}
+
 	/// @notice Calculates the available balances for Party A and Party B after closing positions for given quotes.
 	/// @param quoteIds The IDs of the quotes for which the positions are being closed.
 	/// @param filledAmounts The amounts of the quotes that will be filled by closing the positions.
@@ -150,9 +158,7 @@ library LibSolvency {
 			uint256 marketPrice = marketPrices[i];
 
 			Quote storage quote = quoteLayout.quotes[quoteId];
-			uint256 openAmount = LibQuote.quoteOpenAmount(quote);
-			uint256 unlockedAmount =
-				Math.mulDiv(filledAmount, quote.lockedValues.cva, openAmount) + Math.mulDiv(filledAmount, quote.lockedValues.lf, openAmount);
+			uint256 unlockedAmount = _unlockedCvaLfOnClose(quote, filledAmount);
 
 			partyBAvailableBalance += int256(unlockedAmount);
 			partyAAvailableBalance += int256(unlockedAmount);

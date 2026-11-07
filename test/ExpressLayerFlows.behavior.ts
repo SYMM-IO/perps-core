@@ -1104,9 +1104,9 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await collateral.balanceOf(receiver.address)).to.equal(withdrawAmount)
 		})
 
-		it("should revert InvalidAddressBytesLength when receiver is 19 bytes", async function () {
+		it("core rejects a 19-byte receiver at initiate, before the provider is involved", async function () {
 			const fixture = await deployFixture()
-			const { botSigner, operator, user, expressProvider, context, affiliate } = fixture
+			const { botSigner, user, expressProvider, context, affiliate } = fixture
 			const withdrawAmount = 300n * 10n ** 18n
 			const expressAddr = await expressProvider.getAddress()
 
@@ -1141,23 +1141,17 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			})
 			const providerData = encodeProviderData(nonce, 1, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
 
-			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
-			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
-
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-
-			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
-				expressProvider,
-				"InvalidAddressBytesLength",
+			const lastRequestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWith(
+				"WithdrawFacet : Invalid address bytes length",
 			)
-
-			expect((await expressProvider.getWithdrawInfo(user.address, requestId)).status).to.equal(1n)
+			expect(await context.viewFacet.getLastWithdrawRequestId(user.address)).to.equal(lastRequestId)
+			expect((await expressProvider.getWithdrawInfo(user.address, lastRequestId + 1n)).status).to.equal(0n) // NONE
 		})
 
-		it("should revert InvalidAddressBytesLength when receiver is 21 bytes", async function () {
+		it("core rejects a 21-byte receiver at initiate, before the provider is involved", async function () {
 			const fixture = await deployFixture()
-			const { botSigner, operator, user, expressProvider, context, affiliate } = fixture
+			const { botSigner, user, expressProvider, context, affiliate } = fixture
 			const expressAddr = await expressProvider.getAddress()
 
 			const longReceiver = "0x" + "cd".repeat(21)
@@ -1191,15 +1185,8 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			})
 			const providerData = encodeProviderData(nonce, 1, 0, affiliate, 0n, 0n, 0n, 0n, deadline, signature)
 
-			await context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)
-			const requestId = await context.viewFacet.getLastWithdrawRequestId(user.address)
-
-			await ethers.provider.send("evm_increaseTime", [21])
-			await ethers.provider.send("evm_mine", [])
-
-			await expect(expressProvider.connect(operator).processWithdraw(user.address, requestId, parts)).to.be.revertedWithCustomError(
-				expressProvider,
-				"InvalidAddressBytesLength",
+			await expect(context.withdrawFacet.connect(user).initiateWithdraw(parts, false, providerData)).to.be.revertedWith(
+				"WithdrawFacet : Invalid address bytes length",
 			)
 		})
 
@@ -4857,7 +4844,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.creditLineRequestActivated(affiliate, user.address, requestId)).to.equal(false)
 		})
 
-		it("clears activated debt and decrements activeDebt aggregate", async function () {
+		it("refuses to clear the activated debt of a live PROCESSED request; the suspension rollback settles it instead", async function () {
 			const fixture = await deployFixture()
 			const { user, expressProvider, affiliate, deployer, context } = fixture
 
@@ -4903,10 +4890,21 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
 			expect(await expressProvider.creditLineRequestActivated(affiliate, user.address, requestId)).to.equal(true)
 
-			await expressProvider.connect(deployer).clearRequestDebt(affiliate, user.address, requestId)
+			// Core's finalize callback still has to settle this debt; clearing it now would brick that finalize.
+			await expect(expressProvider.connect(deployer).clearRequestDebt(affiliate, user.address, requestId)).to.be.revertedWithCustomError(
+				expressProvider,
+				"RequestDebtStillLive",
+			)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(creditAmount)
 
+			// The supported exit for a processed request is the suspension rollback, which settles the debt itself.
+			await context.pauseControlFacet.connect(context.signers.admin).suspendedAddress(user.address)
+			await context.withdrawFacet.connect(context.signers.admin).suspendWithdrawRequest(user.address, requestId)
 			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
 			expect(await expressProvider.creditLineRequestDebt(affiliate, user.address, requestId)).to.equal(0n)
+			// Nothing is left for the owner to clear.
+			await expressProvider.connect(deployer).clearRequestDebt(affiliate, user.address, requestId)
+			expect(await expressProvider.creditLineActiveDebt(affiliate)).to.equal(0n)
 		})
 
 		it("is a no-op when no debt exists for the (affiliate, user, requestId) key", async function () {

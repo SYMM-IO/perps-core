@@ -1,5 +1,6 @@
 import {
-	FUZZ_CORNER_OPERATIONS,
+	ALL_FUZZ_CORNER_OPERATIONS as FUZZ_CORNER_OPERATIONS,
+	enabledFuzzCornerOperations,
 	type FuzzCornerOperation,
 	type FuzzModelEvent,
 	type FuzzOperationPhase,
@@ -68,9 +69,10 @@ export function assertRequiredFuzzOperationCoverage(config: FuzzOperationCoverag
 	if (config.runMode !== "bounded" || config.cornerEvery === 0) return
 
 	const scheduledCampaigns = Math.floor(config.rootActions / config.cornerEvery)
-	if (scheduledCampaigns < FUZZ_CORNER_OPERATIONS.length) return
+	const required = enabledFuzzCornerOperations()
+	if (scheduledCampaigns < required.length) return
 
-	const missing = FUZZ_CORNER_OPERATIONS.filter(operation => {
+	const missing = required.filter(operation => {
 		const counts = coverage.byOperation[operation]
 		return counts.attempted === 0 || counts.succeeded === 0
 	})

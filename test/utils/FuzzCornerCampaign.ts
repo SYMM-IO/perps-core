@@ -3,7 +3,7 @@ import type { QuoteStructOutput } from "../../src/types/interfaces/ISymmio.js"
 import { ethers } from "../helpers/hardhat-connection.js"
 import { time } from "../helpers/network-helpers.js"
 import { OrderType, PositionType, QuoteStatus } from "../models/Enums.js"
-import { FUZZ_CORNER_OPERATIONS, type FuzzCornerOperation } from "../models/FuzzLogTypes.js"
+import { enabledFuzzCornerOperations, type FuzzCornerOperation } from "../models/FuzzLogTypes.js"
 import { Hedger } from "../models/Hedger.js"
 import type { RunContext } from "../models/RunContext.js"
 import type { TestManager } from "../models/TestManager.js"
@@ -18,7 +18,10 @@ import { executeFuzzLegacyImport, executeFuzzMarginRecovery, executeFuzzOwnershi
 import { executeFuzzDelegation, executeFuzzFlexFields } from "./FuzzInstantLayerFeatures.js"
 import { executeFuzzInstantTrading } from "./FuzzInstantTradingCampaign.js"
 import { executeFuzzLayerLifecycle } from "./FuzzLayerCampaign.js"
+import { describeResult, runRandomLiquidation } from "./FuzzLiquidationGenerator.js"
+import { executeLiquidationScenario } from "./FuzzLiquidationScenarios.js"
 import { executeFuzzTimelocks } from "./FuzzTimelockCampaign.js"
+import { isKnownViolation, parseKnownViolations } from "./LiquidationModel.js"
 import { pick } from "./RandomUtils.js"
 import {
 	getDummyHighLowPriceSig,
@@ -72,7 +75,7 @@ export class FuzzCornerOperationPlanner {
 	}
 
 	private refill(): void {
-		this.bag = FUZZ_CORNER_OPERATIONS.filter(operation => !this.partyALiquidationSucceeded || operation !== ONE_SHOT_OPERATION)
+		this.bag = enabledFuzzCornerOperations().filter(operation => !this.partyALiquidationSucceeded || operation !== ONE_SHOT_OPERATION)
 		for (let index = this.bag.length - 1; index > 0; index--) {
 			const random = nextRandom(this.randomState)
 			this.randomState = random.state
@@ -123,9 +126,31 @@ function requireBigInt(actual: bigint, expected: bigint, operation: FuzzCornerOp
 
 export class FuzzCornerCampaign {
 	private readonly planner: FuzzCornerOperationPlanner
+	private randomLiquidations = 0
 
 	constructor(private readonly options: FuzzCornerCampaignOptions) {
 		this.planner = new FuzzCornerOperationPlanner(options.seed)
+	}
+
+	/** Model-checked random liquidation (see LiquidationModel.ts); every step is conservation-exact. */
+	private async randomLiquidation(): Promise<OperationResult> {
+		const { context, manager } = this.options
+		const known = parseKnownViolations(process.env.FUZZ_KNOWN_VIOLATIONS)
+		for (let attempt = 0; attempt < 4; attempt++) {
+			const seed = `${this.options.seed}:random:${this.randomLiquidations++}`
+			const result = await runRandomLiquidation(context, manager, {
+				seed,
+				check: step => manager.assertConservation(`LIQUIDATE_PARTY_A_RANDOM:${step}`),
+			})
+			if (result.skipped !== undefined) continue
+			const unexpected = result.violations.filter(violation => !isKnownViolation(violation, known))
+			if (unexpected.length > 0)
+				throw new Error(
+					`LIQUIDATE_PARTY_A_RANDOM seed=${seed} ${describeResult(result)}\n${unexpected.map(v => `${v.code}: ${v.detail}`).join("\n")}`,
+				)
+			return { quoteIds: [], detail: describeResult(result) }
+		}
+		throw new Error("LIQUIDATE_PARTY_A_RANDOM: four consecutive seeds produced no liquidatable book")
 	}
 
 	async executeNext(): Promise<FuzzCornerOperation> {
@@ -141,7 +166,10 @@ export class FuzzCornerCampaign {
 		})
 
 		try {
+			// Every corner operation is checked against the ledger difference it started with (exact, baseline-relative).
+			await this.options.manager.beginConservationScope()
 			const result = await this.execute(operation)
+			await this.options.manager.assertConservation(operation)
 			this.planner.markSucceeded(operation)
 			this.options.manager.recordCornerOperation({
 				operation,
@@ -159,10 +187,12 @@ export class FuzzCornerCampaign {
 				error,
 			})
 			throw error
+		} finally {
+			this.options.manager.endConservationScope()
 		}
 	}
 
-	private execute(operation: FuzzCornerOperation): Promise<OperationResult> {
+	public execute(operation: FuzzCornerOperation): Promise<OperationResult> {
 		const featureOptions = {
 			context: this.options.context,
 			manager: this.options.manager,
@@ -170,6 +200,18 @@ export class FuzzCornerCampaign {
 			route: "instant-layer" as const,
 		}
 		switch (operation) {
+			case "LIQUIDATE_PARTY_A_LATE":
+			case "LIQUIDATE_PARTY_A_OVERDUE":
+			case "LIQUIDATE_PARTY_A_OVERDUE_MIXED_SOLVER":
+			case "LIQUIDATE_PARTY_A_DEFERRED":
+			case "LIQUIDATE_PARTY_A_SNAPSHOT":
+			case "LIQUIDATE_PARTY_A_PENDING":
+				return executeLiquidationScenario(this.options.context, this.options.manager, operation)
+			case "LIQUIDATE_PARTY_A_RANDOM":
+				return this.randomLiquidation()
+			case "LIQUIDATE_PARTY_B_WITH_ORACLE":
+				return this.liquidatePartyB()
+
 			case "FUNDING_CHARGE":
 				return this.chargeFunding()
 			case "SETTLE_UPNL":
@@ -266,9 +308,11 @@ export class FuzzCornerCampaign {
 				.build(),
 		)
 		await manager.observeQuoteState(quoteId)
+		await manager.assertConservation(`${operation}:prepare-position`)
 
 		await hedger.lockQuote(quoteId)
 		await manager.observeQuoteState(quoteId)
+		await manager.assertConservation(`${operation}:prepare-position`)
 
 		const locked = await context.viewFacetQuote.getQuote(quoteId)
 		await hedger.openPosition(
@@ -282,6 +326,7 @@ export class FuzzCornerCampaign {
 				.build(),
 		)
 		const opened = await manager.observeQuoteState(quoteId)
+		await manager.assertConservation(`${operation}:prepare-position`)
 		requireStatus(opened, QuoteStatus.OPENED, operation)
 		return opened
 	}
@@ -507,9 +552,11 @@ export class FuzzCornerCampaign {
 		const insolventUpnl = available >= 0n ? -available - 1n : 0n
 
 		await hedger.liquidate(partyA, getDummySingleUpnlSig(insolventUpnl))
+		await manager.assertConservation("LIQUIDATE_PARTY_B_WITH_ORACLE:start")
 		const priceSignature = await getDummyPriceSig([opened.id], [opened.openedPrice])
 		priceSignature.timestamp = await context.viewFacet.partyBLiquidationTimestamp(partyB, partyA)
 		await context.partyBLiquidationFacet.connect(context.signers.liquidator).liquidatePositionsPartyB(partyB, partyA, priceSignature)
+		await manager.assertConservation("LIQUIDATE_PARTY_B_WITH_ORACLE:positions")
 		const liquidated = await manager.observeQuoteState(opened.id)
 		requireStatus(liquidated, QuoteStatus.LIQUIDATED, "LIQUIDATE_PARTY_B")
 		if (await context.viewFacet.isPartyBLiquidated(partyB, partyA)) {

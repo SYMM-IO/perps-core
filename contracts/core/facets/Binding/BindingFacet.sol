@@ -30,7 +30,7 @@ contract BindingFacet is Accessibility, Pausable, IBindingFacet {
 
 	/// @notice Allows Party A to cancel the unbind request from Party B
 	/// @dev Can only be called by Party A when not suspended
-	function cancelUnbindRequest() external notSuspended(LibSigner.getSigner()) {
+	function cancelUnbindRequest() external whenNotPartyAActionsPaused notSuspended(LibSigner.getSigner()) {
 		BindingFacetImpl.cancelUnbindRequest();
 		emit CancelUnbindRequest(LibSigner.getSigner());
 	}

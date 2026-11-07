@@ -88,36 +88,49 @@ library LibAccountLayerSigner {
 		return AccountStorage.layout().scopedAccount;
 	}
 
+	/// @notice Signer session suspended across an external call: the raw signer, the account scope that
+	///         confined it, and which storage mechanism owned both.
+	struct SuspendedSigner {
+		address signer;
+		address scope;
+		bool wasTransientScoped;
+	}
+
 	/// @notice Temporarily removes delegated signer authority before untrusted code runs.
-	/// @return previousSigner Exact raw signer value to restore after the call.
-	/// @return wasTransientScoped Whether EIP-1153 transient storage owned the suspended value.
-	function clearSignerForExternalCall() internal returns (address previousSigner, bool wasTransientScoped) {
-		wasTransientScoped = isTransientSignerActive();
-		if (wasTransientScoped) {
-			previousSigner = transientSigner();
+	/// @dev The account scope is captured with the signer: a nested trusted session opened during the
+	///      external call may overwrite it, and restoring the signer without its scope would widen the
+	///      delegation confinement for the rest of the transaction.
+	/// @return suspended Exact raw signer, scope and mechanism to restore after the call.
+	function clearSignerForExternalCall() internal returns (SuspendedSigner memory suspended) {
+		suspended.wasTransientScoped = isTransientSignerActive();
+		if (suspended.wasTransientScoped) {
+			suspended.signer = transientSigner();
+			suspended.scope = transientScope();
 			_setTransientSignerValue(address(0));
 		} else {
 			AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-			previousSigner = accountLayout.globalSigner;
+			suspended.signer = accountLayout.globalSigner;
+			suspended.scope = accountLayout.scopedAccount;
 			accountLayout.globalSigner = address(0);
 		}
 	}
 
-	/// @notice Restores a signer suspended by clearSignerForExternalCall.
+	/// @notice Restores a signer session suspended by clearSignerForExternalCall.
 	/// @dev Fails closed if the external call leaves either signer source populated.
 	///      This prevents a hook from installing authority that outlives its call frame.
-	function restoreSignerAfterExternalCall(address previousSigner, bool wasTransientScoped) internal {
+	function restoreSignerAfterExternalCall(SuspendedSigner memory suspended) internal {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
-		if (wasTransientScoped) {
+		if (suspended.wasTransientScoped) {
 			// A nested scope may clear the active marker, but it must not leave either
 			// signer source populated when control returns to the boundary.
 			if (accountLayout.globalSigner != address(0) || transientSigner() != address(0)) revert ExternalCallSignerWasModified();
-			_restoreTransientSigner(previousSigner);
+			_restoreTransientSigner(suspended.signer, suspended.scope);
 		} else {
 			if (accountLayout.globalSigner != address(0) || isTransientSignerActive() || transientSigner() != address(0)) {
 				revert ExternalCallSignerWasModified();
 			}
-			accountLayout.globalSigner = previousSigner;
+			accountLayout.globalSigner = suspended.signer;
+			accountLayout.scopedAccount = suspended.scope;
 		}
 	}
 
@@ -162,11 +175,12 @@ library LibAccountLayerSigner {
 		_transientStore(TRANSIENT_SIGNER_SLOT, uint256(uint160(signerOrZero)));
 	}
 
-	/// @dev Restore the value and active marker because a nested trusted scope may have
-	///      cleared both while the outer signer was suspended.
-	function _restoreTransientSigner(address signer_) private {
+	/// @dev Restore the value, active marker and scope because a nested trusted scope may have
+	///      overwritten all three while the outer signer was suspended.
+	function _restoreTransientSigner(address signer_, address scope) private {
 		_setTransientSignerValue(signer_);
 		_transientStore(TRANSIENT_SIGNER_ACTIVE_SLOT, TRANSIENT_SIGNER_ACTIVE);
+		_transientStore(TRANSIENT_SIGNER_SCOPE_SLOT, uint256(uint160(scope)));
 	}
 
 	// ── The only EIP-1153 primitives in the AccountLayer diamond ──────────────

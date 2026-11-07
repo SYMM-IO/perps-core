@@ -208,16 +208,17 @@ library LibAccountLayerUtils {
 		if (hook == address(0)) return;
 
 		// Save and clear signer before external call to prevent hook from impersonating user
-		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		bool coreContextSuspended;
 		// InstantLayer keeps the core context active across AccountLayer operations. Suspend
 		// it as well so an affiliate hook cannot call core directly with transaction-wide
 		// privileges. Core-originated system hooks are already scoped by LibHook.safeCall.
-		if (msg.sender != symmioCore && (wasTransientScoped || ISymmio(symmioCore).isCallFromInstantLayer())) {
+		if (msg.sender != symmioCore && (suspendedSigner.wasTransientScoped || ISymmio(symmioCore).isCallFromInstantLayer())) {
 			coreContextSuspended = ISymmio(symmioCore).suspendExecutionContextForExternalCall();
 		}
 
-		// Set hook context before calling
+		// Set hook context before calling; keep the outer context so a nested hook call restores it instead of clearing it.
+		HookContext memory previousHookContext = afLayout.hookContext;
 		afLayout.hookContext = HookContext({
 			account: account,
 			affiliate: affiliate,
@@ -229,12 +230,12 @@ library LibAccountLayerUtils {
 
 		(bool success, bytes memory result) = hook.call(data);
 
-		// Clear hook context after call
-		delete afLayout.hookContext;
+		// Restore the outer hook context after the call (an empty context for the common single-hook case).
+		afLayout.hookContext = previousHookContext;
 
 		// Restore both contexts before propagating a hook failure.
 		if (coreContextSuspended) ISymmio(symmioCore).restoreExecutionContextAfterExternalCall();
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 
 		if (!success) {
 			revert IAccountLayerErrors.HookFailed(result);

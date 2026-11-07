@@ -1,5 +1,7 @@
 import { BehaviorSubject, filter, map } from "rxjs"
 
+import { conservationOracle } from "../utils/ConservationOracle.js"
+import { isKnownViolation, parseKnownViolations } from "../utils/LiquidationModel.js"
 import { logger } from "../utils/LoggerUtils.js"
 import { MultiError } from "../utils/MultiError.js"
 import { pause } from "../utils/Pauser.js"
@@ -341,6 +343,8 @@ export class TestManager {
 		[Action.FORCE_CLOSE_REQUEST, new ForceClosePositionValidator()],
 		[Action.SEND_QUOTE, new SendQuoteValidator()],
 	])
+	public conservationSeed?: string
+	public readonly conservationQuoteIds = new Set<bigint>()
 	private readonly actionQueue: FuzzActionQueue
 	private pause = new BehaviorSubject<boolean>(false)
 	private eventListener?: EventListener
@@ -389,15 +393,73 @@ export class TestManager {
 	}
 
 	public enqueueAction(action: LoopAction): boolean {
-		return this.actionQueue.enqueueAction(action)
+		return this.actionQueue.enqueueAction(this.withConservation(action))
 	}
 
 	public scheduleAction(delayMs: number, action: LoopAction): boolean {
 		nonNegativeActionDelay(delayMs)
 		// Direct-mode fuzzing uses logical queue order so a seeded replay cannot
 		// change when a wall-clock timer happens to fire between transactions.
-		if (this.eventMode === "direct") return this.actionQueue.enqueueAction(action)
-		return this.actionQueue.scheduleAction(delayMs, action)
+		if (this.eventMode === "direct") return this.actionQueue.enqueueAction(this.withConservation(action))
+		return this.actionQueue.scheduleAction(delayMs, this.withConservation(action))
+	}
+
+	/// Exact money-conservation oracle after every queued action. Opt out with FUZZ_CONSERVATION_ORACLE=off;
+	/// explicit corner-campaign checks (assertConservation) still run so liquidation scenarios stay exact.
+	private withConservation(action: LoopAction): LoopAction {
+		if (process.env.FUZZ_CONSERVATION_ORACLE === "off") return action
+		return {
+			...action,
+			action: async () => {
+				try {
+					await action.action()
+				} catch (error) {
+					// Keep the precise failing substep when a corner already checked conservation.
+					if (!(error instanceof Error && error.message.startsWith("Money conservation violation")) && this.conservationSeed !== undefined)
+						await this.assertConservation(action.title)
+					throw error
+				}
+				if (this.conservationSeed !== undefined) await this.assertConservation(action.title)
+			},
+		}
+	}
+
+	/// Baseline-relative checks for corner operations: a scenario must not change the ledger-to-token
+	/// difference it started with, so drift left by earlier actions (already reported by the per-action
+	/// oracle when it is on) does not mask or fake a scenario's own leak. Undefined scope means exact zero.
+	public conservationBaseline?: bigint
+
+	public async beginConservationScope(): Promise<void> {
+		this.conservationBaseline = (await this.measureConservation()).diff
+	}
+
+	public endConservationScope(): void {
+		this.conservationBaseline = undefined
+	}
+
+	private async measureConservation() {
+		const lastId = await this.context.viewFacetQuote.getNextQuoteId()
+		for (let id = 1n; id <= lastId; id++) this.conservationQuoteIds.add(id)
+		return conservationOracle(this.context, {
+			partyAs: this.users.keys(),
+			partyBs: this.hedgers.keys(),
+			quoteIds: this.conservationQuoteIds,
+		})
+	}
+
+	/// FUZZ_KNOWN_VIOLATIONS="CONSERVATION<=N" tolerates a bounded, already-reported wei leak so a
+	/// campaign can keep hunting for larger ones. Unset (the default) means exact.
+	public async assertConservation(operation: string): Promise<void> {
+		const result = await this.measureConservation()
+		const expected = this.conservationBaseline ?? 0n
+		const delta = result.diff - expected
+		if (
+			delta !== 0n &&
+			!isKnownViolation({ code: "CONSERVATION", detail: operation, amount: delta }, parseKnownViolations(process.env.FUZZ_KNOWN_VIOLATIONS))
+		)
+			throw new Error(
+				`Money conservation violation FUZZ_SEED=${this.conservationSeed ?? process.env.FUZZ_SEED ?? "unset"} actionIndex=${this.actionQueue.getActiveActionSequence() ?? "direct"} operation=${operation} baseline=${expected} delta=${result.diff - expected} ${JSON.stringify(result, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`,
+			)
 	}
 
 	public waitForIdle(timeoutMs = DEFAULT_FUZZ_IDLE_TIMEOUT_MS): Promise<void> {

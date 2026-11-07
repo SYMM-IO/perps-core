@@ -439,7 +439,11 @@ library LibQuote {
 	function closePositionFully(uint256 quoteId, uint256 closedPrice) internal returns (uint256 closedAmount) {
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 		closedAmount = quoteOpenAmount(quote);
-		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + closedAmount * closedPrice) / (quote.closedAmount + closedAmount);
+		uint256 totalClosedAmount = quote.closedAmount + closedAmount;
+		// A zero-quantity position has nothing to average; leave the price untouched so it can still be cleared.
+		if (totalClosedAmount > 0) {
+			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + closedAmount * closedPrice) / totalClosedAmount;
+		}
 		subFromPartiesAggregatedPositions(quote, closedAmount);
 		quote.closedAmount = quote.quantity;
 		removeFromOpenPositions(quote.id);

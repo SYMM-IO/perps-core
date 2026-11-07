@@ -5,12 +5,15 @@ They are intended for exact ID parity, not name-based deduplication.
 
 The checked-in configurations target:
 
-- `hyperevm-to-arbitrum.json`: HyperEVM v0.8.6 Core `0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB` to Arbitrum
-  v0.8.6 Core `0x573310dB6d160B26026B8706EBe9831c7dEF1D09` through Symbol Manager
+- `hyperevm-to-arbitrum.json`: HyperEVM v0.8.6 Core `0x99641E06d38F327166b3a48f86Ca2cbB3B4fB7EB` to the Arbitrum
+  v0.8.6 Core of the **Vibe Arbitrum Staging** deployment, `0x573310dB6d160B26026B8706EBe9831c7dEF1D09`, through Symbol Manager
   `0x902a529f5f1E9BCEBe7BC6e785A70aC2Db07Ad2c`.
 - `hyperevm-v0.8.5-to-arbitrum-v0.8.6.json`: HyperEVM v0.8.5 Core `0x57331038c21982116EE9b0906E4a5c5cB52dcE2e`
-  to Arbitrum v0.8.6 Core `0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A` through Symbol Manager
+  to the Arbitrum v0.8.6 Core of the **Vibe Arbitrum Production** deployment, `0x57331027091994FCb9c5Aec48ea92cEf0a93CF6A`, through Symbol Manager
   `0x3FB153ee0a18B2726a54E132C173AC73D8c05e20`.
+
+The two Arbitrum cores are different deployments (see `addresses.json`, ids `arbitrum-vibe` and the Vibe Arbitrum staging entry); pick the
+configuration for the environment you are synchronizing, not by version alone.
 
 Both flows use HyperEVM chain `999` and Arbitrum One chain `42161`. Select the configuration matching the Core version; their snapshots and
 assignment reports use separate output paths.

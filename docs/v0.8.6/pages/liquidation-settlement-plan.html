@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="LATE and OVERDUE liquidations reduced each quote as it closed, against a signed total, so a mixed-book solver could be billed more than the close step had checked and rounding created wei. The plan is now fixed once, from on-chain totals, when the last position closes."
+		/>
+		<title>Exact Liquidation Settlement Plan - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#before">How the plan used to be built</a>
+				<a class="toc-link level-2" href="#problems">Three problems in one path</a>
+				<a class="toc-link level-2" href="#close-step">Close step: raw buckets</a>
+				<a class="toc-link level-2" href="#plan-step">Plan step: the last close</a>
+				<a class="toc-link level-2" href="#normal">NORMAL</a>
+				<a class="toc-link level-2" href="#late-overdue">LATE and OVERDUE</a>
+				<a class="toc-link level-2" href="#example">Worked examples</a>
+				<a class="toc-link level-2" href="#settlement">Settlement, disputes and takeover</a>
+				<a class="toc-link level-2" href="#solvers">What changes for solvers</a>
+				<a class="toc-link level-2" href="#integration">Storage, ABI and integration notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Exact Liquidation Settlement Plan</h1>
+							<p class="hero-copy">
+								A PartyA liquidation now decides what every counterparty pays or receives in one place: the close that brings the
+								position count to zero, from on-chain totals. What the buckets pay out is exactly the liquidated allocation, a solver
+								is never billed more than the amount checked against its allocation, and no wei is created or lost.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="summary">Summary</h2>
+					<p>
+						When a PartyA is liquidated, its positions are closed at the signed liquidation prices and the result is collected per PartyB
+						into a settlement bucket: the net PnL PartyA owes or is owed, and the CVA the PartyB gets back. The liquidation type decides
+						what the trader&rsquo;s collateral can cover. NORMAL means the shortfall is within the locked LF, so PartyBs are made whole
+						and the remaining LF pays the liquidator and the insurance vault. LATE means the LF is gone and part of the CVA is consumed.
+						OVERDUE means the CVA is gone as well and part of the losses stays uncovered.
+					</p>
+					<p>
+						In LATE and OVERDUE the amount that is missing has to be shared. v0.8.6 shares it in a single plan step from on-chain totals,
+						instead of quote by quote against the signed total loss, and settles the rounding allowance in the same step. The plan is
+						final when the last position closes; settlement only pays it.
+					</p>
+
+					<h2 id="before">How the plan used to be built</h2>
+					<p>Each closed quote adjusted its PartyB&rsquo;s bucket on its own, as it closed:</p>
+					<ul>
+						<li>LATE: the quote&rsquo;s CVA was reduced by <code>cva_i * deficit / lockedCva</code>.</li>
+						<li>
+							OVERDUE: a losing quote&rsquo;s loss was reduced by <code>loss_i * deficit / totalUnrealizedLoss</code>, with
+							<code>totalUnrealizedLoss</code> taken from the Muon payload. Winning quotes were counted in full.
+						</li>
+					</ul>
+					<p>
+						When a PartyB&rsquo;s last position closed, its bucket&rsquo;s <em>net</em> expected amount was checked against the
+						PartyB&rsquo;s allocation and counted into PartyA&rsquo;s accumulated uPNL, which the dispute check compares with the signed
+						value. Settlement, however, paid the bucket&rsquo;s <em>actual</em> amount: the sum of the reduced quote amounts. The rounding
+						allowance was applied later still, bucket by bucket at settlement time.
+					</p>
+
+					<h2 id="problems">Three problems in one path</h2>
+					<ol>
+						<li>
+							<strong>Gross sharing versus a net check.</strong> A solver holding a winning and a losing quote against the trader has a
+							small net claim but a large gross loss. The OVERDUE reduction was applied to the gross loss, so the solver&rsquo;s planned
+							debit could exceed the net amount the close step had verified against its allocation. An isolated solver short of the
+							planned debit was silently capped at settlement while the other solvers were paid in full, and the difference was created
+							out of nothing. Dispute-free, and reproducible in two to three of every hundred random liquidations.
+						</li>
+						<li>
+							<strong>Per-quote floors against an off-chain denominator.</strong> Every quote dropped the fraction of its share, so the
+							shares never summed to the deficit; the one or two units of difference were created in half of the random OVERDUE
+							liquidations. The denominator was a signed field, and a zero there divided by zero.
+						</li>
+						<li>
+							<strong>Lazy rounding.</strong> The accepted rounding difference was recorded at the last close but consumed at
+							settlement, and the correction for an overstated signed profit was taken from the trader&rsquo;s deferred balance only,
+							which is zero in the legacy flow. The uncollected part, up to three units per position, was created.
+						</li>
+					</ol>
+
+					<h2 id="close-step">Close step: raw buckets</h2>
+					<p>
+						<code>liquidatePositionsPartyA</code> no longer reduces anything. A PartyB&rsquo;s bucket opens at its first closed quote and
+						is recorded in <code>partyALiquidationPartyBs</code>, in open order. Every closed quote adds its signed PnL with funding to
+						the bucket&rsquo;s expected and actual amounts and, in NORMAL and LATE, its raw locked CVA.
+					</p>
+					<p>
+						When the PartyB has no position left against this PartyA, the bucket is counted. A loss is counted in full. A gain is counted
+						up to the PartyB&rsquo;s allocation, and the bucket&rsquo;s actual amount is set to that counted value, so a payer never pays
+						more than what was checked here. The allocation cannot fall again before settlement: deallocation, allocation transfer and
+						PartyB liquidation against a liquidated PartyA are all blocked.
+					</p>
+
+					<h2 id="plan-step">Plan step: the last close</h2>
+					<p>
+						The close that brings <code>partyAPositionsCount</code> to zero compares the accumulated uPNL with the signed one, as
+						described in
+						<a href="liquidation-rounding-and-funding-aggregate-repair.html">Liquidation Rounding and Funding Aggregate Repair</a>. A
+						difference above three units per position disputes the liquidation. An accepted difference settles at the smaller amount
+						supported by both calculations, and that reduction is applied to the buckets now, in open order, with each bucket&rsquo;s
+						reserve contribution following. The buckets then receive their final amounts according to the liquidation type.
+					</p>
+					<aside class="callout callout-invariant">
+						<strong>Invariant.</strong> After the plan step, the liquidator fee, the vault credit and the sum over buckets of CVA returned
+						minus the amount collected equal exactly the allocation finalization consumes. Nothing is created or stranded.
+					</aside>
+
+					<h2 id="normal">NORMAL</h2>
+					<p>
+						The liquidator fee and the vault credit were sized at liquidation start from the signed uPNL, while the buckets settle at the
+						capped on-chain amount. The difference between the two is at most the rounding allowance and is settled explicitly:
+					</p>
+					<ul>
+						<li>
+							If the capped uPNL is above the signed one, the difference is collateral the buckets do not need. It is moved out of the
+							allocation into PartyA&rsquo;s deferred balance, which finalization returns to PartyA.
+						</li>
+						<li>
+							If it is below, the difference is taken from the deferred balance first, then from the liquidator fee, then from the vault
+							credit. Only a fee cap below three units per position can leave it uncovered, and that liquidation is disputed instead.
+						</li>
+					</ul>
+
+					<h2 id="late-overdue">LATE and OVERDUE</h2>
+					<p>
+						Both types start from the same number: the collateral left once every bucket has been settled at its planned amount, which is
+						PartyA&rsquo;s allocation plus its net uPNL on chain.
+					</p>
+					<pre><code>resources = allocation + cappedUpnl</code></pre>
+					<ul>
+						<li>
+							<strong>Resources are positive.</strong> They are returned as CVA, pro rata to each bucket&rsquo;s raw locked CVA, with a
+							running remainder: every bucket takes the floor of its share and the last bucket takes what is left. Anything above the
+							total CVA is set aside for PartyA with its deferred balance. This is the LATE case.
+						</li>
+						<li>
+							<strong>Resources are negative.</strong> The uncovered loss is shared pro rata across the buckets PartyA owes, in
+							proportion to their net claims, with the same running remainder, and no CVA is returned. Payers keep their counted amount.
+							This is the OVERDUE case.
+						</li>
+					</ul>
+					<p>
+						The signed <code>totalUnrealizedLoss</code> is no longer read and the stored <code>deficit</code> is informational: both
+						distributions are exact to the unit because their denominators are on-chain sums.
+					</p>
+
+					<h2 id="example">Worked examples</h2>
+					<p>Allocation 80. PartyB1 holds a winning and a losing quote of 100 each (net 0). PartyB2 holds a losing quote of 200.</p>
+					<pre><code>net claims            PartyB1 0, PartyB2 200
+resources             80 - 200 = -120
+PartyB1 pays          0
+PartyB2 receives      200 - 120 = 80   (the whole allocation)</code></pre>
+					<p>
+						Under gross sharing the deficit was 40% of every losing quote: PartyB1 was billed 40 it had never been checked for, PartyB2
+						was credited 120, and whatever PartyB1 could not pay was created.
+					</p>
+					<p>Allocation 80. PartyB1 holds a winning quote of 50 (counted at 50). PartyB2 holds a losing quote of 200.</p>
+					<pre><code>resources             80 + 50 - 200 = -70
+PartyB1 pays          50
+PartyB2 receives      200 - 70 = 130   (allocation plus PartyB1's payment)</code></pre>
+
+					<h2 id="settlement">Settlement, disputes and takeover</h2>
+					<p>
+						<code>settlePartyALiquidation</code> pays the stored amounts, in any batches. If an isolated PartyB&rsquo;s allocation, with
+						its CVA credited back, is below its planned amount, the transaction reverts with
+						<code>LiquidationFacet: Settlement exceeds PartyB allocation</code> instead of paying less. Under the plan this cannot happen,
+						so the check is an invariant rather than a flow; if a dispute resolution writes an amount the allocation cannot cover, the
+						clearing-house takeover remains the recovery. A cross-mode PartyB keeps the existing
+						<code>LiquidationFacet: Settle cross partyB uPNL first</code> requirement.
+					</p>
+					<p>
+						A disputed liquidation still gets a plan, built on the signed uPNL rather than the on-chain one, so a resolver that overrides
+						some buckets finds the others sized as before. The resolver&rsquo;s amounts are final; the plan step does not run again.
+						Takeover abandons the buckets and clears the recorded PartyB list with the rest of the liquidation state.
+					</p>
+
+					<h2 id="solvers">What changes for solvers</h2>
+					<ul>
+						<li>
+							The OVERDUE deficit is shared on each solver&rsquo;s net claim, the same per-pair netting that
+							<a href="close-settlement-netting.html">ordinary closes</a> use, instead of on gross per-quote losses. A solver that is
+							flat against the trader absorbs nothing; solvers with net claims absorb proportionally more than before, because the flat
+							solvers&rsquo; losing legs leave the base.
+						</li>
+						<li>A payer is never debited beyond the amount counted against its allocation when its bucket closed.</li>
+						<li>NORMAL payouts are unchanged. LATE CVA returns are the same policy as before and now exact to the unit.</li>
+						<li>
+							Settlement amounts are final when the last position closes: <code>getSettlementStates</code> returns what will be paid,
+							not a provisional value.
+						</li>
+					</ul>
+
+					<h2 id="integration">Storage, ABI and integration notes</h2>
+					<ol>
+						<li>
+							One mapping, <code>partyALiquidationPartyBs</code>, is appended to <code>AccountStorage.Layout</code>. It is cleared at
+							settlement completion, takeover and the next liquidation start. No existing slot moves and no public signature changes;
+							the <code>LiquidationSettlementState</code> tuple and every event keep their shape.
+						</li>
+						<li>
+							<code>partyALiquidationRoundingReduction</code> is only consulted for liquidations that were already past their last close
+							when this release was deployed; new liquidations never store a value there.
+						</li>
+						<li>Muon payloads are unchanged. <code>totalUnrealizedLoss</code> stays signed and stored but is not used by the process.</li>
+						<li>
+							Indexers that reconstructed OVERDUE amounts from the per-quote formula will disagree with the buckets; read
+							<code>getSettlementStates</code> after the last close, or the settlement events.
+						</li>
+						<li>
+							A settlement that used to pay an isolated PartyB less than planned now reverts. Liquidation bots should treat
+							<code>Settlement exceeds PartyB allocation</code> as a signal for the dispute role, not retry.
+						</li>
+					</ol>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

@@ -19,12 +19,12 @@ library LibAccountLayerSafeCall {
 		if (target == address(0)) revert IAccountLayerErrors.ZeroAddress();
 
 		// Save and clear signer before external call to prevent target from impersonating user
-		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 
 		(bool success, bytes memory reason) = target.call(data);
 
 		// Restore signer after external call
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 
 		// Revert with the original error if the call failed
 		if (!success) {

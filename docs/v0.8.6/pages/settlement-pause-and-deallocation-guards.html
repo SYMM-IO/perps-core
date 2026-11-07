@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Three small guards in v0.8.6: a settlement index bound, the PartyA pause on cancelUnbindRequest, and a liquidation guard on zeroUpnlDeallocate."
+		/>
+		<title>Settlement, Pause and Deallocation Guards - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#settle-index">Settlement signature index bound</a>
+				<a class="toc-link level-2" href="#cancel-unbind">Pause on cancelUnbindRequest</a>
+				<a class="toc-link level-2" href="#zero-upnl-deallocate">No zeroUpnlDeallocate during liquidation</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Settlement, Pause and Deallocation Guards</h1>
+							<p class="hero-copy">
+								Three guards that each close one gap. None changes a signature or a storage slot; each turns a state that should have
+								been impossible into a revert.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="settle-index">Settlement signature index bound</h2>
+					<p>
+						Every quote in a <code>settleUpnl</code> payload names the index of its PartyB in the signed <code>upnlPartyBs</code> list.
+						The bound on that index allowed it to equal the list length, so a payload built with an index one past the end failed on the
+						array read with a panic instead of the intended message. The bound is now strict and such a payload reverts with
+						<code>LibSettlement: Invalid partyBUpnlIndex in signature</code>. No valid payload changes.
+					</p>
+
+					<h2 id="cancel-unbind">Pause on cancelUnbindRequest</h2>
+					<p>
+						All PartyA binding actions are behind <code>whenNotPartyAActionsPaused</code> except the cancellation of a PartyB&rsquo;s
+						unbind request, which only checked suspension. During a PartyA-actions pause a trader could still cancel its solver&rsquo;s
+						pending unbind. The cancellation now carries the same pause modifier as the rest of the <code>BindingFacet</code>.
+					</p>
+
+					<h2 id="zero-upnl-deallocate">No zeroUpnlDeallocate during liquidation</h2>
+					<p>
+						<code>zeroUpnlDeallocate</code> lets the balance settler role deallocate without a uPNL signature when the account has no open
+						positions and no pending quotes. Between the close that ends a liquidation&rsquo;s position list and the settlement that
+						finalises it, the account is in exactly that state. A deallocation there would remove the allocation that finalisation
+						consumes to pay the counterparties. The function now carries <code>notLiquidatedPartyA</code> like every other allocation
+						change.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

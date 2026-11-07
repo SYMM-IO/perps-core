@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A partial limit fill floors the parent, filled and child fees separately, so the parent's reservation could exceed the two parts by one unit. That unit left the reservation ledger but was credited to nobody. It now returns to PartyA."
+		/>
+		<title>Partial Fill Fee Reservation Remainder - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#reservation">Fee reservation on a partial fill</a>
+				<a class="toc-link level-2" href="#the-gap">The stranded unit</a>
+				<a class="toc-link level-2" href="#fix">Returning the remainder</a>
+				<a class="toc-link level-2" href="#unchanged">What did not change</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Partial Fill Fee Reservation Remainder</h1>
+							<p class="hero-copy">
+								Three separately floored fees met at a partial fill, and the one unit they could disagree by was released from the
+								reservation ledger without reaching anyone. PartyA now receives it at the fill.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="reservation">Fee reservation on a partial fill</h2>
+					<p>
+						<code>sendQuote</code> debits the open trading fee from PartyA&rsquo;s allocation and records it as a reservation, on the
+						basis described in <a href="market-open-fee-execution-price.html">Market Open Fee on Execution Price</a>. When a LIMIT quote
+						is partially filled, the filled part becomes a position and the remainder becomes a child quote with its own reservation. Each
+						of the three fees is the floor of a product:
+					</p>
+					<pre><code>parent  = floor(quantity        * price * tradingFee / 1e36)
+filled  = floor(filledAmount    * price * tradingFee / 1e36)
+child   = floor((quantity - filledAmount) * price * tradingFee / 1e36)</code></pre>
+					<p>Flooring twice can drop more than flooring once, so <code>parent</code> can exceed <code>filled + child</code> by one unit.</p>
+
+					<h2 id="the-gap">The stranded unit</h2>
+					<p>
+						The open path released <code>parent - child</code> from the reservation ledger, which includes the extra unit, and credited
+						the fee collector with the executed fee for the filled part. The reservation ledger and PartyA&rsquo;s allocation had both
+						been reduced by <code>parent</code> at <code>sendQuote</code>; after the fill the child held <code>child</code>, the collector
+						held <code>filled</code>, and the extra unit was in neither. It stayed in the diamond with no owner. The exact conservation
+						oracle in the repository fuzz runner reported the ledger one unit below the tokens held after every partial fill with
+						non-divisible fee arithmetic.
+					</p>
+
+					<h2 id="fix">Returning the remainder</h2>
+					<p>
+						At a partial open, <code>openPosition</code> computes <code>parent - filled - child</code> and, when it is positive, releases
+						that amount from the reservation and credits it back to PartyA&rsquo;s allocation as <code>PLATFORM_FEE_IN</code>. It then
+						realises only <code>filled</code> against the reservation. The child quote keeps exactly the reservation its own formula
+						produces, so a later open, cancellation, expiry or liquidation of the child unwinds precisely what was recorded for it.
+					</p>
+					<pre><code>reservation after fill  = parent - filled - remainder = child
+collector               += executed fee for the filled part
+PartyA allocation       += remainder (0 or 1 unit)</code></pre>
+
+					<h2 id="unchanged">What did not change</h2>
+					<ol>
+						<li>Full fills have no child and no remainder; their fee handling is as before.</li>
+						<li>
+							The executed fee the collector receives is unchanged; it is still the reserved basis adjusted to the execution price for
+							market quotes.
+						</li>
+						<li>The child quote&rsquo;s locked values and status transitions are unchanged.</li>
+						<li>
+							A <code>BalanceChangePartyA</code> event with <code>PLATFORM_FEE_IN</code> can now appear in a partial-fill transaction
+							for one unit. Indexers that reconcile fee reservations should expect it.
+						</li>
+					</ol>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

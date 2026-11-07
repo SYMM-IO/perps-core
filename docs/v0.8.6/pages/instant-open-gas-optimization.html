@@ -337,8 +337,8 @@
 					</p>
 					<p>
 						To make that suspension reversible, the trusted boundary saves the live context in a snapshot held in caller memory or a
-						caller-specific transient slot. It carries the previous signer and its source flag separately. The snapshot is saved data, not
-						active authority.
+						caller-specific transient slot. It carries the previous signer, the account scope that confines a delegated signer, and its
+						source flag separately. The snapshot is saved data, not active authority.
 					</p>
 					<p>
 						This full suspension is specific to hook boundaries. ERC-20 and generic external-call wrappers clear the signer only; they do
@@ -439,6 +439,31 @@
 						transient storage." After confirming that both signer addresses are empty, the boundary sets the marker again and restores
 						Alice.
 					</p>
+
+					<h4>The scope and the hook context travel with the signer</h4>
+					<p>
+						A trusted session has two parts: the raw signer, and the account scope that confines a delegated signer to one account family
+						(see <a href="delegation-account-scope.html">Delegation Account Scope</a>). <code>clearSignerForExternalCall</code> returns
+						both together with the storage mechanism that owned them, as a <code>SuspendedSigner</code>, and
+						<code>restoreSignerAfterExternalCall</code> writes all three back: the transient signer value, its marker and its scope slot
+						for a transient session, or <code>globalSigner</code> and <code>scopedAccount</code> for a persistent one. If Bob&rsquo;s
+						nested session wrote its own scope into the shared slot, Alice still returns next to the scope she was granted, not next to
+						Bob&rsquo;s or an empty one. All seven suspension sites in the CoreFacet, the MarginFacet, the safe-call and safe-ERC20
+						libraries and the hook caller use this shape.
+					</p>
+					<p>
+						The hook caller treats <code>hookContext</code>, the account, affiliate and operation it publishes for the hook to read, the
+						same way: it saves the context it found before overwriting it and restores that on return, rather than clearing to an empty
+						struct. For a single hook the saved context is empty and the result is the same as clearing.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Why both are saved.</strong> The first v0.8.6 build saved the signer and its source but not the scope, and the hook
+						caller cleared the outer hook context on return. No path in the current layers opens a trusted session inside an external
+						call, so nothing exercised either gap; v0.8.6 closes them so the restoration no longer depends on that property. The
+						fail-closed checks are unchanged: a callee that leaves any signer source populated still reverts with
+						<code>ExternalCallSignerWasModified</code>, and the struct is an internal return type, so no storage layout or public
+						signature changed.
+					</aside>
 
 					<h4>Example: Alice came from persistent storage</h4>
 					<p>

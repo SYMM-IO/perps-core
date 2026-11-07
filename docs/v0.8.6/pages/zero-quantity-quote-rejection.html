@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A market quote with zero quantity could be opened and then never closed or liquidated, because every close path divided by its open amount. Zero quantities are rejected at entry and already-stored ones can be cleared."
+		/>
+		<title>Zero-Quantity Quote Rejection - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#the-gap">How a zero-quantity position came to exist</a>
+				<a class="toc-link level-2" href="#stuck">Why it could never leave</a>
+				<a class="toc-link level-2" href="#fix">Rejection at entry</a>
+				<a class="toc-link level-2" href="#clearing">Clearing stored positions</a>
+				<a class="toc-link level-2" href="#operators">Operator notes</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Zero-Quantity Quote Rejection</h1>
+							<p class="hero-copy">
+								A market quote with zero quantity passed every check and opened a position with no notional. Nothing could close it,
+								and a liquidation of its owner could never finish. Quantity is now checked at entry, and stored positions of that kind
+								can be cleared.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="the-gap">How a zero-quantity position came to exist</h2>
+					<p>
+						<code>sendQuote</code> validated the symbol, the deadline, the locked values against the symbol&rsquo;s minimum quote value
+						and the leverage, but never the quantity itself. A quote could carry normal locked values and a quantity of zero. On the open
+						side, a MARKET quote has to be filled in full, and the check for that was <code>quantity == filledAmount</code>: zero equals
+						zero, so the fill went through. The leverage check divides notional by locked values and a notional of zero passes it as well.
+					</p>
+					<p>The result was an OPENED position with locked collateral, an opened price, and no size.</p>
+
+					<h2 id="stuck">Why it could never leave</h2>
+					<p>Every path that closes a position divides by its open amount:</p>
+					<ul>
+						<li>the average closed price, <code>(avgClosedPrice * closedAmount + filled * price) / (closedAmount + filled)</code>;</li>
+						<li>the proportional release of locked values on a partial close;</li>
+						<li>the CVA + LF released in the solvency check before a close.</li>
+					</ul>
+					<p>
+						With a zero open amount each of these is a division by zero and reverts with a panic. A regular close, an emergency close and
+						a liquidation close all failed. For a liquidation this is the worst case: the account&rsquo;s position count never reaches
+						zero, settlement requires it to, and the account stays flagged as liquidated with every counterparty&rsquo;s settlement bucket
+						pending.
+					</p>
+					<aside class="callout callout-important">
+						<strong>Who could trigger it.</strong> Any PartyA could send the quote; a PartyB had to fill it. A PartyB that filled such a
+						quote against its own PartyA could then block that account&rsquo;s liquidation indefinitely.
+					</aside>
+
+					<h2 id="fix">Rejection at entry</h2>
+					<ol>
+						<li>
+							<code>sendQuote</code> requires <code>quantity &gt; 0</code> next to the locked-value checks, with
+							<code>PartyAFacet: Zero quantity</code>. All <code>sendQuote</code> wrappers share the check.
+						</li>
+						<li>
+							<code>openPosition</code> requires a positive fill for MARKET quotes as it already did for LIMIT quotes, with
+							<code>PartyBFacet: Invalid filledAmount</code>.
+						</li>
+					</ol>
+
+					<h2 id="clearing">Clearing stored positions</h2>
+					<p>
+						A position stored before the checks existed must still be able to leave. The close arithmetic now tolerates a zero open amount
+						instead of dividing by it:
+					</p>
+					<ul>
+						<li><code>closePositionFully</code> leaves the average closed price untouched when there is nothing to average.</li>
+						<li>
+							<code>LibQuoteClose</code> releases all of the quote&rsquo;s locked values, since nothing is proportional, and skips the
+							minimum-fill checks that would divide by the open amount.
+						</li>
+						<li><code>LibSolvency</code> counts the whole CVA + LF as released by the close.</li>
+					</ul>
+					<p>
+						Such a quote closes at the given price with zero PnL, releases its locks and leaves the position count. It can be cleared by
+						<code>emergencyClosePosition</code> or by liquidation; both reach settlement normally.
+					</p>
+
+					<h2 id="operators">Operator notes</h2>
+					<p>
+						After upgrading, scan the deployment for OPENED quotes whose quantity is zero and clear them. No other quote is affected: the
+						average-price rounding for real quotes is unchanged, and the new checks only reject inputs that could never have formed a
+						valid position.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

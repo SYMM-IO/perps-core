@@ -78,7 +78,10 @@
 					</p>
 					<p>
 						The same allowance can carry a simple priority multiplier. <code>10000</code> means normal priority; a higher value is an
-						off-chain scheduling signal that relayers and solvers may use when capacity is tight. It does not change the submitted fee.
+						off-chain scheduling signal that relayers and solvers may use when capacity is tight. A charger that submits its own fee
+						amount is not affected by it. The GaslessLayer gateway does apply it: the relayed fee is the configured selector fee times the
+						multiplier, and any value below <code>10000</code> is charged as <code>10000</code>, so the multiplier can raise a relayed fee
+						but never discount it.
 					</p>
 					<p>
 						The debit draws the payer&rsquo;s <strong>free balance first</strong>, then <strong>allocated margin as fallback</strong>.
@@ -234,14 +237,15 @@ function getOperationalFeeAllowance(address payer, address charger)
 					<h2 id="solvency">Solvency</h2>
 					<p>
 						<code>chargeOperationalFee</code> is hierarchy-blind and signature-free: it always debits the named payer free-first, and the
-						allocated remainder (if any) is bounded by a <strong>balance-only guard</strong>. It never runs a full liquidatability check,
-						because the charge entrypoint carries no Muon upnl signature for the payer.
+						allocated remainder (if any) is bounded by a <strong>collateral floor</strong>: the allocation left after the charge must be
+						at least the payer&rsquo;s CVA + LF requirement, the locked and pending CVA and LF of its positions and quotes. It never runs
+						a full liquidatability check, because the charge entrypoint carries no Muon upnl signature for the payer.
 					</p>
 					<p>
 						This relaxed check is intentional for operational fees. Solvers and relayers are trusted charging parties (registered PartyBs
 						or governance-registered services), these fees are expected to be small per-operation amounts, and the payer&rsquo;s allowance
-						caps future spend until the payer explicitly refreshes it. Core therefore checks that any allocated remainder exists, but does
-						not require a full liquidatability signature for this path.
+						caps future spend until the payer explicitly refreshes it. Core therefore applies the same floor an unsigned PartyA
+						deallocation uses, and nothing more: without a signed PnL, CVA + LF is the only amount known to be spoken for.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -262,13 +266,27 @@ function getOperationalFeeAllowance(address payer, address charger)
 									<td>Allocated remainder</td>
 									<td><code>allocatedBalances[payer]</code></td>
 									<td>
-										<strong>Balance-only guard</strong> (<code>allocatedBalances[payer] &gt;= remainder</code>); no full
-										liquidatability check (no sig available)
+										<strong>CVA + LF floor</strong> (<code
+											>allocatedBalances[payer] - remainder &gt;= partyADeallocateCvaLfRequirement(payer)</code
+										>, otherwise <code>OperationalFee: Would unback positions</code>); no full liquidatability check (no sig
+										available)
 									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
+					<aside class="callout callout-note">
+						<strong>Why the floor exists.</strong> The first v0.8.6 build checked only that the allocation covered the remainder, so an
+						approved charger could take allocation down to zero while positions stayed open: an allocation of 1 000 with 800 locked as CVA
+						+ LF and no free balance accepted a 900 charge and left 100 behind the 800 promised to counterparties and liquidators. The
+						floor refuses exactly that part of a charge. Free balance is still charged first with no floor, a payer with enough free
+						balance is charged as before, the receiver is credited the full amount when the charge succeeds, and the trader&rsquo;s own
+						maintenance margin is deliberately not part of the floor: dropping below it only makes the trader liquidatable sooner, which
+						is how every fee is treated. A charge that would unback positions reverts with
+						<code>OperationalFee: Would unback positions</code>; chargers should fall back to free balance or wait for the positions to
+						close, and a relayer should size fees against free balance plus the allocation above locked CVA + LF rather than the whole
+						allocation.
+					</aside>
 					<p>
 						This is the same treatment for every operational-fee charger, including a registered solver. The solver&rsquo;s separate
 						per-quote rate fee takes the opposite approach: it rides the execution call itself, bounded by the quote cap and a post-fee

@@ -55,7 +55,8 @@ standalone component. The UI:
 3. selects a deployment signer once, with Hardhat keystore recommended first;
 4. writes and digest-binds the recipe;
 5. runs read-only preflight and compilation;
-6. starts a fresh matching fork rehearsal and reviews it;
+6. starts a fresh matching fork rehearsal and reviews it, or accepts an explicit digest-bound operator
+   waiver in place of the rehearsal (the CLI path documented in `cli/README.md`);
 7. requires the exact live network name;
 8. executes through write-ahead transaction journaling;
 9. completes explorer verification and canonical health checks;

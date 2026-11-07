@@ -60,6 +60,7 @@ library LibErrors {
 	error InvalidAccelerateNonce();
 	error InvalidAccelerateSigner();
 	error StandardAlreadyFinalized();
+	error RequestDebtStillLive();
 	error AccelerateCooldownElapsed();
 	error AccelerationFeeExceedsMaximum();
 	// ── Cap-change fee / throttle ──

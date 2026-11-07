@@ -56,6 +56,7 @@
 				>
 				<a class="toc-link level-3" href="#affiliate-cap-self-service-and-fee-model">Affiliate cap self-service and fee model</a>
 				<a class="toc-link level-2" href="#safety-mechanisms">Safety mechanisms</a>
+				<a class="toc-link level-3" href="#part-validation">Part validation at initiate</a>
 				<a class="toc-link level-3" href="#security-window">Security window</a>
 				<a class="toc-link level-3" href="#risk-locking">Risk locking</a>
 				<a class="toc-link level-3" href="#cancellation">Cancellation</a>
@@ -823,6 +824,52 @@ capChangeAffiliateState(address affiliate) returns (uint256 count, uint256 epoch
 						free quota or reaches the paid path.
 					</p>
 					<h2 id="safety-mechanisms">Safety mechanisms</h2>
+					<h3 id="part-validation">Part validation at initiate</h3>
+					<p>
+						A withdrawal request is a list of <code>WithdrawReceiverPart</code> entries, and each part is one of four shapes:
+						<strong>classic</strong> (no provider; core pays the receiver at finalize), <strong>express</strong> (an express provider pays
+						the user early and is reimbursed by core), <strong>virtual</strong> (a virtual provider delivers the amount on another chain,
+						named by the part&rsquo;s <code>chainId</code>), or <strong>express and virtual</strong> (both named; the express provider
+						fronts a cross-chain delivery). A request is single-provider: it has either one express provider, or, when no part is express,
+						one virtual provider. Core&rsquo;s <code>_processWithdrawParts</code> fixes the parts inside <code>initiateWithdraw</code>,
+						before anything is locked and before any provider is asked to act, with two rules.
+					</p>
+					<p>
+						<strong>Express is the master.</strong> Core resolves the express provider first, across all parts, then walks the parts
+						again. In a request that has an express provider, every part that names only a virtual provider is reassigned to it:
+						<code>expressProvider</code> becomes the request&rsquo;s express provider and <code>virtualProvider</code> becomes
+						<code>address(0)</code>. The part is stored in that shape, so from then on it is an ordinary express part: counted in the
+						express amount, advanceable, paid by the provider and reimbursed at finalize, and carried in the finalize callback. The
+						virtual provider named in the original part plays no role in a mixed request. Pure-virtual requests still route to their
+						virtual provider, parts that name both providers keep both, and a second express provider still reverts.
+					</p>
+					<p>
+						<strong>Receivers that core pays are decoded now.</strong> For every part without a virtual provider, that is every part core
+						itself will pay, the receiver bytes must decode to a non-zero address:
+					</p>
+					<pre><code>require(_bytesToAddress(part.receiver) != address(0), "WithdrawFacet : Invalid receiver");</code></pre>
+					<p>
+						Virtual parts are destined for another chain and keep their opaque receiver bytes; their provider validates them on the
+						destination side.
+					</p>
+					<aside class="callout callout-note">
+						<strong>Why these rules exist.</strong> The first v0.8.6 build stored the classic receiver as raw bytes and decoded it only
+						inside <code>finalizeWithdrawRequest</code>, by the transfer itself. A receiver that was not twenty bytes long, or decoded to
+						zero, passed initiate and the provider&rsquo;s acceptance; finalize then reverted on every attempt, the user&rsquo;s
+						collateral stayed locked, and a provider waiting for its reimbursement in the finalize callback never received it. Suspension
+						was the only exit. Likewise, a request with an express part and a virtual-only part left the virtual part unpaid: it was not
+						in the express amount, could not be advanced against, and the virtual provider it named was never the request&rsquo;s
+						provider, so finalize skipped it while the user had locked that amount. Failures that no check at initiate can foresee, such
+						as a receiver contract that later rejects tokens, still end in a suspension, which keeps the provider whole for what it
+						advanced.
+					</aside>
+					<p>
+						Because the stored parts are the express shape, an express bot signs its offer over the parts as stored; an offer signed over
+						the original virtual shape fails the parts-hash check, and such a request can be cancelled and re-created. Frontends that
+						build mixed requests should present the virtual-only part as delivered by the express provider and include it in the
+						provider&rsquo;s capacity check.
+					</p>
+
 					<h3 id="security-window">Security window</h3>
 					<p>
 						The security window (default 20 seconds) is the delay between acceptance and processing for WINDOWED withdrawals. During this
@@ -1575,6 +1622,13 @@ event OperatorFeesClaimed(address indexed affiliate, address indexed recipient, 
 							</tbody>
 						</table>
 					</div>
+					<p>
+						<code>clearRequestDebt(affiliate, user, requestId)</code> is the owner&rsquo;s emergency ledger repair for one request whose
+						debt can no longer settle on its own. It is refused with <code>RequestDebtStillLive</code> while the request is
+						<code>PROCESSED</code>: in that state the debt is still settled by core&rsquo;s finalize callback, and clearing it early would
+						make every later finalize of the request revert with <code>NoDebtForRequest</code> while the provider that advanced the funds
+						was never reimbursed. The debt of a suspended, cancelled or finalized request can be cleared.
+					</p>
 					<h2 id="access-control-and-roles">Access control and roles</h2>
 					<h3 id="expressprovider-roles">ExpressProvider roles</h3>
 					<div class="table-wrap">
@@ -2151,7 +2205,7 @@ function cancelOwnershipTransfer() external;
 function pause() external;   // PAUSER_ROLE
 function unpause() external; // UNPAUSER_ROLE
 function rescueTokens(address token, address to, uint256 amount) external; // Owner only
-function clearRequestDebt(address affiliate, address user, uint256 requestId) external; // Owner only
+function clearRequestDebt(address affiliate, address user, uint256 requestId) external; // Owner only; reverts while the request is PROCESSED
 function repayCreditBadDebt(address affiliate, uint256 amount) external; // Permissionless payer
 </code></pre>
 					<h4 id="view-functions">View functions</h4>
@@ -2428,8 +2482,10 @@ expressProvider.depositToAffiliate(affiliateAddress, amount)
 						<strong>Mixed-request boundary:</strong> Core now caps <code>advanceWithdraw</code> against only express, non-virtual parts,
 						and ExpressProvider computes the same amount from parts whose <code>expressProvider == address(this)</code> and
 						<code>virtualProvider == address(0)</code>; classic parts cannot inflate the advance. The bot should still set
-						<code>virtualProvider</code> to zero on every part assigned to this provider. Virtual-only parts mixed under an Express-master
-						request are outside this provider&rsquo;s transfer loop and should not be offered.
+						<code>virtualProvider</code> to zero on every part assigned to this provider. A virtual-only part mixed into an Express-master
+						request is reassigned to the express provider by core at initiate (see
+						<a href="#part-validation">Part validation at initiate</a>), so it is inside this provider&rsquo;s transfer loop and must be
+						sized into the offer.
 					</p>
 					<h3 id="liquidity-fragmentation">Liquidity fragmentation</h3>
 					<p>

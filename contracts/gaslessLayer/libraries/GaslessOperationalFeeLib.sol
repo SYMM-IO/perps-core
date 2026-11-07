@@ -104,11 +104,17 @@ library GaslessOperationalFeeLib {
 			if (chargers.length != amounts.length || chargers.length != feeMultipliers.length) revert IGaslessLayer.ArrayLengthMismatch();
 			for (uint256 i = 0; i < chargers.length; i++) {
 				if (chargers[i] == charger) {
-					feeMultiplier = feeMultipliers[i] == 0 ? FEE_MULTIPLIER_BASE : feeMultipliers[i];
+					feeMultiplier = feeMultipliers[i];
 				}
 			}
 		}
-		fee = (baseFee * feeMultiplier) / FEE_MULTIPLIER_BASE;
+		fee = (baseFee * _effectiveMultiplier(feeMultiplier)) / FEE_MULTIPLIER_BASE;
+	}
+
+	/// @dev The multiplier is a priority signal the payer sets; it can raise the relayed fee but never discount it.
+	///      Unset (0) and anything below 1x are charged at exactly 1x.
+	function _effectiveMultiplier(uint256 feeMultiplier) private pure returns (uint256) {
+		return feeMultiplier < FEE_MULTIPLIER_BASE ? FEE_MULTIPLIER_BASE : feeMultiplier;
 	}
 
 	// ─────────────────── Internal: settlement plan ───────────────────
@@ -183,7 +189,7 @@ library GaslessOperationalFeeLib {
 			due: 0,
 			allowance: allowance,
 			balanceCapacity: ISymmioCore(core).balanceOf(payer) + ISymmioCore(core).allocatedBalanceOfPartyA(payer),
-			feeMultiplier: feeMultiplier
+			feeMultiplier: _effectiveMultiplier(feeMultiplier)
 		});
 		newStateCount = stateCount + 1;
 	}

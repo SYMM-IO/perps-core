@@ -265,6 +265,9 @@ const signature = await sessionKey.signTypedData(
 						<li>
 							<strong>Only the granted functions.</strong> Each operation&rsquo;s function selector must have an active delegation to
 							the key. For AccountLayer timelock wrappers (<code>executeTimelockOp</code>), the check applies to the wrapped function.
+							The AccountLayer multiplexers <code>_call</code> and <code>_callWithMargin</code> are checked as a single selector: a key
+							granted either of them may run any core function inside their call lists for the account, so grant them only to keys that
+							are meant to hold that full trading authority.
 						</li>
 						<li>
 							<strong>Only the granted account family.</strong> A grant covers the named SubAccount and its Virtual Accounts. Other

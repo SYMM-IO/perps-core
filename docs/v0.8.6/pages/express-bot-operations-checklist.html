@@ -4969,7 +4969,7 @@ Setup:
     Options for Alice, Bob, Carol, Dave, Eve: all signed by 0xBotSigner
 
 Step 1: Admin calls: revokeRole(0xBotSigner, SIGNER_ROLE)
-  No role-change event is emitted by the current ControlFacet/LibAccessControl implementation.
+  ControlFacet emits RoleGranted(role, user) and RoleRevoked(role, user) for every grant and revoke; subscribe to both and reconcile with hasRole periodically.
   On-chain: hasRole(0xBotSigner, SIGNER_ROLE) = false
 
 Step 2: Alice submits her withdrawal tx with option signed by 0xBotSigner
@@ -5456,7 +5456,9 @@ Step 3: Bot sees: WithdrawFinalized event for W1 (pools replenished)
 								<tr>
 									<td><code>clearRequestDebt(affiliate, user, requestId)</code></td>
 									<td>Diamond owner</td>
-									<td>Emergency ledger repair for one stuck request; no collateral transfer</td>
+									<td>
+										Emergency ledger repair for one stuck request; no collateral transfer; refused while the request is PROCESSED
+									</td>
 								</tr>
 							</tbody>
 						</table>

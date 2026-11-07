@@ -41,7 +41,7 @@
 			<div class="rail-sections-source" data-rail-sections hidden>
 				<a class="toc-link level-2" href="#summary">Summary</a>
 				<a class="toc-link level-2" href="#rounding">Why liquidation totals can differ</a>
-				<a class="toc-link level-2" href="#settlement">Applying the cap at settlement</a>
+				<a class="toc-link level-2" href="#settlement">Applying the cap when the last position closes</a>
 				<a class="toc-link level-2" href="#funding">Why partial closes left dust</a>
 				<a class="toc-link level-2" href="#exact-notional">Exact Muon PnL input</a>
 				<a class="toc-link level-2" href="#repair">Repairing existing groups</a>
@@ -107,36 +107,40 @@ Group total:    cut(4.8 + 5.8)        = cut(10.6) = 10</code></pre>
 						101 settle at 100. No separate payment is created for the difference or assigned to another account.
 					</p>
 
-					<h2 id="settlement">Applying the cap at settlement</h2>
+					<h2 id="settlement">Applying the cap when the last position closes</h2>
 					<p>
 						Closing a position removes its PartyB connection as soon as that pair has no open positions or pending quotes. Pending-quote
 						cleanup follows the same rule. A saved settlement does not keep an empty connection alive. Once the final position closes, the
-						contract checks the rounding bound and records the target UPNL and the signed reduction still needed. PartyB settlement
-						amounts are not changed in the position-closing transaction.
+						contract checks the rounding bound, records the target UPNL, and applies the reduction to the saved PartyB settlements in the
+						same transaction, in the order those settlements were opened. The stored amounts are final before settlement starts; the LATE
+						and OVERDUE steps that run in the same close are described in
+						<a href="liquidation-settlement-plan.html">Exact Liquidation Settlement Plan</a>.
 					</p>
 					<p>
-						<code>settlePartyALiquidation</code> and its snapshot variant use the PartyB addresses supplied by the caller. Before paying
-						each pending settlement, the contract reduces its expected amount toward zero and reduces its actual amount in the same
-						direction without crossing zero. Existing OVERDUE haircuts and funding classification still apply. Only buckets with the
-						needed sign consume the reduction, in caller-supplied order; it is not a proportional split between PartyBs.
+						The reduction consumes planned amounts of its own sign toward zero, without crossing it, and the expected amount follows so
+						funding is not rescaled for a rounding cap. Only buckets with the needed sign consume it; it is not a proportional split
+						between PartyBs.
 					</p>
 					<pre><code>Muon loss = 100; quote loss = 102; reduction needed = 2
-First settlement:  quote payment 1  becomes 0; reduction left = 1
-Second settlement: quote payment 101 becomes 100; reduction left = 0
-Total paid = 100; liquidation can finish</code></pre>
+First bucket:  planned payment 1   becomes 0;   reduction left = 1
+Second bucket: planned payment 101 becomes 100; reduction left = 0
+Total planned = 100; the buckets are paid as stored</code></pre>
 					<p>
-						Partial batches carry only the remaining reduction in <code>partyALiquidationRoundingReduction</code>. Empty batches do not
-						consume it; unknown, duplicate, or already-settled PartyBs revert the transaction. Normal finalization requires every PartyB
-						settlement and the whole reduction to be consumed. Positive PartyB reserves remain conservative until payment, then their
-						contributions are released as usual. No new rounding event, vault transfer, or permanent counter is introduced.
+						<code>settlePartyALiquidation</code> and its snapshot variant pay the stored amounts for the PartyB addresses supplied by the
+						caller, in any batches; unknown, duplicate, or already-settled PartyBs revert the transaction. Positive PartyB reserves follow
+						the final planned amount until payment, then their contributions are released as usual.
+						<code>partyALiquidationRoundingReduction</code> is consulted only for liquidations that were already past their last close
+						when this release was deployed.
 					</p>
 					<p>
-						If positive signed UPNL overstated PartyA&rsquo;s profit, liquidation start sized LF and CVA from more than PartyB will pay.
-						The difference is recovered once from PartyA&rsquo;s deferred credit when the target is recorded after the final position
-						closes. The deduction is <code>min(deferred balance, signed UPNL - target UPNL)</code>: a zero balance stays zero, and an
-						insufficient balance is reduced only to zero without reverting liquidation. A dispute-role override cancels the unconsumed
-						automatic reduction and uses the supplied amounts; Clearing House takeover also cancels the unconsumed reduction. Neither path
-						reverses payments already made. A new liquidation starts with no pending reduction, and normal completion clears it.
+						In a NORMAL liquidation the liquidator fee and the vault credit were sized at start from the signed UPNL, while the
+						settlements pay the capped amount. When the capped UPNL is above the signed value, the signed loss was larger than what the
+						quotes settle at, and the difference is collateral the settlements do not need: it is moved out of the allocation into
+						PartyA&rsquo;s deferred balance and returned at finalization instead of being stranded. When it is below, the signed profit
+						was larger than what PartyBs will pay, and the difference is recovered from the deferred balance first, then from the
+						liquidator fee, then from the vault credit; only a fee cap below three units per position can leave it uncovered, and that
+						liquidation is disputed. A dispute-role override replaces the planned amounts with the supplied ones; Clearing House takeover
+						abandons the plan. Neither path reverses payments already made.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Keep the settlement PartyB list independently.</strong> Liquidators must retain the PartyBs from the liquidated quotes
@@ -184,9 +188,10 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 						Using the same result prevents the two signed fields from disagreeing because of different truncation.
 					</p>
 					<aside class="callout callout-note">
-						<strong>OVERDUE safety.</strong> A rounding-sized mismatch can make a calculated loss reduction one unit larger than a
-						quote&rsquo;s loss. The reduction is now capped at that quote&rsquo;s loss, so the liquidation reaches the normal dispute
-						check instead of reverting.
+						<strong>OVERDUE and LATE sharing.</strong> The uncovered loss and the returned CVA are distributed from on-chain totals in the
+						close that ends the position list, never by dividing a quote&rsquo;s amount by a signed field. A rounding-sized mismatch in
+						the signed total unrealized loss therefore cannot revert a close; see
+						<a href="liquidation-settlement-plan.html">Exact Liquidation Settlement Plan</a>.
 					</aside>
 
 					<h2 id="repair">Repairing existing groups</h2>

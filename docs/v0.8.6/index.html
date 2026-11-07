@@ -71,7 +71,7 @@
 					/>
 					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 				</label>
-				<span class="catalog-count" id="catalog-result-count" data-catalog-count>40 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>45 chapters</span>
 			</div>
 			<div class="catalog-empty" data-catalog-empty hidden>
 				<strong>No chapters found</strong>
@@ -257,7 +257,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>25 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>30 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -472,6 +472,52 @@
 							<span
 								>Preserves TP/SL and session-key delegations across future upgrades, with a migration facet for the one-time
 								redeployment.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/liquidation-settlement-plan.html" data-catalog-item>
+							<span class="doc-list-index">41</span>
+							<span class="category">Liquidation</span>
+							<strong>Exact Liquidation Settlement Plan</strong>
+							<span
+								>LATE and OVERDUE liquidations reduced each quote as it closed against a signed total, so a mixed-book solver could be
+								billed more than the close step had checked and rounding created wei. The plan is now fixed once, from on-chain
+								totals, when the last position closes.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/zero-quantity-quote-rejection.html" data-catalog-item>
+							<span class="doc-list-index">42</span>
+							<span class="category">Trading</span>
+							<strong>Zero-Quantity Quote Rejection</strong>
+							<span
+								>A market quote with zero quantity could be opened and then never closed or liquidated, because every close path
+								divided by its open amount. Zero quantities are rejected at entry and stored ones can be cleared.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/liquidation-dispute-resolution-guards.html" data-catalog-item>
+							<span class="doc-list-index">43</span>
+							<span class="category">Liquidation</span>
+							<strong>Liquidation Dispute Resolution Guards</strong>
+							<span
+								>resolveLiquidationDispute accepted a PartyA that was not under liquidation and PartyBs without a pending settlement
+								bucket, writing amounts and reserve contributions that nothing would settle. Both are now required.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/settlement-pause-and-deallocation-guards.html" data-catalog-item>
+							<span class="doc-list-index">44</span>
+							<span class="category">Hardening</span>
+							<strong>Settlement, Pause and Deallocation Guards</strong>
+							<span
+								>Three small guards: a settlement index bound, the PartyA pause on cancelUnbindRequest, and a liquidation guard on
+								zeroUpnlDeallocate.</span
+							>
+						</a>
+						<a class="minor-improvement-item" href="pages/partial-fill-fee-reservation.html" data-catalog-item>
+							<span class="doc-list-index">45</span>
+							<span class="category">Fees</span>
+							<strong>Partial Fill Fee Reservation Remainder</strong>
+							<span
+								>A partial limit fill floors the parent, filled and child fees separately, so the parent&rsquo;s reservation could
+								exceed the two parts by one unit that reached nobody. It now returns to PartyA.</span
 							>
 						</a>
 					</div>

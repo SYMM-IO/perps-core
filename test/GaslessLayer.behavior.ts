@@ -1576,16 +1576,35 @@ describe("GaslessLayer", () => {
 		const approvalOp = {
 			...makeSignedOp(user.address),
 			target: await core.getAddress(),
-			callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [u("10")], [5000]]),
+			callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [u("10")], [15000]]),
 		}
 
 		const quote = await previewBatch([approvalOp], [0n])
-		expect(quote.totalFee18).to.equal(u("1"))
+		expect(quote.totalFee18).to.equal(u("3"))
 
 		await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]], [0n])
 		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
-		expect(allowance.feeMultiplier).to.equal(5000)
-		expect(allowance.allowance).to.equal(u("9"))
+		expect(allowance.feeMultiplier).to.equal(15000)
+		expect(allowance.allowance).to.equal(u("7"))
+	})
+
+	it("relayInstantBatch charges an approval multiplier below 1x at exactly 1x", async () => {
+		await core.setInstantLayer(await instant.getAddress())
+		await core.setEnforceOperationalFeeAllowance(true)
+		await instant.setTargetExecution(true, await core.getAddress())
+		await gateway.connect(admin).setDefaultSelectorFee(u("2"))
+
+		const approvalOp = {
+			...makeSignedOp(user.address),
+			target: await core.getAddress(),
+			callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [u("10")], [5000]]),
+		}
+
+		expect((await previewBatch([approvalOp], [0n])).totalFee18).to.equal(u("2"))
+		await gateway.connect(relayer).relayInstantBatch([approvalOp], ["0x"], [[]], [[]], [0n])
+		const allowance = await core.getOperationalFeeAllowance(user.address, gatewayAddr)
+		expect(allowance.feeMultiplier).to.equal(5000) // stored as submitted, charged at 1x
+		expect(allowance.allowance).to.equal(u("8"))
 	})
 
 	it("relayInstantBatch reverts atomically when a normal batch leaves no fee allowance", async () => {
@@ -2032,13 +2051,13 @@ describe("GaslessLayer", () => {
 
 	it("relayed grant operation: applies the resolved payer core multiplier", async () => {
 		await gateway.connect(admin).setDefaultSelectorFee(u("1"))
-		await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
+		await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 15000)
 		const grantOp = await makeGrantOp(user.address, stranger.address)
 		await instant.setTargetExecution(true, await core.getAddress())
 
 		await gateway.connect(relayer).relayInstantBatch([grantOp], ["0x"], [[]], [[]], [0n])
 
-		expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
+		expect(await core.operationalFeesCharged(user.address)).to.equal(u("1.5"))
 	})
 
 	it("relayed grant operation: rolls back charged fee and free usage when InstantLayer reverts", async () => {
@@ -2676,12 +2695,12 @@ describe("GaslessLayer", () => {
 			const subAccount = ethers.Wallet.createRandom().address
 			const virtualAccount = ethers.Wallet.createRandom().address
 			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
-			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 15000)
 			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
 
 			await gateway.connect(relayer).relayInstantBatch(...batchArgs([makeSignedOp(virtualAccount)]))
 
-			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("0.5"))
+			expect(await core.operationalFeesCharged(subAccount)).to.equal(u("1.5"))
 			expect(await core.operationalFeesCharged(virtualAccount)).to.equal(0)
 		})
 
@@ -2708,7 +2727,7 @@ describe("GaslessLayer", () => {
 			const subAccount = ethers.Wallet.createRandom().address
 			const virtualAccount = ethers.Wallet.createRandom().address
 			await accountLayer.setVirtualAccount(virtualAccount, subAccount)
-			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(subAccount, gatewayAddr, 15000)
 			await core.setOperationalFeeMultiplier(virtualAccount, gatewayAddr, 20000)
 
 			expect(await gateway.dailyFreeOpsRemaining(virtualAccount)).to.equal(await gateway.dailyFreeOpsRemaining(subAccount))
@@ -2718,7 +2737,7 @@ describe("GaslessLayer", () => {
 				ops,
 				ops.map(() => 0n),
 			)
-			expect(actual.totalFee18).to.equal(u("0.5"))
+			expect(actual.totalFee18).to.equal(u("1.5"))
 			expect(actual.freeOpsApplied).to.equal(1)
 			expect(actual.payments.map((p: any) => [p.account, p.payer])).to.deep.equal([
 				[virtualAccount, subAccount],
@@ -3242,14 +3261,24 @@ describe("GaslessLayer", () => {
 	describe("core-owned fee multiplier", () => {
 		it("applies the perps-core allowance fee multiplier when charging and reading the current value", async () => {
 			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
-			await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
+			await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 15000)
 			const op = makeSignedOp(user.address)
 
 			const q = await previewBatch([op], [0n])
-			expect(q.totalFee18).to.equal(u("0.5"))
+			expect(q.totalFee18).to.equal(u("1.5"))
 
 			await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
-			expect(await core.operationalFeesCharged(user.address)).to.equal(u("0.5"))
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("1.5"))
+		})
+
+		it("a core multiplier below 1x can never discount the relayed fee", async () => {
+			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
+			await core.setOperationalFeeMultiplier(user.address, gatewayAddr, 5000)
+			const op = makeSignedOp(user.address)
+
+			expect((await previewBatch([op], [0n])).totalFee18).to.equal(u("1"))
+			await gateway.connect(relayer).relayInstantBatch([op], ["0x"], [[]], [[]], [0n])
+			expect(await core.operationalFeesCharged(user.address)).to.equal(u("1"))
 		})
 
 		it("does not expose a gateway-local fee multiplier setter", async () => {
@@ -3291,13 +3320,13 @@ describe("GaslessLayer", () => {
 		it("previewFeeQuote reflects the core multiplier", async () => {
 			await gateway.connect(admin).setDefaultSelectorFee(u("1"))
 			const solver = ethers.Wallet.createRandom().address
-			await core.setOperationalFeeMultiplier(solver, gatewayAddr, 5000) // 50%
+			await core.setOperationalFeeMultiplier(solver, gatewayAddr, 15000) // 150%
 			const ops = [makeSignedOp(solver), makeSignedOp(solver)]
 			const q = await previewBatch(
 				ops,
 				ops.map(() => 0n),
 			)
-			expect(q.totalFee18).to.equal(u("1")) // 2 ops × 1 × 50%
+			expect(q.totalFee18).to.equal(u("3")) // 2 ops × 1 × 150%
 		})
 
 		it("does not expose fee helpers with quote or estimate naming", async () => {
@@ -3482,9 +3511,9 @@ describe("GaslessLayer", () => {
 			const op = {
 				...makeSignedOp(user.address),
 				target: await core.getAddress(),
-				callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [coreUnits("20")], [5000]]),
+				callData: core.interface.encodeFunctionData("approveOperationalFeeWithMultiplier", [[gatewayAddr], [coreUnits("20")], [15000]]),
 			}
-			expect((await previewBatch([op], [0n])).totalFee18).to.equal(coreUnits("1"))
+			expect((await previewBatch([op], [0n])).totalFee18).to.equal(coreUnits("3"))
 			expect((await previewBatch([op, makeSignedOp(user.address)], [0n, 0n])).totalFee18).to.equal(coreUnits("4"))
 			const flexible = { ...op, flexFields: [{ offset: 0, length: 4, authorizedFlexFiller: relayer.address }] }
 			expect((await previewBatch([flexible], [0n])).totalFee18).to.equal(coreUnits("2"))

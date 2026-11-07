@@ -50,6 +50,12 @@ library LibOperationalFee {
 		allocatedUsed = amount - freeUsed;
 		if (allocatedUsed > 0) {
 			require(a.allocatedBalances[payer] >= allocatedUsed, "OperationalFee: Insufficient balance");
+			// A charge carries no solvency proof, so it may only consume allocation that is not promised to
+			// counterparties and liquidators: the same CVA + LF floor that an unsigned deallocation keeps.
+			require(
+				a.allocatedBalances[payer] - allocatedUsed >= LibAccount.partyADeallocateCvaLfRequirement(payer),
+				"OperationalFee: Would unback positions"
+			);
 			LibAccount.decreasePartyAAllocatedBalance(payer, allocatedUsed, SharedEvents.BalanceChangeType.OPERATIONAL_FEE_OUT);
 		}
 		a.balances[feeReceiver] += amount;

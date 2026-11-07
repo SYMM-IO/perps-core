@@ -58,10 +58,10 @@ contract AccountLayerSignerRestoreProbe {
 
 	function run(address outerSigner, address nestedSigner) external {
 		LibAccountLayerSigner.setTransientSigner(outerSigner);
-		(address previousSigner, bool wasTransient) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		LibAccountLayerSigner.setTransientSigner(nestedSigner);
 		LibAccountLayerSigner.setTransientSigner(address(0));
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransient);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 		signerActiveAfterNestedCall = LibAccountLayerSigner.isTransientSignerActive();
 		signerRestoredAfterNestedCall = LibAccountLayerSigner.configuredSigner();
 		LibAccountLayerSigner.setTransientSigner(address(0));
@@ -69,38 +69,38 @@ contract AccountLayerSignerRestoreProbe {
 
 	function rejectTransientSignerInjectedIntoPersistentBoundary(address persistentSigner, address injectedSigner) external {
 		AccountStorage.layout().globalSigner = persistentSigner;
-		(address previousSigner, bool wasTransient) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		LibAccountLayerSigner.setTransientSigner(injectedSigner);
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransient);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 
 	function rejectPersistentSignerLeftInPersistentBoundary(address persistentSigner, address injectedSigner) external {
 		AccountStorage.layout().globalSigner = persistentSigner;
-		(address previousSigner, bool wasTransient) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		AccountStorage.layout().globalSigner = injectedSigner;
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransient);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 
 	function rejectPersistentSignerInjectedIntoTransientBoundary(address transientSigner, address injectedSigner) external {
 		LibAccountLayerSigner.setTransientSigner(transientSigner);
-		(address previousSigner, bool wasTransient) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		AccountStorage.layout().globalSigner = injectedSigner;
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransient);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 
 	function rejectTransientSignerLeftInTransientBoundary(address transientSigner, address injectedSigner) external {
 		LibAccountLayerSigner.setTransientSigner(transientSigner);
-		(address previousSigner, bool wasTransient) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		LibAccountLayerSigner.setTransientSigner(injectedSigner);
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransient);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 	}
 
 	function restoreTransientSignerAfterClearedPersistentScope(address transientSigner, address nestedSigner) external {
 		LibAccountLayerSigner.setTransientSigner(transientSigner);
-		(address previousSigner, bool wasTransient) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		AccountStorage.layout().globalSigner = nestedSigner;
 		AccountStorage.layout().globalSigner = address(0);
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransient);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 		signerActiveAfterNestedCall = LibAccountLayerSigner.isTransientSignerActive();
 		signerRestoredAfterNestedCall = LibAccountLayerSigner.configuredSigner();
 		LibAccountLayerSigner.setTransientSigner(address(0));

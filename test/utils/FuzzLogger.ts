@@ -13,7 +13,7 @@ import type {
 	FuzzSetupInfo,
 	FuzzStopSignal,
 } from "../models/FuzzLogTypes.js"
-import { FUZZ_CORNER_OPERATIONS } from "../models/FuzzLogTypes.js"
+import { ALL_FUZZ_CORNER_OPERATIONS, enabledFuzzCornerOperations } from "../models/FuzzLogTypes.js"
 import {
 	createFuzzDashboardRecorderFromEnv,
 	type FuzzDashboardFinal,
@@ -367,7 +367,7 @@ function copyQuoteInventory(inventory: FuzzQuoteInventory): FuzzQuoteInventory {
 function copyOperationCoverage(coverage: FuzzOperationCoverage): FuzzOperationCoverage {
 	return {
 		totals: { ...coverage.totals },
-		byOperation: Object.fromEntries(FUZZ_CORNER_OPERATIONS.map(operation => [operation, { ...coverage.byOperation[operation] }])) as Record<
+		byOperation: Object.fromEntries(ALL_FUZZ_CORNER_OPERATIONS.map(operation => [operation, { ...coverage.byOperation[operation] }])) as Record<
 			FuzzCornerOperation,
 			FuzzOperationCounts
 		>,
@@ -492,6 +492,14 @@ const CORNER_LABELS: Readonly<Record<FuzzCornerOperation, string>> = {
 	INSTANT_LAYER_FLEX_FIELDS: "Flex field fills",
 	INSTANT_LAYER_TEMPLATE: "Instant-open template",
 	INSTANT_LAYER_PARTY_B_RELAYS: "PartyB signed relays",
+	LIQUIDATE_PARTY_A_LATE: "Party A LATE liquidation",
+	LIQUIDATE_PARTY_A_OVERDUE: "Party A OVERDUE liquidation",
+	LIQUIDATE_PARTY_A_OVERDUE_MIXED_SOLVER: "OVERDUE mixed-book solver",
+	LIQUIDATE_PARTY_A_DEFERRED: "Deferred liquidation",
+	LIQUIDATE_PARTY_A_SNAPSHOT: "Snapshot liquidation",
+	LIQUIDATE_PARTY_B_WITH_ORACLE: "Party B liquidation (oracle-checked)",
+	LIQUIDATE_PARTY_A_PENDING: "Liquidation with pending quote",
+	LIQUIDATE_PARTY_A_RANDOM: "Model-checked random liquidation",
 }
 
 function humanizeAction(action: string): string {
@@ -1485,10 +1493,11 @@ export class FuzzRunLogger {
 
 	private cornerCoverageSegments(): string[] {
 		const coverage = this.latestOperationCoverage
-		const covered = FUZZ_CORNER_OPERATIONS.filter(operation => coverage.byOperation[operation].succeeded > 0).length
+		const enabled = enabledFuzzCornerOperations()
+		const covered = enabled.filter(operation => coverage.byOperation[operation].succeeded > 0).length
 		const inProgress = Math.max(0, coverage.totals.attempted - coverage.totals.succeeded - coverage.totals.skipped - coverage.totals.failed)
 		return [
-			`${covered}/${FUZZ_CORNER_OPERATIONS.length} rare paths verified`,
+			`${covered}/${enabled.length} rare paths verified`,
 			`${formatCount(coverage.totals.succeeded)} passed`,
 			`${formatCount(coverage.totals.skipped)} skipped`,
 			`${formatCount(coverage.totals.failed)} failed`,
@@ -1521,7 +1530,7 @@ export class FuzzRunLogger {
 			...wrapDashboardSegments("corners", this.cornerCoverageSegments(), columns),
 			...wrapDashboardSegments(
 				"rare paths",
-				FUZZ_CORNER_OPERATIONS.map(operation => this.cornerBadge(operation)),
+				enabledFuzzCornerOperations().map(operation => this.cornerBadge(operation)),
 				columns,
 			),
 		]
@@ -1533,7 +1542,7 @@ export class FuzzRunLogger {
 			columns >= 76
 				? [
 						this.detailLine("operation", "rare path                 attempted  passed  skipped  failed"),
-						...FUZZ_CORNER_OPERATIONS.map(operation => {
+						...enabledFuzzCornerOperations().map(operation => {
 							const counts = coverage.byOperation[operation]
 							return (
 								`│ ${"".padEnd(11)}${CORNER_LABELS[operation].padEnd(26)}` +
@@ -1542,7 +1551,7 @@ export class FuzzRunLogger {
 							)
 						}),
 					]
-				: FUZZ_CORNER_OPERATIONS.flatMap(operation => {
+				: enabledFuzzCornerOperations().flatMap(operation => {
 						const counts = coverage.byOperation[operation]
 						return wrapDashboardSegments(
 							"rare path",

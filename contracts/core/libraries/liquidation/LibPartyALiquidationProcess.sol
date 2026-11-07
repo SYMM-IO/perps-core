@@ -149,43 +149,18 @@ library LibPartyALiquidationProcess {
 				liquidationId
 			);
 
-			// Open or update the pending settlement bucket for this PartyB.
+			// Open or update the pending settlement bucket for this PartyB. Buckets hold raw amounts only: the CVA to
+			// return and the share of any uncovered loss are fixed once, from on-chain totals, when the last position closes.
 			if (!settlementState.pending) {
 				settlementState.pending = true;
 				liquidationDetail.involvedPartyBCounts += 1;
+				accountLayout.partyALiquidationPartyBs[partyA].push(quote.partyB);
 			}
-			if (liquidationDetail.liquidationType == LiquidationType.NORMAL) {
+			if (liquidationDetail.liquidationType != LiquidationType.OVERDUE) {
 				settlementState.cva += quote.lockedValues.cva;
-				settlementState.actualAmount += pnlWithFunding;
-				settlementState.expectedAmount += pnlWithFunding;
-			} else if (liquidationDetail.liquidationType == LiquidationType.LATE) {
-				// LF is exhausted in LATE liquidation, so `deficit` is the amount eaten from PartyA's total CVA.
-				// returned quote CVA = quote CVA - quote's share of total CVA deficit
-				if (liquidationDetail.deficit == 0) {
-					settlementState.cva += quote.lockedValues.cva;
-				} else {
-					settlementState.cva +=
-						quote.lockedValues.cva - ((quote.lockedValues.cva * liquidationDetail.deficit) / accountLayout.lockedBalances[partyA].cva);
-				}
-				settlementState.actualAmount += pnlWithFunding;
-				settlementState.expectedAmount += pnlWithFunding;
-			} else if (liquidationDetail.liquidationType == LiquidationType.OVERDUE) {
-				if (pnlWithFunding >= 0) {
-					settlementState.actualAmount += pnlWithFunding;
-					settlementState.expectedAmount += pnlWithFunding;
-				} else {
-					uint256 lossAmount = uint256(-pnlWithFunding);
-					// In OVERDUE, `deficit` is the residual loss after PartyA's allocation, LF, and CVA are exhausted.
-					// adjusted quote loss = quote loss - quote's share of the residual unrealized loss deficit
-					uint256 lossReduction = (lossAmount * liquidationDetail.deficit) / uint256(-liquidationDetail.totalUnrealizedLoss);
-					uint256 adjustedLoss = lossAmount - Math.min(lossAmount, lossReduction);
-					settlementState.actualAmount -= int256(adjustedLoss);
-					settlementState.expectedAmount += pnlWithFunding;
-				}
 			}
-
-			// Track the settlement reserve for all modes; LibAccount applies it only in cross mode.
-			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, quote.partyB, settlementState.actualAmount);
+			settlementState.actualAmount += pnlWithFunding;
+			settlementState.expectedAmount += pnlWithFunding;
 
 			// Close the quote and update accumulated PartyA uPNL when this PartyB has no remaining positions.
 			LibAccount.subFromPartyBLockedBalances(quote);
@@ -193,20 +168,11 @@ library LibPartyALiquidationProcess {
 			LibConnections.removeConnectionIfNoPositions(partyA, quote.partyB);
 
 			if (quoteLayout.partyBPositionsCount[quote.partyB][partyA] == 0) {
-				int256 partyAExpectedReceivableFromPartyB = accountLayout.settlementStates[partyA][quote.partyB].expectedAmount;
-				address allocKey = LibAccount.partyBAllocationKey(quote.partyB, partyA);
-				if (partyAExpectedReceivableFromPartyB < 0) {
-					// Negative means PartyA lost against this PartyB; the loss can always be counted in full.
-					liquidationDetail.partyAAccumulatedUpnl += partyAExpectedReceivableFromPartyB;
-				} else {
-					// Positive means PartyA gained against this PartyB; count only what PartyB's allocation can actually cover.
-					if (accountLayout.partyBAllocatedBalances[quote.partyB][allocKey] >= uint256(partyAExpectedReceivableFromPartyB)) {
-						liquidationDetail.partyAAccumulatedUpnl += partyAExpectedReceivableFromPartyB;
-					} else {
-						liquidationDetail.partyAAccumulatedUpnl += int256(accountLayout.partyBAllocatedBalances[quote.partyB][allocKey]);
-					}
-				}
+				_countClosedBucket(accountLayout, liquidationDetail, settlementState, partyA, quote.partyB);
 			}
+
+			// Track the settlement reserve for all modes; LibAccount applies it only in cross mode.
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, quote.partyB, settlementState.actualAmount);
 
 			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
 			averageClosedPrices[index] = quote.avgClosedPrice;
@@ -222,58 +188,193 @@ library LibPartyALiquidationProcess {
 			);
 		}
 
-		// Once all positions are closed, allow three raw rounding units per position captured at liquidation start.
-		// The bound assumes repaired funding aggregates and exact aggregate notional in the oracle.
-		// An accepted difference settles at the smaller amount supported by both calculations; larger differences dispute.
+		// The close that ends the position list checks the signed uPNL and fixes the settlement plan.
 		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
-			int256 signedUpnl = liquidationDetail.upnl;
-			int256 settledUpnl = liquidationDetail.partyAAccumulatedUpnl;
-			uint256 difference = LibUtils.absDiff(settledUpnl, signedUpnl);
-			if (difference != 0) {
-				uint256 allowance =
-					LibPartyALiquidationShared.LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION *
-						accountLayout.liquidationStartPositionCounts[partyA];
-				if (difference > allowance) {
-					liquidationDetail.disputed = true;
-					return (true, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
-				}
-				_prepareSettlementRounding(accountLayout, partyA, signedUpnl, settledUpnl);
-			}
+			return (_planSettlement(accountLayout, partyA, liquidationDetail), liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 		}
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 	}
 
-	/// @dev Records the accepted cap once, without enumerating PartyBs. Their buckets are adjusted
-	///      as they settle. Opposite-direction calculations cap to zero. PartyA's deferred credit
-	///      is corrected now so neither later settlement batches nor a takeover apply it twice.
-	function _prepareSettlementRounding(AccountStorage.Layout storage accountLayout, address partyA, int256 signedUpnl, int256 settledUpnl) private {
-		int256 cappedUpnl = _smallerSameDirectionUpnl(signedUpnl, settledUpnl);
-		accountLayout.partyALiquidationRoundingReduction[partyA] = settledUpnl - cappedUpnl;
-		accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl = cappedUpnl;
+	/// @dev Counts a PartyB's closed bucket into PartyA's accumulated uPNL. A loss is counted in full. A gain is counted
+	///      only up to what the PartyB's allocation can actually cover, and the bucket is planned at that counted amount,
+	///      so a payer never pays more than was checked here. The allocation cannot fall again before settlement.
+	function _countClosedBucket(
+		AccountStorage.Layout storage accountLayout,
+		LiquidationDetail storage liquidationDetail,
+		LiquidationSettlementState storage settlementState,
+		address partyA,
+		address partyB
+	) private {
+		int256 expectedAmount = settlementState.expectedAmount;
+		if (expectedAmount < 0) {
+			liquidationDetail.partyAAccumulatedUpnl += expectedAmount;
+			return;
+		}
+		uint256 allocation = accountLayout.partyBAllocatedBalances[partyB][LibAccount.partyBAllocationKey(partyB, partyA)];
+		int256 counted = allocation >= uint256(expectedAmount) ? expectedAmount : int256(allocation);
+		liquidationDetail.partyAAccumulatedUpnl += counted;
+		settlementState.actualAmount = counted;
+	}
 
-		// Liquidation start sized LF and CVA from the positive signed uPNL, but PartyB pays only the
-		// capped amount. Recover the difference from PartyA's deferred credit; that balance may be
-		// zero or smaller than the rounding difference.
-		if (signedUpnl > cappedUpnl && signedUpnl > 0) {
-			uint256 deferredReduction = uint256(signedUpnl - cappedUpnl);
-			accountLayout.partyADeferredBalance[partyA] -= Math.min(accountLayout.partyADeferredBalance[partyA], deferredReduction);
+	/// @dev Runs once, in the close that brings PartyA's position count to zero. The signed uPNL is checked against the
+	///      on-chain total with three raw rounding units per position captured at start (the bound assumes repaired
+	///      funding aggregates and exact aggregate notional in the oracle); a larger difference disputes. An accepted
+	///      difference settles at the smaller amount supported by both calculations, applied to the buckets now. Every
+	///      bucket then receives its final amounts from on-chain totals, so what the buckets pay out, plus the liquidator
+	///      fee and vault credit carved out at start, is exactly PartyA's allocation.
+	function _planSettlement(
+		AccountStorage.Layout storage accountLayout,
+		address partyA,
+		LiquidationDetail storage detail
+	) private returns (bool disputed) {
+		int256 signedUpnl = detail.upnl;
+		int256 netUpnl = detail.partyAAccumulatedUpnl;
+		uint256 difference = LibUtils.absDiff(netUpnl, signedUpnl);
+		if (
+			difference >
+			LibPartyALiquidationShared.LIQUIDATION_UPNL_ROUNDING_ALLOWANCE_PER_POSITION * accountLayout.liquidationStartPositionCounts[partyA]
+		) {
+			// The signed figure stays the basis of the plan; a resolver overrides the buckets it disagrees with.
+			detail.disputed = true;
+			disputed = true;
+			netUpnl = signedUpnl;
+		} else if (difference != 0) {
+			netUpnl = _applyRoundingCap(accountLayout, partyA, signedUpnl, netUpnl);
+		}
+
+		if (detail.liquidationType == LiquidationType.NORMAL) {
+			if (!disputed && !_settleRoundingDifference(accountLayout, partyA, detail, netUpnl - signedUpnl)) {
+				detail.disputed = true;
+				disputed = true;
+			}
+		} else {
+			_distributeLateAndOverdue(accountLayout, partyA, int256(accountLayout.allocatedBalances[partyA]) + netUpnl);
 		}
 	}
 
-	/// @dev Applies only the still-needed reduction to this pending PartyB before payment. Positive
-	///      reductions consume positive expected amounts; negative reductions consume negative ones.
-	///      The returned remainder carries over to later PartyBs and later settlement transactions.
+	/// @dev Settles at the smaller of the signed and on-chain uPNL (zero when they disagree on direction) and applies
+	///      the reduction to the buckets in open order, so the stored plan is final once the last position closes.
+	function _applyRoundingCap(
+		AccountStorage.Layout storage accountLayout,
+		address partyA,
+		int256 signedUpnl,
+		int256 settledUpnl
+	) private returns (int256 cappedUpnl) {
+		cappedUpnl = _smallerSameDirectionUpnl(signedUpnl, settledUpnl);
+		int256 remainingReduction = settledUpnl - cappedUpnl;
+		address[] storage partyBs = accountLayout.partyALiquidationPartyBs[partyA];
+		for (uint256 i = 0; i < partyBs.length && remainingReduction != 0; i++) {
+			LiquidationSettlementState storage state = accountLayout.settlementStates[partyA][partyBs[i]];
+			int256 remainingAfter = _capSettlementToSmallerUpnl(state, remainingReduction);
+			if (remainingAfter != remainingReduction) {
+				LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyBs[i], state.actualAmount);
+			}
+			remainingReduction = remainingAfter;
+		}
+		require(remainingReduction == 0, "LiquidationFacet: Invalid rounding cap");
+		accountLayout.liquidationDetails[partyA].partyAAccumulatedUpnl = cappedUpnl;
+	}
+
+	/// @dev NORMAL only. The liquidator fee and vault credit were sized at start from the signed uPNL, while the buckets
+	///      settle at the capped on-chain amount. A positive difference is collateral the buckets do not need: it is set
+	///      aside with PartyA's deferred balance instead of being stranded in the diamond. A negative one is paid by
+	///      PartyA's deferred balance, then the liquidator fee, then the vault credit; the allocation finalization
+	///      consumes then covers the buckets exactly. Returns false only if those three cannot cover it.
+	function _settleRoundingDifference(
+		AccountStorage.Layout storage accountLayout,
+		address partyA,
+		LiquidationDetail storage detail,
+		int256 difference
+	) private returns (bool) {
+		if (difference >= 0) {
+			_setAsideForPartyA(accountLayout, partyA, uint256(difference));
+			return true;
+		}
+		uint256 shortfall = uint256(-difference);
+		uint256 take = Math.min(accountLayout.partyADeferredBalance[partyA], shortfall);
+		accountLayout.partyADeferredBalance[partyA] -= take;
+		shortfall -= take;
+		take = Math.min(detail.liquidationFee, shortfall);
+		detail.liquidationFee -= take;
+		shortfall -= take;
+		if (shortfall > 0) {
+			address vault = MAStorage.layout().liquidationInsuranceVault;
+			take = Math.min(accountLayout.balances[vault], shortfall);
+			accountLayout.balances[vault] -= take;
+			shortfall -= take;
+		}
+		return shortfall == 0;
+	}
+
+	/// @dev Moves collateral the settlement will not need out of the allocation finalization consumes and into
+	///      PartyA's deferred balance, which finalization returns to PartyA. Same movement as a late allocation at start.
+	function _setAsideForPartyA(AccountStorage.Layout storage accountLayout, address partyA, uint256 amount) private {
+		if (amount == 0) return;
+		LibAccount.decreasePartyAAllocatedBalance(partyA, amount, SharedEvents.BalanceChangeType.DEFERRED_BALANCE_OUT);
+		accountLayout.partyADeferredBalance[partyA] += amount;
+	}
+
+	/// @dev LATE and OVERDUE. `resources` is PartyA's allocation plus its net uPNL, the collateral left once every
+	///      bucket is settled at its planned amount. A positive amount is returned as CVA pro rata to each bucket's
+	///      locked CVA; anything beyond the total CVA joins PartyA's deferred balance. A negative amount is the loss no
+	///      collateral covers: it is shared pro rata across the buckets PartyA owes (their net claims), and no CVA is
+	///      returned. Both use a running remainder, so the amounts are exact to the unit. Buckets PartyA collects from
+	///      keep the amount counted when they closed.
+	function _distributeLateAndOverdue(AccountStorage.Layout storage accountLayout, address partyA, int256 resources) private {
+		address[] storage partyBs = accountLayout.partyALiquidationPartyBs[partyA];
+		uint256 count = partyBs.length;
+		uint256 remainingCva;
+		uint256 remainingClaims;
+		for (uint256 i = 0; i < count; i++) {
+			LiquidationSettlementState storage state = accountLayout.settlementStates[partyA][partyBs[i]];
+			remainingCva += state.cva;
+			if (state.actualAmount < 0) remainingClaims += uint256(-state.actualAmount);
+		}
+
+		uint256 remainingPool;
+		uint256 remainingDeficit;
+		if (resources >= 0) {
+			remainingPool = Math.min(uint256(resources), remainingCva);
+			_setAsideForPartyA(accountLayout, partyA, uint256(resources) - remainingPool);
+		} else {
+			remainingDeficit = Math.min(uint256(-resources), remainingClaims);
+		}
+
+		for (uint256 i = 0; i < count; i++) {
+			LiquidationSettlementState storage state = accountLayout.settlementStates[partyA][partyBs[i]];
+			uint256 cva = state.cva;
+			if (cva > 0) {
+				uint256 share = remainingCva <= cva ? remainingPool : (cva * remainingPool) / remainingCva;
+				state.cva = share;
+				remainingPool -= share;
+				remainingCva -= cva;
+			}
+			int256 actualAmount = state.actualAmount;
+			if (actualAmount < 0 && remainingDeficit > 0) {
+				uint256 claim = uint256(-actualAmount);
+				uint256 share = remainingClaims <= claim ? remainingDeficit : (claim * remainingDeficit) / remainingClaims;
+				state.actualAmount = actualAmount + int256(share);
+				remainingDeficit -= share;
+				remainingClaims -= claim;
+			}
+			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyBs[i], state.actualAmount);
+		}
+	}
+
+	/// @dev Applies the still-needed reduction to one bucket. Positive reductions consume positive planned amounts;
+	///      negative reductions consume negative ones. The expected amount follows, so funding is not rescaled for it.
+	///      The returned remainder carries over to the next bucket. Also serves the pre-upgrade lazy path at settlement.
 	function _capSettlementToSmallerUpnl(LiquidationSettlementState storage settlementState, int256 remainingReduction) private returns (int256) {
-		int256 expectedAmount = settlementState.expectedAmount;
-		if (remainingReduction == 0 || expectedAmount == 0 || (remainingReduction > 0) != (expectedAmount > 0)) return remainingReduction;
+		int256 actualAmount = settlementState.actualAmount;
+		if (remainingReduction == 0 || actualAmount == 0 || (remainingReduction > 0) != (actualAmount > 0)) return remainingReduction;
 
 		int256 sign = remainingReduction > 0 ? int256(1) : int256(-1);
-		int256 reduction = sign * int256(Math.min(SignedMath.abs(expectedAmount), SignedMath.abs(remainingReduction)));
-		settlementState.expectedAmount = expectedAmount - reduction;
+		int256 reduction = sign * int256(Math.min(SignedMath.abs(actualAmount), SignedMath.abs(remainingReduction)));
+		settlementState.actualAmount = actualAmount - reduction;
 
-		int256 actualAmount = settlementState.actualAmount;
-		if (actualAmount != 0 && (actualAmount > 0) == (reduction > 0)) {
-			settlementState.actualAmount = actualAmount - sign * int256(Math.min(SignedMath.abs(actualAmount), SignedMath.abs(reduction)));
+		int256 expectedAmount = settlementState.expectedAmount;
+		if (expectedAmount != 0 && (expectedAmount > 0) == (reduction > 0)) {
+			settlementState.expectedAmount = expectedAmount - sign * int256(Math.min(SignedMath.abs(expectedAmount), SignedMath.abs(reduction)));
 		}
 		return remainingReduction - reduction;
 	}
@@ -295,6 +396,7 @@ library LibPartyALiquidationProcess {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 
 		require(!ClearingHouseStorage.layout().partyATakeoverDetails[partyA].inProgress, "LiquidationFacet: Takeover in progress");
+		require(maLayout.liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = block.timestamp;
 		accountLayout.liquidationDetails[partyA].disputed = disputed;
 		require(partyBs.length == amounts.length, "LiquidationFacet: Invalid length");
@@ -303,6 +405,7 @@ library LibPartyALiquidationProcess {
 
 		// Override PartyB settlement buckets and keep settlement reserves in sync.
 		for (uint256 i = 0; i < partyBs.length; i++) {
+			require(accountLayout.settlementStates[partyA][partyBs[i]].pending, "LiquidationFacet: PartyB is not in settlement");
 			accountLayout.settlementStates[partyA][partyBs[i]].actualAmount = amounts[i];
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyBs[i], amounts[i]);
 		}
@@ -362,23 +465,19 @@ library LibPartyALiquidationProcess {
 			allocationKeys[i] = allocKey;
 			uint256 partyBAllocatedBalance = LibAccount.increasePartyBAllocatedBalance(partyB, allocKey, cva, SharedEvents.BalanceChangeType.CVA_IN);
 
-			// Determine the settled amount first; the allocation bucket is mutated below so the
-			// funding and realized-PnL components can each carry their own balance-change type.
-			if (partyAReceivableFromPartyB < 0) {
-				settleAmounts[i] = partyAReceivableFromPartyB;
-			} else {
-				if (partyBAllocatedBalance >= uint256(partyAReceivableFromPartyB)) {
-					// PartyB can fully pay PartyA
-					settleAmounts[i] = partyAReceivableFromPartyB;
-				} else {
-					// PartyB cannot fully pay PartyA
-					// Cross-mode PartyBs must settle uPNL first via settlePartyBUpnlForLiquidation
-					// to convert unrealized profit into allocated balance before settlement.
-					// The clearing house takeover flow handles cases where settlement is not possible.
-					require(!maLayout.crossModeEnabledForPartyB[partyB], "LiquidationFacet: Settle cross partyB uPNL first");
-					settleAmounts[i] = int256(partyBAllocatedBalance);
-				}
+			// The planned amount is paid as is; the allocation bucket is mutated below so the funding and
+			// realized-PnL components can each carry their own balance-change type. A cross-mode PartyB converts
+			// unrealized profit into allocation first via settlePartyBUpnlForLiquidation. An isolated PartyB's
+			// allocation cannot fall below the planned amount once its bucket was counted, so that check is an
+			// invariant; a dispute resolution or the clearing-house takeover handles the case where it ever fails.
+			if (partyAReceivableFromPartyB > 0 && partyBAllocatedBalance < uint256(partyAReceivableFromPartyB)) {
+				revert(
+					maLayout.crossModeEnabledForPartyB[partyB]
+						? "LiquidationFacet: Settle cross partyB uPNL first"
+						: "LiquidationFacet: Settlement exceeds PartyB allocation"
+				);
 			}
+			settleAmounts[i] = partyAReceivableFromPartyB;
 			int256 rawFundingFee = fundingFee;
 			(uint256 scaleNumerator, uint256 scaleDenominator) = _getFundingSettlementScale(settlementState.expectedAmount, settleAmounts[i]);
 			fundingFee = _scaleFundingFee(fundingFee, scaleNumerator, scaleDenominator);
@@ -507,6 +606,7 @@ library LibPartyALiquidationProcess {
 		delete accountLayout.liquidationUsesPartyBSymbolSnapshots[partyA][liquidationId];
 		delete accountLayout.liquidationStartPositionCounts[partyA];
 		delete accountLayout.partyALiquidationRoundingReduction[partyA];
+		delete accountLayout.partyALiquidationPartyBs[partyA];
 		delete accountLayout.liquidationDetails[partyA].liquidationType;
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;

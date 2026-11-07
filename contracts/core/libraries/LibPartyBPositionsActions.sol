@@ -9,7 +9,7 @@ import { QuoteStorage, Quote, LockedValues, PositionType, OrderType, QuoteStatus
 import { AccountStorage } from "../storages/AccountStorage.sol";
 import { AffiliateStorage } from "../storages/AffiliateStorage.sol";
 import { LibExecutionContext } from "./LibExecutionContext.sol";
-import { SymbolStorage } from "../storages/SymbolStorage.sol";
+import { Symbol, SymbolStorage } from "../storages/SymbolStorage.sol";
 import { SharedEvents } from "./SharedEvents.sol";
 import { LibQuote } from "./LibQuote.sol";
 import { LibQuoteClose } from "./LibQuoteClose.sol";
@@ -90,7 +90,8 @@ library LibPartyBPositionsActions {
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
 		Quote storage quote = quoteLayout.quotes[quoteId];
-		require(SymbolStorage.layout().symbols[quote.symbolId].isValid, "PartyBFacet: Symbol is not valid");
+		Symbol storage symbol = SymbolStorage.layout().symbols[quote.symbolId];
+		require(symbol.isValid, "PartyBFacet: Symbol is not valid");
 		LibSymbolAdjustment.requireNotFrozen(quote.symbolId);
 		require(quote.quoteStatus == QuoteStatus.LOCKED || quote.quoteStatus == QuoteStatus.CANCEL_PENDING, "PartyBFacet: Invalid state");
 		LibSymbolAdjustment.requirePendingQuoteCurrent(quote);
@@ -108,7 +109,7 @@ library LibPartyBPositionsActions {
 		if (quote.orderType == OrderType.LIMIT) {
 			require(quote.quantity >= filledAmount && filledAmount > 0, "PartyBFacet: Invalid filledAmount");
 		} else {
-			require(quote.quantity == filledAmount, "PartyBFacet: Invalid filledAmount");
+			require(quote.quantity == filledAmount && filledAmount > 0, "PartyBFacet: Invalid filledAmount");
 		}
 		if (quote.positionType == PositionType.LONG) {
 			require(openedPrice <= quote.requestedOpenPrice, "PartyBFacet: Opened price isn't valid");
@@ -138,10 +139,7 @@ library LibPartyBPositionsActions {
 			quote.lockedValues.mul(openedPrice).div(quote.requestedOpenPrice);
 
 			// check locked values
-			require(
-				quote.lockedValues.totalForPartyA() >= SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
-				"PartyBFacet: Quote value is low"
-			);
+			require(quote.lockedValues.totalForPartyA() >= symbol.minAcceptableQuoteValue, "PartyBFacet: Quote value is low");
 		}
 		// partially fill
 		else {
@@ -163,15 +161,11 @@ library LibPartyBPositionsActions {
 			appliedFilledLockedValues = appliedFilledLockedValues.mulMem(openedPrice);
 			appliedFilledLockedValues = appliedFilledLockedValues.divMem(quote.requestedOpenPrice);
 			// check that opened position is not minor position
-			require(
-				appliedFilledLockedValues.totalForPartyA() >= SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
-				"PartyBFacet: Quote value is low"
-			);
+			require(appliedFilledLockedValues.totalForPartyA() >= symbol.minAcceptableQuoteValue, "PartyBFacet: Quote value is low");
 			// check that new pending position is not minor position
 			require(
 				newStatus == QuoteStatus.CANCELED ||
-					(quote.lockedValues.totalForPartyA() - filledLockedValues.totalForPartyA()) >=
-						SymbolStorage.layout().symbols[quote.symbolId].minAcceptableQuoteValue,
+					(quote.lockedValues.totalForPartyA() - filledLockedValues.totalForPartyA()) >= symbol.minAcceptableQuoteValue,
 				"PartyBFacet: Quote value is low"
 			);
 
@@ -213,6 +207,14 @@ library LibPartyBPositionsActions {
 			_splitSolverFeeState(quoteLayout, quote.id, currentId);
 			Quote storage newQuote = quoteLayout.quotes[currentId];
 			remainingQuoteFee = LibQuote.getReservedOpenTradingFee(newQuote, LibQuote.quoteOpenAmount(newQuote));
+			// The parent fee, the filled fee and the child fee are each floored separately, so the parent's
+			// reservation can exceed the two parts by one unit. Return that remainder to PartyA now, so the
+			// child's reservation is exactly what its own fee formula will realize or refund later.
+			uint256 reservationRemainder = quoteFeeBeforeOpen - reservedOpenFee - remainingQuoteFee;
+			if (reservationRemainder > 0) {
+				LibAccount.releaseReservedOpenTradingFee(quote.partyA, reservationRemainder);
+				LibAccount.increasePartyAAllocatedBalance(quote.partyA, reservationRemainder, SharedEvents.BalanceChangeType.PLATFORM_FEE_IN);
+			}
 
 			if (newStatus == QuoteStatus.CANCELED) {
 				// send trading Fee back to partyA
@@ -246,10 +248,7 @@ library LibPartyBPositionsActions {
 		LibAccount.addToPartyBLockedBalances(quote);
 
 		// check leverage (is in 18 decimals)
-		require(
-			(quote.quantity * quote.openedPrice) / quote.lockedValues.totalForPartyA() <= SymbolStorage.layout().symbols[quote.symbolId].maxLeverage,
-			"PartyBFacet: Leverage is high"
-		);
+		require((quote.quantity * quote.openedPrice) / quote.lockedValues.totalForPartyA() <= symbol.maxLeverage, "PartyBFacet: Leverage is high");
 
 		accountLayout.balances[LibAccount.getFeeCollector(quote.affiliate)] += executedOpenFee;
 		quoteLayout.partyBPositionsCount[quote.partyB][address(0)] += 1;
@@ -257,7 +256,9 @@ library LibPartyBPositionsActions {
 		LibQuote.addToOpenPositions(quoteId);
 
 		if (!_instantOpenMode) {
-			LibAccount.realizeOpenTradingFee(quote.partyA, quoteFeeBeforeOpen - remainingQuoteFee);
+			// Only the filled portion is realized here; a partial open has already released the child's
+			// reservation remainder above, and the child keeps exactly `remainingQuoteFee` reserved.
+			LibAccount.realizeOpenTradingFee(quote.partyA, reservedOpenFee);
 		}
 		{
 			address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];

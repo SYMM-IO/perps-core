@@ -269,6 +269,11 @@ library AccountStorage {
 		///      Temporary state shared across settlement batches, not a balance or a dust counter.
 		///      Cleared on settlement completion, dispute override, takeover, and a new liquidation.
 		mapping(address => int256) partyALiquidationRoundingReduction;
+		/// @notice PartyBs holding a pending settlement bucket in the active PartyA liquidation, in bucket-open order.
+		/// @dev Lets the close that ends the liquidation walk every bucket and fix the settlement plan from on-chain totals,
+		///      without changing the public settlement-state tuple. Bounded by the PartyA's counterparties.
+		///      Cleared on settlement completion, takeover, and a new liquidation.
+		mapping(address => address[]) partyALiquidationPartyBs;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

@@ -179,7 +179,7 @@ export function getOpenFeeDeltaInsolvencyUpnl(
 }
 
 /** Mirrors LibQuote: limit quotes price off requestedOpenPrice, market quotes off marketPrice (reserved) or openedPrice (executed). */
-function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedBasis: boolean): bigint {
+export function getQuoteTradingFeeWithAmount(quote: QuoteStructOutput, amount: bigint, useExecutedBasis: boolean): bigint {
 	const tradingPrice =
 		quote.orderType === BigInt(OrderType.LIMIT)
 			? quote.requestedOpenPrice

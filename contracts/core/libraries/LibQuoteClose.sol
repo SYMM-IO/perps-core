@@ -52,25 +52,23 @@ library LibQuoteClose {
 		SymbolStorage.Layout storage symbolLayout = SymbolStorage.layout();
 		Quote storage quote = QuoteStorage.layout().quotes[quoteId];
 
-		require(
-			quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
-			"LibQuote: Low filled amount"
-		);
-		require(
-			quote.lockedValues.partyAmm == 0 || (quote.lockedValues.partyAmm * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
-			"LibQuote: Low filled amount"
-		);
-		require(
-			quote.lockedValues.partyBmm == 0 || (quote.lockedValues.partyBmm * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0,
-			"LibQuote: Low filled amount"
-		);
-		require((quote.lockedValues.lf * filledAmount) / LibQuote.quoteOpenAmount(quote) > 0, "LibQuote: Low filled amount");
-		LockedValues memory lockedValues = LockedValues(
-			quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / (LibQuote.quoteOpenAmount(quote))),
-			quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / (LibQuote.quoteOpenAmount(quote))),
-			quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / (LibQuote.quoteOpenAmount(quote))),
-			quote.lockedValues.partyBmm - ((quote.lockedValues.partyBmm * filledAmount) / (LibQuote.quoteOpenAmount(quote)))
-		);
+		uint256 openAmount = LibQuote.quoteOpenAmount(quote);
+		LockedValues memory lockedValues;
+		if (openAmount > 0) {
+			require(quote.lockedValues.cva == 0 || (quote.lockedValues.cva * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
+			require(quote.lockedValues.partyAmm == 0 || (quote.lockedValues.partyAmm * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
+			require(quote.lockedValues.partyBmm == 0 || (quote.lockedValues.partyBmm * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
+			require((quote.lockedValues.lf * filledAmount) / openAmount > 0, "LibQuote: Low filled amount");
+			lockedValues = LockedValues(
+				quote.lockedValues.cva - ((quote.lockedValues.cva * filledAmount) / openAmount),
+				quote.lockedValues.lf - ((quote.lockedValues.lf * filledAmount) / openAmount),
+				quote.lockedValues.partyAmm - ((quote.lockedValues.partyAmm * filledAmount) / openAmount),
+				quote.lockedValues.partyBmm - ((quote.lockedValues.partyBmm * filledAmount) / openAmount)
+			);
+		} else {
+			// A zero-quantity position stored before sendQuote rejected them: nothing is proportional, release all locks.
+			lockedValues = LockedValues(0, 0, 0, 0);
+		}
 
 		accountLayout.lockedBalances[quote.partyA].subQuote(quote).add(lockedValues);
 		LibAccount.updatePartyBLockedBalances(quote, lockedValues);
@@ -102,7 +100,11 @@ library LibQuoteClose {
 
 		if (settlement.fundingEnabled) LibQuoteFunding.emitQuoteFundingSettled(quoteId, settlement.allocationKey, settlement.fundingFee);
 
-		quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + filledAmount * closedPrice) / (quote.closedAmount + filledAmount);
+		uint256 totalClosedAmount = quote.closedAmount + filledAmount;
+		// A zero-quantity position has nothing to average; leave the price untouched so it can still be cleared.
+		if (totalClosedAmount > 0) {
+			quote.avgClosedPrice = (quote.avgClosedPrice * quote.closedAmount + filledAmount * closedPrice) / totalClosedAmount;
+		}
 
 		fee = (filledAmount * closedPrice * quote.closeFee) / 1e36;
 		LibAccount.decreasePartyAAllocatedBalance(quote.partyA, fee, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);

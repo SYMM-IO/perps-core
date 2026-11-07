@@ -139,9 +139,9 @@ contract MarginFacet is IMarginFacet, AccountLayerAccessibility, AccountLayerPau
 	// ==================== Internal Functions ====================
 
 	function _executeWithSymmioSigner(address symmio, address signer, bytes memory callData) private returns (bytes memory) {
-		(address previousSigner, bool wasTransientScoped) = LibAccountLayerSigner.clearSignerForExternalCall();
+		LibAccountLayerSigner.SuspendedSigner memory suspendedSigner = LibAccountLayerSigner.clearSignerForExternalCall();
 		bytes memory result = LibAccountLayerUtils.executeWithSignerOnCore(symmio, signer, callData);
-		LibAccountLayerSigner.restoreSignerAfterExternalCall(previousSigner, wasTransientScoped);
+		LibAccountLayerSigner.restoreSignerAfterExternalCall(suspendedSigner);
 		return result;
 	}
 }

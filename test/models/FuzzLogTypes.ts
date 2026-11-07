@@ -26,6 +26,17 @@ export type FuzzQueueSnapshot = {
 
 export type FuzzActionPhase = "queued" | "started" | "succeeded" | "failed" | "timed_out" | "settled_after_timeout"
 
+export const FUZZ_LIQUIDATION_OPERATIONS = [
+	"LIQUIDATE_PARTY_A_LATE",
+	"LIQUIDATE_PARTY_A_OVERDUE",
+	"LIQUIDATE_PARTY_A_OVERDUE_MIXED_SOLVER",
+	"LIQUIDATE_PARTY_A_DEFERRED",
+	"LIQUIDATE_PARTY_A_SNAPSHOT",
+	"LIQUIDATE_PARTY_B_WITH_ORACLE",
+	"LIQUIDATE_PARTY_A_PENDING",
+	"LIQUIDATE_PARTY_A_RANDOM",
+] as const
+
 export const FUZZ_CORNER_OPERATIONS = [
 	"FUNDING_CHARGE",
 	"SETTLE_UPNL",
@@ -48,7 +59,15 @@ export const FUZZ_CORNER_OPERATIONS = [
 	"INSTANT_LAYER_PARTY_B_RELAYS",
 ] as const
 
-export type FuzzCornerOperation = (typeof FUZZ_CORNER_OPERATIONS)[number]
+export type FuzzCornerOperation = (typeof FUZZ_CORNER_OPERATIONS)[number] | (typeof FUZZ_LIQUIDATION_OPERATIONS)[number]
+
+/** FUZZ_LIQUIDATION_SCENARIOS=all adds every liquidation scenario; =random adds only the model-checked random generator. */
+export function enabledFuzzCornerOperations(): FuzzCornerOperation[] {
+	const mode = process.env.FUZZ_LIQUIDATION_SCENARIOS
+	const extra: FuzzCornerOperation[] = mode === "all" ? [...FUZZ_LIQUIDATION_OPERATIONS] : mode === "random" ? ["LIQUIDATE_PARTY_A_RANDOM"] : []
+	return [...FUZZ_CORNER_OPERATIONS, ...extra]
+}
+export const ALL_FUZZ_CORNER_OPERATIONS = [...FUZZ_CORNER_OPERATIONS, ...FUZZ_LIQUIDATION_OPERATIONS] as const
 
 export type FuzzOperationPhase = "started" | "succeeded" | "skipped" | "failed"
 

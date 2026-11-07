@@ -96,6 +96,22 @@ FUZZ_SEED=layer-features FUZZ_ROOT_ACTIONS=38 npm run test:fuzz:ci
 npm run test:fuzz
 ```
 
+Every queued fuzz action is followed by an exact money-conservation check: the sum of all internal ledger buckets (free and allocated balances, PartyB buckets, reserve vaults, reimbursement, liquidation escrow, deferred balances, reserved open fees, withdraw lock) must equal the collateral the diamond holds. A violation fails the run with the seed, action index and a per-bucket breakdown. `FUZZ_CONSERVATION_ORACLE=off` disables the per-action check; the corner campaigns still verify it explicitly. `FUZZ_LIQUIDATION_SCENARIOS=all` adds LATE, OVERDUE, mixed-solver OVERDUE, deferred, snapshot and pending-quote PartyA liquidations plus an oracle-checked PartyB liquidation to the corner bag:
+
+```bash
+# Liquidation scenarios through settlement, each step conservation-checked
+FUZZ_LIQUIDATION_SCENARIOS=all npx hardhat test mocha --no-compile -- test/parallel/ConservationOracle.test.ts
+FUZZ_LIQUIDATION_SCENARIOS=all FUZZ_SEED=oracle-1 FUZZ_ROOT_ACTIONS=40 npm run test:fuzz:ci
+```
+
+`test/utils/FuzzLiquidationGenerator.ts` adds a seeded random PartyA liquidation checked against a reference model (`test/utils/LiquidationModel.ts`): one to three solvers, one to six legs with random sides, sizes, prices and locked values, mixed books, partial opens and closes, pending and locked quotes, a price chosen to land in the NORMAL, LATE or OVERDUE band, solver allocations shaped around their expected and actual amounts, oracle values perturbed inside and beyond the rounding allowance, and the legacy, deferred or snapshot entry flow. The model predicts the liquidation type, deficit, liquidator fee, dispute flag, every solver's expected and actual amounts and CVA, the settlement deltas in random batches, PartyA's final balances and the escrow; the generator also checks locked-balance sums and exact conservation after every step. Each mismatch is a named violation (`TYPE`, `DEFICIT`, `DISPUTE`, `STATE:n`, `PLAN_SUM`, `SOLVER_CAP:n`, `SOLVER_DELTA:n`, `PARTYA_FINAL`, `CONSERVATION`, …). `FUZZ_KNOWN_VIOLATIONS="PLAN_SUM<=15,CONSERVATION<=15"` tolerates already-reported wei-level leaks so larger ones still fail; unset means exact. `FUZZ_LIQUIDATION_SCENARIOS=random` puts only this generator into the corner bag.
+
+```bash
+# 100 seeded random liquidations against the model; LIQ_ONLY=33,97 replays selected iterations
+LIQ_SEED=sweep2 LIQ_ITERATIONS=100 npx hardhat test mocha --no-compile -- test/parallel/LiquidationModelFuzz.test.ts
+FUZZ_LIQUIDATION_SCENARIOS=random FUZZ_SEED=random-1 FUZZ_ROOT_ACTIONS=40 npm run test:fuzz:ci
+```
+
 The default three users exercise all three routes. `FUZZ_USER_COUNT=1` keeps only the direct actor; `2` also includes AccountLayer. Layer campaigns remain in the corner-operation bag regardless of actor count. `FUZZ_CORNER_EVERY=0` disables that bag. Bounded runs that schedule at least nineteen corner campaigns require every family to succeed; operation counters appear in the fuzz logs and dashboard. The seed varies routes, amounts, directions, delays and isolation keys. Focused integration tests cover both template accounting modes and both execution-context protocols; a campaign counter records its family, not every parameter combination.
 
 ## Deployment and operations

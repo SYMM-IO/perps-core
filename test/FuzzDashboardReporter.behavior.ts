@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { FuzzModelEvent, FuzzQueueSnapshot, FuzzRootResult, FuzzRunConfig, FuzzRunResult } from "./models/FuzzLogTypes.js"
-import { FUZZ_CORNER_OPERATIONS } from "./models/FuzzLogTypes.js"
+import { ALL_FUZZ_CORNER_OPERATIONS as FUZZ_CORNER_OPERATIONS } from "./models/FuzzLogTypes.js"
 import {
 	createFuzzDashboardRecorderFromEnv,
 	type FuzzDashboardFinal,
@@ -294,7 +294,7 @@ export function shouldBehaveLikeFuzzDashboardReporter(): void {
 		expect(report.targets.quoteStates).to.deep.equal([...FUZZ_QUOTE_STATUS_NAMES])
 		expect(report.targets.quoteStates).to.have.length(11)
 		expect(report.targets.cornerOperations).to.deep.equal([...FUZZ_CORNER_OPERATIONS])
-		expect(report.targets.cornerOperations).to.have.length(19)
+		expect(report.targets.cornerOperations).to.have.length(27)
 		const [failure] = report.run.failures
 		// The run stops inside the cycle after the last completed one, so root is the completed count.
 		expect(failure).to.include({ boundary: "execution", root: 2 })

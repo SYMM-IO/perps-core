@@ -1,6 +1,6 @@
 import { expect } from "chai"
 
-import { FUZZ_CORNER_OPERATIONS, type FuzzModelEvent } from "./models/FuzzLogTypes.js"
+import { FUZZ_CORNER_OPERATIONS, FUZZ_LIQUIDATION_OPERATIONS, type FuzzModelEvent } from "./models/FuzzLogTypes.js"
 import { assertRequiredFuzzOperationCoverage, FuzzOperationCoverageTracker, type FuzzOperationCoverage } from "./utils/FuzzOperationCoverage.js"
 
 type OperationEvent = Extract<FuzzModelEvent, { type: "operation" }>
@@ -24,6 +24,7 @@ export function shouldBehaveLikeFuzzOperationCoverage(): void {
 				failed: 0,
 			},
 			byOperation: {
+				...Object.fromEntries(FUZZ_LIQUIDATION_OPERATIONS.map(operation => [operation, { attempted: 0, succeeded: 0, skipped: 0, failed: 0 }])),
 				FUNDING_CHARGE: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
 				SETTLE_UPNL: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
 				FORCE_CLOSE: { attempted: 0, succeeded: 0, skipped: 0, failed: 0 },
