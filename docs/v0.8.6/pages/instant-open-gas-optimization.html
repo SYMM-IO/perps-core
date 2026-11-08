@@ -17,10 +17,12 @@
 		</script>
 		<link rel="stylesheet" href="../assets/v086-docs.css" />
 		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<link rel="stylesheet" href="../assets/instant-open-guide.css" />
 		<script src="../assets/v086-docs.js" defer></script>
 		<script src="../../assets/docs-portal.js" defer></script>
+		<script src="../assets/instant-open-guide.js" defer></script>
 	</head>
-	<body class="doc-page" data-version="0.8.6">
+	<body class="doc-page gas-guide" data-version="0.8.6">
 		<a class="skip-link" href="#full-document">Skip to document</a>
 
 		<header class="docs-header">
@@ -40,9 +42,9 @@
 
 		<div class="reader-shell">
 			<div class="rail-sections-source" data-rail-sections hidden>
-				<a class="toc-link level-2" href="#summary">Summary</a>
+				<a class="toc-link level-2" href="#summary">The short version</a>
 				<a class="toc-link level-2" href="#operation-compression">Two operations instead of four</a>
-				<a class="toc-link level-3" href="#old-flow">The existing four-operation template</a>
+				<a class="toc-link level-3" href="#old-flow">Compare the two templates</a>
 				<a class="toc-link level-3" href="#lock-and-open">Combined core entry</a>
 				<a class="toc-link level-3" href="#call-with-margin">Combined AccountLayer entry</a>
 				<a class="toc-link level-3" href="#two-op-template">The compact template</a>
@@ -62,29 +64,55 @@
 				<header class="reader-hero">
 					<div class="reader-title-row">
 						<div>
-							<h1>InstantOpen Gas Optimization</h1>
+							<h1>Instant<wbr />Open Gas Optimization</h1>
 							<p class="hero-copy">
-								v0.8.6 lowers atomic InstantOpen gas in two independent ways. It adds an opt-in two-operation
-								<code>InstantOpenCompact</code> template beside the existing four-operation template, while EIP-1153 transient storage
-								removes persistent writes for temporary batch authority. The focused compact-template benchmark measures roughly
-								<strong>126k gas saved</strong> and enforces a 120k regression floor.
+								The same atomic trade, with less execution overhead. v0.8.6 combines signed operations and moves temporary batch
+								authority into transient storage.
+							</p>
+							<dl class="gas-facts">
+								<div>
+									<dt>Signed operations</dt>
+									<dd>4 <span aria-label="to">→</span> 2</dd>
+								</div>
+								<div>
+									<dt>Compact benchmark saving</dt>
+									<dd>≈126k <span>gas</span></dd>
+								</div>
+								<div>
+									<dt>Chain requirement</dt>
+									<dd>Cancun <span>or later</span></dd>
+								</div>
+							</dl>
+							<p class="gas-benchmark-note">
+								The saving is from the focused compact-template benchmark, with a 120k gas regression floor. It is not a per-trade
+								guarantee or a separate measurement of transient-storage savings.
 							</p>
 						</div>
 					</div>
 				</header>
 
 				<article class="doc-article" id="full-document" tabindex="-1">
-					<h2 id="summary">Summary</h2>
-					<p>
-						The existing atomic InstantOpen template crosses InstantLayer four times: the user funds the next virtual account and sends
-						the quote, then the solver locks the quote and opens the position. v0.8.6 adds an optional
-						<code>InstantOpenCompact</code> template that joins each pair, reducing the same trade to two signed operations. The
-						four-operation template and its individual calls remain available.
-					</p>
-					<p>
-						Independently, temporary batch authority now lives in <a href="#transient">EIP-1153 transient storage</a> instead of being
-						written to persistent fields around every batch. The trading flow stays the same while its execution overhead falls.
-					</p>
+					<h2 id="summary">The short version</h2>
+					<div class="gas-overview">
+						<p>
+							<strong>Fewer signed operations.</strong> Opt in to <code>InstantOpenCompact</code> to combine the user’s fund-and-quote
+							steps and the solver’s lock-and-open steps.
+						</p>
+						<p>
+							<strong>Cheaper temporary authority.</strong> EIP-1153 transient storage holds the batch context and signer without
+							persistent writes around every batch.
+						</p>
+						<p>
+							<strong>Existing paths stay available.</strong> The four-operation template remains supported. This build requires a
+							Cancun-compatible chain; changing selectors does not roll back storage.
+						</p>
+					</div>
+					<nav class="gas-jump-links" aria-label="Guide sections">
+						<a href="#operation-compression">Compare the operations</a>
+						<a href="#transient">Understand the context</a>
+						<a href="#suspend-overview">Follow a hook call</a>
+						<a href="#compat">Check compatibility</a>
+					</nav>
 
 					<h2 id="operation-compression">Two operations instead of four</h2>
 					<p>
@@ -97,17 +125,31 @@
 						resolve to that same key.
 					</p>
 
-					<h3 id="old-flow">The existing four-operation template</h3>
-					<p>
-						The existing <code>InstantOpen</code> template executed by <code>InstantLayer.executeTemplate</code> carries four signed
-						operations:
-					</p>
-					<ol>
-						<li><code>addMarginToNextVA</code>, signed by the user and sent to the AccountLayer.</li>
-						<li><code>sendQuote</code>, signed by the user and routed through the AccountLayer to core.</li>
-						<li><code>lockQuote</code>, signed by the solver with the quote id injected from the send result.</li>
-						<li><code>openPosition</code>, signed by the solver with the quote id injected from the send result.</li>
-					</ol>
+					<h3 id="old-flow">Compare the two templates</h3>
+					<figure class="gas-comparison" aria-labelledby="gas-comparison-title">
+						<figcaption id="gas-comparison-title">One atomic trade. Two ways to submit it.</figcaption>
+						<div class="gas-flow-grid">
+							<section class="gas-flow" aria-label="Existing template">
+								<h4>Existing <code>InstantOpen</code></h4>
+								<p class="gas-flow-count">4 signed operations</p>
+								<ol>
+									<li><span>User · fund margin</span><code>addMarginToNextVA</code></li>
+									<li><span>User · send quote</span><code>sendQuote</code></li>
+									<li><span>Solver · lock quote</span><code>lockQuote</code></li>
+									<li><span>Solver · open position</span><code>openPosition</code></li>
+								</ol>
+							</section>
+							<section class="gas-flow gas-flow-compact" aria-label="Compact template">
+								<h4>Opt-in <code>InstantOpenCompact</code></h4>
+								<p class="gas-flow-count">2 signed operations</p>
+								<ol>
+									<li><span>User · fund margin + send quote</span><code>_callWithMargin</code></li>
+									<li><span>Solver · lock + open position</span><code>lockAndOpenPosition</code></li>
+								</ol>
+								<p class="gas-flow-note">The quote ID passes from the user operation into the solver operation.</p>
+							</section>
+						</div>
+					</figure>
 					<p>Each operation carries fixed per-operation overhead regardless of what it does:</p>
 					<ul>
 						<li>An <code>operationUsageCount</code> read/write for replay protection, creating a slot on first use.</li>
@@ -123,13 +165,13 @@
 						preserve the behavior of each pair.
 					</p>
 
-					<h3 id="lock-and-open">Combined core entry: <code>lockAndOpenPosition</code></h3>
+					<h3 id="lock-and-open">Combined core entry <code>lockAndOpenPosition</code></h3>
 					<p>
 						The solver&rsquo;s compact operation first runs the existing <code>lockQuote</code> path. If the lock succeeds, it continues
 						directly into <code>openPosition</code>. Both paths are reached through self-delegatecall, so their guards, hooks, post-hook
 						binding checks, and events still run in the same order. The combined entrypoint is:
 					</p>
-					<pre><code>function lockAndOpenPosition(
+					<pre><code class="language-solidity">function lockAndOpenPosition(
     uint256 quoteId,
     uint256 filledAmount,
     uint256 openedPrice,
@@ -155,13 +197,13 @@
 						user&rsquo;s two operations are compressed in the same way on the AccountLayer side.
 					</p>
 
-					<h3 id="call-with-margin">Combined AccountLayer entry: <code>_callWithMargin</code></h3>
+					<h3 id="call-with-margin">Combined AccountLayer entry <code>_callWithMargin</code></h3>
 					<p>
 						The user&rsquo;s compact operation enters AccountLayer once. It resolves the next virtual account from the supplied isolation
 						type and symbol, transfers margin to that account, and then continues through the existing <code>_call</code> path. The
 						combined entrypoint is:
 					</p>
-					<pre><code>function _callWithMargin(
+					<pre><code class="language-solidity">function _callWithMargin(
     address account,
     VirtualAccountIsolationType isolationType,
     uint256 symbolId,
@@ -238,16 +280,16 @@
 					<p>
 						The core live word uses its lowest three bits for one source marker and two authority flags. Bits 3 through 255 remain zero.
 					</p>
-					<div class="table-wrap">
+					<div class="table-wrap" role="region" tabindex="0" aria-label="Core live execution-context bits">
 						<table>
 							<caption>
 								Core live execution-context word
 							</caption>
 							<thead>
 								<tr>
-									<th>Bit</th>
-									<th>Constant</th>
-									<th>Meaning</th>
+									<th scope="col">Bit</th>
+									<th scope="col">Constant</th>
+									<th scope="col">Meaning</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -280,7 +322,7 @@
 						The two core mode readers, <code>isCallFromInstantLayer()</code> and <code>isInstantOpenMode()</code>, consult the live
 						transient word first and read their persistent fields only when no transient scope is active:
 					</p>
-					<pre><code>function isCallFromInstantLayer() internal view returns (bool) {
+					<pre><code class="language-solidity">function isCallFromInstantLayer() internal view returns (bool) {
 		uint256 context = _instantLayerContext();
 		if (context &amp; INSTANT_CONTEXT_ACTIVE != 0) return context &amp; CALL_FROM_INSTANT_LAYER != 0;
 		return GlobalAppStorage.layout().callFromInstantLayer;
@@ -296,9 +338,20 @@
 						bit 0 only. <code>ControlFacet.setSigner</code> uses that narrower reader to avoid selecting transient signer storage when no
 						transient scope exists to own it.
 					</p>
-					<p>The live-word panel applies the same source rule across the no-scope, routing-only, and InstantOpen states.</p>
-
-					<section class="tool-panel" data-word-reader-tool="live" aria-label="Interactive live context word reader"></section>
+					<section class="tool-panel" data-word-reader-tool="live" aria-label="Interactive live context word reader">
+						<p>
+							Live examples: 0 reads persistent fields; 3 enables routing; 7 enables routing and InstantOpen. Enable JavaScript to
+							inspect each bit.
+						</p>
+					</section>
+					<aside class="gas-rule" aria-label="Live context examples">
+						<strong>Read bit 0 first.</strong>
+						<ul>
+							<li><code>0</code> · No transient scope. Read the persistent compatibility fields.</li>
+							<li><code>3</code> · Transient scope active, routing enabled, InstantOpen mode off.</li>
+							<li><code>7</code> · Transient scope active, routing and InstantOpen mode enabled.</li>
+						</ul>
+					</aside>
 
 					<h3 id="signer">Why the transient signer uses two slots</h3>
 					<p>
@@ -347,52 +400,25 @@
 						reentrancy checks still apply. The figure follows the full hook boundary from suspension to restoration:
 					</p>
 
-					<figure class="scope-timeline" aria-labelledby="scope-timeline-title">
+					<figure class="gas-hook-flow" aria-labelledby="scope-timeline-title">
 						<figcaption>
-							<strong id="scope-timeline-title">The batch scope spans the hook call; its authority does not</strong>
-							<span>Authority is cleared before control leaves trusted code and restored only after validation.</span>
+							<strong id="scope-timeline-title">The batch scope spans the hook. Its authority does not.</strong
+							><span>Read in order: before the call, during the hook, after a clean return.</span>
 						</figcaption>
-						<div class="scope-timeline-scroll">
-							<div
-								class="scope-timeline-chart"
-								role="img"
-								aria-label="Batch authority is active in trusted protocol code. Before a hook runs, core clears the signer, snapshots the routing and InstantOpen context, and clears the live context. After the hook returns, core verifies and restores the context, then verifies and restores the signer."
-							>
-								<div class="scope-timeline-row">
-									<strong class="scope-timeline-label">Batch authority</strong>
-									<div class="scope-timeline-bars">
-										<span class="scope-timeline-bar is-active"><strong>Active</strong></span>
-										<span class="scope-timeline-bar is-suspended"
-											><strong>Cleared for hook</strong><small>No outer batch authority</small></span
-										>
-										<span class="scope-timeline-bar is-active"><strong>Restored</strong></span>
-									</div>
-								</div>
-								<div class="scope-timeline-boundary-row" aria-hidden="true">
-									<span></span>
-									<div class="scope-timeline-boundaries">
-										<span></span>
-										<span class="scope-timeline-boundary">Clear signer, then snapshot + clear context &darr;</span>
-										<span class="scope-timeline-boundary">&uarr; Verify + restore context, then signer</span>
-									</div>
-								</div>
-								<div class="scope-timeline-row">
-									<strong class="scope-timeline-label">Code running</strong>
-									<div class="scope-timeline-runners">
-										<span class="scope-timeline-run"><strong>Trusted protocol code</strong></span>
-										<span class="scope-timeline-run is-external"
-											><strong>External hook</strong><small>Callbacks have no outer batch authority</small></span
-										>
-										<span class="scope-timeline-run"><strong>Trusted protocol code</strong></span>
-									</div>
-								</div>
-								<div class="scope-timeline-time" aria-hidden="true">
-									<span>Before hook</span>
-									<strong>Time &rarr;</strong>
-									<span>After return</span>
-								</div>
-							</div>
-						</div>
+						<ol>
+							<li>
+								<strong>1. Suspend</strong
+								><span>Trusted protocol code saves the signer and context, then clears their effective authority.</span>
+							</li>
+							<li>
+								<strong>2. Run the hook</strong
+								><span>The external hook has no outer batch authority. The snapshot is saved data only.</span>
+							</li>
+							<li>
+								<strong>3. Validate + restore</strong
+								><span>Check the return state, restore the context, then restore the signer. A failed check reverts.</span>
+							</li>
+						</ol>
 					</figure>
 
 					<p>
@@ -442,14 +468,15 @@
 
 					<h4>The scope and the hook context travel with the signer</h4>
 					<p>
-						A trusted session has two parts: the raw signer, and the account scope that confines a delegated signer to one account family
-						(see <a href="delegation-account-scope.html">Delegation Account Scope</a>). <code>clearSignerForExternalCall</code> returns
-						both together with the storage mechanism that owned them, as a <code>SuspendedSigner</code>, and
-						<code>restoreSignerAfterExternalCall</code> writes all three back: the transient signer value, its marker and its scope slot
-						for a transient session, or <code>globalSigner</code> and <code>scopedAccount</code> for a persistent one. If Bob&rsquo;s
-						nested session wrote its own scope into the shared slot, Alice still returns next to the scope she was granted, not next to
-						Bob&rsquo;s or an empty one. All seven suspension sites in the CoreFacet, the MarginFacet, the safe-call and safe-ERC20
-						libraries and the hook caller use this shape.
+						An AccountLayer trusted session has two parts: the raw signer, and the account scope that confines a delegated signer to one
+						account family (see <a href="delegation-account-scope.html">Delegation Account Scope</a>).
+						<code>clearSignerForExternalCall</code> returns both together with the storage mechanism that owned them, as a
+						<code>SuspendedSigner</code> from <code>LibAccountLayerSigner</code>, and <code>restoreSignerAfterExternalCall</code> writes
+						all three back: the transient signer value, its marker and its scope slot for a transient session, or
+						<code>globalSigner</code> and <code>scopedAccount</code> for a persistent one. If Bob&rsquo;s nested session wrote its own
+						scope into the shared slot, Alice still returns next to the scope she was granted, not next to Bob&rsquo;s or an empty one.
+						All seven suspension sites in the CoreFacet, the MarginFacet, the safe-call and safe-ERC20 libraries and the hook caller use
+						this shape.
 					</p>
 					<p>
 						The hook caller treats <code>hookContext</code>, the account, affiliate and operation it publishes for the hook to read, the
@@ -495,19 +522,31 @@
 						To restore a transient snapshot, the library needs only the original live-word bits. <code>INSTANT_CONTEXT_FLAGS</code>
 						combines the three live constants:
 					</p>
-					<pre><code>INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER | INSTANT_OPEN_MODE</code></pre>
+					<pre><code class="language-solidity">INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER | INSTANT_OPEN_MODE</code></pre>
 					<p>
 						The resulting mask has bits 0 through 2 set. <code>snapshot &amp; INSTANT_CONTEXT_FLAGS</code> removes the snapshot markers in
 						bits 254 through 255 and leaves the original live word.
 					</p>
-					<pre><code>if (snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_TRANSIENT != 0) {
+					<pre><code class="language-solidity">if (snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_TRANSIENT != 0) {
 	_setInstantLayerContext(snapshot &amp; INSTANT_CONTEXT_FLAGS);
 } else {
 	globalLayout.callFromInstantLayer = snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_CALL != 0;
 	globalLayout.instantOpenMode = snapshot &amp; EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_OPEN != 0;
 }</code></pre>
 
-					<section class="tool-panel" data-word-reader-tool="snapshot" aria-label="Interactive snapshot word reader"></section>
+					<section class="tool-panel" data-word-reader-tool="snapshot" aria-label="Interactive snapshot word reader">
+						<p>
+							A transient snapshot carries bits 255, 254, 2, 1 and 0. A persistent snapshot carries bits 255, 2 and 1. Enable JavaScript
+							to compare the words.
+						</p>
+					</section>
+					<aside class="gas-rule">
+						<strong>Example: <code>0xc000…0007</code></strong>
+						<p>
+							The high <code>c</code> sets snapshot bits 255 and 254. The low <code>7</code> preserves live bits 0, 1 and 2. This is a
+							saved transient InstantOpen context, not a live authority word.
+						</p>
+					</aside>
 					<p>
 						Before writing a snapshot back, <code>restoreExecutionContextAfterExternalCall</code> requires the transient live word and
 						both persistent mode fields to be empty. Suspension clears the active source; transient-scope entry guards guarantee the
@@ -520,12 +559,13 @@
 						router&rsquo;s snapshot, or suspending twice before restore.
 					</p>
 					<p>
-						The caller examples in the snapshot-slot panel use the same namespace with three illustrative addresses. Each address produces
-						a different slot, so one router cannot reach another router&rsquo;s saved context.
+						The same namespace produces a different slot for each caller address, so one router cannot reach another router&rsquo;s saved
+						context.
 					</p>
 
-					<section class="tool-panel" data-slot-address-tool aria-label="Caller-scoped snapshot slots"></section>
-
+					<section class="tool-panel" data-slot-address-tool aria-label="Caller-scoped snapshot slots">
+						<p>Snapshot slots use one namespace and the caller address; different callers resolve to different slots.</p>
+					</section>
 					<h3 id="lifecycle">Closing the batch scope</h3>
 					<p>
 						A batch opens one transient scope. <code>beginInstantLayerExecution</code> rejects a second live scope with
@@ -538,9 +578,9 @@
 						signer would otherwise remain readable for the rest of the transaction with no active scope responsible for it.
 					</p>
 					<p>
-						The lifecycle panel shows the successful path from scope creation through signer cleanup and final close. At the hook
-						boundary, the live word becomes <code>0</code> while the trusted boundary holds the snapshot. A clean return restores the
-						context and signer; a callback path that leaves either kind of authority behind stops at the corresponding restoration error.
+						The successful lifecycle runs from scope creation through signer cleanup and final close. At the hook boundary, the live word
+						becomes <code>0</code> while the trusted boundary holds the snapshot. A clean return restores the context and signer; a
+						callback path that leaves either kind of authority behind stops at the corresponding restoration error.
 					</p>
 					<p>
 						The historical persistent-field path begins from pre-existing <code>GlobalAppStorage</code> values and applies the same
@@ -548,9 +588,25 @@
 						next.
 					</p>
 
-					<section class="tool-panel" data-context-lifecycle-tool aria-label="Execution context lifecycle walkthrough"></section>
+					<aside class="gas-rule">
+						<strong>Cleanup order</strong>
+						<p>
+							Open the scope → execute operations → clear the per-operation signer → close the scope. Hook suspension is temporary;
+							closing the batch is final.
+						</p>
+					</aside>
 
+					<section class="tool-panel" data-context-lifecycle-tool aria-label="Execution context lifecycle walkthrough">
+						<p>
+							Open the scope, install signer, suspend around the hook, validate and restore, clear signer, then close the scope. Enable
+							JavaScript to step through clean and rejected callbacks.
+						</p>
+					</section>
 					<h2 id="compat">Compatibility and pre-Cancun porting</h2>
+					<aside class="gas-rule">
+						<strong>The runtime switch changes selectors, not storage.</strong>
+						<p>Both selector sequences use transient storage in this build. A pre-Cancun chain needs a separate build.</p>
+					</aside>
 					<h3>Keeping existing deployments compatible</h3>
 					<p>
 						Existing deployments preserve their InstantLayer address because it is the EIP-712 verifying contract. Their historical
