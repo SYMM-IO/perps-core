@@ -191,8 +191,9 @@
 					<h3 id="doc-cross-party-b-allocation-and-deallocation-in-cross-mode">Allocation and Deallocation in Cross Mode</h3>
 					<p>
 						When cross mode is active, <code>allocateForPartyB</code> requires <code>partyA == address(0)</code>. Calling with any other
-						<code>partyA</code> address reverts with <code>"Cross partyB mode is active"</code>. <code>transferAllocation</code> (which
-						moves funds between per-PartyA buckets) reverts entirely in cross mode since it is meaningless when everything is pooled.
+						<code>partyA</code> address reverts with <code>"PartyBFacet: Cross partyB mode is active"</code>.
+						<code>transferAllocation</code> (which moves funds between per-PartyA buckets) reverts entirely in cross mode since it is
+						meaningless when everything is pooled.
 					</p>
 					<p><code>deallocateForPartyB</code> supports two modes in cross:</p>
 					<ul>
@@ -252,8 +253,9 @@
 						strictly necessary until the settlement completes.
 					</p>
 					<p>
-						The reserve only applies to cross bucket deallocation (<code>partyA == address(0)</code>). Legacy per-PartyA drains are
-						already protected by the <code>notLiquidatedPartyA</code> modifier on <code>deallocateForPartyB</code>.
+						The reserve is subtracted for <strong>every cross-mode deallocation</strong>. Cross-bucket deallocation requires the resulting
+						effective availability to cover <code>amount</code>; a legacy per-PartyA drain only requires it to remain nonnegative. The
+						separate <code>notLiquidatedPartyA</code> modifier also blocks a drain for the supplied liquidating PartyA.
 					</p>
 					<h3 id="doc-cross-party-b-dual-tracking-of-locked-balances">Dual-Tracking of Locked Balances</h3>
 					<p>
@@ -306,7 +308,8 @@
 					</ul>
 					<h3 id="doc-cross-party-b-nonce-increment">Nonce Increment</h3>
 					<p>
-						Even though signatures ignore the nonce, the on-chain nonce still increments on every state-changing operation.
+						Operations that call the nonce helpers increment the stored counters even when their signatures use a zero cross nonce.
+						Allocation and deallocation do not call these helpers and do not increment those counters.
 						<code>LibAccount.increasePartyBNonce</code> always increments <strong>both</strong> the per-PartyA nonce and the cross nonce:
 					</p>
 					<pre><code class="language-solidity">function increasePartyBNonce(address partyB, address partyA) internal {
@@ -315,8 +318,8 @@
 }
 </code></pre>
 					<p>
-						This keeps the cross nonce as a monotonically increasing counter that reflects total state changes, even though it is not
-						checked in most signatures.
+						This keeps a shared counter for operations that use the helper; it is not a version counter for every balance mutation.
+						Deallocation checks the actual cross nonce but does not consume it by incrementing it.
 					</p>
 					<h3 id="doc-cross-party-b-unified-settlement-nonce">Unified Settlement Nonce</h3>
 					<p>The unified settlement signature (<code>verifyUnifiedSettlement</code>) handles nonces differently depending on mode:</p>
@@ -549,7 +552,7 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 								uPnL-based solvency check. If PartyB is insolvent with uPnL, retries with <code>upnlPartyB = 0</code> (ignoring uPnL).
 								If the close is possible ignoring uPnL (i.e., the allocated balance minus locked balances covers the cost), the
 								position closes and is marked <code>CLOSED_INSOLVENT</code>. If even ignoring uPnL is insufficient, the transaction
-								reverts with <code>"Insufficient balance"</code>.
+								reverts with <code>"ForceActionsFacet: Insufficient balance"</code>.
 								<strong>PartyB is never liquidated during cross-mode force close</strong> — the position either closes or the
 								transaction reverts.
 							</p>
@@ -588,9 +591,10 @@ quotesSettlementsData[] — per-quote data with partyAIndex mapping each quote t
 					<p>
 						To address this, liquidation of cross-enabled PartyBs is handled by the <strong>ClearingHouse</strong>, a privileged off-chain
 						Symmio entity. The ClearingHouse computes liquidation outcomes off-chain and executes balance updates on-chain through the
-						<code>ClearingHouseFacet</code>. All functions require the <code>CLEARING_HOUSE_ROLE</code>. The ClearingHouse is fully
-						trusted — <code>liquidateCrossPartyB</code> takes the UPNL and liquidation parameters directly from the ClearingHouse without
-						requiring a Muon oracle signature.
+						<code>ClearingHouseFacet</code>. The liquidation, takeover and escrow methods require <code>CLEARING_HOUSE_ROLE</code>;
+						<code>softPartyBLiquidation</code> instead requires <code>SOFT_LIQUIDATOR_ROLE</code>. The ClearingHouse is fully trusted —
+						<code>liquidateCrossPartyB</code> takes the UPNL and liquidation parameters directly from the ClearingHouse without requiring
+						a Muon oracle signature.
 					</p>
 					<p>The ClearingHouse handles two distinct liquidation flows:</p>
 					<ol>

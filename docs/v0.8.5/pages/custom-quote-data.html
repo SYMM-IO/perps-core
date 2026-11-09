@@ -185,8 +185,8 @@ async function listenToSendQuoteEvents(contract: ethers.Contract) {
     // Decode the params using standard ABI decoder
     const params = decodeSendQuoteParamsData(paramsData);
     console.log("  symbolId:", params.symbolId.toString());
-    console.log("  positionType:", params.positionType === 0 ? "LONG" : "SHORT");
-    console.log("  orderType:", params.orderType === 0 ? "LIMIT" : "MARKET");
+    console.log("  positionType:", params.positionType === 0n ? "LONG" : "SHORT");
+    console.log("  orderType:", params.orderType === 0n ? "LIMIT" : "MARKET");
     console.log("  price:", ethers.formatUnits(params.price, 18));
     console.log("  quantity:", ethers.formatUnits(params.quantity, 18));
 

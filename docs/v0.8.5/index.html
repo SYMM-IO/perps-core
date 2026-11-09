@@ -51,16 +51,18 @@
 		<main class="index-shell version-catalog-shell" id="docs">
 			<div class="catalog-toolbar" role="search">
 				<label class="catalog-search-wrap">
-					<span class="visually-hidden">Search v0.8.5 chapters</span>
-					<input
-						class="catalog-search"
-						type="search"
-						placeholder="Search chapters"
-						data-catalog-search
-						autocomplete="off"
-						aria-describedby="catalog-result-count"
-					/>
-					<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
+					<span class="catalog-search-label">Search v0.8.5 chapters</span>
+					<span class="catalog-search-control">
+						<input
+							class="catalog-search"
+							type="search"
+							placeholder="e.g., liquidation"
+							data-catalog-search
+							autocomplete="off"
+							aria-describedby="catalog-result-count"
+						/>
+						<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
+					</span>
 				</label>
 				<span class="catalog-count" id="catalog-result-count" data-catalog-count>32 chapters</span>
 			</div>
@@ -93,12 +95,12 @@
 						<span class="doc-list-main">
 							<span class="category">Account &amp; Fund Management</span>
 							<strong>New Withdraw System</strong>
-							<span
-								>Complete replacement of the old single-step withdrawal. Users can now split a withdrawal across multiple chains and
-								providers in a single atomic request. Express providers front the funds immediately for a fee, virtual providers
-								deliver cross-chain, and both can be combined. Includes cooldown management, speed-up approvals for whitelisted users,
-								cancellation flows with blackout windows, and admin force-cancel capabilities.</span
-							>
+							<span>
+								A multi-part withdrawal path with classic, virtual and express-provider callbacks, configurable cooldowns, speed-up
+								approval and cancellation. One master provider coordinates a provider-managed request. The legacy withdrawal APIs
+								remain separately controlled by their deprecation flag; integrations must follow the documented part and provider
+								constraints.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/virtual-funds.html" data-catalog-item>
 						<span class="doc-list-index">03</span>
@@ -129,14 +131,12 @@
 						<span class="doc-list-main">
 							<span class="category">Account &amp; Fund Management</span>
 							<strong>Express Deposit &amp; Withdrawal System</strong>
-							<span
-								>Lets affiliates route a configurable percentage of user deposits into an express provider contract, building a
-								liquidity pool that funds faster withdrawals. Users get up to three options: instant (~20 seconds) when liquidity is
-								available, earliest-available (somewhere between now and 12 hours) based on projected liquidity inflows, or the
-								standard 12-hour cooldown as a guaranteed fallback. The system coordinates an Express Contract (per-chain liquidity
-								management with bucket-based scheduling), a Virtual Contract (per-frontend deposit-funded pool), and an off-chain bot
-								for risk assessment and processing.</span
-							>
+							<span>
+								AccountLayer implements the deposit split used by this provider-side design proposal. The proposed Express/Virtual
+								contracts and bot sketch fast, earliest-available and standard-cooldown offers, but their scheduling, option
+								generation and signing are not implemented in the pinned v0.8.5 source. The 12-hour cooldown is a scenario assumption,
+								not a guaranteed deployed fallback.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/safe-deallocate.html" data-catalog-item>
 						<span class="doc-list-index">06</span>
@@ -178,11 +178,11 @@
 						<span class="doc-list-main">
 							<span class="category">Trading Execution</span>
 							<strong>Oracle-Less Trading</strong>
-							<span
-								>When a PartyA trades exclusively with a single PartyB, Muon oracle signatures become unnecessary overhead. PartyA can
-								bind to that PartyB, and from that point all signature checks are bypassed. Unbinding requires a cooldown period to
-								prevent abuse. Designed for low-latency trading environments where the solver is the sole trusted counterparty.</span
-							>
+							<span>
+								PartyA can bind to a bindable PartyB so covered trading paths skip Muon verification. Account ownership, delegated
+								authority and operator permissions still apply. Unbinding has a cooldown; the mode suits integrations that
+								deliberately trust the bound solver for trading prices and risk.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/batch-positions.html" data-catalog-item>
 						<span class="doc-list-index">09</span>
@@ -258,24 +258,22 @@
 						<span class="doc-list-main">
 							<span class="category">Risk &amp; Liquidation</span>
 							<strong>Soft Liquidation</strong>
-							<span
-								>A tiered warning system before hard liquidation. As a PartyB&#x27;s balance approaches the danger zone, the
-								ClearingHouse can issue on-chain penalties at configurable thresholds — giving the solver time to top up funds instead
-								of immediately closing all positions and disrupting every user on every frontend.</span
-							>
+							<span>
+								Allows an authorized soft liquidator to penalize a PartyB before hard liquidation, under the supplied UPNL and
+								on-chain penalty checks. Operational warning tiers and when to trigger them are off-chain policy; the contract does
+								not run an automatic tier scheduler.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/adl-close.html" data-catalog-item>
 						<span class="doc-list-index">15</span>
 						<span class="doc-list-main">
 							<span class="category">Risk &amp; Liquidation</span>
 							<strong>ADL Close (Auto-Deleveraging)</strong>
-							<span
-								>Allows solvers to unilaterally close positions to reduce risk exposure without needing emergency mode or delisted
-								symbols. No solvency checks are enforced on PartyB during ADL, which means it works even when the solver is
-								underwater. To prevent abuse, PartyBs must deposit [pledge collateral](pledge.md) that can be slashed if ADL is
-								misused. Emits mock events that mirror the normal close flow so indexers and UIs don&#x27;t need special
-								handling.</span
-							>
+							<span>
+								Allows solvers to close positions through the ADL path without requiring emergency mode or delisted symbols. PartyB
+								solvency is not checked by that path. Pledge collateral can support governance enforcement, but the ADL call does not
+								require a pledge balance on-chain. Close-flow events let indexers follow the position lifecycle.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/pledge.html" data-catalog-item>
 						<span class="doc-list-index">16</span>
@@ -319,14 +317,11 @@
 						<span class="doc-list-main">
 							<span class="category">Risk &amp; Liquidation</span>
 							<strong>Liquidation Escrow</strong>
-							<span
-								>Prevents PartyA from recovering pending trading fees through the reimbursement path when their liquidation is
-								<code>LATE</code> or <code>OVERDUE</code>. Particularly important in [oracle-less trading](oracle-less-trading.md)
-								mode, where a bound PartyA can submit fabricated UPNL to drain <code>allocatedBalances</code> into fees, worsen their
-								liquidation severity, then recover the fees at settlement. The escrow holds these fees for the ClearingHouse to
-								distribute — typically to compensate PartyBs who suffered CVA haircuts. Also separates deferred excess balance (always
-								returned to PartyA) from pending fee reimbursement (escrowed in LATE/OVERDUE).</span
-							>
+							<span>
+								Routes pending-fee reimbursement to a ClearingHouse-controlled escrow in LATE/OVERDUE liquidation. A separate deferred
+								balance holds only the positive current liquidation-available surplus for later PartyA return. It is not simply the
+								difference between current and historically signed allocations.
+							</span>
 						</span>
 					</a>
 				</div>
@@ -342,24 +337,22 @@
 						<span class="doc-list-main">
 							<span class="category">Funding &amp; Positions</span>
 							<strong>Accumulated Funding Rate</strong>
-							<span
-								>Replaces the old system where solvers had to process funding for every individual position at each epoch. Instead,
-								funding rates are tracked as weighted averages at the symbol level. When a solver sets a new rate, it blends into the
-								running average — no need to touch individual positions. Rates are pre-multiplied by market price at storage time to
-								eliminate price lookups during calculation. Supports dynamic epoch duration changes with automatic rate scaling.</span
-							>
+							<span>
+								Tracks price-weighted funding rates at the symbol/PartyB level so new rates do not require updating every quote.
+								Integer arithmetic truncates averages and aggregate contributions. Epoch-duration changes rescale rates and reset from
+								the stored update timestamp, which can precede the change transaction.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/aggregated-positions.html" data-catalog-item>
 						<span class="doc-list-index">21</span>
 						<span class="doc-list-main">
 							<span class="category">Funding &amp; Positions</span>
 							<strong>Aggregated Positions And Fundings For Better UPNL Calculation</strong>
-							<span
-								>Maintains running totals of position size and notional value per (party, symbol, positionType) combination, so UPNL
-								calculations only need to iterate over active symbols instead of individual quotes. For a solver with 5,000 positions
-								across 50 symbols, this turns solvency checks from O(5000) to O(50). Also tracks aggregate funding debt for the same
-								efficiency gain.</span
-							>
+							<span>
+								Maintains position size, notional and paid-funding aggregates by party, symbol and direction. Off-chain UPNL consumers
+								can read active symbol groups rather than every quote. Core trading still uses its signed-data and execution checks;
+								the aggregates are inputs for calculation, not an O(symbols) replacement for every on-chain solvency path.
+							</span>
 						</span>
 					</a>
 				</div>
@@ -375,23 +368,22 @@
 						<span class="doc-list-main">
 							<span class="category">Fees &amp; Symbols</span>
 							<strong>Custom open/close fee for affiliates</strong>
-							<span
-								>Affiliates can now set custom open and close fees at four priority levels: per user+symbol, per user default, per
-								symbol, or affiliate-wide default. The close fee is factored into solvency checks after position closure. Also adds
-								<code>fillCloseRequestToLiquidation</code> — when a normal close would push PartyA into insolvency, this calculates
-								the maximum partial close that brings them exactly to the liquidation threshold.</span
-							>
+							<span>
+								Affiliates can set custom open and close fees at per-user/symbol, user-default, symbol and affiliate-default levels,
+								subject to the protocol minimum. Close fees enter the PartyA solvency model. fillCloseRequestToLiquidation computes a
+								candidate partial LIMIT close towards the liquidation boundary; integer rounding can leave a positive remainder and
+								execution guards still apply.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/symbol-types.html" data-catalog-item>
 						<span class="doc-list-index">23</span>
 						<span class="doc-list-main">
 							<span class="category">Fees &amp; Symbols</span>
 							<strong>Symbol Types</strong>
-							<span
-								>Groups symbols into categories (e.g., Binance pairs vs. lowcap vibe markets) and lets PartyBs whitelist entire
-								categories rather than individual symbols. When new symbols are added to a category, all whitelisted PartyBs can
-								immediately trade them without additional configuration.</span
-							>
+							<span>
+								Groups symbols into categories and lets PartyBs whitelist a category. Newly added symbols in that category pass the
+								type-listing check, subject to per-symbol blacklists and the ordinary quote and execution guards.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/custom-quote-data.html" data-catalog-item>
 						<span class="doc-list-index">24</span>
@@ -419,10 +411,9 @@
 							<span class="category">Infrastructure</span>
 							<strong>Muon Signature Verification and Key Management</strong>
 							<span
-								>Moves from a single hardcoded Muon public key and gateway signer to an external
-								<code>MuonSignatureVerifier</code> contract that manages multiple keys. Enables key rotation without redeploying the
-								diamond, supports multiple independent Muon nodes for fault tolerance, and decouples key management access control
-								from the core protocol.</span
+								>Moves from one mutable, Core-stored TSS public key/gateway pair to an external
+								<code>SymmioSignatureVerifier</code> contract with overlapping registered keys and per-category permissions. Key and
+								gateway administration is separated from Core configuration; rotation need not redeploy the diamond.</span
 							>
 						</span> </a
 					><a class="doc-list-item" href="pages/hook-system.html" data-catalog-item>
@@ -430,12 +421,11 @@
 						<span class="doc-list-main">
 							<span class="category">Infrastructure</span>
 							<strong>Hook System</strong>
-							<span
-								>Every position open, close, cancel, and funding charge now fires an on-chain hook notification. Affiliates register
-								hook contracts implementing <code>ISymmioHook</code> to execute custom logic — reward tracking, volume analytics,
-								cashback programs — all with fresh on-chain data. The signer context is cleared before hook invocation to prevent
-								privilege escalation.</span
-							>
+							<span>
+								Core exposes configured hooks for the documented position, cancellation and funding-charge paths. Affiliates can use
+								ISymmioHook callbacks for reward tracking, volume analytics or custom logic. The signer context is cleared around hook
+								invocation, and callback behavior and liveness remain subject to the hook contract.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/va-lifecycle-hooks.html" data-catalog-item>
 						<span class="doc-list-index">27</span>
@@ -453,13 +443,11 @@
 						<span class="doc-list-main">
 							<span class="category">Infrastructure</span>
 							<strong>Role Admin System</strong>
-							<span
-								>Adds delegated role management on top of the existing RBAC. Previously, only a single admin could grant and revoke
-								roles. Now the owner appoints default admins, who can delegate management of specific roles to dedicated addresses via
-								<code>addRoleAdmin</code> / <code>removeRoleAdmin</code>. Per-role admins can grant and revoke their assigned role
-								without needing owner or default admin transactions. Delegation is one level deep — per-role admins cannot
-								sub-delegate.</span
-							>
+							<span>
+								Adds per-role management to the existing RBAC. Multiple default admins can grant/revoke roles and appoint role admins.
+								Ordinary-role admins manage only their assigned role and cannot directly appoint other admins; administering
+								DEFAULT_ADMIN_ROLE itself can confer full default-admin authority.
+							</span>
 						</span> </a
 					><a class="doc-list-item" href="pages/two-step-ownership.html" data-catalog-item>
 						<span class="doc-list-index">29</span>
@@ -509,7 +497,10 @@
 						<span class="doc-list-main">
 							<span class="category">Upgrade &amp; Migration</span>
 							<strong>System Deployment Guide</strong>
-							<span>Post-migration configuration tasks for initializing v0.8.5 parameters and verifying the upgrade.</span>
+							<span
+								>Complete-system deployment, initial configuration, verification and checkpoint recovery for v0.8.5. Use the Migration
+								Process chapter for an in-place upgrade.</span
+							>
 						</span>
 					</a>
 				</div>

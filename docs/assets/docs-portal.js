@@ -120,6 +120,11 @@
 			["narrower-admin-roles", "Access Control", "Narrower Admin Roles"],
 			["pledge-token-whitelist", "Pledge Collateral", "Pledge Token Whitelist"],
 			["instant-layer-upgradeability", "InstantLayer", "Upgradeable InstantLayer and Delegation Migration"],
+			["liquidation-settlement-plan", "Liquidation", "Exact Liquidation Settlement Plan"],
+			["zero-quantity-quote-rejection", "Trading", "Zero-Quantity Quote Rejection"],
+			["liquidation-dispute-resolution-guards", "Liquidation", "Liquidation Dispute Resolution Guards"],
+			["settlement-pause-and-deallocation-guards", "Hardening", "Settlement, Pause and Deallocation Guards"],
+			["partial-fill-fee-reservation", "Fees", "Partial Fill Fee Reservation Remainder"],
 		],
 	};
 
@@ -128,7 +133,6 @@
 	const COMPANIONS = {
 		"0.8.6": {
 			overview: ["Release", "Symmio Core v0.8.6 Overview"],
-			"express-bot-operations-checklist": ["Express Withdrawal", "Express Provider Bot Operations Checklist"],
 			"market-best-effort": ["Compatibility", "MARKET_BEST_EFFORT Close Orders"],
 			"per-solver-liquidation-overshoot": ["Compatibility", "Per-Solver Liquidation Overshoot"],
 			"session-keys": ["Gasless Operations", "Session Keys"],
@@ -192,9 +196,15 @@
 
 		const railWidthKey = "docs-rail-width";
 		const minimumRailWidth = 180;
-		const minimumReaderWidth = 320;
+		const reader = document.querySelector(".reader-main");
+		const minimumReaderWidth = () => {
+			const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+			const style = reader && getComputedStyle(reader);
+			const padding = style ? Number.parseFloat(style.paddingInlineStart) + Number.parseFloat(style.paddingInlineEnd) : 0;
+			return 30 * fontSize + padding;
+		};
 		const defaultRailWidth = () => (window.innerWidth <= 1180 ? 280 : 304);
-		const maximumRailWidth = () => Math.max(minimumRailWidth, window.innerWidth - minimumReaderWidth);
+		const maximumRailWidth = () => Math.max(minimumRailWidth, window.innerWidth - minimumReaderWidth());
 		const savedRailWidth = Number.parseFloat(store.get(railWidthKey) || "");
 		let preferredRailWidth = Number.isFinite(savedRailWidth) ? savedRailWidth : null;
 
@@ -222,10 +232,12 @@
 			event.preventDefault();
 			body.classList.add("rail-is-resizing");
 			resizer.setPointerCapture(event.pointerId);
+			const startPointerX = event.clientX;
+			const startRailWidth = Number(resizer.getAttribute("aria-valuenow"));
+			const direction = getComputedStyle(body).direction === "rtl" ? -1 : 1;
 
 			const updateFromPointer = pointerEvent => {
-				const rightToLeft = getComputedStyle(body).direction === "rtl";
-				preferredRailWidth = applyRailWidth(rightToLeft ? window.innerWidth - pointerEvent.clientX : pointerEvent.clientX);
+				preferredRailWidth = applyRailWidth(startRailWidth + direction * (pointerEvent.clientX - startPointerX));
 			};
 			const finishResize = pointerEvent => {
 				if (pointerEvent.type === "pointerup") updateFromPointer(pointerEvent);
@@ -867,10 +879,23 @@
 
 	/* --- Deep links --------------------------------------------------------- */
 	// Diagrams and code frames land after first paint, so a hash target moves.
-	// Re-align it a few times instead of leaving the reader mid-chapter.
-	const initialHash = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+	// Compensate only while the initial navigation still owns the reading position.
+	const initialLocationHash = window.location.hash;
+	const initialHash = decodeURIComponent(initialLocationHash.replace(/^#/, ""));
+	let initialHashActive = Boolean(initialHash);
+	const hashAlignmentTimers = [];
+	const hashInterruptionEvents = ["wheel", "touchstart", "pointerdown", "keydown", "hashchange", "popstate"];
+	const cancelInitialHashAlignment = () => {
+		initialHashActive = false;
+		hashAlignmentTimers.forEach(timer => window.clearTimeout(timer));
+		hashInterruptionEvents.forEach(type => window.removeEventListener(type, cancelInitialHashAlignment, true));
+		window.removeEventListener("load", beginInitialHashAlignment);
+	};
 	const alignInitialHash = () => {
-		if (!initialHash) return;
+		if (!initialHashActive || window.location.hash !== initialLocationHash) {
+			cancelInitialHashAlignment();
+			return;
+		}
 		const target = document.getElementById(initialHash);
 		if (!target) return;
 		const root = document.documentElement;
@@ -878,6 +903,18 @@
 		root.style.scrollBehavior = "auto";
 		target.scrollIntoView({ block: "start" });
 		root.style.scrollBehavior = previousBehavior;
+	};
+	const beginInitialHashAlignment = () => {
+		alignInitialHash();
+		if (!initialHashActive) return;
+		[300, 1200, 2400].forEach(delay => {
+			hashAlignmentTimers.push(
+				window.setTimeout(() => {
+					alignInitialHash();
+					if (delay === 2400) cancelInitialHashAlignment();
+				}, delay),
+			);
+		});
 	};
 
 	installLandmarks();
@@ -889,13 +926,16 @@
 
 	// Reader pages can need delayed realignment as diagrams settle into place.
 	if (initialHash) {
-		window.addEventListener(
-			"load",
-			() => {
-				alignInitialHash();
-				[300, 1200, 2400].forEach(delay => window.setTimeout(alignInitialHash, delay));
-			},
-			{ once: true },
-		);
+		hashInterruptionEvents.forEach(type => window.addEventListener(type, cancelInitialHashAlignment, { capture: true, passive: true }));
+		window.addEventListener("load", beginInitialHashAlignment, { once: true });
 	}
+})();
+
+// The same local annotation asset serves every release and the operator guide.
+(() => {
+	const source = document.currentScript?.src;
+	if (!source) return;
+	const script = document.createElement("script");
+	script.src = new URL("docs-annotations.js", source).href;
+	document.head.append(script);
 })();

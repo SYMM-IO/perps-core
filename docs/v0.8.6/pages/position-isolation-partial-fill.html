@@ -62,7 +62,8 @@
 				<article class="doc-article" id="full-document">
 					<h2 id="summary">Summary</h2>
 					<p>
-						When a solver partially fills a LIMIT quote, the core creates a new PENDING quote for the unfilled remainder under the same
+						When a solver partially fills an ordinary LOCKED LIMIT quote, Core creates a new PENDING quote for the unfilled remainder
+						under the same
 						<code>partyA</code>. On a POSITION-isolated virtual account that remainder would be a path to a second position on an account
 						whose isolation rule permits exactly one position, sharing margin and liquidating together with the first.
 					</p>
@@ -73,8 +74,9 @@
 						and the pending locked balance is released back to the virtual account in the same transaction.
 					</p>
 					<p>
-						Virtual accounts with MARKET, MARKET_LONG, or MARKET_SHORT isolation keep the remainder: the child quote has the same symbol
-						and direction as its parent, so tracking it on the same account preserves those isolation contracts.
+						For that PENDING-child case, virtual accounts with MARKET, MARKET_LONG, or MARKET_SHORT isolation keep the remainder: the
+						child quote has the same symbol and direction as its parent, so tracking it on the same account preserves those isolation
+						contracts.
 					</p>
 
 					<h2 id="partial-fill-flow">Partial-fill flow</h2>
@@ -133,7 +135,12 @@ if (childQuote.parentId == quoteId &amp;&amp; childQuote.partyA == partyA &amp;&
 						quote&rsquo;s <code>parentId</code> points to the filled quote, which is how clients distinguish this pair from a
 						user-initiated cancel.
 					</p>
-					<p>Two operational couplings follow from routing the cancel through the normal PartyA path:</p>
+					<p>
+						These nested-cancel rules apply to the ordinary LOCKED-parent case. If the original quote is CANCEL_PENDING, Core instead
+						creates a CANCELED child and refunds it directly. No nested <code>RequestToCancelQuote</code> is emitted, and the
+						nested-cancel pause and instant-mode gates below do not apply to that branch.
+					</p>
+					<p>For a PENDING child, two operational couplings follow from the normal PartyA cancel path:</p>
 					<ul>
 						<li>
 							While PartyA actions are paused, the nested cancel reverts, so a partial fill on a POSITION-isolated account reverts with

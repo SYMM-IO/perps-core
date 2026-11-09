@@ -93,8 +93,10 @@
 					<p>Returns the address of the pending owner, or <code>address(0)</code> if no transfer is pending.</p>
 					<h2 id="doc-two-step-ownership-migration-notes">Migration Notes</h2>
 					<p>
-						No migration is required for this change. The upgrade simply replaces the ownership transfer logic in the Diamond's admin
-						facet. Existing ownership is preserved.
+						Existing ownership storage is preserved; no ownership-state rewrite is required. The Diamond cut must replace
+						<code>transferOwnership(address)</code>, add <code>acceptOwnership()</code> and <code>cancelOwnershipTransfer()</code>, and
+						add the <code>pendingOwner()</code> view selector through <code>ViewFacet</code>. Use the complete target selector map so both
+						write and read paths are upgraded.
 					</p>
 				</article>
 			</main>

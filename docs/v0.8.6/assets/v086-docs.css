@@ -305,6 +305,10 @@ button {
 
 /* --- Controls ------------------------------------------------------------ */
 
+[data-theme-toggle]:not([data-theme-ready]) {
+	display: none;
+}
+
 .button {
 	display: inline-flex;
 	align-items: center;
@@ -1342,9 +1346,7 @@ code {
 }
 
 .doc-article h3 {
-	display: flex;
-	gap: 10px;
-	align-items: center;
+	display: block;
 	color: var(--ink);
 	font-size: var(--text-h3);
 	font-weight: var(--weight-strong);
@@ -2159,6 +2161,7 @@ body.doc-page .doc-article > p.adjustment-timeline-intro {
 .adjustment-sequence-header > span code {
 	color: inherit;
 	font-size: inherit;
+	overflow-wrap: anywhere;
 }
 
 .adjustment-sequence-header h4 {
@@ -2228,8 +2231,20 @@ body.doc-page .doc-article .adjustment-continuation-header p {
 
 .adjustment-tick {
 	display: grid;
-	grid-template-rows: 66px 19px auto;
+	grid-template-rows: 8rem 1.1875rem auto;
 	min-width: 0;
+}
+
+/* Shared rows keep every horizontal tick on one rail as event labels grow. */
+@supports (grid-template-rows: subgrid) {
+	.adjustment-track {
+		grid-template-rows: minmax(4.125rem, auto) 1.1875rem auto;
+	}
+
+	.adjustment-tick {
+		grid-row: 1 / span 3;
+		grid-template-rows: subgrid;
+	}
 }
 
 .adjustment-track > .adjustment-tick {
@@ -2266,7 +2281,7 @@ body.doc-page .doc-article .adjustment-continuation-header p {
 	font-size: var(--text-caption);
 	font-weight: 600;
 	line-height: 1.4;
-	overflow-wrap: normal;
+	overflow-wrap: anywhere;
 }
 
 .adjustment-event > code *,
@@ -2279,7 +2294,7 @@ body.doc-page .doc-article .adjustment-continuation-header p {
 }
 
 body.doc-page .doc-article .adjustment-event > code {
-	overflow-wrap: normal;
+	overflow-wrap: anywhere;
 }
 
 .adjustment-rail {
@@ -2329,6 +2344,8 @@ body.doc-page .doc-article .adjustment-event > code {
 }
 
 .adjustment-interval code {
+	min-width: 0;
+	max-width: 100%;
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -2336,6 +2353,7 @@ body.doc-page .doc-article .adjustment-event > code {
 	font-size: 0.75rem;
 	font-weight: 600;
 	letter-spacing: 0.02em;
+	overflow-wrap: anywhere;
 }
 
 .adjustment-status,
@@ -2376,7 +2394,8 @@ body.doc-page .doc-article .adjustment-interval p {
 	hyphens: none;
 }
 
-@container adjustment-sequence (max-width: 700px) {
+/* Leave at least seven rem per step before using the eight-step horizontal route. */
+@container adjustment-sequence (max-width: 56rem) {
 	.adjustment-continuation-header {
 		grid-template-columns: minmax(0, 1fr);
 		gap: 2px;
@@ -2384,12 +2403,14 @@ body.doc-page .doc-article .adjustment-interval p {
 
 	.adjustment-track {
 		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: none;
 		padding: 18px 18px 4px;
 	}
 
 	.adjustment-tick {
 		position: relative;
 		display: grid;
+		grid-row: auto;
 		grid-template-columns: 20px minmax(0, 1fr);
 		grid-template-rows: auto auto;
 		gap: 0 10px;
@@ -2791,6 +2812,13 @@ body.doc-page .doc-article .adjustment-interval p {
 .mermaid svg .cluster rect {
 	fill: var(--diagram-cluster) !important;
 	stroke: var(--diagram-card-border) !important;
+	stroke-width: 1px !important;
+}
+
+/* Sequence phase groups keep the same text-grade palette as their messages. */
+.mermaid svg rect.rect {
+	fill: var(--diagram-cluster) !important;
+	stroke: var(--diagram-edge) !important;
 	stroke-width: 1px !important;
 }
 
@@ -3286,6 +3314,49 @@ body.doc-page .doc-article .adjustment-interval p {
 		scroll-behavior: auto;
 	}
 
+	/* Theme roles must also switch: descendants have explicit screen colors. */
+	:root {
+		--bg: #ffffff !important;
+		--bg-raised: #ffffff !important;
+		--surface: #ffffff !important;
+		--surface-soft: #f3f3f3 !important;
+		--ink: #000000 !important;
+		--ink-soft: #222222 !important;
+		--muted: #555555 !important;
+		--faint: #555555 !important;
+		--line: #cccccc !important;
+		--line-strong: #888888 !important;
+		--line-control: #777777 !important;
+		--accent: #000000 !important;
+		--accent-strong: #000000 !important;
+		--accent-dim: #eeeeee !important;
+		--link: #000000 !important;
+		--on-accent: #ffffff !important;
+		--status-danger-text: #000000 !important;
+		--status-warning-text: #000000 !important;
+		--status-info-text: #000000 !important;
+		--code-bg: #f7f7f7 !important;
+		--code-ink: #000000 !important;
+		--code-toolbar-bg: #f3f3f3 !important;
+		--code-toolbar-ink: #222222 !important;
+		--code-button-bg: #eeeeee !important;
+		--code-button-hover: #dddddd !important;
+		--code-keyword: #000000 !important;
+		--code-type: #000000 !important;
+		--code-symbol: #000000 !important;
+		--code-string: #000000 !important;
+		--code-number: #000000 !important;
+		--code-comment: #555555 !important;
+		--diagram-bg: #ffffff !important;
+		--diagram-card: #ffffff !important;
+		--diagram-card-border: #888888 !important;
+		--diagram-edge: #555555 !important;
+		--diagram-label-bg: #ffffff !important;
+		--diagram-node: #ffffff !important;
+		--diagram-node-border: #555555 !important;
+		--diagram-cluster: #f3f3f3 !important;
+	}
+
 	body {
 		font-size: 10.5pt;
 		line-height: 1.45;
@@ -3510,7 +3581,11 @@ body.doc-page .doc-article .adjustment-interval p {
 	.tok-symbol,
 	.tok-string,
 	.tok-number,
-	.tok-comment {
+	.tok-comment,
+	.tok-fn,
+	.tok-arg,
+	.tok-num,
+	.tok-punct {
 		color: #000000 !important;
 	}
 

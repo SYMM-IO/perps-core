@@ -224,9 +224,8 @@ function virtualDepositFor(address user, uint256 amount) internal {
 </code></pre>
 					<h3 id="doc-virtual-funds-pure-virtual-withdrawal">Pure Virtual Withdrawal</h3>
 					<p>
-						When all parts use a virtual provider (and no express provider), the withdrawal is classified as "pure virtual" (<code
-							>isPureVirtual = true</code
-						>). In this flow:
+						A request with at least one virtual-provider part and no express-provider part is classified as "pure virtual", even when
+						classic parts are included (<code>isPureVirtual = true</code>). In this flow:
 					</p>
 					<ol>
 						<li>User calls <code>initiateWithdraw</code> with virtual provider parts</li>
@@ -243,8 +242,10 @@ function virtualDepositFor(address user, uint256 amount) internal {
 					</p>
 					<h3 id="doc-virtual-funds-cancel-blackout">Cancel Blackout</h3>
 					<p>
-						Pure virtual withdrawals have a configurable <code>pureVirtualCancelBlackout</code> period. During this window before cooldown
-						expiry, the user cannot cancel, giving the provider certainty that accepted requests will complete.
+						With <code>pureVirtualCancelBlackout &gt; 0</code>, a pure-virtual cancellation requires
+						<code>block.timestamp + pureVirtualCancelBlackout &lt; cooldownEndTime</code>. At equality and later, including after cooldown
+						expiry, it reverts with <code>WithdrawFacet : Cancel blackout active</code>. This applies to both pending and accepted
+						requests. A zero blackout disables this restriction; no provider-approved cancellation path bypasses it.
 					</p>
 					<h2 id="doc-virtual-funds-virtual-external-transfers">Virtual External Transfers</h2>
 					<p>

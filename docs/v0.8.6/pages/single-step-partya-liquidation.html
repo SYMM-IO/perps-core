@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="After the v0.8.5 AccountLayer changes, many accounts carry one market or one position. This wrapper completes those small snapshot liquidations in one all-or-revert transaction."
+			content="For small accounts whose full snapshot liquidation fits in one transaction, this wrapper completes the process atomically."
 		/>
 		<title>Single-Step PartyA Liquidation - Symmio Core v0.8.6</title>
 		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
@@ -67,9 +67,9 @@
 						PartyBs.
 					</p>
 					<p>
-						The AccountLayer changes in v0.8.5 made the wrapper useful for more accounts. Many accounts now carry positions in a single
-						market, and some hold only one open position. For those accounts, the full snapshot liquidation can often fit in one
-						transaction.
+						AccountLayer supports single-market and single-position isolation. Those small accounts are intended candidates for this
+						wrapper when the complete snapshot liquidation fits within the transaction gas limit; the API does not establish how common
+						those account shapes are.
 					</p>
 					<p>
 						<code>singleStepLiquidatePartyAWithSnapshot</code> is the compact path for accounts where all of that work fits in one

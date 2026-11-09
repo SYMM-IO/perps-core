@@ -83,7 +83,11 @@
 					<h3 id="doc-aggregated-positions-aggregated-funding-storage">Aggregated Funding Storage</h3>
 					<p>For each (party, symbol, positionType) combination, the system tracks:</p>
 					<ul>
-						<li><strong>weightedPaidFunding</strong>: Sum of (openAmount × accumulatedPaidFunding / 1e18) across all quotes</li>
+						<li>
+							<strong>weightedPaidFunding</strong>: A signed accumulator maintained from separately rounded open, close and
+							funding-baseline-update contributions. It approximates the sum of current open-quote paid contributions, but partial-close
+							or update rounding can leave residue. Funding-debt views use the stored accumulator, not a recomputed sum.
+						</li>
 					</ul>
 					<p>This allows computing funding debt without iterating through individual quotes.</p>
 					<h3 id="doc-aggregated-positions-active-symbols-tracking">Active Symbols Tracking</h3>
@@ -241,14 +245,22 @@
 </code></pre>
 					<h2 id="doc-aggregated-positions-upnl-calculation">UPNL Calculation</h2>
 					<p>With aggregated data, UPNL can be calculated off-chain as:</p>
-					<pre><code>UPNL = Position UPNL + Funding Debt
+					<pre><code>UPNL = Position UPNL - Funding Debt
 
-Position UPNL (per symbol):
+PartyA position UPNL (per symbol):
   LONG:  (currentPrice - avgOpenPrice) × aggregatedAmount / 1e18
   SHORT: (avgOpenPrice - currentPrice) × aggregatedAmount / 1e18
 
-Total UPNL = Σ(Position UPNL for each active symbol) + Σ(Funding Debt for each active symbol)
+PartyB position UPNL (per symbol; direction remains the original PartyA quote direction):
+  LONG:  (avgOpenPrice - currentPrice) × aggregatedAmount / 1e18
+  SHORT: (currentPrice - avgOpenPrice) × aggregatedAmount / 1e18
+
+Total UPNL = Σ(Position UPNL for each active symbol) - Σ(Funding Debt for each active symbol)
 </code></pre>
+					<p>
+						Funding debt is signed from the queried party's perspective: positive means the party owes funding, so it is subtracted;
+						negative means the party receives funding.
+					</p>
 					<h2 id="doc-aggregated-positions-usage-example">Usage Example</h2>
 					<h3 id="doc-aggregated-positions-partya-upnl-with-specific-partyb">PartyA UPNL (with specific PartyB)</h3>
 					<pre><code class="language-solidity">int256 totalUpnl = 0;
@@ -260,12 +272,13 @@ while (true) {
 
     for (uint256 i = 0; i &lt; data.length; i++) {
         uint256 price = getPrice(data[i].symbolId);
+        // Precondition: price, avgOpenPrice and aggregatedAmount fit int256.
         int256 positionUpnl;
 
         if (data[i].positionType == PositionType.LONG) {
-            positionUpnl = int256((price - data[i].avgOpenPrice) * data[i].aggregatedAmount / 1e18);
+            positionUpnl = (int256(price) - int256(data[i].avgOpenPrice)) * int256(data[i].aggregatedAmount) / 1e18;
         } else {
-            positionUpnl = int256((data[i].avgOpenPrice - price) * data[i].aggregatedAmount / 1e18);
+            positionUpnl = (int256(data[i].avgOpenPrice) - int256(price)) * int256(data[i].aggregatedAmount) / 1e18;
         }
 
         totalUpnl += positionUpnl - data[i].fundingDebt;

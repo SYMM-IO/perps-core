@@ -311,8 +311,9 @@ function unpauseCreditLine(address affiliate) external;   // SETTER_ROLE</code><
 						<li>
 							<strong>InstantLayer</strong> gains <code>TEMPLATE_MANAGER_ROLE</code>, which gates <code>addTemplate</code> and
 							<code>setTemplateActive</code>. <code>SETTER_ROLE</code> keeps AccountLayer routing, the target whitelist, PartyB
-							enrollment, instant-open mode, transient context, and the revocation cooldown. The constructor grants the new role to the
-							initial admin. InstantLayer is immutable, so this takes effect at the next redeploy.
+							enrollment, instant-open mode, transient context, and the revocation cooldown. The diamond’s <code>Init.init</code> grants
+							the new role to the initial admin. A legacy monolithic deployment needs the one-time diamond migration; the current
+							diamond can receive later facet updates at the same address.
 						</li>
 						<li>
 							<strong>SymmioPartyB</strong> gains <code>MULTICAST_WHITELIST_ROLE</code>, which gates <code>setMulticastWhitelist</code>.

@@ -58,17 +58,16 @@
 					<h2 id="doc-role-admin-system-overview">Overview</h2>
 					<p>
 						v0.8.5 introduces <strong>role admins</strong> — a delegation layer on top of SYMMIO's existing role-based access control.
-						Previously, the <code>DEFAULT_ADMIN_ROLE</code> holder was the only address that could grant and revoke roles, making it a
-						bottleneck for every role change. Now, default admins can delegate management of specific roles to dedicated addresses via
-						per-role admins. This allows operational teams to manage their domain (e.g., liquidator rotation, pause controls) without
-						requiring the default admin to sign every transaction.
+						Previously, only <code>DEFAULT_ADMIN_ROLE</code> holders could grant and revoke roles, so every role change required one of
+						those administrators. Now, default admins can delegate management of specific roles to dedicated addresses via per-role
+						admins. This allows operational teams to manage their domain (e.g., liquidator rotation, pause controls) without requiring the
+						default admin to sign every transaction.
 					</p>
 					<h2 id="doc-role-admin-system-how-it-worked-before">How It Worked Before</h2>
 					<p>
-						In v0.8.4, the Diamond owner called <code>setAdmin(address)</code> to grant <code>DEFAULT_ADMIN_ROLE</code> to a single
-						wallet. That wallet could then grant and revoke any role via <code>grantRole</code> / <code>revokeRole</code>. There was no
-						way to delegate management of a specific role to someone else — every role change had to go through the one
-						<code>DEFAULT_ADMIN_ROLE</code> holder.
+						In v0.8.4, the Diamond owner could call <code>setAdmin(address)</code> to grant <code>DEFAULT_ADMIN_ROLE</code>. Multiple
+						addresses could hold it, and each could grant or revoke roles via <code>grantRole</code> / <code>revokeRole</code>. There was
+						no separate per-role management delegation; changes required a default administrator.
 					</p>
 					<h2 id="doc-role-admin-system-what-changed">What Changed</h2>
 					<p>A new mapping was added to <code>GlobalAppStorage</code>:</p>
@@ -94,8 +93,9 @@ mapping(bytes32 =&gt; mapping(address =&gt; bool)) roleAdmins;
 							<code>addRoleAdmin</code> / <code>removeRoleAdmin</code>.
 						</li>
 						<li>
-							<strong>Per-role admins</strong> can grant/revoke only the role they were assigned to administer. They cannot delegate
-							further.
+							<strong>Per-role admins</strong> can grant/revoke the role they administer. An ordinary-role admin cannot directly appoint
+							another role admin. An admin of <code>DEFAULT_ADMIN_ROLE</code>, however, can grant full default-admin authority, whose
+							holder can then appoint role admins.
 						</li>
 					</ul>
 					<h2 id="doc-role-admin-system-example">Example</h2>
@@ -117,8 +117,9 @@ mapping(bytes32 =&gt; mapping(address =&gt; bool)) roleAdmins;
 					<h2 id="doc-role-admin-system-security-notes">Security Notes</h2>
 					<ul>
 						<li>
-							<strong>Delegation is one level deep.</strong> Per-role admins cannot appoint other role admins — only
-							<code>DEFAULT_ADMIN_ROLE</code> holders can call <code>addRoleAdmin</code>.
+							<strong>Ordinary-role delegation is one level deep.</strong> Only <code>DEFAULT_ADMIN_ROLE</code> holders can call
+							<code>addRoleAdmin</code> directly. Administering <code>DEFAULT_ADMIN_ROLE</code> itself permits granting that full
+							authority, so it is an escalation-sensitive exception.
 						</li>
 						<li>
 							<strong>No role enumeration on-chain.</strong> Both <code>hasRole</code> and <code>roleAdmins</code> are nested mappings,

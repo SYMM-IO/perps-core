@@ -280,11 +280,11 @@ then, depending on what Operations does next:
 					<pre><code class="language-text">frozen = restating || (state == SCHEDULED && block.timestamp &gt;= effectiveTimestamp)</code></pre>
 					<p>
 						So a symbol freezes by itself the moment its effective time arrives, with nobody sending a transaction, and it unfreezes only
-						when something makes the predicate false: confirmation, cancellation, or finalizing a restatement window. Note that aborting a
-						window is not on that list &mdash; an abort clears <code>restating</code>, but on the direct route the state is still an
-						effective <code>SCHEDULED</code>, so the symbol stays frozen. <code>isSymbolFrozen(symbolId)</code> evaluates the predicate
-						live. A freeze is also not a symbol-wide pause &mdash; it blocks <a href="#boundaries">a specific list of paths</a>, and
-						several quote mutations stay callable throughout.
+						when something makes the predicate false: confirmation, cancellation, finalizing a restatement window, or aborting an
+						active-factor window. An abort clears <code>restating</code>, but on the direct route the state is still an effective
+						<code>SCHEDULED</code>, so the symbol stays frozen. <code>isSymbolFrozen(symbolId)</code> evaluates the predicate live. A
+						freeze is also not a symbol-wide pause &mdash; it blocks <a href="#boundaries">a specific list of paths</a>, and several quote
+						mutations stay callable throughout.
 					</p>
 					<p>
 						One more term before the routes. <em>Physical restatement</em> is the name of the maintenance window itself: eligible stored
@@ -385,7 +385,12 @@ funding amount = 1 * 8 = 8</code></pre>
 						id="conversion-calculator"
 						data-symbol-adjustment-tool
 						aria-label="Factor and quote conversion calculator"
-					></section>
+					>
+						<p>
+							Enable JavaScript to compare factors and quotes interactively, or use the
+							<a href="#rewrite-conversion">conversion arithmetic and field rules</a> below.
+						</p>
+					</section>
 
 					<h2 id="lifecycle">What happens after scheduling</h2>
 					<p>
@@ -667,14 +672,16 @@ funding amount = 1 * 8 = 8</code></pre>
 						confirmation, it is the active factor:
 					</p>
 					<pre><code class="language-text">adjusted old-unit price = floor(raw venue price * feed factor / 1e18)
-venue quantity          = floor(stored quantity * feed factor / 1e18)
-venue closed amount     = floor(stored closed amount * feed factor / 1e18)
-venue open amount       = venue quantity - venue closed amount</code></pre>
+venue open amount       = floor((stored quantity - stored closed amount) * factor / 1e18)
+venue closed amount     = floor(stored closed amount * factor / 1e18)
+venue quantity          = venue open amount + venue closed amount</code></pre>
 					<p>
-						The <code>getQuoteInVenueUnits</code> view, and its batch form, return normalized copies by scaling stored total and closed
-						amounts separately. Their difference can be one amount wei away from
-						<code>floor(stored open amount * feed factor / 1e18)</code>. This view conversion does not modify quote storage. Normal Core
-						execution still expects the stored old-unit values on this route.
+						The <code>getQuoteInVenueUnits</code> view, and its batch form, scale the open and closed amounts separately, then reconstruct
+						total quantity from their sum. Fractional carries cannot add one wei to the live open amount. In the amount formulas,
+						<code>factor</code> is the active factor after confirmation, or the window factor for a quote not yet restated in an open
+						window. Before confirmation or window opening, the view still uses the existing active factor, even if Muon has begun
+						translating with the prospective feed factor. View conversion does not modify storage and can revert on dust or overflow.
+						Normal Core execution still expects stored old-unit values on the adjusted-price route.
 					</p>
 					<ol>
 						<li>At the effective time, confirm that <code>isSymbolFrozen(symbolId)</code> is true.</li>
@@ -949,15 +956,16 @@ else:
 					</aside>
 					<p>
 						The conversion assigns exactly those nine fields. It does not assign IDs, parties, symbol, position or order type, whitelists,
-						statuses, deadlines, parent links, locked values, fee fields, affiliate, funding limit, close fee, or data. When accumulated
-						funding is active, the earlier <code>FUNDING_SETTLEMENT</code> pass sets <code>lastFundingPaymentTimestamp</code> and may
-						change <code>accumulatedPaidFunding</code> and party balances. The later <code>QUOTE_PROCESSING</code> pass performs only the
-						unit conversion and related aggregate updates.
+						deadlines, parent links, locked values, fee fields, affiliate, funding limit, close fee, or data. Status and its modification
+						timestamp normally stay unchanged; cancelling an unrepresentable close intent instead sets <code>OPENED</code> and stamps
+						<code>statusModifyTimestamp</code>. When accumulated funding is active, the earlier <code>FUNDING_SETTLEMENT</code> pass sets
+						<code>lastFundingPaymentTimestamp</code> and may change <code>accumulatedPaidFunding</code> and party balances. The later
+						<code>QUOTE_PROCESSING</code> pass performs only the unit conversion and related aggregate updates.
 					</p>
 					<p>
 						A reverse split can make a very small raw amount disappear when multiplication is rounded down, and Core would rather refuse
-						the conversion than silently erase a field. Four checks guard that. The examples below all use a <code>0.01x</code> factor,
-						and the numbers are raw 18-decimal amount integers, so one unit here means one amount wei.
+						the conversion than silently erase a field. Four checks guard that. Each example states its factor; most use
+						<code>0.01x</code>, and the numbers are raw 18-decimal amount integers, so one unit here means one amount wei.
 					</p>
 					<div class="table-wrap">
 						<table>
@@ -1172,7 +1180,12 @@ signedHash = keccak256(abi.encode(domain, payloadHash, priceBases)); // bytes32,
 						cannot fabricate completion and it does not bypass financial accounting.
 					</p>
 					<aside class="callout callout-invariant">
-						<strong>Gas is bounded by caller-supplied liquidation batches.</strong>
+						<strong
+							>The new restatement hooks add constant work per affected quote. Existing liquidation work can still scan account-wide
+							pending arrays, and the last PartyA close can plan settlement across all accumulated PartyB buckets. Rehearse those
+							full-account sizes as well as the supplied quote and address batches; smaller quote batches alone do not bound the whole
+							workflow.</strong
+						>
 						The compatibility path never scans all symbols, all PartyBs, or an account&rsquo;s complete position set. It performs
 						constant-time basis and inventory work for each supplied quote ID. Existing liquidation loops still scale with the explicit
 						quote array; PartyA price setup remains linear in its explicitly signed symbol or PartyB-symbol state array and adds one
@@ -1422,7 +1435,7 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 					<ul>
 						<li>quote creation, PartyB quote locking, open and close execution, batch wrappers, and solver-fee wrappers;</li>
 						<li>legacy and unified settlement;</li>
-						<li>force actions, three-step force-close finalization, non-dust emergency PartyB actions, and ADL-style closes;</li>
+						<li>force-close execution and its three-step finalization, non-dust emergency PartyB actions, and ADL-style closes;</li>
 						<li>funding charge, rate setting, epoch-duration changes, and accumulated-funding paths.</li>
 					</ul>
 					<p>
@@ -1439,10 +1452,11 @@ paused state: snapshot = snapshot', accumulatedRate = 0, currentRate = 0, startE
 					</p>
 					<p>
 						Other non-price cleanup can remain callable. A function that neither receives a symbol nor resolves one from a quote cannot
-						apply the freeze check. The freeze also does not cancel an existing liquidation. Liquidation price setup and position-close
-						paths use a narrower guard: an effective scheduled freeze still blocks them, but an actual open restatement window admits them
-						with the quote-local price conversion and inventory accounting described above. Pending-position liquidation does not use a
-						price and remains callable under its existing account-level guards.
+						apply the freeze check. The freeze also does not cancel an existing liquidation. PartyA liquidation price setup and
+						isolated-PartyB and Clearing House position closes use a narrower guard: an effective scheduled freeze blocks those steps, but
+						an open restatement window admits them with the basis and inventory checks described above. Already-priced PartyA position
+						processing has no independent freeze guard and can continue under its existing checks. Pending-position liquidation and force
+						cancellation also retain their existing guards.
 					</p>
 
 					<h3>Signature expiry and account-level payloads</h3>
@@ -2236,11 +2250,12 @@ RestatementFinalized(uint256 indexed symbolId, uint256 epoch)</code></pre>
 						before comparing those values with the venue payload. Funding-restoration events report restoration mode and remaining PartyB
 						work. Per-pair preparation and restoration also emit the existing <code>AccumulatedFundingStateUpdated</code>. When
 						checkpoints exist, <code>RestatementAborted</code> or <code>RestatementFinalized</code> is emitted by the last funding batch
-						rather than the transaction that starts restoration. That terminal transaction also emits
-						<code>PendingQuoteIdCutoffUpdated</code>. Each later lazy cancellation emits <code>StalePendingQuoteCancelled</code>. During
-						<code>FUNDING_SETTLEMENT</code>, every successfully processed quote emits <code>QuoteFundingSettled</code>, including when the
-						amount is zero. During the later <code>QUOTE_PROCESSING</code> pass, every successfully rewritten quote emits
-						<code>QuoteAdjusted</code>. Indexers need both events to attribute settlement side effects and the later unit conversion.
+						rather than the transaction that starts restoration. Terminal finalization also emits
+						<code>PendingQuoteIdCutoffUpdated</code>; abort preserves the existing cutoff and emits no cutoff update. Each later lazy
+						cancellation emits <code>StalePendingQuoteCancelled</code>. During <code>FUNDING_SETTLEMENT</code>, every successfully
+						processed quote emits <code>QuoteFundingSettled</code>, including when the amount is zero. During the later
+						<code>QUOTE_PROCESSING</code> pass, every successfully rewritten quote emits <code>QuoteAdjusted</code>. Indexers need both
+						events to attribute settlement side effects and the later unit conversion.
 					</p>
 				</article>
 			</main>

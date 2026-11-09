@@ -3,10 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta
-			name="description"
-			content="function addSymbolWithType( string memory name, uint256 minAcceptableQuoteValue,hassle uint256 minAcceptablePortionLF, uint256 tradingFee, uint256 maxLeverage, uint256 fundingRateEpochDuration, uint256 fundingRateWindowTime, uint256 symbolType ) external; function setSymbolTypes(uint256[]…"
-		/>
+		<meta name="description" content="Symbol categories and PartyB type whitelists in the archived v0.8.5 SymbolControl API." />
 		<title>Symbol Types - Symmio Core v0.8.5</title>
 		<link rel="icon" type="image/svg+xml" href="../../v0.8.6/assets/symmio-mark.svg" />
 		<script>
@@ -55,30 +52,26 @@
 					</div>
 				</header>
 				<article class="doc-article" id="full-document">
-					<pre><code class="language-solidity">function addSymbolWithType(
-        string memory name,
-        uint256 minAcceptableQuoteValue,hassle
-        uint256 minAcceptablePortionLF,
-        uint256 tradingFee,
-        uint256 maxLeverage,
-        uint256 fundingRateEpochDuration,
-        uint256 fundingRateWindowTime,
-        uint256 symbolType
-    ) external;
-
+					<pre><code class="language-solidity">// SymbolWithType is defined in contracts/core/storages/SymbolStorage.sol.
+// Its fields are symbolId, name, isValid, minAcceptableQuoteValue,
+// minAcceptablePortionLF, tradingFee, maxLeverage,
+// fundingRateEpochDuration, fundingRateWindowTime, symbolType.
+function addSymbolsWithType(SymbolWithType[] memory symbolsWithType) external;
 function setSymbolTypes(uint256[] calldata symbolIds, uint256[] calldata symbolTypes) external;
-
-function setPartyBWhitelistedSymbolTypeStatus(
-        address partyB,
-        uint256 symbolType,
-        bool isWhiteList
-    ) external;
-
-function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory)
-
-function isWhitelistedSymbolType(address partyB, uint256 symbolType) external view returns (bool)
+function whitelistSymbolType(address partyB, uint256 symbolType) external;
+function removeSymbolTypeFromWhitelist(address partyB, uint256 symbolType) external;
+function getSymbolWithType(uint256 symbolId) external view returns (SymbolWithType memory);
+function isWhitelistedSymbolType(address partyB, uint256 symbolType) external view returns (bool);
 </code></pre>
-					<p>This feature improves risk isolation and regulatory compliance for PartyBs.</p>
+					<p>
+						Adding symbols and changing their types requires <code>SYMBOL_MANAGER_ROLE</code>. Whitelist changes are authorized for the
+						PartyB itself or a <code>PARTY_B_MANAGER_ROLE</code> holder. Listing checks also account for per-symbol whitelists and
+						blacklists; a type whitelist alone does not override a blacklisted symbol.
+					</p>
+					<p>
+						Symbol types let PartyBs restrict the categories of new trades they accept. They do not establish regulatory compliance by
+						themselves.
+					</p>
 				</article>
 			</main>
 		</div>

@@ -59,8 +59,8 @@
 						<div>
 							<h1>Close-to-Liquidation Execution</h1>
 							<p class="hero-copy">
-								How a solver closes the largest valid part of a request near PartyA&rsquo;s solvency boundary, how a one-shot
-								best-effort request handles the remainder, and why a manager may permit a controlled overshoot.
+								How a solver selects a conservative valid fill near the liquidation boundary near PartyA&rsquo;s solvency boundary,
+								how a one-shot best-effort request handles the remainder, and why a manager may permit a controlled overshoot.
 							</p>
 						</div>
 					</div>
@@ -101,8 +101,10 @@
 					<p>
 						If the whole bounded amount leaves PartyA nonnegative, the method fills it. A harmful close that starts from a positive
 						balance may also fill the whole amount when its shortfall fits the configured overshoot. Otherwise, the planner calculates the
-						largest amount inside the boundary. The method then executes that amount through the normal close pipeline, including
-						bound-mode handling, the applicable Muon and solvency checks, settlement, uPnL counters, hooks, and fill events.
+						a conservative boundary amount. Separate integer floors can leave some smallest quantity units unfilled even when a larger
+						fill would pass, and the remaining-value fallback may reduce the fill further. The method executes the selected amount through
+						the normal close pipeline, including bound-mode handling, the applicable Muon and solvency checks, settlement, uPnL counters,
+						hooks, and fill events.
 					</p>
 					<pre data-diagram-size="853 1763"><code class="language-mermaid">flowchart TD
     A[Validate pending close and signed snapshot] --&gt; B[Simulate the bounded amount]
@@ -112,7 +114,7 @@
     E --&gt;|No| F[Revert without changing the request]
     E --&gt;|Yes| G{Shortfall fits configured overshoot?}
     G --&gt;|Yes| D
-    G --&gt;|No| H[Calculate the largest amount inside the boundary]
+    G --&gt;|No| H[Calculate a conservative boundary amount]
     H --&gt; I{Positive amount and valid remainder?}
     I --&gt;|No| F
     I --&gt;|Yes| J[Execute the normal close pipeline]</code></pre>

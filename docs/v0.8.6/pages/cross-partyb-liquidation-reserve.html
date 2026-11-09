@@ -127,16 +127,17 @@ function partyBAvailableBalanceForLiquidation(
 
 					<h2 id="settlement-top-up-exception">Settlement top-up exception</h2>
 					<p>
-						One path intentionally bypasses the reserve check: <code>settlePartyBUpnlForLiquidation</code>. That function exists so a
-						liquidator can realize a cross PartyB&rsquo;s positive uPNL from other solvent PartyAs before paying the pending liquidation
-						settlement. If the reserve were applied to that pre-settlement solvency check, the top-up path could be blocked by the same
-						reserve it is trying to fund.
+						Among settlement flows that run oracle-based solvency checks, one path explicitly disables the reserve flag:
+						<code>settlePartyBUpnlForLiquidation</code>. That function exists so a liquidator can realize a cross PartyB&rsquo;s positive
+						uPNL from other solvent PartyAs before paying the pending liquidation settlement. If the reserve were applied to that
+						pre-settlement solvency check, the top-up path could be blocked by the same reserve it is trying to fund.
 					</p>
 					<p>
 						To keep the bypass narrow, <code>LibSettlement.settleUpnlUnified</code> now accepts an explicit
 						<code>applyPartyBLiquidationReserve</code> flag. Normal settlement and force-close settlement pass <code>true</code>.
 						<code>settlePartyBUpnlForLiquidation</code> passes <code>false</code> and then requires the PartyB&rsquo;s cross allocated
-						balance to be non-decreasing.
+						balance to be non-decreasing. The existing bound-to-bindable-PartyB branch skips the entire oracle solvency check; passing
+						this flag does not add a reserve check to that exempt branch.
 					</p>
 					<pre><code class="language-solidity">uint256 partyBBalanceBefore = accountLayout.partyBAllocatedBalances[sig.partyB][address(0)];
 LibSettlement.settleUpnlUnified(sig, updatedPrices, true, false, false);
@@ -152,7 +153,11 @@ require(
 						<li>
 							Cross-PartyB liquidation eligibility counts pending settlement debt even when raw allocation alone still appears solvent.
 						</li>
-						<li>The liquidation top-up path alone bypasses the reserve, and it may not reduce the PartyB cross-allocation bucket.</li>
+						<li>
+							Among settlement branches that run oracle-based solvency checks, the liquidation top-up path alone disables the reserve
+							deduction and may not reduce the PartyB cross-allocation bucket. The oracle-less bound branch skips the whole solvency
+							check, as described above.
+						</li>
 					</ul>
 				</article>
 			</main>

@@ -153,11 +153,11 @@
 					<p>Penalty amounts are transferred to the configured <code>softLiquidationPenaltyCollector</code> address.</p>
 					<h3 id="doc-soft-liquidation-event">Event</h3>
 					<pre><code class="language-solidity">event SoftPartyBLiquidation(
-    address indexed partyB,
-    address indexed partyA,
+    address partyB,
+    address partyA,
     uint256 penaltyFromAllocated,
     uint256 penaltyFromBalance
-)
+);
 </code></pre>
 				</article>
 			</main>

@@ -98,8 +98,9 @@ function setAffiliateFee(
 function setMinAffiliateFee(uint256 minAffiliateFee) external;
 </code></pre>
 					<p>
-						The methods can be called either by the affiliate manager or by the affiliates themselves. In the latter case, frontends may
-						need to update their contract to support these function calls through their contract (restricted to admin privileges only).
+						<code>setAffiliateFee</code> and <code>setAffiliateFeeForUser</code> allow the affiliate itself or an
+						<code>AFFILIATE_MANAGER_ROLE</code> holder. Contract affiliates must expose an appropriately restricted call path. The
+						protocol-wide <code>setMinAffiliateFee</code> instead requires <code>FEE_ADMIN_ROLE</code>.
 					</p>
 					<p>
 						Before this feature, in order to support multiple fees for multiple frontends, we had to duplicate symbols with the exact same
@@ -137,10 +138,10 @@ partyAAvailableBalance -= int256(closeFee);
 					</p>
 					<p>
 						<strong>The solution:</strong> fillCloseRequestToLiquidation calculates and executes the maximum close amount that brings
-						PartyA exactly to the liquidation threshold (available balance = 0). After this partial close, a small market move would make
-						PartyA liquidatable.
+						PartyA towards the liquidation threshold. Integer rounding can leave a small positive available balance; the result is not
+						guaranteed to be exactly zero, and a further market move must consume that remainder before PartyA becomes liquidatable.
 					</p>
-					<pre><code class="language-solidity">unction fillCloseRequestToLiquidation(
+					<pre><code class="language-solidity">function fillCloseRequestToLiquidation(
         uint256 quoteId,
         uint256 closedPrice,
         PairUpnlAndPriceSig memory upnlSig
@@ -174,9 +175,13 @@ partyAAvailableBalance -= int256(closeFee);
 </code></pre>
 					<p>This returns:</p>
 					<ul>
-						<li>maxCloseAmount: The amount that will be filled</li>
-						<li>canCloseAll: Whether the full quantityToClose can be filled without insolvency</li>
+						<li><code>maxCloseAmount</code>: The candidate amount from the PartyA solvency model.</li>
+						<li><code>canCloseAll</code>: Whether that model permits the full <code>quantityToClose</code>.</li>
 					</ul>
+					<p>
+						The preview does not guarantee execution. Quote status, deadline, price and LIMIT-order checks, minimum remaining locked
+						values, a positive fill and PartyB solvency still apply to the transaction.
+					</p>
 				</article>
 			</main>
 		</div>

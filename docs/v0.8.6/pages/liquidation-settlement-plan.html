@@ -105,12 +105,13 @@
 							small net claim but a large gross loss. The OVERDUE reduction was applied to the gross loss, so the solver&rsquo;s planned
 							debit could exceed the net amount the close step had verified against its allocation. An isolated solver short of the
 							planned debit was silently capped at settlement while the other solvers were paid in full, and the difference was created
-							out of nothing. Dispute-free, and reproducible in two to three of every hundred random liquidations.
+							out of nothing without necessarily marking the liquidation disputed. This is a possible accounting path, not a measured
+							incidence rate for live or randomly generated liquidations.
 						</li>
 						<li>
 							<strong>Per-quote floors against an off-chain denominator.</strong> Every quote dropped the fraction of its share, so the
-							shares never summed to the deficit; the one or two units of difference were created in half of the random OVERDUE
-							liquidations. The denominator was a signed field, and a zero there divided by zero.
+							shares could fail to sum to the deficit, leaving smallest-unit accounting differences. The denominator was a signed field,
+							and a zero there divided by zero. The frequency depends on the inputs and is not established here.
 						</li>
 						<li>
 							<strong>Lazy rounding.</strong> The accepted rounding difference was recorded at the last close but consumed at
@@ -128,8 +129,9 @@
 					<p>
 						When the PartyB has no position left against this PartyA, the bucket is counted. A loss is counted in full. A gain is counted
 						up to the PartyB&rsquo;s allocation, and the bucket&rsquo;s actual amount is set to that counted value, so a payer never pays
-						more than what was checked here. The allocation cannot fall again before settlement: deallocation, allocation transfer and
-						PartyB liquidation against a liquidated PartyA are all blocked.
+						more than what was checked here. For isolated per-PartyA allocation, deallocation, allocation transfer and PartyB liquidation
+						against this liquidated PartyA are blocked. Cross mode instead uses a shared bucket: reserve-aware availability protects the
+						pending claim, but settlement still requires sufficient raw allocation or a prior positive-uPnL top-up.
 					</p>
 
 					<h2 id="plan-step">Plan step: the last close</h2>
@@ -157,8 +159,9 @@
 							allocation into PartyA&rsquo;s deferred balance, which finalization returns to PartyA.
 						</li>
 						<li>
-							If it is below, the difference is taken from the deferred balance first, then from the liquidator fee, then from the vault
-							credit. Only a fee cap below three units per position can leave it uncovered, and that liquidation is disputed instead.
+							If it is below, the difference is taken from deferred balance first, then the actual remaining liquidator fee, then
+							available insurance-vault balance. The liquidation is disputed if those sources cannot cover it. A small configured fee
+							cap can contribute, but is not the only cause of a shortfall.
 						</li>
 					</ul>
 
@@ -218,10 +221,10 @@ PartyB2 receives      200 - 70 = 130   (allocation plus PartyB1's payment)</code
 					<h2 id="solvers">What changes for solvers</h2>
 					<ul>
 						<li>
-							The OVERDUE deficit is shared on each solver&rsquo;s net claim, the same per-pair netting that
-							<a href="close-settlement-netting.html">ordinary closes</a> use, instead of on gross per-quote losses. A solver that is
-							flat against the trader absorbs nothing; solvers with net claims absorb proportionally more than before, because the flat
-							solvers&rsquo; losing legs leave the base.
+							The OVERDUE deficit is shared on each solver&rsquo;s net liquidation bucket instead of gross per-quote losses.
+							<a href="close-settlement-netting.html">Ordinary closes</a> have narrower per-close funding/PnL netting, not this
+							cross-position liquidation-bucket netting. A solver that is flat against the trader absorbs nothing; solvers with net
+							claims absorb proportionally more than before, because the flat solvers&rsquo; losing legs leave the base.
 						</li>
 						<li>A payer is never debited beyond the amount counted against its allocation when its bucket closed.</li>
 						<li>NORMAL payouts are unchanged. LATE CVA returns are the same policy as before and now exact to the unit.</li>

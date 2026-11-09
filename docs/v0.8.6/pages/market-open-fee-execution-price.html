@@ -144,7 +144,10 @@
 					</p>
 					<ol>
 						<li>Cancelling or expiring a pending quote, and force-cancelling a locked one.</li>
-						<li>PartyB unlocking a quote it had locked.</li>
+						<li>
+							Unlocking an expired quote enters its expiry/refund path. Ordinary unlocking returns it to PENDING and retains the
+							open-fee reservation.
+						</li>
 						<li>The unfilled remainder of a partially filled limit quote that is cancelled.</li>
 						<li>PartyA and PartyB liquidation of pending quotes, including clearing-house takeover and escrow accumulation.</li>
 						<li>Reservations rebuilt by <code>migrateQuotes</code>.</li>

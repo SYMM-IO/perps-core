@@ -143,8 +143,11 @@
 					</p>
 					<p>
 						Accepted symbols write their nonce before the forward. This ordering does not make the nonce single-use: because an equal
-						nonce remains acceptable, replaying the same batch forwards it again. The mapping prevents older updates from overwriting a
-						newer accepted nonce; callers still need their own idempotency policy if duplicate forwarding matters.
+						nonce remains acceptable, replaying the same batch forwards it again. For calls containing at most one entry per symbol, the
+						mapping prevents an older update from overwriting a newer accepted nonce. Callers still need idempotency for repeated
+						forwarding. Repeated symbol IDs within one call are unsupported: this helper does not reject them, and they can decrease the
+						stored floor or make filtering revert. For example, two all-fresh entries for one symbol at nonces 5 then 4 can leave its
+						floor at 4. Deduplicate symbol IDs before signing or submission.
 					</p>
 
 					<h2 id="event">Reporting</h2>
@@ -168,9 +171,17 @@
 					</p>
 
 					<h2 id="storage">Storage</h2>
-					<p>Two slots are appended after the existing v0.8.4-compatible layout, so no existing field moves.</p>
-					<pre><code class="language-solidity">uint256 private deprecatedFundingNonce;      // slot N+4: superseded global nonce, unused
-mapping(uint256 =&gt; uint256) public fundingNonce; // slot N+5: symbolId =&gt; last accepted nonce</code></pre>
+					<p>The current helper uses OpenZeppelin 5 inherited modules with ERC-7201 namespaced storage. Its five linear fields are:</p>
+					<pre><code class="language-solidity">address public symmioAddress;
+mapping(bytes4 =&gt; bool) public restrictedSelectors;
+mapping(address =&gt; bool) public multicastWhitelist;
+address public signer;
+mapping(uint256 =&gt; uint256) public fundingNonce; // symbolId =&gt; last accepted nonce</code></pre>
+					<p>
+						There is no deprecated global funding-nonce slot. This is the initial layout for fresh proxies using this implementation; it
+						is not compatible with PartyB proxies built on OpenZeppelin 4 or a v0.8.4-style inherited layout. An upgrade needs a
+						layout-compatible predecessor; do not infer compatibility from a version label.
+					</p>
 					<p>
 						<code>fundingNonce</code> is public, so the engine can read the current floor per symbol and resynchronise after a restart
 						rather than guessing.
@@ -182,7 +193,10 @@ mapping(uint256 =&gt; uint256) public fundingNonce; // slot N+5: symbolId =&gt; 
 							Supply a per-symbol nonce that never decreases for that symbol. A shared counter across symbols works but wastes headroom.
 						</li>
 						<li>Set a deadline that reflects how long the update stays meaningful, not how long inclusion might take.</li>
-						<li>Read <code>fundingNonce(symbolId)</code> on startup to recover the floor after an engine restart.</li>
+						<li>
+							Include at most one entry per symbol per call, and read <code>fundingNonce(symbolId)</code> on startup to recover the
+							floor.
+						</li>
 						<li>
 							Treat <code>FundingFeeUpdateSkipped</code> as expected traffic; alert on a symbol that is skipped repeatedly, which means
 							the engine&rsquo;s nonce has fallen behind.

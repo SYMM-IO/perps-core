@@ -103,8 +103,9 @@ cumulativeFee = snapshotFee
 					<p>
 						Funding charges, aggregate funding debt views, and the per-quote <code>accumulatedPaidFunding</code> baseline written at open,
 						close, charge, liquidation, or migration all use this formula. Because the fee charged and the baseline written now come from
-						the same expression, the amount a quote pays equals the change in its recorded baseline exactly, with no re-rounding of the
-						weighted average in between.
+						the same cumulative expression, the charged fee is <code>trunc(openAmount * (newBaseline - oldBaseline) / 1e18)</code>. The
+						baseline is a per-unit rate, not the payment amount: open amount <code>2e18</code> and baseline change <code>3</code> produce
+						fee <code>6</code>. There is no intervening weighted-average division.
 					</p>
 
 					<h2 id="what-changed">What changed on-chain</h2>

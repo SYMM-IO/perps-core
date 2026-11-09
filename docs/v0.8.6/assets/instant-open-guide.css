@@ -431,6 +431,14 @@ body.gas-guide .tool-heading p {
 	border-color: var(--accent);
 	background: var(--accent-dim);
 }
+.bit-cell:not(.is-interactive) {
+	border-color: transparent;
+	border-radius: 0;
+	background: transparent;
+}
+.bit-cell:not(.is-interactive).is-set {
+	background: var(--accent-dim);
+}
 .bit-cell.is-changed,
 .bit-value-bar.is-changed {
 	outline: 2px solid var(--status-info);
@@ -467,6 +475,12 @@ body.gas-guide .tool-panel code {
 	white-space: normal;
 	overflow-wrap: anywhere;
 	max-width: 100%;
+}
+body.gas-guide .tool-panel code.bit-expression {
+	overflow-wrap: normal;
+}
+.bit-expression-term {
+	overflow-wrap: anywhere;
 }
 .bit-readout-row code.is-wide {
 	display: block;

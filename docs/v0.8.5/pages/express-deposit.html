@@ -49,7 +49,7 @@
 				<a class="toc-link level-3" href="#doc-express-deposit-instant-withdrawal-flow">Instant Withdrawal Flow</a>
 				<a class="toc-link level-3" href="#doc-express-deposit-components">Components</a>
 				<a class="toc-link level-3" href="#doc-express-deposit-liquidity-priority">Liquidity Priority</a>
-				<a class="toc-link level-3" href="#doc-express-deposit-safety-guarantees">Safety Guarantees</a>
+				<a class="toc-link level-3" href="#doc-express-deposit-safety-guarantees">Proposed Safety Properties</a>
 			</div>
 			<main class="reader-main">
 				<header class="reader-hero">
@@ -69,9 +69,9 @@
 					</p>
 					<h2 id="doc-express-deposit-what-we-introduced-in-symmio-core">What We Introduced in SYMMIO Core</h2>
 					<p>
-						v0.8.5 adds express deposit hooks and virtual provider integration into the core protocol. When a user deposits through an
-						affiliate's frontend, the affiliate can configure a percentage (X%) of that deposit to be automatically routed to an external
-						provider contract via the <code>onExpressDeposit</code> callback. This is built on top of the
+						v0.8.5 adds Core virtual-provider integration and AccountLayer express-deposit splitting. When a user uses an express-rate
+						deposit through an affiliate's frontend, the affiliate can configure a percentage (X%) of that deposit to be automatically
+						routed to an external provider contract via the <code>onExpressDeposit</code> callback. This is built on top of the
 						<a href="virtual-funds.html">Virtual Fund System</a> — the provider contract is registered as a virtual provider in SYMMIO and
 						implements the <code>IVirtualProvider</code> lifecycle callbacks (<code>onExpressDeposit</code>,
 						<code>onWithdrawRequest</code>, <code>onWithdrawComplete</code>, etc.).
@@ -92,20 +92,21 @@
     participant Virtual Provider
 
     User-&gt;&gt;Frontend: Deposit 1000 USDC
-    Frontend-&gt;&gt;AccountLayer: depositWithExpressRate(1000 USDC)
+    Frontend-&gt;&gt;AccountLayer: depositForAccountWithExpressRate(account, 1000 USDC)
     Note over AccountLayer: Affiliate configured 3% express split
-    AccountLayer-&gt;&gt;SYMMIO Core: depositFor(user, 970 USDC)
-    Note over SYMMIO Core: Credit user 970 USDC balance
-    AccountLayer-&gt;&gt;Virtual Provider: transfer 30 USDC + onExpressDeposit(user, 30 USDC)
-    Virtual Provider-&gt;&gt;SYMMIO Core: virtualDepositFor(user, 30 USDC)
-    Note over SYMMIO Core: Credit user additional 30 USDC (virtual)
+    AccountLayer-&gt;&gt;SYMMIO Core: depositFor(account, 970 USDC)
+    Note over SYMMIO Core: Credit account 970 USDC balance
+    AccountLayer-&gt;&gt;Virtual Provider: transfer 30 USDC + onExpressDeposit(account, 30 USDC, core)
+    Virtual Provider-&gt;&gt;SYMMIO Core: virtualDepositFor(account, 30 USDC normalized to 18 decimals)
+    Note over SYMMIO Core: Credit account additional 30 USDC (virtual)
     Note over Virtual Provider: 30 USDC routed to provider,&lt;br/&gt;970 USDC stays in SYMMIO
     Note over Virtual Provider: Liquidity pool grows&lt;br/&gt;with every deposit
 </code></pre>
 					<p>
-						<strong>What the core provides:</strong> - Express deposit splitting on the deposit path (configurable % per affiliate) -
-						Virtual provider registration and callback interface - Express provider registration and withdraw lifecycle hooks (accept,
-						complete, cancel, suspend) - Withdraw request data field for passing signed options from providers
+						<strong>Implemented integration:</strong> - AccountLayer express-deposit splitting through the explicit WithExpressRate
+						methods (configurable % per affiliate) - Virtual provider registration and callback interface - Express provider registration
+						and withdraw lifecycle hooks (accept, complete, cancel, suspend) - Opaque <code>providerData</code> bytes; any option
+						signature validation belongs to a provider
 					</p>
 					<p>
 						<strong>What the core does NOT provide (not yet implemented):</strong> - The actual Express and Virtual provider contracts -
@@ -116,46 +117,50 @@
 						The Future System: Express &amp; Virtual Withdrawals
 					</h2>
 					<p>
-						The hooks above are designed to enable a full Express and Virtual Withdrawal System that will give users fast access to their
-						funds. Here's what that system will look like.
+						The remainder of this page describes an <strong>unimplemented provider/bot design for v0.8.5</strong>, not deployed behavior.
+						Its 20-second and 12-hour examples and hourly buckets are illustrative assumptions. Core stores a configurable cooldown from
+						the user's last deallocation; it does not implement this scheduler or guarantee provider delivery.
 					</p>
 					<h3 id="doc-express-deposit-overview">Overview</h3>
 					<p>
-						An <strong>Express Contract</strong> and <strong>Virtual Contract</strong> will be deployed as the provider-side
-						infrastructure. Together with an off-chain <strong>Bot</strong>, they will offer users up to three withdrawal options:
+						The proposed provider-side infrastructure consists of an <strong>Express Contract</strong>,
+						<strong>Virtual Contract</strong> and off-chain <strong>Bot</strong>. The design targets up to three options, conditional on
+						available liquidity and the Core request/account guards:
 					</p>
 					<pre><code class="language-mermaid">flowchart TD
     A[User requests withdrawal] --&gt; B{Bot evaluates&lt;br/&gt;available liquidity}
     B --&gt;|Enough now| C["Option A: Instant&lt;br/&gt;(~20 seconds)"]
     B --&gt;|Enough later| D["Option A2: Earliest-Available&lt;br/&gt;(between now and 12h)"]
-    B --&gt;|Not enough| E["Option B: After Cooldown&lt;br/&gt;(12 hours, always available)"]
+    B --&gt;|Not enough| E["Option B: After configured cooldown&lt;br/&gt;(subject to core liquidity and guards)"]
 
     C --&gt; F[Express Contract fronts funds immediately]
     D --&gt; G[Express Contract reserves funds,&lt;br/&gt;pays at projected time]
-    E --&gt; H[Standard SYMMIO withdrawal after cooldown]
+    E --&gt; H[Attempt standard withdrawal after stored cooldown and required checks]
 
-    F --&gt; I[SYMMIO reimburses provider after 12h]
+    F --&gt; I[Claim core reimbursement after stored cooldown and required checks]
     G --&gt; I
 </code></pre>
 					<p>
 						<strong>Option A — Instant (~20 seconds):</strong> If enough liquidity exists right now across the Express and Virtual pools,
-						the user gets funds almost immediately. The Express Contract fronts the money, and after the 12-hour cooldown completes,
-						SYMMIO reimburses the provider.
+						the proposed provider would front the funds. Its Core reimbursement can be claimed after the stored cooldown, subject to
+						request status, account suspension and callback success; the example timing is not a Core delivery guarantee.
 					</p>
 					<p>
 						<strong>Option A2 — Earliest-Available (between now and 12 hours):</strong> When instant liquidity isn't sufficient but the
 						Express Contract can project when enough funds will become available (based on other pending withdrawals finalizing), it
-						offers the user a specific earlier payout time. A user might wait 2 hours instead of 12. The Express Contract uses a 12-bucket
-						ring buffer representing hourly time slots to track expected inflows and reservations, preventing the same future liquidity
-						from being promised twice.
+						offers the user a specific earlier payout time. A user might wait 2 hours instead of 12. The proposal uses a 12-bucket ring
+						buffer of hourly slots to track expected inflows and reservations, with the goal of preventing double promises. No such
+						scheduler or reservation invariant is implemented in the archived v0.8.5 provider source.
 					</p>
 					<p>
-						<strong>Option B — After Cooldown (12 hours):</strong> Always available as a guaranteed fallback. This is the standard SYMMIO
-						withdrawal — no provider capital needed.
+						<strong>Option B — After Configured Cooldown:</strong> A classic request needs no provider, but creation requires sufficient
+						user free balance and unreserved real collateral in Core. Finalization still requires an eligible request and an unsuspended
+						user. It is not an unconditional 12-hour fallback; proposed Virtual-provider backup would also depend on that provider's
+						implementation and liquidity.
 					</p>
 					<p>
 						The frontend shows the best available option. If instant is possible, show that. If not but earliest-available is, show that.
-						Otherwise, fall back to the standard 12-hour flow.
+						Otherwise, offer the classic path only when its normal liquidity/account conditions can be met.
 					</p>
 					<h3 id="doc-express-deposit-instant-withdrawal-flow">Instant Withdrawal Flow</h3>
 					<pre><code class="language-mermaid">sequenceDiagram
@@ -169,61 +174,78 @@
     Bot-&gt;&gt;Bot: Check liquidity, sign option
     Bot-&gt;&gt;User: Option A (instant), Option B (cooldown)
 
-    User-&gt;&gt;SYMMIO Core: initiateWithdraw(parts, signed option)
-    SYMMIO Core-&gt;&gt;Express Contract: onWithdrawRequest()
+    User-&gt;&gt;SYMMIO Core: initiateWithdraw(parts, false, providerData)
+    SYMMIO Core-&gt;&gt;Express Contract: onWithdrawRequest(request, collateral)
     Express Contract-&gt;&gt;Express Contract: Verify signature, lock funds
-    Express Contract-&gt;&gt;Virtual Contract: lockForWithdraw() (if virtual part)
-    Express Contract-&gt;&gt;SYMMIO Core: acceptWithdrawRequest()
+    Express Contract-&gt;&gt;Virtual Contract: Proposed lockForWithdraw (if virtual part)
+    Express Contract--&gt;&gt;SYMMIO Core: Return from request callback
+    SYMMIO Core--&gt;&gt;User: Return (requestId, cooldownEndTime)
+    Note over Express Contract,SYMMIO Core: Later transaction, acceptance cannot reenter initiateWithdraw
+    Express Contract-&gt;&gt;SYMMIO Core: acceptWithdrawRequest(user, requestId)
 
     Note over Bot: ~20 seconds security window
     Bot-&gt;&gt;Bot: Risk check (anomaly detection API)
-    Bot-&gt;&gt;Express Contract: processWithdraw()
+    Bot-&gt;&gt;Express Contract: Proposed payout operation
     Express Contract-&gt;&gt;User: Transfer funds
-    Express Contract-&gt;&gt;Virtual Contract: releaseToUser() (if virtual part)
+    Express Contract-&gt;&gt;Virtual Contract: Proposed releaseToUser (if virtual part)
 
-    Note over SYMMIO Core: 12 hours later...
-    Bot-&gt;&gt;SYMMIO Core: finalizeWithdrawRequest()
-    SYMMIO Core-&gt;&gt;Express Contract: onWithdrawComplete()
+    Note over SYMMIO Core: Stored cooldown reached, normal guards must pass
+    Bot-&gt;&gt;SYMMIO Core: finalizeWithdrawRequest(user, requestId)
+    opt Nonvirtual express parts exist
+        SYMMIO Core-&gt;&gt;Express Contract: Transfer core reimbursement first
+    end
+    SYMMIO Core-&gt;&gt;Express Contract: onWithdrawComplete(request)
     Note over Express Contract: Reimburse liquidity pools
 </code></pre>
 					<h3 id="doc-express-deposit-components">Components</h3>
 					<p>
-						<strong>Express Contract</strong> (one per chain): The main coordinator. Manages two types of liquidity pools — a general pool
-						available to all users, and per-frontend pools funded by frontend operators. Validates bot-signed withdrawal options,
-						locks/reserves funds, and handles the full withdrawal lifecycle. For earliest-available withdrawals, the bucket-based
-						scheduling ensures the same future liquidity can't be promised to multiple users.
+						<strong>Express Contract</strong> (proposed one per chain): The main coordinator. Manages two types of liquidity pools — a
+						general pool available to all users, and per-frontend pools funded by frontend operators. Validates bot-signed withdrawal
+						options, locks/reserves funds, and handles the full withdrawal lifecycle. For earliest-available withdrawals, the bucket-based
+						scheduling is intended to avoid promising the same future liquidity to multiple users; the invariant is unverified without an
+						implementation.
 					</p>
 					<p>
-						<strong>Virtual Contract</strong> (one per chain per frontend): Holds the liquidity funded by the express deposit fee
+						<strong>Virtual Contract</strong> (proposed one per chain per frontend): Holds the liquidity funded by the express deposit fee
 						percentage. Locks funds when included in withdrawal requests, releases them to users on Express Contract instruction. Also
-						serves as a fallback when SYMMIO's own contract balance is insufficient for a standard after-cooldown withdrawal.
+						would offer provider-funded backup if Core is short of collateral. Core has no automatic liquidity-shortfall switch to this
+						provider.
 					</p>
 					<p>
-						<strong>Bot</strong> (one globally): Off-chain orchestrator that provides the withdrawal options API, signs options with
-						replay-protected nonces, monitors events, performs risk assessment through an anomaly detection API, and schedules processing
-						calls at the right times.
+						<strong>Bot</strong> (proposed one globally): Off-chain orchestrator that provides the withdrawal options API, signs options
+						with replay-protected nonces, monitors events, performs risk assessment through an anomaly detection API, and schedules
+						processing calls at the right times.
 					</p>
 					<h3 id="doc-express-deposit-liquidity-priority">Liquidity Priority</h3>
 					<p>
-						When constructing instant withdrawal options, the system will draw from pools in this order: 1. Express Contract
-						frontend-specific balance (lowest system risk) 2. Virtual Contract frontend balance (auto-funded from deposits) 3. Express
-						Contract general balance (system-wide fallback)
+						The proposed option-generation policy would select pools in this order: 1. Express Contract frontend-specific balance
+						(frontend-first policy) 2. Virtual Contract frontend balance (auto-funded from deposits) 3. Express Contract general balance
+						(system-wide fallback)
 					</p>
-					<p>For after-cooldown withdrawals, SYMMIO's own balance is used first, with the Virtual Contract as fallback.</p>
-					<h3 id="doc-express-deposit-safety-guarantees">Safety Guarantees</h3>
+					<p>
+						The proposed after-cooldown policy prefers Core liquidity, then Virtual-provider liquidity. This fallback is not implemented
+						by Core; classic requests still require unreserved real collateral at initiation.
+					</p>
+					<h3 id="doc-express-deposit-safety-guarantees">Proposed Safety Properties</h3>
 					<ul>
 						<li>
-							<strong>Permissionless fallback</strong>: If the bot goes down, users can process their own withdrawals after a tolerance
-							period. No one is ever permanently locked out of their funds.
+							<strong>Proposed permissionless provider payout</strong>: The design would allow user processing after a tolerance period
+							if the bot is unavailable. This provider-side recovery is not implemented here. Core finalization is separately
+							permissionless after its cooldown when request, suspension and callback guards pass; unconditional liveness is not
+							guaranteed.
 						</li>
 						<li>
-							<strong>Risk gating</strong>: The bot checks an anomaly detection API before processing instant withdrawals. Flagged users
-							get their withdrawal locked for admin review rather than auto-processed.
+							<strong>Proposed risk gating</strong>: The bot would check an anomaly detection API before processing instant withdrawals.
+							Flagged users would be sent for administrative review under that provider policy.
 						</li>
-						<li><strong>Replay protection</strong>: Every signed option includes a per-user nonce consumed on-chain.</li>
 						<li>
-							<strong>Option B always works</strong>: The after-cooldown withdrawal is a guaranteed fallback regardless of provider
-							state.
+							<strong>Proposed replay protection</strong>: Provider options would include a per-user nonce consumed by the provider. The
+							archived Core only stores opaque <code>providerData</code>; this option-nonce implementation is not supplied.
+						</li>
+						<li>
+							<strong>Conditional classic path</strong>: A provider-free request can proceed only with sufficient unreserved Core
+							collateral and normal account/request guards. Existing provider requests do not automatically become classic requests, and
+							proposed provider backup remains dependent on provider state and liquidity.
 						</li>
 					</ul>
 				</article>

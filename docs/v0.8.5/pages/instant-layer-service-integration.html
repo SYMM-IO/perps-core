@@ -135,10 +135,9 @@
 						<strong>function selectors</strong> (the first 4 bytes of a function signature).
 					</p>
 					<p>
-						The delegation flow is always the same: 1. The user (or their session key) calls <code>grantDelegation</code> on the Instant
-						Layer, specifying the delegate address, the allowed selectors, and an expiry timestamp 2. The delegated address can now sign
-						operations for that user, and submit them via <code>executeBatch</code> 3. InstantLayer verifies the delegation is active for
-						the specific function selector being called
+						Only the account owner can call <code>grantDelegation</code>, naming a delegate, selectors and expiry. A delegated session key
+						cannot grant onward permissions. The delegate may then sign operations; a caller holding <code>OPERATOR_ROLE</code> submits
+						them through <code>executeBatch</code>, which checks the delegation for the signed selector.
 					</p>
 					<p>
 						Delegations have an <strong>expiry timestamp</strong> enforced on-chain and can be <strong>revoked</strong> through a two-step
@@ -157,13 +156,13 @@
 						<tbody>
 							<tr>
 								<td><code>requestToClosePosition</code></td>
-								<td><code>0xeaa31b19</code></td>
+								<td><code>0x501e891f</code></td>
 								<td>TPSL Bot</td>
 								<td>Symmio Core</td>
 							</tr>
 							<tr>
 								<td><code>sendQuoteWithAffiliateAndData</code></td>
-								<td><code>0x1e5efc6c</code></td>
+								<td><code>0xa7f3b34b</code></td>
 								<td>Trigger Market Service</td>
 								<td>Symmio Core</td>
 							</tr>
@@ -183,7 +182,10 @@
 					</table>
 					<hr />
 					<h2 id="doc-instant-layer-service-integration-1-stoploss-takeprofit-tpsl-bot">1. StopLoss / TakeProfit (TPSL) Bot</h2>
-					<p>The TPSL bot monitors price feeds and automatically closes user positions when stop-loss or take-profit thresholds are hit.</p>
+					<p>
+						The proposed TPSL bot monitors price feeds and submits a close request when a threshold is hit. A successful request is not a
+						completed close: PartyB must fill it, and execution remains subject to Core checks.
+					</p>
 					<h3 id="doc-instant-layer-service-integration-how-it-works">How It Works</h3>
 					<p>
 						The user opens a position through the normal trading flow. Then, on the frontend, they configure TP/SL parameters for that
@@ -222,20 +224,20 @@
         Note over User, Bot: Setup Phase (once per session)
         User-&gt;&gt;IL: grantDelegation(requestToClosePosition → bot)
         IL--&gt;&gt;User: Delegation active
-        User-&gt;&gt;Bot: Send TP/SL params (quoteId, prices, qty)
-        Bot-&gt;&gt;Bot: Store {quoteId: 42, TP: 2100, SL: 1900}
+        User-&gt;&gt;Bot: Signed request envelope (account, action, params, nonce, expiry)
+        Bot-&gt;&gt;Bot: Verify envelope, consume nonce, store {quoteId: 42, TP: 2100, SL: 1900}
     end
 
     rect rgb(255, 248, 240)
         Note over Bot, Symmio: Trigger Phase (when price hits threshold)
         Bot-&gt;&gt;Bot: Price feed shows ETH = 2100 (TP hit)
         Bot-&gt;&gt;Bot: Build requestToClosePosition callData
-        Bot-&gt;&gt;IL: executeBatch([closeOp], [botSig])
+        Bot-&gt;&gt;IL: executeBatch([closeOp], [botSig], [[]], [[]])
         IL-&gt;&gt;IL: Verify delegation for bot on selector
         IL-&gt;&gt;Symmio: requestToClosePosition(42, ...)
-        Symmio--&gt;&gt;IL: Success
+        Symmio--&gt;&gt;IL: Close request accepted
         IL--&gt;&gt;Bot: Batch executed
-        Bot-&gt;&gt;Bot: Remove TP/SL entry from DB
+        Bot-&gt;&gt;Bot: Record request submitted, monitor PartyB fills separately
     end
 </code></pre>
 					<h3 id="doc-instant-layer-service-integration-important-details">Important Details</h3>
@@ -254,8 +256,9 @@
 					<hr />
 					<h2 id="doc-instant-layer-service-integration-2-trigger-market-orders">2. Trigger Market Orders</h2>
 					<p>
-						The Trigger Market service allows users to place conditional orders (e.g., "buy ETH-PERP if price drops to 1800") that execute
-						as market orders when the trigger price is reached.
+						The Trigger Market service submits a pending MARKET quote when a condition is met (for example, "buy ETH-PERP if price drops
+						to 1800"). The shown batch funds the VA and sends the quote; PartyB must still lock and open it under the normal execution
+						guards. Successful submission is not a filled trade, so track the later opening, cancellation or expiry separately.
 					</p>
 					<h3 id="doc-instant-layer-service-integration-how-it-works_1">How It Works</h3>
 					<p>
@@ -296,27 +299,28 @@
     participant User as User (Frontend)
     participant TM as Trigger Market Service
     participant IL as Instant Layer
+    participant AL as AccountLayer
     participant Symmio as Symmio Core
 
     rect rgb(240, 248, 255)
         Note over User, TM: Setup Phase
         User-&gt;&gt;IL: grantDelegation(addMarginToNextVA +&lt;br/&gt;sendQuoteWithAffiliateAndData → service)
         IL--&gt;&gt;User: Delegation active
-        User-&gt;&gt;TM: Send trigger order params
-        TM-&gt;&gt;TM: Store trigger order in DB
+        User-&gt;&gt;TM: Signed trigger-order request envelope
+        TM-&gt;&gt;TM: Verify signed envelope, atomically consume nonce and store
     end
 
     rect rgb(255, 248, 240)
         Note over TM, Symmio: Trigger Phase
         TM-&gt;&gt;TM: Price feed shows ETH = 1800 (trigger hit)
         TM-&gt;&gt;TM: Build addMarginToNextVA +&lt;br/&gt;sendQuoteWithAffiliateAndData callData
-        TM-&gt;&gt;IL: executeBatch([marginOp, sendQuoteOp], [sig, sig])
+        TM-&gt;&gt;IL: executeBatch([marginOp, sendQuoteOp], [marginSig, quoteSig], [[], []], [[], []])
         IL-&gt;&gt;IL: Verify delegations for both selectors
-        IL-&gt;&gt;Symmio: addMarginToNextVA(...) → pre-funds next VA address
+        IL-&gt;&gt;AL: addMarginToNextVA(parent, type, symbol, amount)
         IL-&gt;&gt;Symmio: sendQuoteWithAffiliateAndData(...)
         Symmio--&gt;&gt;IL: quoteId returned
         IL--&gt;&gt;TM: Batch executed
-        TM-&gt;&gt;TM: Remove trigger order from DB
+        TM-&gt;&gt;TM: Record quote submission, monitor PartyB opening separately
     end
 </code></pre>
 					<h3 id="doc-instant-layer-service-integration-important-details_1">Important Details</h3>
@@ -326,12 +330,14 @@
 							<code>sendQuoteWithAffiliateAndData</code> targets Symmio Core. Both are whitelisted targets.
 						</li>
 						<li>
-							The <code>signerAccount.addr</code> differs between the two operations: the margin operation uses the sub-account, the
-							send-quote operation uses the virtual account address.
+							For this automatic new-VA flow, both operations use the parent SubAccount as <code>signerAccount.addr</code>. AccountLayer
+							creates or reuses the matching VA and routes the quote through it; an unknown predicted VA cannot pass owner lookup.
 						</li>
 						<li>
-							The service needs to know the virtual account address in advance (it is deterministic — the "next VA" for a given
-							sub-account).
+							The service supplies the parent SubAccount and a matching isolation/symbol/direction key. POSITION uses POSITION (0),
+							MARKET uses MARKET (1), and MARKET_DIRECTION uses MARKET_LONG (2) or MARKET_SHORT (3). CUSTOM has no automatic next-VA
+							path. It can preview the next VA address, but does not put an unknown predicted VA in <code>signerAccount.addr</code>.
+							Existing VAs may be targeted directly when their owner and delegation can be resolved.
 						</li>
 						<li>
 							The service calculates margin values (cva, lf, partyAmm, partyBmm) based on the user's leverage, quantity, and symbol
@@ -355,14 +361,13 @@
 					<pre><code>SESSION_KEY_SELECTOR = 0x00000001
 </code></pre>
 					<p>
-						<strong>Why this works:</strong> - <code>0x00000001</code> does not correspond to any real function selector on Symmio or
-						AccountLayer - It cannot be used in an <code>executeBatch</code> call (no function has this selector) - It serves purely as an
-						<strong>off-chain convention</strong>: if a user has delegated <code>0x00000001</code> to an address, services treat that
-						address as an authorized session key - The delegation is fully on-chain and verifiable — anyone can call
-						<code>isDelegationActive(user, sessionKey, 0x00000001)</code> to confirm
+						<strong>Off-chain convention:</strong> This value is a service opt-in marker, not a wildcard or special Core permission.
+						InstantLayer does not prohibit it as calldata for a whitelisted target; that target determines whether the call exists. It
+						grants neither trading selectors nor permission to grant delegations. Services verify the signed request, then query
+						<code>isDelegationActive(canonicalAccount, sessionKey, 0x00000001)</code> for current opt-in state.
 					</p>
 					<h3 id="doc-instant-layer-service-integration-how-it-works_2">How It Works</h3>
-					<p><strong>Session initialization (one wallet transaction):</strong></p>
+					<p><strong>Session initialization (separate owner grants):</strong></p>
 					<ol>
 						<li>Frontend generates an ephemeral key pair (the "session key") and stores it in browser memory</li>
 						<li>
@@ -399,8 +404,9 @@
 							<strong>session key</strong>.
 						</li>
 						<li>
-							The service checks <code>isDelegationActive(userAccount, sessionKeyAddress, 0x00000001)</code> on-chain. If active, the
-							session key is authorized for that account, and the request is accepted.
+							The service verifies a signature over its configured domain and service identity, action, account, exact parameters, nonce
+							and expiry. It then checks <code>isDelegationActive(canonicalAccount, recoveredSigner, 0x00000001)</code>. Only after
+							authorization does it atomically consume the service nonce and store the signed request.
 						</li>
 						<li>
 							When the trigger condition is met, the service uses <strong>its own delegation</strong> (from step 3) to execute the
@@ -408,9 +414,10 @@
 						</li>
 					</ol>
 					<p>
-						<strong>What services check:</strong> When a service receives a request signed by address X for account Y: 1. Is X the account
-						owner? If yes, proceed. 2. If not, does Y have an active delegation of <code>0x00000001</code> to X? (session key check) 3. If
-						yes, X is an authorized session key for Y — accept the request.
+						<strong>What services check:</strong> Verify the exact signed envelope and its domain, service, action and expiry; recover X
+						and resolve account Y’s owner and canonical family. X must be that owner or hold the active session marker under the canonical
+						family. Then validate only the signed parameters and atomically consume the service nonce with request storage. The delegation
+						view does not authenticate a signature or prevent API replay.
 					</p>
 					<h3 id="doc-instant-layer-service-integration-flow-diagram-desktop-session-key">Flow Diagram: Desktop Session Key</h3>
 					<pre><code class="language-mermaid">sequenceDiagram
@@ -434,9 +441,10 @@
         FE-&gt;&gt;FE: User sets TP/SL on a position
         FE-&gt;&gt;FE: Session key signs the API request
         FE-&gt;&gt;Service: Send TP/SL params + session key signature
-        Service-&gt;&gt;IL: isDelegationActive(user, sessionKey, 0x00000001)?
+        Service-&gt;&gt;Service: Verify signed domain, service, action, account, params, expiry
+        Service-&gt;&gt;IL: isDelegationActive(canonicalAccount, recoveredKey, 0x00000001)?
         IL--&gt;&gt;Service: true (session key is valid for this account)
-        Service-&gt;&gt;Service: Store TP/SL config in DB
+        Service-&gt;&gt;Service: Atomically consume service nonce and store signed TP/SL params
         Note over Service: Bot triggers when price hits threshold,&lt;br/&gt;uses its own delegation to execute
     end
 </code></pre>
@@ -504,14 +512,14 @@
     FE-&gt;&gt;FE: Session key signs API request
     FE-&gt;&gt;TPSL: TP/SL params + session key signature
     TPSL-&gt;&gt;IL: Verify session key (0x00000001)
-    TPSL-&gt;&gt;TPSL: Store TP/SL in DB
+    TPSL-&gt;&gt;TPSL: Verify signed envelope, atomically consume nonce and store
 
     Note over FE, TM: 3. User Places Trigger Order (no wallet)
 
     FE-&gt;&gt;FE: Session key signs API request
     FE-&gt;&gt;TM: Trigger order params + session key signature
     TM-&gt;&gt;IL: Verify session key (0x00000001)
-    TM-&gt;&gt;TM: Store trigger order in DB
+    TM-&gt;&gt;TM: Verify signed envelope, atomically consume nonce and store
 
     Note over TPSL, TM: 4. Services Execute When Triggered
 
@@ -568,7 +576,11 @@
 					</ul>
 					<hr />
 					<h2 id="doc-instant-layer-service-integration-implementation-reference">Implementation Reference</h2>
-					<p>This section contains the EIP-712 types, helper functions, and code examples needed to implement the flows described above.</p>
+					<p>
+						These are integration sketches against the archived ABI, not an implemented backend. Request validation, nonce persistence,
+						trigger monitoring and database helpers must be supplied by the integrating service. Network submission requires an
+						InstantLayer runner holding <code>OPERATOR_ROLE</code>.
+					</p>
 					<h3 id="doc-instant-layer-service-integration-common-configuration">Common Configuration</h3>
 					<h4 id="doc-instant-layer-service-integration-eip-712-domain-and-operation-types">EIP-712 Domain and Operation Types</h4>
 					<p>These are needed for signing operations that services submit via <code>executeBatch</code>:</p>
@@ -613,30 +625,30 @@ function generateSalt(): string {
 </code></pre>
 					<h4 id="doc-instant-layer-service-integration-granting-delegation">Granting Delegation</h4>
 					<p>
-						<code>grantDelegation</code> is a direct transaction called by the account owner (or session key). No EIP-712 signing is
-						needed — the caller's identity is verified on-chain via <code>msg.sender</code>.
+						<code>grantDelegation</code> is a direct transaction called only by the account owner. A session key cannot make onward
+						grants. No EIP-712 signing is needed — the caller's identity is verified on-chain via <code>msg.sender</code>.
 					</p>
 					<pre><code class="language-typescript">async function grantDelegationTo(
-  signer: ethers.Signer,    // account owner or session key
+  signer: ethers.Signer,    // account owner only
   userAccount: string,
   delegateTo: string,
   selectors: string[],
   expiryTimestamp: number,
 ) {
-  await instantLayer.connect(signer).grantDelegation({
+  await (await instantLayer.connect(signer).grantDelegation({
     account: { addr: userAccount, isPartyB: false },
     delegatedSigner: delegateTo,
     selectors: selectors,
     expiryTimestamp: expiryTimestamp,
-  })
+  })).wait()
 }
 </code></pre>
 					<h3 id="doc-instant-layer-service-integration-tpsl-bot">TPSL Bot</h3>
 					<h4 id="doc-instant-layer-service-integration-frontend-delegate-and-submit-tpsl">Frontend: Delegate and Submit TP/SL</h4>
-					<pre><code class="language-typescript">const REQUEST_TO_CLOSE_SELECTOR = "0xeaa31b19"
+					<pre><code class="language-typescript">const REQUEST_TO_CLOSE_SELECTOR = "0x501e891f"
 
 async function setupTPSL(
-  signer: ethers.Signer,      // user's wallet or session key
+  signer: ethers.Signer,      // account owner’s wallet only
   userAccount: string,
   botSignerAddress: string,
   expiryTimestamp: number,
@@ -654,17 +666,17 @@ async function setupTPSL(
     expiryTimestamp,
   )
 
-  // 2. Send TP/SL params to bot API
+  // 2. Send a signed request. Later requests can use the separately authorized session key.
+  const request = await signServiceRequest(signer, TPSL_BOT_URL, userAccount, "tpsl-upsert", {
+    quoteId: quoteId.toString(),
+    takeProfitPrice: takeProfitPrice?.toString() ?? null,
+    stopLossPrice: stopLossPrice?.toString() ?? null,
+    quantityToClose: quantityToClose.toString(),
+  })
   await fetch(`${TPSL_BOT_URL}/api/tpsl`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      quoteId,
-      userAccount,
-      takeProfitPrice: takeProfitPrice?.toString(),
-      stopLossPrice: stopLossPrice?.toString(),
-      quantityToClose: quantityToClose.toString(),
-    }),
+    body: JSON.stringify(request),
   })
 }
 </code></pre>
@@ -702,7 +714,7 @@ async function setupTPSL(
 
   await instantLayer.executeBatch(
     [operation], [signature],
-    [{ values: [] }], [[]]
+    [[]], [[]]
   )
 }
 </code></pre>
@@ -710,11 +722,11 @@ async function setupTPSL(
 					<h4 id="doc-instant-layer-service-integration-frontend-delegate-and-submit-trigger-order">
 						Frontend: Delegate and Submit Trigger Order
 					</h4>
-					<pre><code class="language-typescript">const SEND_QUOTE_SELECTOR = "0x1e5efc6c"
+					<pre><code class="language-typescript">const SEND_QUOTE_SELECTOR = "0xa7f3b34b"
 const ADD_MARGIN_TO_NEXT_VA_SELECTOR = "0xa6d66852"
 
 async function setupTriggerOrder(
-  signer: ethers.Signer,      // user's wallet or session key
+  signer: ethers.Signer,      // account owner’s wallet only
   userAccount: string,
   serviceSignerAddress: string,
   expiryTimestamp: number,
@@ -735,20 +747,16 @@ async function setupTriggerOrder(
     expiryTimestamp,
   )
 
-  // 2. Send trigger order params to service API
+  // 2. The service must verify the trigger-order action and signed parameters.
+  const request = await signServiceRequest(signer, TRIGGER_SERVICE_URL, userAccount, "trigger-order", {
+    symbolId, positionType,
+    triggerPrice: triggerPrice.toString(), quantity: quantity.toString(),
+    leverage, partyBsWhiteList, affiliate,
+  })
   await fetch(`${TRIGGER_SERVICE_URL}/api/trigger-order`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userAccount,
-      symbolId,
-      positionType,
-      triggerPrice: triggerPrice.toString(),
-      quantity: quantity.toString(),
-      leverage,
-      partyBsWhiteList,
-      affiliate,
-    }),
+    body: JSON.stringify(request),
   })
 }
 </code></pre>
@@ -759,7 +767,7 @@ async function setupTriggerOrder(
   ])
 
   const symmioInterface = new ethers.Interface([
-    "function sendQuoteWithAffiliateAndData(address[],uint256,uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,address,(bytes,uint256,int256,uint256),(bytes32,uint8,uint16,uint256[]))",
+    "function sendQuoteWithAffiliateAndData(address[] partyBsWhiteList,uint256 symbolId,uint8 positionType,uint8 orderType,uint256 price,uint256 quantity,uint256 cva,uint256 lf,uint256 partyAmm,uint256 partyBmm,uint256 deadline,address affiliate,(bytes reqId,uint256 timestamp,int256 upnl,uint256 price,bytes gatewaySignature,(uint256 signature,address owner,address nonce) sigs) upnlSig,bytes data)",
   ])
 
   const deadline = Math.floor(Date.now() / 1000) + 300
@@ -769,7 +777,7 @@ async function setupTriggerOrder(
     "addMarginToNextVA",
     [
       order.subAccount,           // user's sub-account
-      order.isolationType,        // VirtualAccountIsolationType (0=CROSS, 1=ISOLATED)
+      order.isolationType,        // VirtualAccountIsolationType: POSITION=0, MARKET=1, MARKET_LONG=2, MARKET_SHORT=3
       order.symbolId,
       order.marginAmount,         // total margin to allocate
     ],
@@ -789,7 +797,8 @@ async function setupTriggerOrder(
     },
   }
 
-  // --- Operation 2: Send quote from the new virtual account ---
+  // --- Operation 2: Route from parent to the new/reused virtual account ---
+  // Match the margin isolation/symbol/direction to this quote. CUSTOM has no next-VA path.
   const sendQuoteCallData = symmioInterface.encodeFunctionData(
     "sendQuoteWithAffiliateAndData",
     [
@@ -814,7 +823,7 @@ async function setupTriggerOrder(
     signer: serviceSignerAddress,
     target: symmioCoreAddress,
     callData: sendQuoteCallData,
-    signerAccount: { addr: order.virtualAccount, isPartyB: false },
+    signerAccount: { addr: order.subAccount, isPartyB: false },
     flexFields: [],
     maxUses: 1,
     replayAttackHeader: {
@@ -836,7 +845,7 @@ async function setupTriggerOrder(
   await instantLayer.executeBatch(
     [marginOp, sendQuoteOp],
     [marginSig, sendQuoteSig],
-    [{ values: [] }, { values: [] }],
+    [[], []],
     [[], []],
   )
 }
@@ -886,8 +895,8 @@ function getSessionKey(): SessionKey | null {
 
 // --- Activate on-chain (requires wallet tx) ---
 
-const REQUEST_TO_CLOSE_SELECTOR = "0xeaa31b19"
-const SEND_QUOTE_SELECTOR = "0x1e5efc6c"
+const REQUEST_TO_CLOSE_SELECTOR = "0x501e891f"
+const SEND_QUOTE_SELECTOR = "0xa7f3b34b"
 const ADD_MARGIN_TO_NEXT_VA_SELECTOR = "0xa6d66852"
 
 async function activateSessionKey(
@@ -912,15 +921,43 @@ async function activateSessionKey(
 
 // --- Sign API requests with session key (for service authentication) ---
 
-async function signServiceRequest(
-  sessionKey: SessionKey,
-  payload: object,
-): Promise&lt;{ signature: string; signerAddress: string }&gt; {
-  const sessionSigner = new ethers.Wallet(sessionKey.privateKey)
-  const message = JSON.stringify(payload)
-  const signature = await sessionSigner.signMessage(message)
-  return { signature, signerAddress: sessionKey.address }
+// This API domain is distinct from the on-chain SignedOperation domain.
+const serviceDomain = {
+  name: "SymmioServiceRequest", version: "1", chainId,
+  verifyingContract: instantLayerAddress,
 }
+const serviceRequestTypes = {
+  ServiceRequest: [
+    { name: "service", type: "string" },
+    { name: "action", type: "string" },
+    { name: "account", type: "address" },
+    { name: "params", type: "string" }, // Exact serialized parameters are signed
+    { name: "nonce", type: "bytes32" },
+    { name: "expiry", type: "uint256" },
+  ],
+}
+interface ServiceRequest {
+  service: string; action: string; account: string; params: string;
+  nonce: string; expiry: number;
+}
+
+async function signServiceRequest(
+  signer: ethers.Signer, // Owner EOA or an authorized session-key Wallet
+  service: string,      // Exact configured service identity, e.g. TPSL_BOT_URL
+  account: string,
+  action: string,
+  params: object,
+): Promise&lt;{ payload: ServiceRequest; signature: string }&gt; {
+  const payload: ServiceRequest = {
+    service, action, account: ethers.getAddress(account),
+    params: JSON.stringify(params),
+    nonce: ethers.hexlify(ethers.randomBytes(32)),
+    expiry: Math.floor(Date.now() / 1000) + 300,
+  }
+  const signature = await signer.signTypedData(serviceDomain, serviceRequestTypes, payload)
+  return { payload, signature }
+}
+// For a session key: pass new ethers.Wallet(sessionKey.privateKey) as signer.
 
 // --- QR code for cross-device transfer ---
 
@@ -948,44 +985,73 @@ function importSessionFromQR(scannedData: string): SessionKey {
 }
 </code></pre>
 					<h4 id="doc-instant-layer-service-integration-backend-verifying-session-keys">Backend: Verifying Session Keys</h4>
-					<pre><code class="language-typescript">async function isValidSessionKey(
-  userAccount: string,
-  sessionKeyAddress: string,
-): Promise&lt;boolean&gt; {
-  return await instantLayer.isDelegationActive(
-    userAccount,
-    sessionKeyAddress,
-    SESSION_KEY_SELECTOR,
+					<p>
+						This EOA-signature example requires an integration-specific persistent nonce store and request-schema validator.
+						Contract-wallet owners require an ERC-1271 verification path supplied by the service. It does not reuse InstantLayer’s
+						operation nonce or implement a production API.
+					</p>
+					<pre><code class="language-typescript">async function canonicalDelegator(account: string): Promise&lt;string&gt; {
+  const va = await accountLayer.getVirtualAccount(account)
+  return va.isExists ? ethers.getAddress(va.parentAccount) : ethers.getAddress(account)
+}
+
+async function isValidSessionKey(account: string, key: string): Promise&lt;boolean&gt; {
+  return instantLayer.isDelegationActive(
+    await canonicalDelegator(account), key, SESSION_KEY_SELECTOR,
   )
 }
 
 async function authenticateRequest(
-  userAccount: string,
-  message: string,
+  payload: ServiceRequest,
   signature: string,
-): Promise&lt;void&gt; {
-  // Recover the signer from the signed API request
-  const signerAddress = ethers.verifyMessage(message, signature)
-
-  // Check: is the signer the account owner?
-  const owner = await accountLayer.ownerOf(userAccount)
-  if (signerAddress === owner) return // authorized
-
-  // Check: is the signer a valid session key for this account?
-  const isSession = await isValidSessionKey(userAccount, signerAddress)
-  if (isSession) return // authorized via session key
-
-  throw new Error("Unauthorized: not account owner or valid session key")
+  expectedService: string, // Server configuration, not an unsigned request field
+  expectedAction: string,  // Endpoint-specific action
+): Promise&lt;string&gt; {
+  if (payload.service !== expectedService || payload.action !== expectedAction) {
+    throw new Error("Wrong service or action")
+  }
+  const now = Math.floor(Date.now() / 1000)
+  if (!Number.isSafeInteger(payload.expiry) || payload.expiry &lt; now || payload.expiry &gt; now + 300) {
+    throw new Error("Expired or excessive request lifetime")
+  }
+  if (!ethers.isHexString(payload.nonce, 32)) throw new Error("Invalid nonce")
+  // Verify the exact typed envelope. serviceDomain is server-configured chain + IL.
+  const key = ethers.verifyTypedData(serviceDomain, serviceRequestTypes, payload, signature)
+  const owner = ethers.getAddress(await accountLayer.ownerOf(payload.account))
+  if (key !== owner &amp;&amp; !(await isValidSessionKey(payload.account, key))) {
+    throw new Error("Not account owner or active session key")
+  }
+  return key
 }
 
-async function handleTPSLRequest(req: Request) {
-  const { userAccount, message, signature, ...params } = req.body
+type TPSLParams = {
+  quoteId: string; takeProfitPrice: string | null;
+  stopLossPrice: string | null; quantityToClose: string;
+}
+// Integration-specific: validate the action schema, amounts and quote/account relation.
+declare function validateTPSLParams(value: unknown, account: string): TPSLParams
+// Integration-specific persistent DB adapter, not provided by this repository.
+// acceptOnce must enforce a unique (domain, service, account, signer, nonce) key
+// AND persist the request in the same atomic transaction; reject a duplicate nonce.
+// Store nonce as bytes32 or normalized lowercase hex, so casing cannot evade uniqueness.
+declare const serviceStore: {
+  acceptOnce(record: {
+    domain: typeof serviceDomain; service: string; action: string; account: string;
+    signer: string; nonce: string; expiry: number; params: TPSLParams;
+  }): Promise&lt;void&gt;
+}
 
-  // Verify the request came from the account owner or their session key
-  await authenticateRequest(userAccount, message, signature)
-
-  // Authenticated -- store TP/SL config in database.
-  // When triggered, the bot uses its own delegation to execute on-chain.
+async function handleTPSLRequest(req: { body: { payload: ServiceRequest; signature: string } }) {
+  const { payload, signature } = req.body
+  const signer = await authenticateRequest(payload, signature, TPSL_BOT_URL, "tpsl-upsert")
+  // Ignore unsigned body parameters. Only this signed JSON string supplies the order.
+  const params = validateTPSLParams(JSON.parse(payload.params), payload.account)
+  await serviceStore.acceptOnce({
+    domain: serviceDomain, service: payload.service, action: payload.action,
+    account: ethers.getAddress(payload.account), signer,
+    nonce: payload.nonce.toLowerCase(), expiry: payload.expiry, params,
+  })
+  // Later: the bot uses its separate on-chain delegation to submit a close request.
 }
 </code></pre>
 					<hr />

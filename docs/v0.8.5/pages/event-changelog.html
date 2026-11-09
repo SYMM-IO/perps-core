@@ -94,7 +94,7 @@
 				>
 				<a class="toc-link level-3" href="#doc-event-changelog-55-withdraw-facet-iwithdrawevents">5.5 Withdraw Facet (IWithdrawEvents)</a>
 				<a class="toc-link level-3" href="#doc-event-changelog-56-symboladjustmentfacet-events-new-facet"
-					>5.6 SymbolAdjustmentFacet Events (new facet)</a
+					>5.6 Later-release Symbol Adjustment reference</a
 				>
 				<a class="toc-link level-2" href="#doc-event-changelog-6-new-accountlayer-diamond-events">6. New AccountLayer Diamond Events</a>
 				<a class="toc-link level-3" href="#doc-event-changelog-61-core-facet-icorefacet">6.1 Core Facet (ICoreFacet)</a>
@@ -120,8 +120,9 @@
 						<div>
 							<h1>Event Changelog: v0.8.4 to v0.8.5</h1>
 							<p class="hero-copy">
-								This document details every event change between Symmio Core v0.8.4 and v0.8.5. It covers the core Symmio diamond (29
-								facets) and the new AccountLayer diamond (6 facets). Use it to update subgraphs, event indexers, frontend listeners,
+								This document details every event change between Symmio Core v0.8.4 and v0.8.5. It covers the historical Core and
+								AccountLayer source at <code>7632c9159264179dd4e036a98a2ac2fed8e49ce3</code>, compared with v0.8.4 at
+								<code>db0191cff744f96b874a62fb4906346a61a7977e</code>. Use it to update subgraphs, event indexers, frontend listeners,
 								and hedger/PartyB integrations.
 							</p>
 						</div>
@@ -140,30 +141,37 @@
 						<tbody>
 							<tr>
 								<td>Removed backward-compatible overloads</td>
-								<td>21</td>
+								<td>22</td>
 							</tr>
 							<tr>
 								<td>Fully removed events</td>
 								<td>1</td>
 							</tr>
 							<tr>
-								<td>Changed event signatures</td>
-								<td>2</td>
+								<td>Changed event type signatures</td>
+								<td>1 (SetMuonIds)</td>
 							</tr>
 							<tr>
-								<td>New events on existing facets/libraries</td>
-								<td>41</td>
+								<td>New signatures on existing Core facets/libraries</td>
+								<td>73</td>
 							</tr>
 							<tr>
 								<td>New facets with events</td>
-								<td>5 facets, 35 events</td>
+								<td>5 families, 36 signatures; Migration adds 2 more</td>
 							</tr>
 							<tr>
 								<td>New AccountLayer diamond events</td>
-								<td>6 facets, 30 events</td>
+								<td>44 unique facet-interface signatures + 2 inherited pause signatures</td>
 							</tr>
 						</tbody>
 					</table>
+					<p>
+						Counts deduplicate normalized event type signatures across production Core facets, libraries, party-event interfaces and the
+						shared Diamond. They count declarations, including declared-only events, rather than observed logs. The 112 added Core
+						signatures partition into 73 on existing facets/libraries, 2 Migration events, 36 in the five new families and the replacement
+						SetMuonIds signature. The 24 removed signatures comprise 22 compatibility overloads, one fully removed event and the old
+						SetMuonIds signature. The affiliate parameter-name correction below does not change an event type signature.
+					</p>
 					<hr />
 					<h2 id="doc-event-changelog-1-removed-backward-compatible-overloads">1. Removed Backward-Compatible Overloads</h2>
 					<p>
@@ -268,9 +276,9 @@
 						</tbody>
 					</table>
 					<p>
-						<strong>Migration note:</strong> All liquidation events now always include <code>liquidationId</code>. Use this field to
-						correlate multi-step liquidation flows. The topic hash changes when parameters change, so your ABI must be updated for
-						decoding.
+						<strong>Migration note:</strong> Use <code>liquidationId</code> on the PartyA event signatures that include it to correlate
+						that liquidation. PartyB liquidation events shown here do not carry this field; correlate them using their PartyB/PartyA and
+						quote fields. Parameter-type changes alter the topic hash, so update the corresponding ABI.
 					</p>
 					<h3 id="doc-event-changelog-12-account-events">1.2 Account Events</h3>
 					<table>
@@ -590,11 +598,15 @@ event ForceClosePartyBInsolvent(
     uint256 closedPrice, uint256 currentPrice, int256 upnlPartyB, int256 partyBAvailableAfterClose
 );
 
-// Force fetch allocated balances from partyB
+// Declared only in this revision: no production emit site
 event ForceFetchAllocated(
     address partyB, address[] partyAs, uint256[] FetchedAmount, uint256[] newPartyBsAllocatedBalances
 );
 </code></pre>
+					<p>
+						<code>ForceFetchAllocated</code> has no production emitter in the pinned v0.8.5 implementation. Its declaration is not
+						evidence that an allocation-fetch operation produces this log.
+					</p>
 					<h3 id="doc-event-changelog-46-funding-rate-events-ifundingrateevents">
 						4.6 Funding Rate Events (<code>IFundingRateEvents</code>)
 					</h3>
@@ -612,6 +624,13 @@ event ChargeAccumulatedFundingFee(address partyA, address partyB, uint256[] quot
 event SettleUpnlUnified(
     bytes settlementId, UnifiedQuoteSettlementData[] settlementData, uint256[] updatedPrices,
     address partyB, address[] partyAs, uint256[] newPartyAsAllocatedBalances, uint256 newPartyBAllocatedBalance
+);
+
+// Emitted by settlePartyBUpnlForLiquidation after its settlement succeeds.
+event SettlePartyBUpnlForLiquidation(
+    address indexed liquidatedPartyA, address indexed partyB, bytes settlementId,
+    UnifiedQuoteSettlementData[] settlementData, uint256[] updatedPrices,
+    address[] partyAs, uint256[] newPartyAsAllocatedBalances, uint256 newPartyBAllocatedBalance
 );
 </code></pre>
 					<h3 id="doc-event-changelog-48-shared-library-events-sharedevents">4.8 Shared Library Events (<code>SharedEvents</code>)</h3>
@@ -650,11 +669,15 @@ event SetSymbolType(uint256 symbolIds, uint256 symbolTypes);
 // Binding system
 event SetUnbindCooldown(uint256 oldUnbindCooldown, uint256 newUnbindCooldown);
 event SetPartyBBindable(address partyB, bool bindable);
+// Emitted when the deactivation cooldown setter succeeds.
+event SetDeactiveInstantActionModeCooldown(uint256 oldCooldown, uint256 newCooldown);
 
 // Cross PartyB
 event SetCrossPartyBModeActivated(bool oldValue, bool newValue);
 event SetCrossPartyB(address indexed partyB, bool enabled);
 event SetLegacyDeallocateDeprecated(bool oldValue, bool newValue);
+// Emitted when the per-PartyB opening-pause flag is set.
+event SetPartyBOpenPositionsPausedForPartyB(address indexed partyB, bool status);
 
 // PartyB symbol management
 event WhitelistSymbolType(address partyB, uint256 symbolType);
@@ -774,6 +797,12 @@ event ActivateInstantActionMode(address partyA, uint256 time);
 event ProposeToDeactivateInstantActionMode(address partyA, uint256 time);
 event DeactivateInstantActionMode(address partyA, uint256 time);
 </code></pre>
+					<p>
+						The archived emitter arguments differ from the declaration names: <code>BindToPartyB</code> emits the target PartyB first and
+						effective PartyA second. <code>CompleteUnbindRequest</code> emits the unbound PartyA first and the effective completing caller
+						second, which may be anyone after the cooldown. Recover the previous bound PartyB from earlier state or logs rather than
+						treating that second argument as the former counterparty.
+					</p>
 					<h3 id="doc-event-changelog-53-pledge-facet-ipledgeevents">5.3 Pledge Facet (<code>IPledgeEvents</code>)</h3>
 					<p>Collateral pledging system for PartyB operators.</p>
 					<pre><code class="language-solidity">event PledgeCollateralDeposited(address indexed user, address indexed token, uint256 amount);
@@ -792,7 +821,7 @@ event AcceptVirtualExternalTransfer(uint256 id);
 event CancelVirtualExternalTransfer(uint256 id);
 </code></pre>
 					<h3 id="doc-event-changelog-55-withdraw-facet-iwithdrawevents">5.5 Withdraw Facet (<code>IWithdrawEvents</code>)</h3>
-					<p>Multi-step withdrawal system replacing the single-step <code>Withdraw</code> event from <code>IAccountEvents</code>.</p>
+					<p>Multi-step withdrawal events alongside the separately gated legacy withdrawal path.</p>
 					<pre><code class="language-solidity">event WithdrawInitiated(uint256 indexed requestId, address indexed user, WithdrawReceiverPart[] parts, bool speedUp, bytes providerData, uint256 cooldownEndTime);
 event WithdrawAccepted(uint256 indexed requestId, address indexed user);
 event WithdrawFinalized(uint256 indexed requestId, address indexed user);
@@ -804,131 +833,22 @@ event WithdrawRejected(uint256 requestId, address user);
 event WithdrawSpeedUpAccepted(uint256 requestId, address user, uint256 newCooldown);
 </code></pre>
 					<p>
-						<strong>Migration:</strong> The old single-step <code>Withdraw(address, address, uint256)</code> is still emitted (from
-						<code>WithdrawFacetImpl</code>) for backward compatibility. However, the full withdrawal lifecycle now flows through
-						<code>WithdrawInitiated</code> -&gt; <code>WithdrawAccepted</code> -&gt; <code>WithdrawFinalized</code>. Indexers tracking
-						withdrawal status should listen to all lifecycle events.
+						<strong>Migration:</strong> The legacy withdrawal APIs can still emit <code>Withdraw(address,address,uint256)</code> while
+						enabled. For a new provider-managed request, acceptance emits <code>WithdrawAccepted</code> before finalization. A classic
+						request without a provider can go from <code>WithdrawInitiated</code> directly to <code>WithdrawFinalized</code> after its
+						cooldown. Track cancellation, rejection, suspension and speed-up events as separate branches.
 					</p>
-					<h3 id="doc-event-changelog-56-symboladjustmentfacet-events-new-facet">5.6 SymbolAdjustmentFacet Events (new facet)</h3>
+					<h3 id="doc-event-changelog-56-symboladjustmentfacet-events-new-facet">5.6 Later-release Symbol Adjustment reference</h3>
 					<p>
-						Handles corporate-action-style symbol adjustments (e.g. a CRWD-style 4:1 split): a registry lifecycle for scheduling a factor,
-						choosing confirmation or direct restatement after the effective-time freeze, gating quote-specific trading, funding,
-						liquidation-price, and settlement paths, and rescaling eligible open quotes while cancelling pending quotes.
-					</p>
-					<table>
-						<thead>
-							<tr>
-								<th>New Event</th>
-								<th>Parameters</th>
-								<th>Notes</th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr>
-								<td><code>AdjustmentScheduled</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 factor, uint256 effectiveTimestamp)</code></td>
-								<td>Corporate action registered; symbol freezes at effectiveTimestamp</td>
-							</tr>
-							<tr>
-								<td><code>AdjustmentCancelled</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 adjustmentIndex)</code></td>
-								<td>Scheduled adjustment cancelled; symbol unfreezes if it was frozen</td>
-							</tr>
-							<tr>
-								<td><code>PriceAdjustmentConfirmed</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 adjustmentIndex, uint256 newCumulativeFactor)</code></td>
-								<td>Oracle factor live; symbol unfrozen</td>
-							</tr>
-							<tr>
-								<td><code>RestatementStarted</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 epoch, uint256 restatementFactor)</code></td>
-								<td>Frozen window opened and bounded funding preparation initialized</td>
-							</tr>
-							<tr>
-								<td><code>RestatementFundingPreparationProgress</code></td>
-								<td>
-									<code
-										>(uint256 indexed symbolId, uint256 indexed epoch, uint256 submittedPartyBs, uint256 checkpointedPartyBs,
-										uint256 pendingPartyBs)</code
-									>
-								</td>
-								<td>An operator-supplied PartyB batch completed; submitted, new checkpoint, and total pending counts are reported</td>
-							</tr>
-							<tr>
-								<td><code>RestatementFundingPreparationCompleted</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 indexed epoch, uint256 pendingPartyBs)</code></td>
-								<td>Operations attested that it supplied the intended PartyB set; quote processing is enabled</td>
-							</tr>
-							<tr>
-								<td><code>RestatementFundingRestorationStarted</code></td>
-								<td>
-									<code>(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 pendingPartyBs)</code>
-								</td>
-								<td>Batched restoration opened; <code>finalizing=false</code> identifies abort restoration</td>
-							</tr>
-							<tr>
-								<td><code>RestatementFundingRestorationProgress</code></td>
-								<td>
-									<code
-										>(uint256 indexed symbolId, uint256 indexed epoch, bool finalizing, uint256 processedPartyBs, uint256
-										remainingPartyBs)</code
-									>
-								</td>
-								<td>One supplied restoration batch completed; zero remaining means the same transaction emits the terminal event</td>
-							</tr>
-							<tr>
-								<td><code>RestatementAborted</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 epoch)</code></td>
-								<td>Mutation-free window closed; confirmed path unfreezes, direct path returns to the transition freeze</td>
-							</tr>
-							<tr>
-								<td><code>QuoteAdjusted</code></td>
-								<td>
-									<code
-										>(uint256 indexed quoteId, uint256 indexed symbolId, uint256 epoch, uint256 factor, uint256 oldQuantity,
-										uint256 newQuantity, uint256 oldOpenedPrice, uint256 newOpenedPrice)</code
-									>
-								</td>
-								<td>Position restated to new units</td>
-							</tr>
-							<tr>
-								<td><code>PendingQuoteCancelledByAdjustment</code></td>
-								<td><code>(uint256 indexed quoteId, uint256 indexed symbolId)</code></td>
-								<td>Pending quote cancelled by the adjustment manager during freeze</td>
-							</tr>
-							<tr>
-								<td><code>RestatementFinalized</code></td>
-								<td><code>(uint256 indexed symbolId, uint256 epoch)</code></td>
-								<td>Factor reset to 1e18; symbol unfrozen</td>
-							</tr>
-						</tbody>
-					</table>
-					<p>
-						<strong>Migration:</strong> Indexers and the Muon app must track all twelve events. During the transition,
-						<code>getCumulativeFactor</code> returns only the active trading factor while
-						<code>getProspectiveCumulativeFactor</code> includes the SCHEDULED step. After effective time, operations may confirm that
-						prospective factor and reopen trading, or call <code>startRestatement</code> directly while frozen. Direct mode records the
-						prospective value in <code>restatementFactor</code> without activating it in <code>cumulativeFactor</code>;
-						<code>RestatementStarted</code> reports the factor selected for that epoch but does not mean funding preparation is complete.
-						Indexers should follow operator-supplied preparation batches and <code>RestatementFundingPreparationCompleted</code>, then
-						follow restoration until zero remaining. When checkpoints exist, <code>RestatementAborted</code> or
-						<code>RestatementFinalized</code> is emitted by the last <code>processRestatementFunding</code> transaction, not by the
-						transaction that begins restoration. <code>AdjustmentCancelled</code> and <code>RestatementAborted</code> are distinct
-						signals, but aborting direct mode returns to the effective SCHEDULED freeze rather than reopening trading.
-						<code>QuoteAdjusted</code> and <code>PendingQuoteCancelledByAdjustment</code> describe processed work. Core does not accept
-						off-chain inventory counts or prove completeness before <code>RestatementFinalized</code>; the symbol manager and indexer must
-						reconcile the full open and pending inventory before finalization. The facet upgrade must remove the legacy
-						<code>startRestatement(uint256,uint256,uint256)</code> selector and add <code>startRestatement(uint256)</code>,
-						<code>processRestatementFunding(uint256,address[])</code>, and <code>completeRestatementFundingPreparation(uint256)</code>.
-						Every Symbol Adjustment read selector, including <code>getRestatementFundingProgress(uint256)</code>, now routes through
-						<code>ViewFacetSymbol</code>. Upgrade both facets from the complete target selector map in one Diamond cut; do not use the
-						one-facet updater for this selector migration.
+						SymbolAdjustmentFacet is absent from the pinned v0.8.5 source and is excluded from this changelog and its counts. See the
+						<a href="../../v0.8.6/pages/symbol-adjustment.html">v0.8.6 Symbol Adjustment guide</a> for that later feature.
 					</p>
 					<hr />
 					<h2 id="doc-event-changelog-6-new-accountlayer-diamond-events">6. New AccountLayer Diamond Events</h2>
 					<p>
 						The AccountLayer is an entirely new diamond introduced in v0.8.5. It manages sub-accounts, virtual accounts, affiliate
-						registration, and margin operations. If you are integrating with the AccountLayer for the first time, index all events below.
+						registration, and margin operations. Select events relevant to your integration, accounting for the declared-only event and
+						inherited pause events noted below.
 					</p>
 					<h3 id="doc-event-changelog-61-core-facet-icorefacet">6.1 Core Facet (<code>ICoreFacet</code>)</h3>
 					<pre><code class="language-solidity">event SubAccountCreated(address indexed account, address indexed owner, address indexed affiliate, string name);
@@ -977,12 +897,20 @@ event AccountManagerImplementationUpdated(bytes oldImplementation, bytes newImpl
 event SignerUpdated(address oldSigner, address newSigner);
 event SymmioFeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
 event WhitelistedSymmioCoreSet(address indexed core, bool status);
+// Declared only: no production emit site in the pinned revision.
 event AccountManagerDeployed(address indexed affiliate, address indexed accountManager);
 event HookAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 event CallAllowedSelectorsSet(address indexed affiliate, bytes4[] selectors, bool allowed);
 event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core);
 </code></pre>
+					<p>
+						The inherited <code>AccountLayerPausable</code> also emits <code>Paused(address account)</code> and
+						<code>Unpaused(address account)</code> for pause-state changes.
+					</p>
 					<h3 id="doc-event-changelog-65-symmiohook-facet-isymmiohookfacet">6.5 SymmioHook Facet (<code>ISymmioHookFacet</code>)</h3>
+					<p>
+						<code>VirtualAccountDeleted</code> is also declared in <code>ICoreFacet</code> above; count the identical type signature once.
+					</p>
 					<pre><code class="language-solidity">event VirtualAccountDeleted(address indexed account, address indexed parent);
 </code></pre>
 					<hr />
@@ -1064,8 +992,11 @@ event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core
 					<h2 id="doc-event-changelog-8-migration-checklist">8. Migration Checklist</h2>
 					<h3 id="doc-event-changelog-for-subgraph-event-indexer-developers">For Subgraph / Event Indexer Developers</h3>
 					<ul>
-						<li>[ ] Update ABIs for all changed event signatures (especially <code>SetMuonIds</code>, <code>RegisterAffiliate</code>)</li>
-						<li>[ ] Remove handlers for all 21 deleted backward-compatible overloads</li>
+						<li>
+							[ ] Update the <code>SetMuonIds</code> type signature; refresh affiliate parameter names without treating that metadata
+							correction as a new topic
+						</li>
+						<li>[ ] Remove handlers for all 22 deleted backward-compatible overloads</li>
 						<li>[ ] Add handlers for the replacement full-parameter events</li>
 						<li>
 							[ ] Add handlers for new <code>OpenPosition</code> and <code>FillCloseRequest</code> overloads with
@@ -1081,7 +1012,10 @@ event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core
 							<code>WithdrawFinalized</code>, etc.)
 						</li>
 						<li>[ ] Index ClearingHouse events if tracking cross PartyB liquidation flows</li>
-						<li>[ ] Index Binding events if tracking PartyA-PartyB binding state</li>
+						<li>
+							[ ] Index Binding events using their actual emitted argument order; include
+							<code>SetDeactiveInstantActionModeCooldown</code> configuration changes
+						</li>
 						<li>[ ] Index <code>TradeVolumeRecorded</code> and <code>TradingFeeCharged</code> for fee/volume analytics</li>
 						<li>[ ] Index <code>LiquidationEscrowCreated</code> and <code>DistributeFromLiquidationEscrow</code> for escrow tracking</li>
 						<li>
@@ -1096,15 +1030,18 @@ event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core
 						<li>[ ] Update event listeners for removed backward-compatible overloads</li>
 						<li>[ ] Handle new <code>ForceCloseInitialized</code> event for two-step force close flow</li>
 						<li>[ ] Handle <code>ForceClosePartyBInsolvent</code> for cross-partyB insolvency scenarios</li>
-						<li>[ ] Listen to <code>ForceFetchAllocated</code> for forced allocation fetches</li>
+						<li>[ ] Treat <code>ForceFetchAllocated</code> as declared-only in this source; do not rely on receiving it</li>
 						<li>
 							[ ] Handle accumulated funding events (<code>SetLongFundingFee</code>, <code>SetShortFundingFee</code>,
 							<code>ChargeAccumulatedFundingFee</code>)
 						</li>
-						<li>[ ] Handle <code>SoftPartyBLiquidation</code> events from the ClearingHouse</li>
+						<li>
+							[ ] Handle <code>SoftPartyBLiquidation</code> from ClearingHouse and <code>SettlePartyBUpnlForLiquidation</code> from
+							SettlementFacet
+						</li>
 						<li>
 							[ ] Listen to new pause events (<code>PausePartyBOpenPositions</code>, <code>PauseExternalTransfer</code>,
-							<code>PauseInstantLayer</code>)
+							<code>PauseInstantLayer</code>) and the per-PartyB <code>SetPartyBOpenPositionsPausedForPartyB</code> flag
 						</li>
 						<li>[ ] Handle binding system events if supporting bound PartyA accounts</li>
 					</ul>
@@ -1115,8 +1052,8 @@ event SymmioCoreAddedToAffiliate(address indexed affiliate, address indexed core
 							<code>Deposit(address,address,uint256,bool)</code>
 						</li>
 						<li>
-							[ ] Update withdrawal UI to track multi-step flow via <code>WithdrawInitiated</code> -&gt;
-							<code>WithdrawAccepted</code> -&gt; <code>WithdrawFinalized</code>
+							[ ] Track provider acceptance separately: classic no-provider withdrawals can finalize after initiation without a
+							<code>WithdrawAccepted</code> log; handle cancellation, rejection and suspension branches too
 						</li>
 						<li>[ ] Display <code>LockedValues</code> from new <code>OpenPosition</code> and <code>FillCloseRequest</code> events</li>
 						<li>[ ] Parse new <code>SendQuote</code> format (decode <code>paramsData</code> bytes)</li>

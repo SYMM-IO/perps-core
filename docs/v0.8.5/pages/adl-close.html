@@ -103,19 +103,23 @@ bool enabled = viewFacet.isADLEnabled(partyBAddress);
 </code></pre>
 					<h2 id="doc-adl-close-pledge-collateral">Pledge Collateral</h2>
 					<p>
-						ADL requires PartyBs to have deposited <a href="pledge.html">pledge collateral</a> — a separate collateral pool that acts as a
-						guarantee of good behavior. If a PartyB misuses ADL (e.g., closes positions at unfair prices harming PartyA), their pledge can
-						be slashed by an admin. See the <a href="pledge.html">Pledge Collateral</a> page for full details on depositing, withdrawing,
-						and slashing.
+						<a href="pledge.html">Pledge collateral</a> is a separate pool that administrators can use as an off-chain policy condition
+						when granting ADL access. Neither <code>setADLEnabled</code> nor <code>adlClose</code> checks a pledge balance or minimum
+						amount in v0.8.5. If a PartyB misuses ADL (e.g., closes positions at unfair prices harming PartyA), any existing pledge can be
+						slashed by an admin. See the <a href="pledge.html">Pledge Collateral</a> page for full details on depositing, withdrawing, and
+						slashing.
 					</p>
 					<h2 id="doc-adl-close-event-emissions-for-off-chain-compatibility">Event Emissions for Off-Chain Compatibility</h2>
 					<p>
-						ADL close emits events that mirror the normal close flow, ensuring off-chain applications (indexers, UIs, analytics) continue
-						to work without modification.
+						ADL close emits events that mirror the normal close flow, to support off-chain applications (indexers, UIs, analytics).
+						Consumers must decode the actual event overloads and state transitions; compatibility is not a guarantee for every existing
+						consumer.
 					</p>
 					<h3 id="doc-adl-close-event-sequence-for-adl-close-on-opened-position">Event Sequence for ADL Close on OPENED Position</h3>
 					<pre><code>1. RequestToClosePosition (orderType: MARKET, closeId: adlCloseId)
-2. FillCloseRequest (closeId: adlCloseId)
+2. FillCloseRequest (legacy overload, closeId: adlCloseId)
+3. FillCloseRequest (overload with lockedValues, closeId: adlCloseId)
+4. ADLClose (quoteId, amount, price)
 </code></pre>
 					<h3 id="doc-adl-close-event-sequence-for-adl-close-on-close_pending-position">
 						Event Sequence for ADL Close on CLOSE_PENDING Position
@@ -124,31 +128,39 @@ bool enabled = viewFacet.isADLEnabled(partyBAddress);
 					<pre><code>1. RequestToCancelCloseRequest (closeId: previousCloseId)  // Mock: PartyA requested cancel
 2. AcceptCancelCloseRequest (closeId: previousCloseId)     // Mock: PartyB accepted cancel
 3. RequestToClosePosition (orderType: MARKET, closeId: adlCloseId)  // ADL close request
-4. FillCloseRequest (closeId: adlCloseId)                  // ADL fill
+4. FillCloseRequest (legacy overload, closeId: adlCloseId)
+5. FillCloseRequest (overload with lockedValues, closeId: adlCloseId)
 
 // If position still has remaining open amount:
-5. RequestToClosePosition (closeId: newCloseId)            // Restore original close request
+6. RequestToClosePosition (closeId: newCloseId)            // Restore original close request
+
+// After the implementation returns, including any restored request:
+Last: ADLClose (quoteId, amount, price)
 </code></pre>
 					<h3 id="doc-adl-close-event-sequence-for-adl-close-on-cancel_close_pending-position">
 						Event Sequence for ADL Close on CANCEL_CLOSE_PENDING Position
 					</h3>
 					<pre><code>1. AcceptCancelCloseRequest (closeId: previousCloseId)     // Mock: accept the pending cancel
 2. RequestToClosePosition (orderType: MARKET, closeId: adlCloseId)
-3. FillCloseRequest (closeId: adlCloseId)
+3. FillCloseRequest (legacy overload, closeId: adlCloseId)
+4. FillCloseRequest (overload with lockedValues, closeId: adlCloseId)
 
 // If position still has remaining open amount:
-4. RequestToClosePosition (closeId: newCloseId)            // Restore original close request
-5. RequestToCancelCloseRequest (closeId: newCloseId)       // Restore cancel-pending status
+5. RequestToClosePosition (closeId: newCloseId)            // Restore original close request
+6. RequestToCancelCloseRequest (closeId: newCloseId)       // Restore cancel-pending status
+
+// After the implementation returns, including any restored request:
+Last: ADLClose (quoteId, amount, price)
 </code></pre>
 					<h3 id="doc-adl-close-why-mock-events">Why Mock Events?</h3>
 					<p>
-						Off-chain applications track position state through events. By emitting the same event sequence as a normal close flow, ADL
-						ensures:
+						The lists above show the close-request lifecycle and final ADL signal, not every log. The shared close path also emits
+						balance, fee and volume events. These compatibility events support the following consumer behavior:
 					</p>
 					<ul>
-						<li><strong>Indexers</strong> correctly update position state without special ADL handling</li>
-						<li><strong>UIs</strong> show consistent state transitions</li>
-						<li><strong>Analytics</strong> accurately track close volumes and prices</li>
+						<li><strong>Indexers</strong> can reconstruct the close-request state transitions</li>
+						<li><strong>UIs</strong> can reflect those transitions when they handle the emitted events</li>
+						<li><strong>Analytics</strong> can read execution volume and price from the relevant events</li>
 						<li><strong>CloseId tracking</strong> remains consistent (each close request gets a unique ID)</li>
 					</ul>
 					<h2 id="doc-adl-close-usage">Usage</h2>

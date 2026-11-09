@@ -244,10 +244,12 @@ const signature = await sessionKey.signTypedData(
 )</code></pre>
 					<ul>
 						<li>
-							<strong>Replay protection.</strong> Each operation can run at most <code>maxUses</code> times, counted per signed
-							operation, so a random <code>salt</code> with <code>maxUses = 1</code> makes it single-use. A nonzero
-							<code>nonce</code> additionally forces order: it must equal <code>nonces(account) + 1</code>, and consecutive operations
-							in a batch use consecutive values. A zero nonce leaves the operation unordered.
+							<strong>Replay protection.</strong> A positive <code>maxUses</code> caps execution count per signed operation;
+							<code>maxUses = 0</code> means unlimited uses. A random <code>salt</code> with <code>maxUses = 1</code> makes it
+							single-use. A nonzero <code>nonce</code> additionally forces order: it must equal <code>nonces(account) + 1</code>, and
+							consecutive operations in a batch use consecutive values. A fixed nonzero nonce therefore prevents reuse after its first
+							success even with a larger usage cap. A zero nonce leaves the operation unordered; a zero deadline disables the operation
+							expiry check.
 						</li>
 						<li>
 							<strong>Deadlines.</strong> Use short deadlines, and give operations that belong together, such as adding margin and
@@ -302,8 +304,9 @@ const signature = await sessionKey.signTypedData(
 						An automated service, such as a take-profit and stop-loss bot, gets its own delegate address with its own functions and
 						expiry, usually fewer functions and a longer expiry than the session key. The session key then signs requests to the service
 						off-chain, for example "close this position at this price", and the service later executes them on-chain with its own
-						delegation. The service can confirm that a request came from the account&rsquo;s key with
-						<code>isDelegationActive</code>.
+						delegation. The service must first verify the request signature over its expected domain, action, account, parameters, nonce
+						and expiry. It then checks <code>isDelegationActive</code> for the authenticated key, canonical account and required selector.
+						That view proves current permission; it does not authenticate a message or protect an API request from replay.
 					</p>
 					<p>
 						<code>grantDelegations(DelegationInfo[])</code> authorizes the session key and the service with one owner signature, each
@@ -349,9 +352,11 @@ const signature = await sessionKey.signTypedData(
 						To end a key early, call <code>initiateRevokeDelegation(account, key, selectors)</code>. The owner, the key itself, or an
 						address with <code>REVOKER_ROLE</code> may call it. It is a direct transaction, not a relayed operation, so the caller pays
 						its network fee. The revocation takes effect after <code>revocationCooldown</code>, which defaults to 10 minutes and can be
-						set between 5 minutes and 30 days. The key keeps its authority until then, and loses it at that moment even if nobody calls
-						<code>finalizeRevokeDelegation</code>; anyone may call that afterwards to clear the record. A new grant for the same functions
-						cancels a pending revocation.
+						set between 5 minutes and 30 days. Permission becomes inactive at the stored revocation ETA while that ETA remains unchanged.
+						The owner, delegate or <code>REVOKER_ROLE</code> holder can reschedule it to a new ETA while the original expiry remains in
+						the future, including after a previous ETA but before finalization. Anyone may finalize after the current ETA to delete the
+						grant. An owner re-grant clears the pending ETA. The first scheduled ETA is therefore not an irrevocable termination
+						guarantee; the original delegation expiry still applies.
 					</p>
 					<aside class="callout callout-important">
 						<strong>Deleting a key locally is not revocation.</strong> Any other copy, for example on a linked phone, keeps its authority

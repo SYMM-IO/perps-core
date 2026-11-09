@@ -81,7 +81,9 @@
 						<div>
 							<h1>System Deployment Guide</h1>
 							<p class="hero-copy">
-								This guide explains how to deploy the complete Symmio system using the <code>deploy:system</code> task.
+								This archived guide describes <code>deploy:system</code> at v0.8.5 source commit <code>7632c915</code>. These commands
+								and defaults are historical instructions, not the current operator workflow or a claim of live deployment
+								compatibility.
 							</p>
 						</div>
 					</div>
@@ -93,11 +95,19 @@
 						<li>Ensure you have sufficient funds in the deployer wallet</li>
 					</ol>
 					<h2 id="doc-setup-task-environment-configuration">Environment Configuration</h2>
-					<p>Configure the following variables in your <code>.env</code> file:</p>
-					<pre><code class="language-bash"># Required: Your deployer's private key
-PRIVATE_KEY="0x..."
+					<p>
+						Configure the archived task’s variables below. <code>TEAM_DEPLOYER</code> selects the first signer on networks using
+						<code>createNetworkConfig</code>; unset values fall back to the configured dummy key unless keystore mode is enabled. The
+						local <code>docker</code> entry omits an accounts list and uses the node’s exposed accounts. Leave
+						<code>ADMIN_PUBLIC_KEY</code> empty for unmodified fresh setup: selecting a different admin does not automatically give the
+						actual deployer every specific setup role (for example, <code>registerHook</code> requires
+						<code>INTEGRATION_ADMIN_ROLE</code>). Separate governance requires explicit setup-role provisioning and a reviewed authority
+						handoff/cleanup.
+					</p>
+					<pre><code class="language-bash"># For key-configured HTTP networks: the explicit deployer private key
+TEAM_DEPLOYER="0x..."
 
-# Optional: Admin address for all contracts (defaults to deployer wallet)
+# Optional: leave empty for the archived task’s admin=deployer setup assumption
 ADMIN_PUBLIC_KEY=""
 
 # Optional: Fee receiver address (defaults to admin)
@@ -106,6 +116,9 @@ SYMMIO_FEE_RECEIVER=""
 # Optional: Existing collateral token address
 # If not set, a FakeStablecoin will be deployed (useful for local testing)
 COLLATERAL_ADDRESS=""
+
+# Deploy SymmioSymbolManager (default: true, set to "false" to skip)
+DEPLOY_SYMBOL_MANAGER="true"
 
 # Deploy SymmioPartyB contract (default: true, set to "false" to skip)
 DEPLOY_PARTYB="true"
@@ -127,7 +140,7 @@ MUON_SIGNATURE_VERIFIER_ADDRESS=""
 # Optional: Muon app/runtime config on Diamond
 # If set, deploy:system calls setMuonIds(muonAppId)
 MUON_APP_ID=""
-# If BOTH are set, deploy:system calls setMuonConfig(upnlValidTime, priceValidTime)
+# Each independently defaults to 300 seconds; setMuonConfig is a checkpointed setup step
 MUON_UPNL_VALID_TIME=""
 MUON_PRICE_VALID_TIME=""
 
@@ -153,13 +166,16 @@ DEPLOY_LOG_LEVEL="minimal"
 					<ol start="2">
 						<li>Configure <code>.env</code> for local testing (minimal config):</li>
 					</ol>
-					<pre><code class="language-bash"># Just the private key - everything else uses sensible defaults
-PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+					<pre><code class="language-bash"># Archived local HTTP network: docker. It uses the node’s exposed accounts.
+HARDHAT_DOCKER_URL="http://127.0.0.1:8545"
+# To select a particular private key locally, first configure that network’s
+# accounts explicitly (for example [process.env.TEAM_DEPLOYER!]).
+# Setting TEAM_DEPLOYER alone does not change the archived docker entry.
 </code></pre>
 					<ol start="3">
 						<li>Run the deployment:</li>
 					</ol>
-					<pre><code class="language-bash">npx hardhat deploy:system --network localhost
+					<pre><code class="language-bash">npx hardhat deploy:system --network docker
 </code></pre>
 					<h3 id="doc-setup-task-testnetmainnet-deployment">Testnet/Mainnet Deployment</h3>
 					<pre><code class="language-bash">npx hardhat deploy:system --network &lt;NETWORK_NAME&gt;
@@ -167,14 +183,26 @@ PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 					<h2 id="doc-setup-task-checkpoint-system-resumable-deployments">Checkpoint System (Resumable Deployments)</h2>
 					<p>
 						The deployment system supports <strong>checkpointing</strong> for resumable deployments. If a deployment is interrupted
-						(network error, out of gas, etc.), you can resume from where it left off.
+						(network error, out of gas, etc.), the checkpoint is a progress hint, not receipt or post-state proof. Several setup actions
+						save their flags after transaction submission without waiting for a successful receipt. Reconcile submitted setup transactions
+						and intended roles/configuration before trusting flags or resuming. Interrupted diamond cuts additionally require full
+						selector-to-facet reconciliation.
 					</p>
 					<h3 id="doc-setup-task-how-it-works">How It Works</h3>
 					<ul>
 						<li>Checkpoint files are saved to <code>tasks/data/checkpoints/checkpoint-&lt;chainId&gt;.json</code></li>
-						<li>Each contract deployment and setup step is checkpointed immediately after completion</li>
-						<li>On resume, already-completed steps are skipped automatically</li>
-						<li>Diamond cuts are verified on-chain to handle edge cases where tx succeeded but checkpoint wasn't saved</li>
+						<li>
+							Steps are checkpointed when their action returns. For setup actions that return after broadcast, this can precede mining
+							and successful execution.
+						</li>
+						<li>
+							Resume skips steps flagged complete, without proving every receipt or intended setup post-state. Confirm those outcomes
+							independently; repair a stale flag only after reconciliation.
+						</li>
+						<li>
+							Diamond-cut recovery uses incomplete on-chain heuristics; verify every expected selector/facet before treating an
+							interrupted cut as complete
+						</li>
 					</ul>
 					<h3 id="doc-setup-task-commands">Commands</h3>
 					<pre><code class="language-bash"># Resume from existing checkpoint (default behavior)
@@ -195,13 +223,17 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 					<p>The <code>deploy:system</code> task deploys and configures the following contracts:</p>
 					<ol>
 						<li><strong>Collateral</strong> - FakeStablecoin (or uses existing if <code>COLLATERAL_ADDRESS</code> is set)</li>
-						<li><strong>Diamond</strong> - Main protocol contract with 29 facets and 3 libraries</li>
+						<li><strong>Diamond</strong> - Main protocol contract with 29 facets including DiamondCutFacet, and 4 linked libraries</li>
 						<li>
 							<strong>MuonSignatureVerifier</strong> - External Muon verification contract (or uses
 							<code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> if provided)
 						</li>
-						<li><strong>AccountLayerDiamond</strong> - Unified account/affiliate management with 6 facets</li>
+						<li>
+							<strong>AccountLayerDiamond</strong> - Unified account/affiliate management with 6 application facets, plus cut/loupe
+							infrastructure
+						</li>
 						<li><strong>InstantLayer</strong> - Instant settlement layer for batched operations</li>
+						<li><strong>SymmioSymbolManager</strong> - Optional, default-on symbol manager (<code>DEPLOY_SYMBOL_MANAGER</code>)</li>
 						<li><strong>SymmioPartyB</strong> - PartyB contract (optional, if <code>DEPLOY_PARTYB=true</code>)</li>
 						<li><strong>AccountManager</strong> - For dummy affiliate (optional, if <code>REGISTER_DUMMY_AFFILIATE=true</code>)</li>
 					</ol>
@@ -224,7 +256,7 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 					<ul>
 						<li>AccountLayerDiamond receives SIGNER_ADMIN_ROLE, AFFILIATE_MANAGER_ROLE, and BALANCE_SETTLER_ROLE on Diamond</li>
 						<li>InstantLayer receives INSTANT_LAYER_ROLE on Diamond</li>
-						<li>InstantLayer receives INSTANT_LAYER_ROLE on AccountLayerDiamond</li>
+						<li>InstantLayer receives SIGNER_SETTER_ROLE on AccountLayerDiamond</li>
 						<li>Symmio Core (Diamond) is whitelisted on AccountLayerDiamond</li>
 						<li>AccountLayer is registered as the system hook on Diamond (<code>registerHook(address(0), accountLayerDiamond)</code>)</li>
 					</ul>
@@ -232,14 +264,14 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 					<p>When <code>deploy:system</code> runs:</p>
 					<ul>
 						<li>
-							If <code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> is set, deployment first requires contract code and
-							<code>supportsMuonFunction(uint8(MuonFunction.RemoveMargin)) == true</code>. A legacy verifier without the capability API
-							is rejected before any setup transaction.
+							If <code>MUON_SIGNATURE_VERIFIER_ADDRESS</code> is set, this archived task records and uses the supplied address directly;
+							it does not preflight contract code or capability support.
 						</li>
 						<li>Otherwise, a new <code>MuonSignatureVerifier</code> is deployed.</li>
 						<li>
-							Diamond is wired to the verifier using <code>setSignatureVerifierAddress</code>. The on-chain setter repeats the
-							<code>RemoveMargin</code> capability check; the zero address remains available to disable verification configuration.
+							Diamond is wired using <code>setSignatureVerifierAddress</code>. This archived setter stores the address without a code or
+							capability check; setup then reads back the configured address. No <code>RemoveMargin</code> capability API exists in this
+							revision.
 						</li>
 						<li>
 							If deployer has admin on verifier, admin receives <code>DEFAULT_ADMIN_ROLE</code> and <code>SETTER_ROLE</code> on
@@ -251,16 +283,23 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 						</li>
 						<li>
 							If <code>MUON_GATEWAY_SIGNERS</code> is set, each signer is added with <code>addGatewaySigner</code> (idempotent check).
+							Registration does not grant category permissions: before oracle-dependent use, a verifier <code>SETTER_ROLE</code> holder
+							must explicitly authorize both the key and gateway for the required historical categories (IDs 0–6) through
+							<code>setPublicKeyPermissions</code> and <code>setGatewaySignerPermissions</code>. The task does not perform those grants.
+							See <a href="muon-keys.html#doc-muon-keys-setup-procedure">Muon key setup</a>.
 						</li>
 					</ul>
 					<h3 id="doc-setup-task-muon-runtime-config-on-diamond">Muon Runtime Config on Diamond</h3>
 					<ul>
 						<li>If <code>MUON_APP_ID</code> is set, <code>setMuonIds</code> is called.</li>
 						<li>
-							If both <code>MUON_UPNL_VALID_TIME</code> and <code>MUON_PRICE_VALID_TIME</code> are set, <code>setMuonConfig</code> is
-							called.
+							<code>MUON_UPNL_VALID_TIME</code> and <code>MUON_PRICE_VALID_TIME</code> independently default to 300 seconds. Setup
+							schedules <code>setMuonConfig</code> with both effective values even when neither variable is supplied.
 						</li>
-						<li>If only one of those validity vars is set, <code>setMuonConfig</code> is skipped with a warning.</li>
+						<li>
+							Setting only one validity variable changes that value while the other remains 300; it does not skip configuration.
+							Checkpointed completed steps can still be skipped on resume.
+						</li>
 					</ul>
 					<h3 id="doc-setup-task-muon-view-call-verification">Muon View-Call Verification</h3>
 					<p>As part of setup, <code>deploy:system</code> verifies Muon config by reading:</p>
@@ -268,8 +307,8 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 						<li><code>getSignatureVerifier()</code> against expected verifier address.</li>
 						<li><code>getMuonIds()</code> against <code>MUON_APP_ID</code> (if provided).</li>
 						<li>
-							<code>getMuonConfig()</code> against <code>MUON_UPNL_VALID_TIME</code> / <code>MUON_PRICE_VALID_TIME</code> (if both
-							provided).
+							<code>getMuonConfig()</code> against both effective configured validity values, including the independent 300-second
+							defaults.
 						</li>
 						<li>
 							<code>getAllPublicKeys()</code> / <code>getAllGatewaySigners()</code> on verifier (if those seed env vars are provided).
@@ -289,8 +328,12 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 					<h3 id="doc-setup-task-instantlayer-templates-if-setup_instant_layer_templatestrue">
 						InstantLayer Templates (if <code>SETUP_INSTANT_LAYER_TEMPLATES=true</code>)
 					</h3>
-					<p>Two templates are registered on InstantLayer to facilitate common trading flows:</p>
-					<h4 id="doc-setup-task-openposition-template-6-operations">OpenPosition Template (6 operations)</h4>
+					<p>
+						Three templates are registered. These are intended payload flows; template storage records operation counts and injection
+						offsets rather than restricting each operation to a named selector. The task enables <code>instantOpenMode</code> on template
+						ID 0, assuming the fresh registry order below.
+					</p>
+					<h4 id="doc-setup-task-openposition-template-6-operations">InstantOpen Template (4 operations)</h4>
 					<table>
 						<thead>
 							<tr>
@@ -303,43 +346,31 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 						<tbody>
 							<tr>
 								<td>0</td>
-								<td><code>predictNextVirtualAccountAddress</code></td>
+								<td><code>addMarginToNextVA</code></td>
 								<td>AccountLayerDiamond</td>
-								<td>None (returns virtualAccount)</td>
+								<td>None</td>
 							</tr>
 							<tr>
 								<td>1</td>
-								<td><code>addMargin</code></td>
-								<td>AccountLayerDiamond</td>
-								<td>virtualAccount from op 0 (param 1)</td>
+								<td>Quote-returning <code>sendQuote</code> variant</td>
+								<td>Diamond via AccountLayer</td>
+								<td>Returns quoteId</td>
 							</tr>
 							<tr>
 								<td>2</td>
-								<td><code>sendQuoteWithAffiliateAndData</code></td>
-								<td>Diamond</td>
-								<td>None (returns quoteId)</td>
-							</tr>
-							<tr>
-								<td>3</td>
-								<td><code>allocateForPartyB</code></td>
-								<td>Diamond</td>
-								<td>partyA from op 0 (param 2)</td>
-							</tr>
-							<tr>
-								<td>4</td>
 								<td><code>lockQuote</code></td>
-								<td>Diamond</td>
-								<td>quoteId from op 2 (param 1)</td>
+								<td>Diamond via PartyB</td>
+								<td>sourceIndices [1], insertionPoints [0], sourceOffsets [0]</td>
 							</tr>
 							<tr>
-								<td>5</td>
+								<td>3</td>
 								<td><code>openPosition</code></td>
-								<td>Diamond</td>
-								<td>quoteId from op 2 (param 1)</td>
+								<td>Diamond via PartyB</td>
+								<td>sourceIndices [1], insertionPoints [0], sourceOffsets [0]</td>
 							</tr>
 						</tbody>
 					</table>
-					<h4 id="doc-setup-task-closeposition-template-4-operations">ClosePosition Template (4 operations)</h4>
+					<h4 id="doc-setup-task-closeposition-template-4-operations">InstantClose Template (2 operations)</h4>
 					<table>
 						<thead>
 							<tr>
@@ -352,30 +383,24 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 						<tbody>
 							<tr>
 								<td>0</td>
-								<td><code>predictNextVirtualAccountAddress</code></td>
-								<td>AccountLayerDiamond</td>
-								<td>None (returns virtualAccount)</td>
+								<td><code>requestToClosePosition</code></td>
+								<td>Diamond via AccountLayer</td>
+								<td>No result injection</td>
 							</tr>
 							<tr>
 								<td>1</td>
-								<td><code>requestToClosePosition</code></td>
-								<td>Diamond</td>
-								<td>None (quoteId provided by user)</td>
-							</tr>
-							<tr>
-								<td>2</td>
 								<td><code>fillCloseRequest</code></td>
-								<td>Diamond</td>
-								<td>None (quoteId provided by user)</td>
-							</tr>
-							<tr>
-								<td>3</td>
-								<td><code>deallocateForPartyB</code></td>
-								<td>Diamond</td>
-								<td>partyA from op 0 (param 2)</td>
+								<td>Diamond via PartyB</td>
+								<td>No result injection</td>
 							</tr>
 						</tbody>
 					</table>
+					<p>
+						<strong>InstantCloseWithAllocation</strong> is the third template and contains 3 operations. All three
+						<code>sourceIndices</code>, <code>insertionPoints</code> and <code>sourceOffsets</code> arrays are empty for every step. The
+						task does not specify a third-step selector; the signed payload supplies the desired allocation operation. For InstantOpen,
+						offsets are bytes: read the first 32-byte word from op 1 and write the first ABI argument after the later call’s selector.
+					</p>
 					<h3 id="doc-setup-task-partyb-setup-if-deployed">PartyB Setup (if deployed)</h3>
 					<ul>
 						<li>SymmioPartyB is registered in Diamond</li>
@@ -445,27 +470,28 @@ npx hardhat deploy:system --network &lt;NETWORK_NAME&gt; --fresh
 					<p>After deployment, you will receive:</p>
 					<ol>
 						<li><strong>Console output</strong> - Summary of all deployed contracts and their addresses</li>
-						<li><strong>Deployment report</strong> - JSON file saved to <code>data/deployment-report.json</code></li>
+						<li><strong>Deployment report</strong> - JSON file saved to <code>tasks/data/deployment-report.json</code></li>
 						<li>
 							<strong>Verification files</strong> - Separate JSON files for contract verification:
 							<ul>
-								<li><code>data/stablecoin.json</code> - Collateral contract</li>
-								<li><code>data/deployed.json</code> - Core Diamond contracts/facets and MuonSignatureVerifier</li>
-								<li><code>data/accountlayer.json</code> - AccountLayerDiamond contracts and facets</li>
-								<li><code>data/instantlayer.json</code> - InstantLayer contract</li>
-								<li><code>data/partyb.json</code> - SymmioPartyB contracts (proxy, implementation, admin)</li>
+								<li><code>tasks/data/stablecoin.json</code> - Collateral contract</li>
+								<li><code>tasks/data/deployed.json</code> - Core Diamond contracts/facets and MuonSignatureVerifier</li>
+								<li><code>tasks/data/accountlayer.json</code> - AccountLayerDiamond contracts and facets</li>
+								<li><code>tasks/data/instantlayer.json</code> - InstantLayer contract</li>
+								<li><code>tasks/data/partyb.json</code> - SymmioPartyB contracts (proxy, implementation, admin)</li>
+								<li><code>tasks/data/symbolmanager.json</code> - SymmioSymbolManager (when deployed)</li>
 							</ul>
 						</li>
 					</ol>
-					<p>Example output:</p>
+					<p>Illustrative output for default-on optional components (not a deployment record):</p>
 					<pre><code>================================================================================
 DEPLOYMENT REPORT
 ================================================================================
 
 DEPLOYMENT SUMMARY
 --------------------------------------------------------------------------------
-Total Contracts: 7
-Successful: 7
+Total Contracts: 8
+Successful: 8
 Skipped (from checkpoint): 0
 Failed: 0
 
@@ -478,10 +504,11 @@ AccountLayerDiamond:  0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
 InstantLayer:         0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
 SymmioPartyB:         0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9
 AccountManager:       0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+SymmioSymbolManager:  &lt;deployed symbol manager address&gt;
 </code></pre>
 					<p>
-						Note: total/success counts depend on optional flags (<code>DEPLOY_PARTYB</code>, <code>REGISTER_DUMMY_AFFILIATE</code>) and
-						whether contracts are reused from checkpoint.
+						Note: total/success counts depend on optional flags (<code>DEPLOY_PARTYB</code>, <code>REGISTER_DUMMY_AFFILIATE</code>,
+						<code>DEPLOY_SYMBOL_MANAGER</code>) and whether contracts are reused from checkpoint.
 					</p>
 					<h2 id="doc-setup-task-task-options">Task Options</h2>
 					<pre><code class="language-bash">npx hardhat deploy:system [options]
@@ -502,7 +529,11 @@ npx hardhat verify:all --network &lt;NETWORK_NAME&gt; --skip 10
 					<p>The <code>verify:all</code> task reads from all deployment log files and verifies each contract.</p>
 					<h2 id="doc-setup-task-troubleshooting">Troubleshooting</h2>
 					<h3 id="doc-setup-task-deployment-fails-mid-way">Deployment fails mid-way</h3>
-					<p>The checkpoint system will save progress. Simply run the same command again to resume:</p>
+					<p>
+						Before resuming, reconcile submitted setup receipts and verify the intended roles and configuration, as well as every selector
+						in any interrupted cut. A saved flag can describe a transaction that was only broadcast, so do not infer successful execution
+						from the checkpoint:
+					</p>
 					<pre><code class="language-bash">npx hardhat deploy:system --network &lt;NETWORK_NAME&gt;
 </code></pre>
 					<h3 id="doc-setup-task-checkpoint-appears-corrupted">Checkpoint appears corrupted</h3>
@@ -513,7 +544,12 @@ npx hardhat verify:all --network &lt;NETWORK_NAME&gt; --skip 10
 					<pre><code class="language-bash">rm tasks/data/checkpoints/checkpoint-&lt;chainId&gt;.json
 </code></pre>
 					<h3 id="doc-setup-task-role-granting-fails">Role granting fails</h3>
-					<p>Ensure the deployer address matches the private key in <code>.env</code> and has admin privileges.</p>
+					<p>
+						Confirm the actual first signer selected by the archived network configuration. Key-configured networks use
+						<code>TEAM_DEPLOYER</code>; <code>docker</code> uses node-exposed accounts unless configured otherwise. DEFAULT_ADMIN_ROLE
+						does not imply the specific roles used by setup. The unmodified fresh flow assumes admin equals deployer; a different
+						governance admin requires explicit setup-role provisioning and later cleanup.
+					</p>
 					<h3 id="doc-setup-task-muon-verifier-seeding-fails">Muon verifier seeding fails</h3>
 					<p>
 						If <code>MUON_PUBLIC_KEY_*</code> or <code>MUON_GATEWAY_SIGNERS</code> are set, deployer must have <code>SETTER_ROLE</code> on
@@ -521,19 +557,23 @@ npx hardhat verify:all --network &lt;NETWORK_NAME&gt; --skip 10
 						a proper verifier admin account.
 					</p>
 					<p>
-						If an existing verifier fails with <code>does not support MuonFunction.RemoveMargin</code>, deploy the current
-						forward-compatible <code>MuonSignatureVerifier</code>. Its verifier ABI uses <code>uint8</code> category IDs and exposes
-						<code>supportsMuonFunction(uint8)</code>; older verifiers without that explicit capability cannot be reused.
+						The archived task has no capability preflight. Independently verify that the supplied address implements the historical
+						enum-typed verifier ABI and that registered keys and gateways hold the required seven-category permissions.
+						Registration/readback alone does not prove a real oracle signature can validate.
 					</p>
 					<h3 id="doc-setup-task-muon-config-was-not-applied">Muon config was not applied</h3>
 					<p>
-						<code>setMuonConfig</code> is called only when both <code>MUON_UPNL_VALID_TIME</code> and
-						<code>MUON_PRICE_VALID_TIME</code> are set. If only one is set, deployment logs a warning and skips that call.
+						Each validity variable independently defaults to 300 seconds. The task checkpoint-schedules <code>setMuonConfig</code> and
+						compares both readback values; supplying just one variable does not skip it. On resume, inspect whether the checkpoint already
+						marked this setup step complete, then verify its receipt and both current readback values before deciding whether to repair
+						that flag or resubmit.
 					</p>
 					<h3 id="doc-setup-task-diamond-cut-verification-mismatch">Diamond cut verification mismatch</h3>
 					<p>
-						If a diamond cut transaction succeeded but the checkpoint wasn't saved, the system will detect this on-chain and update the
-						checkpoint automatically.
+						Recovery is heuristic. Core treats more than one loupe facet as completion; AccountLayer probes an
+						<code>admin()</code> function absent from its archived ControlFacet. Neither proves every selector was installed, and a cut
+						may have completed only some chunks. Reconcile every expected selector-to-facet mapping before retrying or repairing a
+						checkpoint; mark completion only after that verification.
 					</p>
 				</article>
 			</main>

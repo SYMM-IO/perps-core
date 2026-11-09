@@ -106,8 +106,9 @@
 
 					<h2 id="setup-api">Setup API</h2>
 					<p>
-						A registered PartyB is already an eligible charger. Governance must register any other service, such as a relayer, before a
-						payer can grant it an allowance:
+						A registered PartyB is already an eligible charger. Governance must register any other service, such as a relayer, before it
+						can charge. A payer may approve an address before registration; that approval alone does not make the address eligible to
+						charge:
 					</p>
 					<pre><code class="language-solidity">// FEE_ADMIN_ROLE; needed only for a non-PartyB service
 function registerOperationalFeeCharger(address charger) external;
@@ -174,8 +175,9 @@ function getOperationalFeeAllowance(address payer, address charger)
 							spend another charger&rsquo;s allowance.
 						</li>
 						<li>
-							<strong>Timelocked reductions + governance unregister</strong>: a payer can walk away after the delay; governance can
-							disable an explicitly registered service charger via <code>unregisterOperationalFeeCharger</code>.
+							<strong>Configured reduction delay + governance unregister</strong>: a payer can reduce authority after the configured
+							delay (zero is immediate); governance can disable an explicitly registered service charger via
+							<code>unregisterOperationalFeeCharger</code>.
 						</li>
 						<li>
 							<strong>Guards.</strong> The charge path makes no external calls, and the payer must not be suspended or under active
@@ -276,7 +278,7 @@ function getOperationalFeeAllowance(address payer, address charger)
 						</table>
 					</div>
 					<aside class="callout callout-note">
-						<strong>Why the floor exists.</strong> The first v0.8.6 build checked only that the allocation covered the remainder, so an
+						<strong>Why the floor exists.</strong> An earlier implementation checked only that the allocation covered the remainder, so an
 						approved charger could take allocation down to zero while positions stayed open: an allocation of 1 000 with 800 locked as CVA
 						+ LF and no free balance accepted a 900 charge and left 100 behind the 800 promised to counterparties and liquidators. The
 						floor refuses exactly that part of a charge. Free balance is still charged first with no floor, a payer with enough free
@@ -300,9 +302,12 @@ function getOperationalFeeAllowance(address payer, address charger)
 						is immediate, so a user can top up a solver or relayer whenever more operational-fee room is needed.
 					</p>
 					<p>
-						Reducing or revoking the allowance is delayed. During that delay, the requested lower target is not yet effective: the live
-						allowance remains spendable and every charge continues to decrement it. This prevents a payer from approving an operation,
-						letting a trusted charger take on the work, and then revoking the allowance before the small operational fee can be collected.
+						Reducing or revoking the allowance waits the configured <code>operationalFeeReductionDelay</code>; a zero setting makes the
+						change immediate. <code>COOLDOWN_ADMIN_ROLE</code> controls this setting through
+						<code>setOperationalFeeReductionDelay(uint256)</code>. Integrations must read or verify the active configuration. With a
+						positive delay, the requested lower target is not yet effective: the live allowance remains spendable and every charge
+						continues to decrement it. This prevents a payer from approving an operation, letting a trusted charger take on the work, and
+						then revoking the allowance before the small operational fee can be collected.
 					</p>
 					<p>
 						Once the delay has passed, the reduction is handled through lazy evaluation. View calls report the lower effective allowance

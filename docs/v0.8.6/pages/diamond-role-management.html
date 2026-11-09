@@ -105,10 +105,11 @@ function isRoleAdmin(address user, bytes32 role) external view returns (bool);</
 						and withdrawal state therefore remain at their original slots.
 					</p>
 					<aside class="callout callout-risk">
-						<strong>An existing v0.8.6.1 ExpressProvider needs one access-control migration.</strong> Its current owner does not
-						automatically hold <code>DEFAULT_ADMIN_ROLE</code>. The upgrade procedure must call <code>setAdmin(currentOwner)</code>,
-						preferably in the same <code>diamondCut</code> initialization step that installs the new facets. Until that call succeeds, the
-						new role-admin path cannot appoint role admins or use the canonical account-first grant and revoke calls.
+						<strong>Verify ExpressProvider administration during an upgrade.</strong> Diamond ownership does not itself confer
+						<code>DEFAULT_ADMIN_ROLE</code>. Ensure the intended administrator holds it, for example through owner-only
+						<code>setAdmin(currentOwner)</code> in the reviewed upgrade. The legacy owner-only grant overload can also grant it. Without a
+						default admin or the relevant delegated role administrator, the canonical account-first grant/revoke path is unavailable.
+						Inspect the predecessor layout and live grants rather than assuming them from a version label.
 					</aside>
 					<aside class="callout callout-important">
 						<strong>Do not run ExpressProvider <code>Init.init</code> again.</strong> v0.8.6.1 is already initialized, so a second call

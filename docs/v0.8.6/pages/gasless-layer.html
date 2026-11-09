@@ -364,12 +364,11 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						this uncapped type. Gasless Layer checks the signature and sends that value only to the signed recipient.
 					</p>
 					<p>
-						The signer may be an externally owned account or an ERC-1271 smart account, such as a Coinbase Smart Wallet or an EIP-7702
-						delegated account. The signature bytes are handed to the signer unchanged, so variable-length smart-account formats are
-						accepted on the same footing as 65-byte ECDSA signatures. Wallet operations and InstantLayer operations already validate
-						signers the same way. The smart account must produce the ERC-1271 signature for the supplied digest according to its own
-						policy. Coinbase Smart Wallet, for example, wraps that digest in its account-specific replay-safe EIP-712 domain before the
-						owner signs it; merely wrapping the owner&rsquo;s raw Gasless digest signature is not valid.
+						The signer may be an externally owned account or an ERC-1271 smart account. Signature checking passes a contract signer the
+						supplied digest and unchanged signature bytes, so its wallet policy decides whether a variable-length envelope is valid.
+						Wallet operations and InstantLayer operations use the same signature-checking boundary. The client must construct the format
+						and replay domain required by that wallet implementation; a raw owner signature is not a universal smart-account format.
+						Compatibility with a particular vendor or delegated-account implementation is not established by this interface alone.
 					</p>
 					<p>
 						The actual native amount must meet <code>minNativeAmountOut</code> and must not exceed <code>maxNativeGasTopUpAmount</code>.
@@ -491,10 +490,10 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 						existing payer slots with a sub-1x multiplier are read as 1x from the upgrade on.
 					</p>
 					<aside class="callout callout-note">
-						<strong>Why the floor exists.</strong> The first v0.8.6 build computed <code>baseFee * multiplier / 10000</code> at both read
-						points and mapped only a zero multiplier to 1x, so a payer that signed a multiplier of 1 paid <code>baseFee / 10000</code>,
-						rounded down, for an operation the relayer still paid gas for. The field keeps its encoding and range; only its effect below
-						1x changed.
+						<strong>Why the floor exists.</strong> An earlier implementation computed <code>baseFee * multiplier / 10000</code> at both
+						read points and mapped only a zero multiplier to 1x, so a payer that signed a multiplier of 1 paid
+						<code>baseFee / 10000</code>, rounded down, for an operation the relayer still paid gas for. The field keeps its encoding and
+						range; only its effect below 1x changed.
 					</aside>
 					<p>
 						The first <code>dailyFreeOpsLimit</code> operations for a billing account in each UTC day waive their base fee. A zero limit
@@ -512,8 +511,9 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					</p>
 					<p>
 						Billing and authorization deliberately use different account resolution. A deleted Virtual Account keeps its parent for
-						billing because its returned funds sit there. It does not inherit the parent&rsquo;s wallet or delegation authority after
-						deletion.
+						billing because its returned funds sit there. Deleted VAs do not inherit parent-keyed delegated permissions. Wallet-owner
+						lookup still uses AccountLayer&rsquo;s <code>ownerOf</code>, which retains parent-based ownership: deletion does not by itself
+						revoke an existing owner&rsquo;s direct wallet authority.
 					</p>
 
 					<h3 id="fee-timing">Fee timing and atomicity</h3>
@@ -631,8 +631,10 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<p>
 						For a parent account and its Virtual Accounts together, include the rows for every signer belonging to that parent. Keep the
 						full batch when requesting the preview: removing other operations can change which operation pays a shared wallet&rsquo;s
-						creation fee or uses the remaining free quota. <code>freeOpsApplied</code> counts free operations across the whole batch;
-						<code>dailyFreeOpsRemaining(account)</code> reads one billing account&rsquo;s remaining quota.
+						creation fee or uses the remaining free quota. <code>freeOpsApplied</code> counts free operations across the whole batch; For
+						a nonzero <code>dailyFreeOpsLimit</code>, <code>dailyFreeOpsRemaining(account)</code> reads one billing account&rsquo;s
+						remaining quota. Read the limit first: zero means no free quota, even though the remaining getter returns a max-uint
+						compatibility sentinel in that mode. Do not display that sentinel as unlimited free operations.
 					</p>
 					<p>
 						If quota exhaustion is configured to block execution, preview reverts with
@@ -643,8 +645,8 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 
 					<h3 id="quote-approval-only">The request itself changes the fee multiplier</h3>
 					<p>
-						Suppose the base fee is 2 USDC and the user is approving GaslessLayer with a 50% fee multiplier. For a batch containing only
-						that Core approval, with no flex fields, preview reads the multiplier in the approval calldata and quotes 1 USDC for the
+						Suppose the base fee is 2 USDC and the user is approving GaslessLayer with a 150% fee multiplier. For a batch containing only
+						that Core approval, with no flex fields, preview reads the multiplier in the approval calldata and quotes 3 USDC for the
 						billing parent. This works before the signature or allowance is available. The same rule applies to an approval-only template.
 					</p>
 					<p>
@@ -923,10 +925,14 @@ await gateway.setDepositFeeConfig(50_000, minimumDeposit) // 0.05 USDC per settl
 						</li>
 						<li>
 							<p>
-								<strong>Wait for the bridged collateral.</strong> Settle once the wallet holds at least <code>minimumDeposit</code>.
+								<strong>Wait for the bridged collateral.</strong> The gross balance must reach <code>minimumDeposit</code> and
+								strictly exceed this destination&rsquo;s settlement fee plus any wallet-creation fee, leaving a positive net deposit.
 							</p>
 							<pre><code class="language-typescript">const balance = await collateral.balanceOf(depositWallet)
-const ready = balance >= (await gateway.minimumDeposit())</code></pre>
+const settlementFee = await gateway.newAccountDepositFee() // depositFee() for an existing SubAccount
+const creationFee = await gateway.getWalletCreationFee(owner, 0n) // zero once the wallet is deployed
+const ready = balance >= (await gateway.minimumDeposit()) && balance > settlementFee + creationFee
+// These are raw collateral units. Re-preview/simulate the full settlement before submitting.</code></pre>
 						</li>
 						<li>
 							<p>

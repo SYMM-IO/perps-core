@@ -112,7 +112,11 @@
 							</tr>
 							<tr>
 								<td><code>maxLiquidationProfit</code></td>
-								<td>Maximum LF a liquidator can earn <strong>per position</strong> (in collateral token units).</td>
+								<td>
+									Per-position cap on the total LF budget for the two liquidator slots, in
+									<strong>normalized 18-decimal collateral-accounting units</strong>. For example, 50 USDC is
+									<code>50 * 1e18</code> even when the ERC20 uses 6 decimals.
+								</td>
 							</tr>
 						</tbody>
 					</table>
@@ -218,9 +222,10 @@ if (lf &gt; 0) {
 }
 </code></pre>
 					<p>
-						The first liquidator is the one who called <code>liquidatePartyA</code> (or <code>setSymbolsPrice</code> for deferred
-						liquidations). The second is the one who called <code>setSymbolsPrice</code> (or again <code>setSymbolsPrice</code> in the
-						deferred flow). Each receives exactly half of the capped <code>liquidationFee</code>.
+						The first liquidator slot is the caller of <code>liquidatePartyA</code>, or <code>deferredLiquidatePartyA</code> in the
+						deferred flow. The second is the caller of <code>setSymbolsPrice</code> or <code>deferredSetSymbolsPrice</code>, respectively.
+						Each slot receives <code>floor(liquidationFee / 2)</code>; if the fee is an odd integer, the remaining smallest accounting
+						unit is not credited by these two statements.
 					</p>
 					<h2 id="doc-liquidation-insurance-example">Example</h2>
 					<p>

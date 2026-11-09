@@ -123,6 +123,8 @@ interface ISymmioHook {
         TradingFeeType feeType
     ) external;
 
+    // System hook only: no quote affiliate is available.
+    function onLiquidationSettled(address partyA) external;
 }
 </code></pre>
 					<p>
@@ -178,7 +180,9 @@ function registerHook(
 					<h3 id="doc-hook-system-system-wide-hook-address0">System-Wide Hook (address(0))</h3>
 					<p>
 						The <code>address(0)</code> key acts as a system-wide hook. When set, this hook is called for <strong>every</strong> quote
-						regardless of its affiliate. Both hooks fire on every event: first the affiliate-specific hook, then the system hook.
+						regardless of its affiliate. Quote-scoped callbacks run first on the affiliate hook, then on the system hook.
+						<code>onLiquidationSettled(partyA)</code> is the exception: only the system hook receives it because no quote affiliate is
+						available.
 					</p>
 					<pre><code class="language-solidity">address affiliateHook = AffiliateStorage.layout().affiliateHooks[quote.affiliate];
 address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
@@ -275,7 +279,7 @@ address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 							<tr>
 								<td>ClearingHouse pending cancel</td>
 								<td><code>onCancelQuote</code></td>
-								<td><code>ClearingHouseFacetImpl._callCancelQuoteHooksAndUpdateStatus</code></td>
+								<td><code>ClearingHouseFacetImpl.liquidatePendingPositionsForClearingHouse</code></td>
 								<td>Cross-PartyB or PartyA takeover liquidation (pending quotes)</td>
 							</tr>
 							<tr>
@@ -284,6 +288,12 @@ address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 								<td><code>ClearingHouseFacetImpl.liquidatePositionsForClearingHouse</code></td>
 								<td>Cross-PartyB or PartyA takeover liquidation (open positions)</td>
 							</tr>
+							<tr>
+								<td>PartyA liquidation settlement / ClearingHouse PartyA hook batch</td>
+								<td><code>onLiquidationSettled</code> (system hook only)</td>
+								<td><code>LibHook.callLiquidationSettledHooks</code></td>
+								<td>Final normal PartyA settlement, takeover settlement, or operator-supplied cross-liquidation batch</td>
+							</tr>
 						</tbody>
 					</table>
 					<h3 id="doc-hook-system-open-position-flow">Open Position Flow</h3>
@@ -291,7 +301,10 @@ address systemHook = AffiliateStorage.layout().affiliateHooks[address(0)];
 						In <code>LibPartyBPositionsActions.openPosition</code>, after the position is fully created and all balances updated, four
 						hook calls fire:
 					</p>
-					<pre><code class="language-solidity">uint256 openFee = (filledAmount * quote.openedPrice * quote.tradingFee) / 1e36;
+					<pre><code class="language-solidity">uint256 feeBasisPrice = quote.orderType == OrderType.LIMIT
+    ? quote.requestedOpenPrice
+    : quote.marketPrice;
+uint256 openFee = (filledAmount * feeBasisPrice * quote.tradingFee) / 1e36;
 
 // 1. Affiliate hook: onOpenPosition
 LibHook.safeCall(
@@ -309,9 +322,20 @@ LibHook.safeCall(
     quoteId
 );
 // 3. System hook: onOpenPosition
-LibHook.safeCall(systemHook, ...);
+LibHook.safeCall(
+    systemHook,
+    abi.encodeCall(ISymmioHook.onOpenPosition,
+        (quoteId, filledAmount, openedPrice, quote.partyA, quote.partyB)),
+    quoteId
+);
 // 4. System hook: onFeeCharged (OPEN)
-LibHook.safeCall(systemHook, ...);
+LibHook.safeCall(
+    systemHook,
+    abi.encodeCall(ISymmioHook.onFeeCharged,
+        (quoteId, openFee, quote.partyA, quote.partyB,
+         quote.symbolId, quote.affiliate, ISymmioHook.TradingFeeType.OPEN)),
+    quoteId
+);
 </code></pre>
 					<h3 id="doc-hook-system-close-position-flow">Close Position Flow</h3>
 					<p>
@@ -338,9 +362,10 @@ LibHook.safeCall(systemHook, ...);
 					<h3 id="doc-hook-system-liquidation-flows">Liquidation Flows</h3>
 					<p>
 						During liquidations (PartyA, isolated PartyB, and ClearingHouse), hooks fire via
-						<code>LibHook.callClosePositionHooks</code> for position closures and <code>_callCancelQuoteHooksAndUpdateStatus</code> for
-						pending quote cancellations. The liquidation price is passed as <code>closedPrice</code>, so hook contracts can distinguish
-						normal closes from liquidations by comparing against the original <code>openedPrice</code> or by checking quote status.
+						<code>LibHook.callClosePositionHooks</code> for position closures and <code>LibHook.callCancelQuoteHooks</code> for pending
+						quote cancellations. The liquidation price is passed as <code>closedPrice</code>. Check the updated quote status (such as
+						<code>LIQUIDATED</code>) to distinguish liquidation from a normal close; price differing from
+						<code>openedPrice</code> indicates profit or loss and is not a liquidation indicator.
 					</p>
 					<h2 id="doc-hook-system-libhooksafecall-security-model">LibHook.safeCall — Security Model</h2>
 					<p>
@@ -373,18 +398,16 @@ function safeCall(address hook, bytes memory data, uint256 quoteId) internal {
 						SYMMIO uses a meta-transaction pattern where <code>GlobalAppStorage.signer</code> identifies the actual user behind a proxied
 						call. If this signer were still set when the hook executes, a malicious hook could call back into the diamond and execute
 						operations as that user (e.g., deallocate their funds). By clearing the signer to <code>address(0)</code> before the external
-						call, any re-entrant call into the diamond will fail authorization checks because <code>LibSigner.getSigner()</code> returns
-						<code>address(0)</code> — an address that holds no roles and owns no positions.
+						call, a reentrant call no longer inherits that user identity. <code>LibSigner.getSigner()</code> instead falls back to
+						<code>msg.sender</code>, which is the hook. The hook can still use its own balances/roles or permissionless entrypoints when
+						their other guards permit; signer isolation is not a universal reentrancy ban.
 					</p>
-					<p>The <code>MaliciousHook</code> test contract in the repository demonstrates this protection:</p>
-					<pre><code class="language-solidity">// contracts/core/test/MaliciousHook.sol
-
-// Try to call deallocate as the user (this should fail because signer is cleared)
-try ISymmioCore(symmioCore).deallocate(deallocateAmount) {
-    reentrySucceeded = true;
-} catch (bytes memory error) {
-    reentrySucceeded = false;  // Expected: always fails
-    reentryError = error;
+					<p>The source boundary is the signer resolver itself:</p>
+					<pre><code class="language-solidity">// contracts/core/libraries/LibSigner.sol
+function getSigner() internal view returns (address) {
+    return GlobalAppStorage.layout().signer == address(0)
+        ? msg.sender
+        : GlobalAppStorage.layout().signer;
 }
 </code></pre>
 					<h3 id="doc-hook-system-revert-behavior">Revert Behavior</h3>
@@ -414,7 +437,7 @@ if (!success) {
 					<p>
 						<strong>Signer cleared before hook.</strong> The <code>GlobalAppStorage.signer</code> is set to <code>address(0)</code> before
 						the hook call and restored afterward. This prevents the hook from acting on behalf of the user. Any call back into the diamond
-						during hook execution will see no authenticated signer.
+						during hook execution resolves the hook's own <code>msg.sender</code> rather than the original user.
 					</p>
 					<p>
 						<strong>No gas limit on hook calls.</strong> The hook is called with all remaining gas. A hook that consumes excessive gas
@@ -427,32 +450,33 @@ if (!success) {
 						<code>onlySymmio</code> modifier).
 					</p>
 					<p>
-						<strong>Dual invocation.</strong> Both the affiliate-specific hook and the system-wide hook fire for every event. If either
-						reverts, the transaction reverts. This means registering a system-wide hook introduces a global dependency: if it breaks, all
-						trading halts.
+						<strong>Dual invocation.</strong> Both the affiliate-specific hook and the system-wide hook receive quote-scoped callbacks;
+						<code>onLiquidationSettled</code> goes only to the system hook. If either reverts, the transaction reverts. This means
+						registering a system-wide hook introduces a global dependency: if it breaks, all trading halts.
 					</p>
 					<h2 id="doc-hook-system-account-layer-integration">Account Layer Integration</h2>
 					<p>
 						The account layer implements <code>ISymmioHook</code> through <code>SymmioHookFacet</code>, which is registered as a hook on
-						the core diamond. This demonstrates a production use case where the hook maintains virtual account state:
+						the core diamond. This included implementation maintains virtual-account state through callbacks:
 					</p>
 					<pre><code class="language-solidity">// contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol
 
 function onClosePosition(
-    uint256 quoteId, uint256, uint256, address partyA, address
+    uint256 quoteId, uint256, uint256, address partyA, address partyB
 ) external onlySymmio nonReentrant whenNotPaused {
-    _removeQuoteFromAccount(quoteId, partyA);
+    _removeQuoteFromAccount(quoteId, partyA, partyB);
 }
 
 function onCancelQuote(
-    uint256 quoteId, address partyA, address
+    uint256 quoteId, address partyA, address partyB
 ) external onlySymmio whenNotPaused {
-    _removeQuoteFromAccount(quoteId, partyA);
+    _removeQuoteFromAccount(quoteId, partyA, partyB);
 }
 </code></pre>
 					<p>
-						When all quotes for a virtual account are closed or cancelled, the hook automatically deletes the virtual account and returns
-						remaining funds to the parent account. The <code>onOpenPosition</code>, <code>onCloseExpired</code>, and
+						When all tracked quotes are resolved and the liquidation/remembered-cross-liquidation guards permit, the hook deletes the VA
+						and sweeps its actual free/allocated balances to the parent. <code>onLiquidationSettled</code> retries deferred cleanup. The
+						separate liquidation escrow is not swept by VA deletion. The <code>onOpenPosition</code>, <code>onCloseExpired</code>, and
 						<code>onFeeCharged</code> callbacks are no-ops in this implementation but are still defined to satisfy the interface and
 						prevent reverts.
 					</p>
@@ -496,7 +520,7 @@ function onCancelQuote(
 								<td><code>contracts/core/libraries/LibHook.sol</code></td>
 								<td>
 									<code>safeCall</code>, <code>callCancelQuoteHooks</code>, <code>callCloseExpiredHooks</code>,
-									<code>callClosePositionHooks</code>
+									<code>callClosePositionHooks</code>, <code>callLiquidationSettledHooks</code>
 								</td>
 							</tr>
 							<tr>
@@ -545,7 +569,10 @@ function onCancelQuote(
 							</tr>
 							<tr>
 								<td><code>contracts/core/test/MaliciousHook.sol</code></td>
-								<td>Test hook verifying re-entry protection</td>
+								<td>
+									Legacy reentry fixture: calls obsolete <code>deallocate(uint256)</code>; failure alone does not prove
+									signer-isolation behavior
+								</td>
 							</tr>
 							<tr>
 								<td><code>contracts/accountLayer/facets/SymmioHook/SymmioHookFacet.sol</code></td>

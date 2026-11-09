@@ -67,16 +67,26 @@
 				</header>
 				<article class="doc-article" id="full-document">
 					<h2 id="doc-cross-mode-liquidation-settlement-why-this-is-needed">Why This Is Needed</h2>
-					<p>In cross mode, <code>partyBAvailableForQuote</code> includes unrealized PnL:</p>
-					<pre><code>available = allocatedBalances[partyB][address(0)]
-          - totalLockedBalances(partyB)
-          + aggregateUPNL
+					<p>
+						In cross mode, <code>partyBAvailableForQuote</code> uses the following branches. Locked and pending values are the
+						<code>address(0)</code> aggregates, and all balances are normalized to 18 decimals:
+					</p>
+					<pre><code>allocated = partyBAllocatedBalances[partyB][address(0)]
+
+if aggregateUPNL &gt;= 0:
+    available = allocated + aggregateUPNL - locked.totalForPartyB() - pending.totalForPartyB()
+else:
+    available = allocated - locked.cva - locked.lf - pending.totalForPartyB()
+              - max(-aggregateUPNL, locked.partyBmm)
+
+// Cross-mode deallocation also subtracts partyBLiquidationSettlementReserve.
 </code></pre>
 					<p>
-						A PartyB with 200 allocated, 130 locked, and +500 uPNL has an available balance of 570. It could legally deallocate all 200
-						and still be solvent. But <code>settlePartyALiquidation</code> draws from the raw <code>partyBAllocatedBalances</code> — it
-						does not factor in uPNL. If the PartyB owes 50 from a liquidation settlement and its allocated balance is 0 (plus 22 from CVA
-						return = 22), that is not enough.
+						With no pending locks or settlement reserve, a PartyB with 200 allocated, 130 locked, and +500 uPNL has availability
+						<code>200 - 130 + 500 = 570</code>. It could deallocate all 200 and remain solvent. But
+						<code>settlePartyALiquidation</code> draws from the raw <code>partyBAllocatedBalances</code> — it does not factor in uPNL. If
+						the PartyB owes 50 from a liquidation settlement and its allocated balance is 0 (plus 22 from CVA return = 22), that is not
+						enough.
 					</p>
 					<p>
 						Isolated PartyBs do not have this gap. Their balance is per-PartyA and cannot be boosted by profits from other counterparties,
@@ -110,8 +120,9 @@
 					<p>
 						<strong>Mechanics:</strong> Delegates to <code>LibSettlement.settleUpnlUnified</code> with <code>privilegedMode = true</code>,
 						which bypasses the "caller must have a position" check and settlement cooldowns. This adjusts <code>openedPrice</code> on the
-						settled quotes, transferring funds from the solvent PartyAs' allocated balances into the PartyB's cross bucket. After this
-						call, the PartyB has enough allocated balance to cover the liquidation settlement.
+						settled quotes and applies their signed net PNL. Selecting net-profitable positions for PartyB can transfer funds into its
+						cross bucket, but a successful call does not guarantee an increase or enough funds for the pending liquidation. The caller
+						must select sufficient realizable profit and check the resulting raw balance, including the CVA returned at settlement.
 					</p>
 					<p>
 						<strong>Concurrent liquidations:</strong> Because <code>settleUpnlUnified</code> requires that none of the target PartyAs are
@@ -159,27 +170,30 @@
 2. setSymbolsPrice(partyA, sig)
    └─ Sets liquidation prices for each symbol
 
-3. liquidatePositionsPartyA(partyA, quoteIds[])
+3. liquidatePendingPositionsPartyA(partyA)  // when pending quotes exist
+   └─ Clears pending quotes required for final settlement
+
+4. liquidatePositionsPartyA(partyA, quoteIds[])
    └─ Closes positions, computes settleAmounts
    └─ May trigger dispute if cross PartyB can't cover
 
-4. resolveLiquidationDispute(partyA, partyBs[], amounts[], false)
+5. resolveLiquidationDispute(partyA, partyBs[], amounts[], false)
    └─ Admin resolves dispute, clears disputed flag
-   └─ (only needed if dispute was triggered in step 3)
+   └─ (only needed if dispute was triggered in step 4)
 
-5. settlePartyALiquidation(partyA, [isolatedPartyBs])
+6. settlePartyALiquidation(partyA, [isolatedPartyBs])
    └─ Settle isolated PartyBs first (capped payment if needed)
 
-6. settlePartyBUpnlForLiquidation(partyA, sig, prices[])
+7. settlePartyBUpnlForLiquidation(partyA, sig, prices[])
    └─ Realize cross PartyB's uPNL from other solvent PartyAs
-   └─ Increases PartyB's allocated balance
+   └─ Select sufficient net profit to fund the shortfall; success alone does not ensure this
 
-7. settlePartyALiquidation(partyA, [crossPartyB])
-   └─ Now succeeds with sufficient balance
+8. settlePartyALiquidation(partyA, [crossPartyB])
+   └─ Retry only after raw balance plus returned CVA covers the payment
 </code></pre>
 					<p>
-						Steps 5--7 can be combined if the liquidator settles uPNL before attempting any settlement. Step 4 is only needed when the
-						dispute flag is set.
+						Steps 6–8 can share an execution flow if sufficient uPNL is realized before settlement. Step 5 is only needed when the dispute
+						flag is set.
 					</p>
 					<h2 id="doc-cross-mode-liquidation-settlement-isolated-vs-cross-mode-behavior">Isolated vs Cross-Mode Behavior</h2>
 					<table>

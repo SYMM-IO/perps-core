@@ -131,7 +131,10 @@
 						</li>
 					</ul>
 					<h3 id="doc-va-lifecycle-hooks-deletion-deferral">Deletion Deferral</h3>
-					<p><code>_tryDeleteVirtualAccount(partyA, partyB)</code> gates deletion with three checks:</p>
+					<p>
+						<code>_tryDeleteVirtualAccount(partyA, partyB)</code> first requires an existing VA with no tracked quotes, then checks the
+						following liquidation guards:
+					</p>
 					<table>
 						<thead>
 							<tr>
@@ -160,12 +163,20 @@
 								<td><code>settleCrossPartyBLiquidation</code> clears <code>inProgress</code></td>
 								<td><code>onLiquidationSettled</code> (passes <code>address(0)</code>, skipping this check)</td>
 							</tr>
+							<tr>
+								<td>Active entries in <code>vaPendingCrossLiqPartyBs[partyA]</code></td>
+								<td>A previous cross-liquidation share is still pending when a later hook names another PartyB</td>
+								<td>Completed entries are removed during retry; <code>onLiquidationSettled</code> clears the remembered set</td>
+								<td>Only call the settlement hook after all relevant VA shares have been credited</td>
+							</tr>
 						</tbody>
 					</table>
 					<p>
-						The <code>partyB</code> parameter comes directly from the hook call (<code>onClosePosition</code> /
-						<code>onCancelQuote</code>). For <code>onLiquidationSettled</code>, <code>address(0)</code> is passed because settlement is
-						already complete — no cross partyB check is needed.
+						The current <code>partyB</code> comes from <code>onClosePosition</code> or <code>onCancelQuote</code>. A cross-liquidating
+						counterparty is also recorded in the VA's remembered set, so later hooks from another solver cannot bypass that deferral.
+						<code>onLiquidationSettled</code> clears the entire remembered set and retries with <code>address(0)</code>, skipping the
+						current-PartyB check. For ClearingHouse batches, the trusted operator must ensure the VA's relevant distributions are complete
+						before invoking that hook; the source does not verify that payment condition.
 					</p>
 					<h2 id="doc-va-lifecycle-hooks-normal-flows">Normal Flows</h2>
 					<h3 id="doc-va-lifecycle-hooks-full-close-fillcloserequest">Full Close (<code>fillCloseRequest</code>)</h3>
@@ -200,22 +211,26 @@
 						<li>If last quoteId: <strong>VA deleted</strong></li>
 					</ol>
 					<h3 id="doc-va-lifecycle-hooks-force-close-finalizeforceclose">Force Close (<code>finalizeForceClose</code>)</h3>
-					<p>Uses shared <code>LibQuoteClose.closeQuote()</code> path — same as full close above.</p>
+					<p>
+						When force close succeeds through the solvent or reserve-sufficient branch, it uses <code>LibQuoteClose.closeQuote</code> for
+						the requested quantity. A partial quantity keeps the VA tracked. In isolated mode, insufficient reserve instead starts PartyB
+						liquidation without closing the quote there; cleanup follows the later position-liquidation calls.
+					</p>
 					<h2 id="doc-va-lifecycle-hooks-liquidation-flows">Liquidation Flows</h2>
 					<h3 id="doc-va-lifecycle-hooks-partya-normal-liquidation">PartyA Normal Liquidation</h3>
 					<p><strong>Trigger:</strong> VA becomes insolvent.</p>
 					<ol>
 						<li>
-							<strong><code>liquidatePartyA(partyA)</code></strong> — sets <code>liquidationStatus[partyA] = true</code>
+							<strong><code>liquidatePartyA(partyA, sig)</code></strong> — sets <code>liquidationStatus[partyA] = true</code>
 						</li>
 						<li>
-							<strong><code>setSymbolsPrice(partyA)</code></strong> — sets liquidation prices per symbol
+							<strong><code>setSymbolsPrice(partyA, sig)</code></strong> — sets liquidation prices per symbol
 						</li>
 						<li>
-							<strong><code>liquidatePendingPositionsPartyA(partyA)</code></strong> — cancels all pending quotes - Collects quoteIds
-							during loop - <code>delete partyAPendingQuotes[partyA]</code> - Fires <code>onCancelQuote</code> per quote
-							<strong>after</strong> delete — quoteIds removed from VA - <code>_tryDeleteVirtualAccount</code> --
-							<code>isPartyALiquidated = true</code> — <strong>deferred</strong>
+							<strong><code>liquidatePendingPositionsPartyA(partyA)</code></strong> — loops backward through pending quotes. For each
+							quote it releases fees/state, pops that quote, then immediately fires <code>onCancelQuote</code>. Remaining pending
+							entries still exist during earlier callbacks; the pending locked total is zeroed after the loop. VA quote IDs are removed,
+							but <code>isPartyALiquidated = true</code> keeps deletion <strong>deferred</strong>.
 						</li>
 						<li>
 							<strong><code>liquidatePositionsPartyA(partyA, quoteIds)</code></strong> — liquidates open positions (paginated) - Removes
@@ -230,14 +245,17 @@
 						</li>
 					</ol>
 					<p>
-						<strong>Fund flow:</strong> Reimbursement credited to <code>allocatedBalances[VA]</code> during settlement.
-						<code>_deleteVirtualAccount</code> calls <code>zeroUpnlDeallocate</code> to sweep to parent.
+						<strong>Fund flow:</strong> <code>NORMAL</code> settlement returns reimbursement to <code>allocatedBalances[VA]</code>.
+						<code>LATE</code>/<code>OVERDUE</code> put it in <code>liquidationEscrow[VA]</code> for later ClearingHouse distribution.
+						Deferred balance returns to VA allocation in all types. Cleanup uses <code>zeroUpnlDeallocate</code> and
+						<code>internalTransferToBalance</code> to sweep actual free/allocated funds to the parent; it does not sweep the separate
+						escrow.
 					</p>
 					<h3 id="doc-va-lifecycle-hooks-clearinghouse-partya-takeover">ClearingHouse PartyA Takeover</h3>
 					<p><strong>Trigger:</strong> ClearingHouse takes over a partyA's liquidation.</p>
 					<ol>
 						<li>
-							<strong><code>initiatePartyATakeover(partyA)</code></strong> — sets
+							<strong><code>takeoverPartyALiquidation(partyA)</code></strong> — sets
 							<code>partyATakeoverDetails[partyA].inProgress = true</code>
 						</li>
 						<li>
@@ -252,8 +270,8 @@
 							<code>isPartyATakeoverInProgress = true</code> — <strong>deferred</strong>
 						</li>
 						<li>
-							<strong><code>distributeForClearingHouse(partyA, ...)</code></strong> — distributes funds - Credits
-							<code>allocatedBalances[VA]</code> with reimbursement
+							<strong><code>distributeForClearingHouse(partyA, ...)</code></strong> — credits the still-liquidating VA's
+							<code>partyAReimbursement[VA]</code>. Final takeover settlement releases it to allocation before the cleanup hook.
 						</li>
 						<li>
 							<strong><code>settlePartyATakeover(partyA, settledPartyBs)</code></strong> — clears takeover state -
@@ -264,7 +282,7 @@
 					<p><strong>Trigger:</strong> A cross partyB becomes insolvent across all its partyAs.</p>
 					<ol>
 						<li>
-							<strong><code>liquidateCrossPartyB(partyB)</code></strong> — sets
+							<strong><code>liquidateCrossPartyB(partyB, liquidationId, upnl, timestamp)</code></strong> — sets
 							<code>crossLiquidationDetails[partyB].inProgress = true</code>
 						</li>
 						<li>
@@ -280,7 +298,8 @@
 						</li>
 						<li>
 							<strong><code>distributeForClearingHouse(partyB, [va1, ...], ...)</code></strong> — distributes from
-							<code>deallocatedPool</code> - Credits <code>allocatedBalances[VA]</code> with reimbursement
+							<code>deallocatedPool</code> — credits <code>allocatedBalances[VA]</code> for a healthy VA, or
+							<code>partyAReimbursement[VA]</code> if it is also liquidating.
 						</li>
 						<li>
 							<strong><code>settleCrossPartyBLiquidation(partyB, [va1], false)</code></strong> — partial settlement (pagination) - Fires
@@ -294,9 +313,10 @@
 						</li>
 					</ol>
 					<p>
-						<strong>Note:</strong> <code>onLiquidationSettled</code> passes <code>address(0)</code> as <code>partyB</code>, which skips
-						the cross check. This is correct because the hook only fires for partyAs that have already been distributed to — their funds
-						are safe.
+						<strong>Operator ordering:</strong> <code>onLiquidationSettled</code> clears remembered cross deferrals and retries with
+						<code>address(0)</code>. The ClearingHouse supplies the PartyA list; a <code>finalize = false</code> batch does not check that
+						those VAs were paid. The trusted operator must finish each listed VA's relevant distributions first. Deletion still requires
+						its tracked quote set to be empty and its PartyA liquidation/takeover flags to be clear.
 					</p>
 					<h3 id="doc-va-lifecycle-hooks-isolated-partyb-liquidation">Isolated PartyB Liquidation</h3>
 					<p><strong>Trigger:</strong> PartyB becomes insolvent against a specific partyA (VA).</p>
@@ -311,28 +331,31 @@
 						</li>
 						<li>
 							<strong><code>liquidatePositionsPartyB(partyB, partyA, priceSig)</code></strong> — closes open positions - Per quote:
-							settles PnL, removes from open positions - Fires <code>onClosePosition</code> per quote after state update — quoteIds
-							removed - When last quoteId removed: <code>_tryDeleteVirtualAccount</code> — <strong>VA deleted immediately</strong>
+							removes the position at the liquidation price and fires <code>onClosePosition</code> after state update — quoteIds removed
+							- When last quoteId removed: <code>_tryDeleteVirtualAccount</code> — <strong>VA deleted immediately</strong>
 						</li>
 					</ol>
 					<p>
-						<strong>No deferral needed:</strong> PartyA is not liquidated. PartyB is not in cross mode. VA is deleted as soon as all
-						quotes are resolved.
+						<strong>No deferral for this isolated counterparty:</strong> PartyA is not liquidated and this PartyB is not cross-mode.
+						Deletion can proceed when all quotes are resolved, unless an earlier cross-liquidating counterparty remains in the VA's
+						remembered set or another cleanup guard is active.
 					</p>
 					<p>
-						<strong>No settlement hook needed:</strong> Funds are settled inline during <code>liquidatePartyB</code> (pending) and
-						<code>liquidatePositionsPartyB</code> (positions). No deferred distribution step exists.
+						<strong>No separate settlement hook for isolated PartyB:</strong> <code>liquidatePartyB</code> transfers the remaining PartyB
+						allocation to PartyA at initiation. Later position calls close state and pay per-position liquidator fees; they do not
+						transfer each quote's PNL anew. There is no deferred distribution phase for this isolated flow.
 					</p>
 					<h2 id="doc-va-lifecycle-hooks-hook-firing-order">Hook Firing Order</h2>
 					<p>
-						All hooks must fire <strong>after</strong> core state changes are complete so that <code>_removeQuoteFromAccount</code> can
-						correctly compare <code>coreTotal</code> with <code>vData.quoteIds.length()</code>.
+						A quote-removal hook must observe the quote <strong>after</strong> its pending/open tracking was removed, so
+						<code>_removeQuoteFromAccount</code> can compare the current <code>coreTotal</code> with <code>vData.quoteIds.length()</code>.
+						Some paths fire per quote and others after a batch; a hook does not imply that later settlement or every batch update is
+						complete.
 					</p>
 					<p>
-						Places where this was specifically addressed: - <code>liquidatePendingPositionsPartyA</code> — hooks fire after
-						<code>delete partyAPendingQuotes</code> - <code>liquidatePendingPositionsForClearingHouse</code> (both paths) — hooks fire
-						after swap-pop loop / delete - <code>LibLiquidation.liquidatePartyB</code> — hooks fire after all balance updates and
-						<code>delete partyBPendingQuotes</code>
+						In v0.8.5, <code>liquidatePendingPositionsPartyA</code> fires after each pop. The cross-PartyB ClearingHouse path fires after
+						its per-PartyA swap/pop loop; takeover fires after deleting the full pending array.
+						<code>LibLiquidation.liquidatePartyB</code> fires cancellation hooks after its balance updates and pending-array cleanup.
 					</p>
 				</article>
 			</main>

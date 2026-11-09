@@ -149,6 +149,10 @@
 							or a trusted router acting under a valid scoped signer session.
 						</li>
 						<li>Ownership and delegated account scope are checked through the existing <code>onlyAccountOwner</code> path.</li>
+						<li>
+							If this selector has a configured <a href="./accountlayer-timelock.html">timelock</a>, its approval or schedule
+							requirements must also be satisfied.
+						</li>
 					</ul>
 					<p>Validation:</p>
 					<ul>
@@ -211,7 +215,8 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					</p>
 					<p>
 						Balances, allocations, pending quotes, open positions, and reusable VA pools stay attached to the same SubAccount and VA
-						addresses. Only owner resolution changes.
+						addresses. The built-in transfer changes owner resolution; a configured transfer hook can still perform permitted Core
+						actions.
 					</p>
 					<p>Implications:</p>
 					<ul>
@@ -259,8 +264,9 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					</p>
 					<h3 id="direct-ownership-transfer">Direct ownership transfer</h3>
 					<p>
-						Ownership transfer is immediate and does not require recipient acceptance. A typo in <code>newOwner</code> transfers control
-						to that address atomically; there is no second transaction in which the recipient confirms the transfer.
+						Once any configured transfer timelock is satisfied, ownership changes atomically without recipient acceptance. A typo in
+						<code>newOwner</code> transfers control to that address atomically; there is no second transaction in which the recipient
+						confirms the transfer.
 					</p>
 					<p>
 						The function does not require the SubAccount to be empty. A user can transfer an account with balances, allocated margin,
@@ -302,9 +308,9 @@ mapping(address =&gt; EnumerableSet.AddressSet) userToSubAccounts;
 					</p>
 					<h3 id="no-symmio-core-balance-movement">No Symmio core balance movement</h3>
 					<p>
-						Transfer only changes AccountLayer ownership metadata and indexes. It does not call into the Symmio core to move balances,
-						deallocate collateral, settle positions, or alter quote ownership. The same virtual addresses continue to hold the same
-						Symmio-side balances and positions.
+						The built-in transfer changes AccountLayer ownership metadata and indexes without moving Core funds or positions. The
+						configured transfer hook can still perform allowed Core actions, subject to its timelock and Core checks. Ownership transfer
+						alone does not change the virtual addresses holding the balances and positions.
 					</p>
 					<hr />
 					<h2 id="events">Events</h2>

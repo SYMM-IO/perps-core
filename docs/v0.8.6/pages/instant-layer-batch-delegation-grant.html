@@ -69,7 +69,8 @@
 						Before v0.8.6, granting a delegation was its own transaction: the owner called <code>grantDelegation</code> directly or a
 						relayer submitted a <code>grantBatchDelegationBySig</code> payload, and only afterwards could an operation signed by the
 						delegate execute. A flow such as &ldquo;authorize this session key, then let it configure my account&rdquo; therefore took at
-						least two transactions, and the second could not be prepared until the first had landed.
+						least two transactions. The delegate operation could be prepared and signed in advance, but could execute only after its grant
+						became active.
 					</p>
 					<p>
 						In v0.8.6 the grant itself is a <code>SignedOperation</code>: an operation that targets the InstantLayer contract itself and
@@ -214,8 +215,10 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 						</li>
 						<li><strong>The user deposits.</strong> Collateral is bridged to that address from anywhere.</li>
 						<li>
-							<strong>The relayer settles.</strong> <code>settleDepositToNewAccount</code> sweeps the wallet, takes the flat deposit
-							fee, creates a SubAccount owned by the user through the AccountLayer, and deposits the remainder into core.
+							<strong>The relayer settles.</strong> <code>settleDepositToNewAccount</code> sweeps collateral, checks
+							<code>minimumDeposit</code>, and deducts <code>newAccountDepositFee</code> plus <code>walletCreationFee</code> if this
+							call deploys the wallet. The gross deposit must strictly exceed those total fees. It creates the owner-held SubAccount
+							through AccountLayer and deposits the net remainder into Core.
 						</li>
 						<li>
 							<strong>One relayed batch finishes setup.</strong> The batch carries the user&rsquo;s single signature and the session
@@ -252,11 +255,11 @@ const grantSig = await owner.signTypedData(domain, signedOperationTypes, grantOp
 
 					<h2 id="existing-grant-paths">Existing grant paths</h2>
 					<p>
-						The operation form is additive. <code>grantDelegation</code> and <code>grantDelegations</code> as direct owner calls and
-						<code>grantBatchDelegationBySig</code> with its dedicated EIP-712 payload and delegation nonce all keep working unchanged;
-						every path shares the same validation and writes the same delegation storage. For new integrations the operation form is
-						preferred, since it composes with other operations in a batch and rides the standard operation replay machinery instead of a
-						separate nonce track.
+						The operation form is additive. The existing direct <code>grantDelegation</code> and dedicated-signature
+						<code>grantBatchDelegationBySig</code> paths remain available. The new direct owner call <code>grantDelegations</code> is also
+						available; every path shares the same validation and writes the same delegation storage. For new integrations the operation
+						form is preferred, since it composes with other operations in a batch and rides the standard operation replay machinery
+						instead of a separate nonce track.
 					</p>
 					<h2 id="migrate-delegations">Copy delegations from an older layer</h2>
 					<p>

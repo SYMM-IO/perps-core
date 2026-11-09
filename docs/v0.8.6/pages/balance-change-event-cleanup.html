@@ -196,8 +196,8 @@ event BalanceChangePartyB(
 									<td><code>PLATFORM_FEE_IN</code></td>
 									<td>Inbound</td>
 									<td>
-										A reserved open fee refund or positive explicit Clearing House platform-fee component enters PartyA
-										allocation.
+										A reserved open fee refund enters PartyA allocation. A positive explicit Clearing House platform-fee component
+										can enter PartyA allocation or reimbursement, or a PartyB allocation bucket.
 									</td>
 								</tr>
 								<tr>
@@ -205,8 +205,8 @@ event BalanceChangePartyB(
 									<td><code>PLATFORM_FEE_OUT</code></td>
 									<td>Outbound</td>
 									<td>
-										PartyA allocation pays or reserves a trading fee, or pays a negative explicit Clearing House platform-fee
-										component.
+										PartyA allocation pays or reserves a trading fee. A negative explicit Clearing House platform-fee component
+										can leave PartyA allocation or reimbursement, or a PartyB allocation bucket.
 									</td>
 								</tr>
 								<tr>
@@ -291,13 +291,16 @@ event BalanceChangePartyB(
 									<td>16</td>
 									<td><code>OPEN_SOLVER_FEE_OUT</code></td>
 									<td>Outbound</td>
-									<td>An open solver fee leaves PartyA allocation for PartyB free balance.</td>
+									<td>An open solver fee leaves PartyA allocation for the resolved solver-fee receiver&rsquo;s free balance.</td>
 								</tr>
 								<tr>
 									<td>17</td>
 									<td><code>CLOSE_SOLVER_FEE_OUT</code></td>
 									<td>Outbound</td>
-									<td>A close solver fee leaves PartyA allocation for PartyB free balance.</td>
+									<td>
+										A close solver fee leaves PartyA allocation for the resolved solver-fee receiver&rsquo;s free balance. Tags
+										resolve to the tag-specific receiver, then the default receiver, then PartyB.
+									</td>
 								</tr>
 								<tr>
 									<td>18</td>
@@ -601,9 +604,11 @@ clampFired(partyA)                = totalLf &gt; lfFromPartyAAllocation
 
 // Liquidation-start classification, before the per-position profit cap:
 rawRemainingLf                    = lockedLf - availableBalanceShortfall
-totalLf                           = min(rawRemainingLf, maxLiquidationProfitPerPosition * positionsCount)
-insuranceVaultCredit              = rawRemainingLf - totalLf
-// LF_OUT is only the slice of totalLf still present in PartyA allocation at finalization.
+initialLiquidatorFee              = min(rawRemainingLf, maxLiquidationProfitPerPosition * positionsCount)
+initialInsuranceVaultCredit        = rawRemainingLf - initialLiquidatorFee
+// Later rounding reconciliation may reduce the fee and consume vault balance.
+// Read final totalLf from settlement events rather than assuming the initial amount survives.
+// LF_OUT is only the slice of final totalLf still present in PartyA allocation at finalization.
 // The allocated-balance events do not encode lockedLf or availableBalanceShortfall.</code></pre>
 					<p>
 						A settlement call emits its balance changes before the legacy and extended <code>SettlePartyALiquidation</code> events. Buffer

@@ -28,14 +28,15 @@
 	liveStatus.setAttribute("data-live-status", "");
 	document.body.append(liveStatus);
 	let liveStatusTimer = 0;
-	window.v086Announce = text => {
+	window.v086Announce = (text, delay = 60) => {
 		window.clearTimeout(liveStatusTimer);
 		liveStatus.textContent = "";
+		if (!text) return;
 		liveStatusTimer = window.setTimeout(() => {
 			liveStatus.textContent = text;
-		}, 60);
+		}, delay);
 	};
-	const announce = text => window.v086Announce(text);
+	const announce = (text, delay) => window.v086Announce(text, delay);
 	const themeButtons = Array.from(document.querySelectorAll("[data-theme-toggle]"));
 	const icons = {
 		check: '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>',
@@ -85,6 +86,7 @@
 			});
 			window.dispatchEvent(new CustomEvent("v086-docs:themechange", { detail: { theme: next } }));
 		});
+		button.dataset.themeReady = "true";
 	});
 
 	const escapeHtml = value =>
@@ -507,9 +509,9 @@
 		appendFallbackOverflow(target, rows.length - limit, source);
 	};
 
-	let activeDiagramModal = null;
+	let closeActiveDiagramViewer = null;
 	const openDiagramViewer = (frame, title) => {
-		if (activeDiagramModal) activeDiagramModal.remove();
+		closeActiveDiagramViewer?.();
 
 		const source = frame.querySelector(":scope > .mermaid, :scope > .diagram-fallback");
 		if (!source) return;
@@ -552,7 +554,8 @@
 		canvas.append(modalSource);
 		document.body.append(modal);
 		document.body.classList.add("has-diagram-modal");
-		activeDiagramModal = modal;
+		const backgroundState = [...document.body.children].filter(element => element !== modal).map(element => [element, element.inert]);
+		backgroundState.forEach(([element]) => (element.inert = true));
 
 		let scale = 1;
 		let x = 0;
@@ -628,7 +631,8 @@
 		const close = () => {
 			modal.remove();
 			document.body.classList.remove("has-diagram-modal");
-			if (activeDiagramModal === modal) activeDiagramModal = null;
+			backgroundState.forEach(([element, inert]) => (element.inert = inert));
+			if (closeActiveDiagramViewer === close) closeActiveDiagramViewer = null;
 			document.removeEventListener("keydown", onKeydown);
 			window.removeEventListener("resize", fitToStage);
 			if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
@@ -762,8 +766,8 @@
 				return;
 			}
 			if (pointers.size > 1) return;
-			const shouldCloseFromBackdrop = backdropClickCandidate && !dragMoved && !pinched;
-			if (dragMoved || pinched) lastDragEndedAt = Date.now();
+			const shouldCloseFromBackdrop = event.type === "pointerup" && backdropClickCandidate && !dragMoved && !pinched;
+			if (event.type === "pointercancel" || dragMoved || pinched) lastDragEndedAt = Date.now();
 			backdropClickCandidate = false;
 			dragMoved = false;
 			pinched = false;
@@ -773,6 +777,7 @@
 		};
 		stage.addEventListener("pointerup", stopDragging);
 		stage.addEventListener("pointercancel", stopDragging);
+		closeActiveDiagramViewer = close;
 		document.addEventListener("keydown", onKeydown);
 		window.addEventListener("resize", fitToStage);
 		modal.querySelector("[data-diagram-close]").focus();
@@ -1166,7 +1171,12 @@
 	installMermaidDiagrams();
 
 	const formatAmount = value =>
-		new Intl.NumberFormat("en-US", { maximumFractionDigits: 6, minimumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
+		new Intl.NumberFormat(
+			"en-US",
+			value !== 0 && Math.abs(value) < 0.000001
+				? { notation: "scientific", maximumFractionDigits: 5 }
+				: { maximumFractionDigits: 6, minimumFractionDigits: Number.isInteger(value) ? 0 : 2 },
+		).format(value);
 	// Returns null for a blank, non-numeric or out-of-range entry so the tool can say so
 	// instead of computing with a silent 0 or a negative amount. `data-min-exclusive`
 	// makes `min` itself invalid (an amount that must be above 0).
@@ -1176,7 +1186,7 @@
 		const min = input && input.getAttribute("min") !== null ? Number(input.getAttribute("min")) : 0;
 		const max = input && input.getAttribute("max") !== null ? Number(input.getAttribute("max")) : Infinity;
 		const belowMin = input?.hasAttribute("data-min-exclusive") ? value <= min : value < min;
-		return text === "" || !Number.isFinite(value) || belowMin || value > max ? null : value;
+		return text === "" || !Number.isFinite(value) || belowMin || value > max || input?.validity.stepMismatch ? null : value;
 	};
 	const sentence = text => `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 
@@ -1201,8 +1211,10 @@
 	const wireTool = (mount, result, compute) => {
 		const controls = Array.from(mount.querySelectorAll("input, select"));
 		let lastGood = "";
-		let announceTimer = 0;
 		const update = event => {
+			// One shared queue owns both debounce and live-region delivery, including
+			// updates in another tool. Invalid/stale outcomes cancel earlier success.
+			if (event) announce("");
 			const outcome = compute();
 			const invalid = new Set(outcome.invalid || []);
 			const typing = event?.type === "input";
@@ -1224,8 +1236,7 @@
 			// Only after load: the scroll-region helper is set up further down the file.
 			if (event) syncScrollRegions();
 			if (event && outcome.summary) {
-				window.clearTimeout(announceTimer);
-				announceTimer = window.setTimeout(() => announce(outcome.summary), 500);
+				announce(outcome.summary, 560);
 			}
 		};
 		const heading = mount.querySelector(".tool-heading");
@@ -1256,6 +1267,9 @@
 	const fieldRule = input => {
 		const min = input?.getAttribute("min") ?? "0";
 		const max = input?.getAttribute("max");
+		const step = input?.getAttribute("step");
+		if (step === "1") return max != null ? `Enter a whole number from ${min} to ${max}` : `Enter a whole number, ${min} or more`;
+		if (step && step !== "any") return `Enter ${min} or more in increments of ${step}`;
 		if (input?.hasAttribute("data-min-exclusive")) return `Enter an amount above ${min}`;
 		return max !== null && max !== undefined ? `Enter ${min} to ${max}` : `Enter ${min} or more`;
 	};
@@ -1271,238 +1285,213 @@
 
 	const installExpressFundingTool = mount => {
 		const uid = nextToolId();
-		const money = (name, label, value, error, extra = "") =>
+		const money = (name, label, value, error = "Enter a nonnegative amount representable in the selected collateral decimals.", extra = "") =>
 			toolInput(`${uid}-${name}`, label, `type="text" inputmode="decimal" min="0"${extra} value="${value}" data-${name}`, error);
 		const count = (name, label, value, max = "") =>
 			toolInput(
 				`${uid}-${name}`,
 				label,
-				`type="number" min="0"${max ? ` max="${max}"` : ""} step="1" value="${value}" data-${name}`,
-				max ? `Enter 0 to ${max}.` : undefined,
+				`type="text" inputmode="numeric" min="0"${max ? ` max="${max}"` : ""} step="1" value="${value}" data-${name}`,
+				max ? `Enter a whole number from 0 to ${max}.` : "Enter a nonnegative uint256 whole number.",
 			);
 		mount.innerHTML = `
-			<div class="tool-heading">
-				<div>
-					<p class="eyebrow">Calculator</p>
-					<h3>Offer eligibility and funding</h3>
-				</div>
-				<p>Enter the user’s request, pool balances, and credit config to see which offers the bot can sign and where capital is drawn from.</p>
-			</div>
+			<div class="tool-heading"><div><p class="eyebrow">Calculator</p><h3>Offer funding and fee checks</h3></div>
+			<p>Amounts are collateral tokens at the selected precision. This illustrates funding, fee bounds and a bot policy that excludes both fast offers at high risk. Actual acceptance also requires a supported AccountLayer account and affiliate, valid signed fields, nonce, deadline, validator approvals and any credit attestation. User fee limits and acceleration fees are not inputs here.</p></div>
 			<div class="tool-input-groups">
-				<div class="tool-input-group">
-					<strong>Request</strong>
-					<div class="tool-grid tool-grid-compact">
-						${money("request-amount", "User requested amount", "500", "Enter an amount above 0.", " data-min-exclusive")}
-						<label>Risk check<select id="${uid}-risk-check" data-risk-check>
-							<option value="LOW">Low risk</option>
-							<option value="HIGH">High risk</option>
-						</select></label>
-						${count("validator-count", "Min validator signatures", "2")}
-					</div>
-				</div>
-				<div class="tool-input-group">
-					<strong>Available liquidity</strong>
-					<div class="tool-grid tool-grid-compact">
-						${money("affiliate-pool", "Affiliate pool free", "120")}
-						${money("general-pool", "General pool free", "300")}
-						${money("eligible-base", "Muon eligible base", "2000")}
-					</div>
-				</div>
-				<div class="tool-input-group">
-					<strong>Credit line config</strong>
-					<div class="tool-grid tool-grid-compact">
-						${money("current-debt", "Current debt", "300")}
-						${money("protocol-max-debt", "Protocol max debt", "1000")}
-						${money("affiliate-max-debt", "Affiliate max debt", "700")}
-						${count("protocol-max-bps", "Protocol max bps", "5000", "10000")}
-						${count("affiliate-max-bps", "Affiliate max bps", "3000", "10000")}
-						<label>Credit line status<select id="${uid}-credit-blocked" data-credit-blocked>
-							<option value="NO">Active</option>
-							<option value="PAUSED">Paused</option>
-							<option value="BLACKLISTED">User blacklisted</option>
-						</select></label>
-					</div>
-				</div>
-				<div class="tool-input-group">
-					<strong>Fees</strong>
-					<div class="tool-grid tool-grid-compact">
-						${count("fee-bps", "Affiliate fee bps", "80", "10000")}
-						${money("operator-fee", "Operator fee", "1")}
-					</div>
-				</div>
-			</div>
-			<div class="tool-result"></div>
-		`;
+				<div class="tool-input-group"><strong>Request</strong><div class="tool-grid tool-grid-compact">
+					${money("request-amount", "Express-routed amount", "500", "Enter an amount above 0 at the selected collateral precision.", " data-min-exclusive")}
+					${count("collateral-decimals", "Collateral decimals", "6", "77")}
+					<label>Bot risk policy<select id="${uid}-risk-check" data-risk-check><option value="LOW">Low risk</option><option value="HIGH">High risk</option></select></label>
+					${count("validator-count", "Effective minimum validator signatures", "2")}
+				</div></div>
+				<div class="tool-input-group"><strong>Available liquidity</strong><div class="tool-grid tool-grid-compact">
+					${money("affiliate-pool", "Affiliate pool free", "120")}${money("general-pool", "General pool free", "300")}${money("eligible-base", "Muon eligible base", "2000")}
+				</div></div>
+				<div class="tool-input-group"><strong>Credit line config</strong><div class="tool-grid tool-grid-compact">
+					${money("current-debt", "Reserved + active + bad debt", "300")}${money("protocol-max-debt", "Protocol max debt", "1000")}${money("affiliate-max-debt", "Affiliate max debt", "700")}
+					${count("protocol-max-bps", "Protocol max bps", "5000")}${count("affiliate-max-bps", "Affiliate max bps", "3000")}
+					<label>Credit line status<select id="${uid}-credit-blocked" data-credit-blocked><option value="NO">Active</option><option value="PAUSED">Paused</option><option value="BLACKLISTED">User blacklisted</option></select></label>
+				</div></div>
+				<div class="tool-input-group"><strong>Fees</strong><div class="tool-grid tool-grid-compact">
+					${count("fee-bps", "Affiliate fee bps", "80", "10000")}${money("operator-fee", "Operator fee", "1")}
+				</div></div>
+			</div><div class="tool-result"></div>`;
 		const result = mount.querySelector(".tool-result");
-		const cappedLimit = values => {
-			const positive = values.filter(value => value > 0);
-			return positive.length ? Math.min(...positive) : Infinity;
-		};
-		const describeLimit = value => (Number.isFinite(value) ? formatAmount(value) : "uncapped by config");
-		const allocateFastFunding = (amount, affiliatePool, generalPool, creditCapacity, allowCredit = true) => {
-			const affiliateAmount = Math.min(amount, affiliatePool);
-			let remaining = Math.max(0, amount - affiliateAmount);
-			const creditAmount = allowCredit ? Math.min(remaining, creditCapacity) : 0;
-			remaining = Math.max(0, remaining - creditAmount);
-			const generalAmount = Math.min(remaining, generalPool);
-			remaining = Math.max(0, remaining - generalAmount);
-			return { affiliateAmount, creditAmount, generalAmount, unfunded: remaining };
-		};
-		const optionCard = option => `
-			<article class="option-card ${option.available ? "is-available" : "is-unavailable"}">
-				<div class="option-card-title">
-					<span>${escapeHtml(option.type)}</span>
-					<strong>${option.available ? "Available" : "Not available"}</strong>
-				</div>
-				<p>${escapeHtml(option.reason)}</p>
-				<div class="option-spend-grid">
-					<span><small>Affiliate pool</small><strong>${formatAmount(option.allocation.affiliateAmount)}</strong></span>
-					<span><small>Credit advance</small><strong>${formatAmount(option.allocation.creditAmount)}</strong></span>
-					<span><small>General pool</small><strong>${formatAmount(option.allocation.generalAmount)}</strong></span>
-					${option.allocation.unfunded > 0 ? `<span><small>Unfunded</small><strong>${formatAmount(option.allocation.unfunded)}</strong></span>` : ""}
-				</div>
-			</article>
-		`;
-		const numericFields = [
-			["requestAmount", "user requested amount", "[data-request-amount]"],
-			["validatorCount", "min validator signatures", "[data-validator-count]"],
-			["affiliatePool", "affiliate pool free", "[data-affiliate-pool]"],
-			["generalPool", "general pool free", "[data-general-pool]"],
-			["eligibleBase", "Muon eligible base", "[data-eligible-base]"],
-			["currentDebt", "current debt", "[data-current-debt]"],
-			["protocolMaxDebt", "protocol max debt", "[data-protocol-max-debt]"],
-			["affiliateMaxDebt", "affiliate max debt", "[data-affiliate-max-debt]"],
-			["protocolMaxBps", "protocol max bps", "[data-protocol-max-bps]"],
-			["affiliateMaxBps", "affiliate max bps", "[data-affiliate-max-bps]"],
-			["feeBps", "affiliate fee bps", "[data-fee-bps]"],
-			["operatorFee", "operator fee", "[data-operator-fee]"],
-		].map(([key, label, selector]) => ({ key, label, input: mount.querySelector(selector) }));
+		const min = (a, b) => (a < b ? a : b);
+		const effectiveCap = (a, b) => (a === 0n ? b : b === 0n ? a : min(a, b));
+		const fields = [
+			["requestAmount", "express-routed amount", "request-amount"],
+			["validatorCount", "validator minimum", "validator-count"],
+			["affiliatePool", "affiliate pool", "affiliate-pool"],
+			["generalPool", "general pool", "general-pool"],
+			["eligibleBase", "eligible base", "eligible-base"],
+			["currentDebt", "current debt", "current-debt"],
+			["protocolMaxDebt", "protocol max debt", "protocol-max-debt"],
+			["affiliateMaxDebt", "affiliate max debt", "affiliate-max-debt"],
+			["protocolMaxBps", "protocol max bps", "protocol-max-bps"],
+			["affiliateMaxBps", "affiliate max bps", "affiliate-max-bps"],
+			["feeBps", "fee bps", "fee-bps"],
+			["operatorFee", "operator fee", "operator-fee"],
+		].map(([key, label, name]) => ({ key, label, input: mount.querySelector(`[data-${name}]`) }));
+		const integerKeys = new Set(["validatorCount", "protocolMaxBps", "affiliateMaxBps", "feeBps"]);
 		const compute = () => {
-			const values = {};
-			const invalidFields = [];
-			numericFields.forEach(field => {
-				values[field.key] = readChecked(field.input);
-				if (values[field.key] == null) invalidFields.push(field);
-			});
-			if (invalidFields.length) return { html: invalidValuesMessage(invalidFields), invalid: invalidFields.map(field => field.input) };
-			const {
-				requestAmount,
-				validatorCount,
-				affiliatePool,
-				generalPool,
-				eligibleBase,
-				currentDebt,
-				protocolMaxDebt,
-				affiliateMaxDebt,
-				protocolMaxBps,
-				affiliateMaxBps,
-				feeBps,
-				operatorFee,
-			} = values;
-			const riskCheck = mount.querySelector("[data-risk-check]").value;
-			const creditBlocked = mount.querySelector("[data-credit-blocked]").value;
-
-			const protocolBpsLimit = protocolMaxBps > 0 ? (eligibleBase * protocolMaxBps) / 10000 : Infinity;
-			const affiliateBpsLimit = affiliateMaxBps > 0 ? (eligibleBase * affiliateMaxBps) / 10000 : Infinity;
-			const effectiveDebtLimit = cappedLimit([protocolMaxDebt, affiliateMaxDebt, protocolBpsLimit, affiliateBpsLimit]);
-			const creditBlockedReason =
-				creditBlocked === "PAUSED"
-					? "the credit line is paused"
-					: creditBlocked === "BLACKLISTED"
-						? "the user is blacklisted for credit"
-						: "";
-			const rawCreditCapacity = Number.isFinite(effectiveDebtLimit) ? Math.max(0, effectiveDebtLimit - currentDebt) : requestAmount;
-			const creditCapacity = creditBlocked === "NO" ? rawCreditCapacity : 0;
-			const fastAllocation = allocateFastFunding(requestAmount, affiliatePool, generalPool, creditCapacity);
-			const standardAllocation = { affiliateAmount: 0, creditAmount: 0, generalAmount: 0, unfunded: 0 };
-
-			const feeAmount = (requestAmount * feeBps) / 10000;
-			const userFee = feeAmount + operatorFee;
-			const netUserAmount = Math.max(0, requestAmount - userFee);
-			const poolDraw = fastAllocation.affiliateAmount + fastAllocation.generalAmount;
-			const validatorsReady = validatorCount > 0;
-			// The request field rejects 0, so every request here is above 0.
-			const fastFundingAvailable = fastAllocation.unfunded <= 0;
-			const fundingReason =
-				fastAllocation.unfunded > 0 ? `${formatAmount(fastAllocation.unfunded)} is still unfunded after pools and credit.` : "";
-
-			const sameTxReasons = [];
-			if (!validatorsReady) sameTxReasons.push("Min validator signatures is 0.");
-			if (fundingReason) sameTxReasons.push(fundingReason);
-			if (creditBlockedReason && fastAllocation.unfunded > 0) sameTxReasons.push(sentence(creditBlockedReason));
-			const windowedReasons = [];
-			if (riskCheck !== "LOW") windowedReasons.push("Risk check is high, so the bot should not sign a fast offer.");
-			if (fundingReason) windowedReasons.push(fundingReason);
-			if (creditBlockedReason && fastAllocation.unfunded > 0) windowedReasons.push(sentence(creditBlockedReason));
-
-			const options = [
-				{
-					type: "SAME_TX",
-					available: validatorsReady && fastFundingAvailable,
-					reason: sameTxReasons.length
-						? sameTxReasons.join(" ")
-						: "Same-transaction payout can be signed because validators are configured and the request can be fully funded.",
-					allocation: fastAllocation,
-				},
-				{
-					type: "WINDOWED",
-					available: riskCheck === "LOW" && fastFundingAvailable,
-					reason: windowedReasons.length
-						? windowedReasons.join(" ")
-						: "The request can be processed after the security window using the computed pool and credit split.",
-					allocation: fastAllocation,
-				},
-				{
-					type: "STANDARD",
-					available: true,
-					reason: "Always available as the cooldown offer; Express does not front pools or credit for STANDARD.",
-					allocation: standardAllocation,
-				},
-			];
-			// STANDARD is always available, so there is always a recommendation.
-			const recommended = options.find(option => option.available);
-			const warnings = [];
-			if (creditBlockedReason) warnings.push(`Credit capacity is zero because ${creditBlockedReason}.`);
-			if (fastAllocation.unfunded > 0)
-				warnings.push("Fast offers cannot cover the full request with the current pools and credit capacity; STANDARD remains the fallback.");
-			if (!validatorsReady) warnings.push("SAME_TX needs Min validator signatures above 0.");
-			if (riskCheck !== "LOW") warnings.push("WINDOWED should not be signed while the risk check is high.");
-			const verdict = recommended.type;
-			const html = `
-				<p class="tool-verdict"><small>Recommended offer</small><strong>${escapeHtml(verdict)}</strong></p>
-				<div class="result-metrics">
-					<span><small>Fast offer pool draw</small><strong>${formatAmount(poolDraw)}</strong></span>
-					<span><small>Credit capacity</small><strong>${formatAmount(creditCapacity)}</strong></span>
-					<span><small>User receives after fees</small><strong>${formatAmount(netUserAmount)}</strong></span>
-				</div>
-				<div class="option-card-grid">${options.map(optionCard).join("")}</div>
-				<p>Effective credit cap is <strong>${describeLimit(effectiveDebtLimit)}</strong>; current debt is <strong>${formatAmount(currentDebt)}</strong>; usable credit for this request is <strong>${formatAmount(creditCapacity)}</strong>.</p>
-				<p>Affiliate fee <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>: the user pays <strong>${formatAmount(userFee)}</strong> in fees.</p>
-				${warnings.length ? `<ul class="tool-warnings">${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}
-				${!warnings.length ? '<p class="tool-ok">Current config supports a fast offer and a standard fallback.</p>' : ""}
-			`;
-			const summary = `Recommended offer ${recommended.type}. User receives ${formatAmount(netUserAmount)}.`;
-			return { html, summary };
+			try {
+				const precisionInput = mount.querySelector("[data-collateral-decimals]");
+				const precisionValue = parseUnsignedInteger(precisionInput.value);
+				if (precisionValue == null || precisionValue > 77n)
+					return {
+						html: '<ul class="tool-warnings"><li>Enter collateral decimals from 0 to 77. Larger decimal powers exceed uint256 in Core’s conversion.</li></ul>',
+						invalid: [precisionInput],
+					};
+				const precision = Number(precisionValue),
+					unit = 10n ** precisionValue;
+				const parseAmount = raw => {
+					const text = String(raw).trim();
+					if (!/^\d+(?:\.\d*)?$/.test(text)) return null;
+					const [whole, fraction = ""] = text.split(".");
+					if (fraction.length > precision) return null;
+					const value = BigInt(whole) * unit + BigInt((fraction + "0".repeat(precision)).slice(0, precision) || "0");
+					return value <= UINT256_MAX ? value : null;
+				};
+				const formatAmount = value => {
+					const whole = (value / unit).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+					const fraction = (value % unit).toString().padStart(precision, "0").replace(/0+$/, "");
+					return fraction ? `${whole}.${fraction}` : whole;
+				};
+				const values = {},
+					invalid = [];
+				fields.forEach(field => {
+					const value = integerKeys.has(field.key) ? parseUnsignedInteger(field.input.value) : parseAmount(field.input.value);
+					values[field.key] = value;
+					if (value == null || (field.key === "requestAmount" && value === 0n) || (field.key === "feeBps" && value > 10000n))
+						invalid.push(field);
+				});
+				if (invalid.length)
+					return {
+						html: `<ul class="tool-warnings"><li>Check ${escapeHtml(invalid.map(f => f.label).join(", "))}. Token amounts need at most ${precision} decimal places and must fit uint256; the request must be positive, counts are uint256 integers, and the affiliate fee is 0–10000 bps.</li></ul>`,
+						invalid: invalid.map(f => f.input),
+					};
+				const {
+					requestAmount,
+					validatorCount,
+					affiliatePool,
+					generalPool,
+					eligibleBase,
+					currentDebt,
+					protocolMaxDebt,
+					affiliateMaxDebt,
+					protocolMaxBps,
+					affiliateMaxBps,
+					feeBps,
+					operatorFee,
+				} = values;
+				const riskLow = mount.querySelector("[data-risk-check]").value === "LOW";
+				const creditStatus = mount.querySelector("[data-credit-blocked]").value;
+				const absoluteCap = effectiveCap(protocolMaxDebt, affiliateMaxDebt),
+					bpsCap = effectiveCap(protocolMaxBps, affiliateMaxBps);
+				const limits = [];
+				if (absoluteCap > 0n) limits.push(absoluteCap);
+				if (bpsCap > 0n) limits.push(checkedUint256(eligibleBase * bpsCap) / 10000n);
+				const effectiveDebtLimit = limits.length ? limits.reduce(min) : null;
+				const debtLimit = effectiveDebtLimit == null ? UINT256_MAX : effectiveDebtLimit;
+				const capacity = debtLimit > currentDebt ? debtLimit - currentDebt : 0n;
+				const creditCapacity = creditStatus === "NO" ? min(capacity, requestAmount) : 0n;
+				const affiliateAmount = min(requestAmount, affiliatePool);
+				let remaining = requestAmount - affiliateAmount;
+				const creditAmount = min(remaining, creditCapacity);
+				remaining -= creditAmount;
+				const generalAmount = min(remaining, generalPool);
+				remaining -= generalAmount;
+				const allocation = { affiliateAmount, creditAmount, generalAmount, unfunded: remaining };
+				const feeAmount = checkedUint256(requestAmount * feeBps) / 10000n;
+				const feesFit = feeAmount <= requestAmount && operatorFee <= requestAmount - feeAmount;
+				const userFee = feeAmount + operatorFee,
+					netUserAmount = feesFit ? requestAmount - userFee : null;
+				const fastFits = remaining === 0n && feesFit && riskLow;
+				const commonReasons = [];
+				if (!feesFit) commonReasons.push("Base plus operator fees exceed the express amount; acceptance reverts.");
+				if (remaining > 0n) commonReasons.push(`${formatAmount(remaining)} remains unfunded for a fast offer.`);
+				if (!riskLow) commonReasons.push("The illustrated bot policy excludes fast offers at high risk.");
+				const options = [
+					{
+						type: "SAME_TX",
+						available: fastFits && validatorCount > 0n,
+						reason:
+							[
+								...commonReasons,
+								...(validatorCount === 0n ? ["SAME_TX requires a positive effective validator minimum and valid approvals."] : []),
+							].join(" ") || "The shown funding, fee and validator-minimum checks pass; valid approvals are still required.",
+						allocation,
+					},
+					{
+						type: "WINDOWED",
+						available: fastFits,
+						reason: commonReasons.join(" ") || "The shown funding and fee checks pass. Any effective validator quorum still applies.",
+						allocation,
+					},
+					{
+						type: "STANDARD",
+						available: feesFit,
+						reason: feesFit
+							? "No fast pool or credit funding is needed. Other acceptance checks, including signed fee limits, still apply."
+							: "Fees exceed the express amount, so STANDARD acceptance also reverts.",
+						allocation: { affiliateAmount: 0n, creditAmount: 0n, generalAmount: 0n, unfunded: 0n },
+					},
+				];
+				const recommended = options.find(o => o.available);
+				const optionCard = option =>
+					`<article class="option-card ${option.available ? "is-available" : "is-unavailable"}"><div class="option-card-title"><span>${option.type}</span><strong>${option.available ? "Available" : "Not available"}</strong></div><p>${escapeHtml(option.reason)}</p><div class="option-spend-grid">${[
+						["Affiliate pool", "affiliateAmount"],
+						["Credit advance", "creditAmount"],
+						["General pool", "generalAmount"],
+						["Unfunded", "unfunded"],
+					]
+						.map(([label, key]) => `<span><small>${label}</small><strong>${formatAmount(option.allocation[key])}</strong></span>`)
+						.join("")}</div></article>`;
+				const html = `<p class="tool-verdict"><small>Candidate under these checks</small><strong>${recommended?.type || "No eligible offer"}</strong></p>
+					<div class="result-metrics"><span><small>Fast offer pool draw</small><strong>${formatAmount(affiliateAmount + generalAmount)}</strong></span><span><small>Usable credit for this request</small><strong>${formatAmount(creditCapacity)}</strong></span><span><small>User receives after fees</small><strong>${netUserAmount == null ? "n/a" : formatAmount(netUserAmount)}</strong></span></div>
+					<div class="option-card-grid">${options.map(optionCard).join("")}</div>
+					<p>Effective credit cap is <strong>${effectiveDebtLimit == null ? "uncapped by config" : formatAmount(effectiveDebtLimit)}</strong>; used capacity, including bad debt, is <strong>${formatAmount(currentDebt)}</strong>. A computed zero BPS capacity is binding.</p>
+					<p>Affiliate fee <strong>${formatAmount(feeAmount)}</strong> plus operator fee <strong>${formatAmount(operatorFee)}</strong>: <strong>${formatAmount(userFee)}</strong> collateral tokens. Integer base-unit division rounds down. Zero configured caps disable only their own axis.</p>
+					${creditStatus !== "NO" ? '<p class="tool-notes">Credit is unavailable under the selected pause/blacklist state; fully pool-funded offers may still pass these checks.</p>' : ""}
+					${!feesFit ? '<p class="tool-warnings">Fees exceed the amount. No offer can be accepted with these inputs.</p>' : ""}`;
+				return {
+					html,
+					summary: recommended
+						? `Candidate ${recommended.type}; net payout ${formatAmount(netUserAmount)} collateral tokens.`
+						: "No eligible offer: fees exceed the amount.",
+				};
+			} catch (error) {
+				if (!(error instanceof RangeError)) throw error;
+				return {
+					html: `<ul class="tool-warnings"><li>${escapeHtml(error.message)} Core or Express arithmetic would reject these inputs.</li></ul>`,
+					summary: "Arithmetic exceeds uint256.",
+				};
+			}
 		};
 		wireTool(mount, result, compute);
 	};
-
 	const installExpressTimingTool = mount => {
 		const uid = nextToolId();
 		const seconds = (name, label, value, step = "1") =>
-			toolInput(`${uid}-${name}`, label, `type="number" min="0" step="${step}" value="${value}" data-${name}`);
+			toolInput(
+				`${uid}-${name}`,
+				label,
+				`type="number" min="${name === "standard-cooldown" ? "0" : "10"}" step="${step}" value="${value}" data-${name}`,
+				step === "1" ? "Enter a whole number, 10 or more." : `Enter 0 or more in increments of ${step}.`,
+			);
 		mount.innerHTML = `
 			<div class="tool-heading">
 				<div>
 					<p class="eyebrow">Calculator</p>
 					<h3>Processing timeline</h3>
 				</div>
-				<p>See when the operator, anyone, and STANDARD finalization can process a request.</p>
+				<p>T is acceptance. Enter the remaining time until the request’s stored cooldownEndTime, not the full cooldown period since its last balance credit. This shows unlocked WINDOWED processing and the earliest STANDARD finalization; actual payout still requires transactions and the normal pause, user and request-state guards.</p>
 			</div>
 			<div class="tool-grid tool-grid-compact">
 				${seconds("security-window", "Security window (seconds)", "20")}
 				${seconds("tolerance-period", "Tolerance period (seconds)", "60")}
-				${seconds("standard-cooldown", "STANDARD cooldown (hours)", "12", "0.25")}
+				${seconds("standard-cooldown", "Remaining Core cooldown (hours, 0.25-hour steps)", "12", "0.25")}
 			</div>
 			<div class="timeline-track"></div>
 		`;
@@ -1522,13 +1511,16 @@
 				<div class="timeline-item"><span>Accept</span><strong>T + 0s</strong><small>Request enters ExpressProvider state.</small></div>
 				<div class="timeline-item"><span>Operator</span><strong>T + ${formatDuration(securityWindow)}</strong><small>Operator can process WINDOWED if not locked.</small></div>
 				<div class="timeline-item"><span>Permissionless</span><strong>T + ${formatDuration(permissionless)}</strong><small>Anyone can process after tolerance expires.</small></div>
-				<div class="timeline-item"><span>STANDARD</span><strong>T + ${formatDuration(cooldownHours * 3600)}</strong><small>Symmio cooldown target before finalization.</small></div>
+				<div class="timeline-item"><span>STANDARD</span><strong>T + ${formatDuration(cooldownHours * 3600)}</strong><small>Earliest Core finalization. Operator payout follows finalization; other callers add tolerance from finalizedAt.</small></div>
 			`;
 			return { html, summary: `Permissionless processing at T plus ${formatDuration(permissionless)}.` };
 		};
 		wireTool(mount, result, compute);
 	};
 	const ADJUSTMENT_SCALE = 1000000000000000000n;
+	const UINT256_MAX = (1n << 256n) - 1n;
+	const INT256_MAX = (1n << 255n) - 1n;
+	const INT256_MIN = -(1n << 255n);
 
 	const parseScaledFactor = raw => {
 		const text = String(raw == null ? "" : raw).trim();
@@ -1537,10 +1529,10 @@
 		if (fraction.length > 18) return null;
 		const padded = (fraction + "000000000000000000").slice(0, 18);
 		const value = BigInt(whole || "0") * ADJUSTMENT_SCALE + BigInt(padded);
-		return value > 0n ? value : null;
+		return value > 0n && value <= UINT256_MAX ? value : null;
 	};
 
-	const parseSignedInteger = raw => {
+	const parseInteger = raw => {
 		const text = String(raw == null ? "" : raw)
 			.trim()
 			.replace(/[_,\s]/g, "");
@@ -1548,9 +1540,14 @@
 		return BigInt(text);
 	};
 
+	const parseSignedInteger = raw => {
+		const value = parseInteger(raw);
+		return value == null || value < INT256_MIN || value > INT256_MAX ? null : value;
+	};
+
 	const parseUnsignedInteger = raw => {
-		const value = parseSignedInteger(raw);
-		return value == null || value < 0n ? null : value;
+		const value = parseInteger(raw);
+		return value == null || value < 0n || value > UINT256_MAX ? null : value;
 	};
 
 	const formatFactor = value => {
@@ -1565,14 +1562,32 @@
 		return negative ? `-${digits}` : digits;
 	};
 
-	const scaleDown = (amount, factor) => (amount * factor) / ADJUSTMENT_SCALE;
+	const checkedUint256 = value => {
+		if (value < 0n || value > UINT256_MAX) throw new RangeError("A converted amount or price exceeds uint256.");
+		return value;
+	};
+	const scaleDown = (amount, factor) => checkedUint256((amount * factor) / ADJUSTMENT_SCALE);
 
-	const convertAmountPricePair = (amount, price, factor, adjustedAmount = scaleDown(amount, factor)) => {
+	const convertAmountPricePair = (amount, price, factor, adjustedAmount = scaleDown(amount, factor), cancelOverflow = false) => {
+		if (amount === 0n) return { adjustedAmount: 0n, adjustedPrice: price, oldNotional: 0n, newNotional: 0n, dust: 0n };
 		if (adjustedAmount === 0n) return { adjustedAmount, adjustedPrice: 0n, oldNotional: amount * price, newNotional: 0n, dust: 0n };
-		const adjustedPrice = price === 0n ? 0n : (amount * price) / adjustedAmount;
+		const quotient = (amount * price) / adjustedAmount;
+		if (cancelOverflow && quotient > UINT256_MAX)
+			return { adjustedAmount: 0n, adjustedPrice: 0n, oldNotional: amount * price, newNotional: 0n, dust: 0n, cancelled: true };
+		const adjustedPrice = checkedUint256(quotient);
 		const oldNotional = amount * price;
 		const newNotional = adjustedAmount * adjustedPrice;
 		return { adjustedAmount, adjustedPrice, oldNotional, newNotional, dust: oldNotional - newNotional };
+	};
+	const longPricePnl = (amount, delta) => {
+		const magnitude = checkedUint256(amount * (delta < 0n ? -delta : delta)) / ADJUSTMENT_SCALE;
+		return delta < 0n ? -magnitude : magnitude;
+	};
+	const perEpochFunding = (amount, rate) => {
+		if (amount > INT256_MAX) throw new RangeError("The funding illustration requires open amount to fit int256.");
+		const product = amount * rate;
+		if (product < INT256_MIN || product > INT256_MAX) throw new RangeError("The signed funding product exceeds int256.");
+		return product / ADJUSTMENT_SCALE;
 	};
 
 	const installSymbolAdjustmentTool = mount => {
@@ -1586,14 +1601,14 @@
 					<p class="eyebrow">Calculator</p>
 					<h3>Factor and quote conversion</h3>
 				</div>
-				<p>Describe one venue event and one stored quote. The panel shows the price Muon must publish on the adjusted-price route, and the rewritten fields, rounding dust, and rejection rules on the physical route.</p>
+				<p>Describe one venue event and one stored quote. This projects the shown fields after confirmation or during an open restatement window, before this quote is rewritten. Amounts, prices and rates are raw 18-decimal integers. A scheduled event factor must be 0.01–100, excluding 1, with at most 18 decimal places. The panel checks the shown arithmetic; it cannot establish a quote’s lifecycle eligibility.</p>
 			</div>
 			<div class="tool-input-groups">
 				<div class="tool-input-group">
 					<strong>Venue event</strong>
 					<div class="tool-grid tool-grid-compact">
-						${field("active-factor", "Active factor", "decimal", "1", "Enter a decimal above 0.")}
-						${field("event-factor", "This event’s factor", "decimal", "4", "Enter a decimal above 0.")}
+						${field("active-factor", "Active factor", "decimal", "1", "Enter a number above 0 with at most 18 decimal places.")}
+						${field("event-factor", "This event’s factor", "decimal", "4", "Enter a number above 0 with at most 18 decimal places.")}
 						${field("venue-price", "Raw venue price after event", "numeric", "100", wholeNumber)}
 					</div>
 				</div>
@@ -1624,113 +1639,130 @@
 
 		const inputFor = selector => mount.querySelector(selector);
 		const compute = () => {
-			const activeFactor = readField("[data-active-factor]", parseScaledFactor);
-			const eventFactor = readField("[data-event-factor]", parseScaledFactor);
-			const venuePrice = readField("[data-venue-price]", parseUnsignedInteger);
-			const quantity = readField("[data-quantity]", parseUnsignedInteger);
-			const openedPrice = readField("[data-opened-price]", parseUnsignedInteger);
-			const closedAmount = readField("[data-closed-amount]", parseUnsignedInteger);
-			const avgClosedPrice = readField("[data-avg-closed-price]", parseUnsignedInteger);
-			const quantityToClose = readField("[data-quantity-to-close]", parseUnsignedInteger);
-			const requestedClosePrice = readField("[data-requested-close-price]", parseUnsignedInteger);
-			const fundingRate = readField("[data-funding-rate]", parseSignedInteger);
+			try {
+				const activeFactor = readField("[data-active-factor]", parseScaledFactor);
+				const eventFactor = readField("[data-event-factor]", parseScaledFactor);
+				const venuePrice = readField("[data-venue-price]", parseUnsignedInteger);
+				const quantity = readField("[data-quantity]", parseUnsignedInteger);
+				const openedPrice = readField("[data-opened-price]", parseUnsignedInteger);
+				const closedAmount = readField("[data-closed-amount]", parseUnsignedInteger);
+				const avgClosedPrice = readField("[data-avg-closed-price]", parseUnsignedInteger);
+				const quantityToClose = readField("[data-quantity-to-close]", parseUnsignedInteger);
+				const requestedClosePrice = readField("[data-requested-close-price]", parseUnsignedInteger);
+				const fundingRate = readField("[data-funding-rate]", parseSignedInteger);
 
-			const missing = [
-				[activeFactor, "active factor", "[data-active-factor]"],
-				[eventFactor, "this event’s factor", "[data-event-factor]"],
-				[venuePrice, "raw venue price", "[data-venue-price]"],
-				[quantity, "quantity", "[data-quantity]"],
-				[openedPrice, "opened price", "[data-opened-price]"],
-				[closedAmount, "closed amount", "[data-closed-amount]"],
-				[avgClosedPrice, "average closed price", "[data-avg-closed-price]"],
-				[quantityToClose, "quantity to close", "[data-quantity-to-close]"],
-				[requestedClosePrice, "requested close price", "[data-requested-close-price]"],
-				[fundingRate, "funding rate", "[data-funding-rate]"],
-			].filter(([value]) => value == null);
-			if (missing.length)
-				return {
-					html: `<ul class="tool-warnings"><li>Enter a valid value for ${escapeHtml(missing.map(([, label]) => label).join(", "))}. Factors are positive decimals; amounts and prices are whole numbers; the funding rate may be negative.</li></ul>`,
-					invalid: missing.map(([, , selector]) => inputFor(selector)),
-				};
-			if (quantity === 0n)
-				return {
-					html: `<ul class="tool-warnings"><li>Enter a <code>quantity</code> above 0. A stored quote always has one.</li></ul>`,
-					invalid: [inputFor("[data-quantity]")],
-				};
-			if (closedAmount > quantity)
-				return { html: `<ul class="tool-warnings"><li><code>closedAmount</code> cannot exceed <code>quantity</code>.</li></ul>` };
+				const missing = [
+					[activeFactor, "active factor", "[data-active-factor]"],
+					[eventFactor, "this event’s factor", "[data-event-factor]"],
+					[venuePrice, "raw venue price", "[data-venue-price]"],
+					[quantity, "quantity", "[data-quantity]"],
+					[openedPrice, "opened price", "[data-opened-price]"],
+					[closedAmount, "closed amount", "[data-closed-amount]"],
+					[avgClosedPrice, "average closed price", "[data-avg-closed-price]"],
+					[quantityToClose, "quantity to close", "[data-quantity-to-close]"],
+					[requestedClosePrice, "requested close price", "[data-requested-close-price]"],
+					[fundingRate, "funding rate", "[data-funding-rate]"],
+				].filter(([value]) => value == null);
+				if (missing.length)
+					return {
+						html: `<ul class="tool-warnings"><li>Enter a valid value for ${escapeHtml(missing.map(([, label]) => label).join(", "))}. Factors must be above 0 with at most 18 decimal places; amounts and prices are whole numbers; the funding rate may be negative.</li></ul>`,
+						invalid: missing.map(([, , selector]) => inputFor(selector)),
+					};
+				if (quantity === 0n)
+					return {
+						html: `<ul class="tool-warnings"><li>Enter a <code>quantity</code> above 0. Physical restatement requires a nonzero stored position.</li></ul>`,
+						invalid: [inputFor("[data-quantity]")],
+					};
+				if (closedAmount > quantity)
+					return { html: `<ul class="tool-warnings"><li><code>closedAmount</code> cannot exceed <code>quantity</code>.</li></ul>` };
+				if (eventFactor < ADJUSTMENT_SCALE / 100n || eventFactor > 100n * ADJUSTMENT_SCALE || eventFactor === ADJUSTMENT_SCALE)
+					return {
+						html: `<ul class="tool-warnings"><li>A scheduled event factor must be between 0.01 and 100, inclusive, and must differ from 1. This is the bound on one event, not on the cumulative active factor.</li></ul>`,
+						invalid: [inputFor("[data-event-factor]")],
+					};
 
-			const prospectiveFactor = (activeFactor * eventFactor) / ADJUSTMENT_SCALE;
-			if (prospectiveFactor === 0n)
-				return {
-					html: `<ul class="tool-warnings"><li>The two factors compound to zero: <code>floor(${escapeHtml(formatFactor(activeFactor))} &times; ${escapeHtml(formatFactor(eventFactor))})</code> floors away entirely. Confirmation, direct start, and preview all reject this product.</li></ul>`,
-				};
+				const prospectiveFactor = checkedUint256((activeFactor * eventFactor) / ADJUSTMENT_SCALE);
+				if (prospectiveFactor === 0n)
+					return {
+						html: `<ul class="tool-warnings"><li>The two factors compound to zero: <code>floor(${escapeHtml(formatFactor(activeFactor))} &times; ${escapeHtml(formatFactor(eventFactor))})</code> floors away entirely. Confirmation, direct start, and preview all reject this product.</li></ul>`,
+					};
+				if (prospectiveFactor === ADJUSTMENT_SCALE)
+					return {
+						html: `<p class="tool-notes">The prospective cumulative factor is 1x. Confirmation can activate it, but <code>startRestatement</code> and physical preview reject a neutral factor: there is no adjustment to restate.</p>`,
+						summary: "No physical restatement at a neutral 1x factor.",
+					};
 
-			// Adjusted-price route: external prices are lifted onto the stored quote basis.
-			const adjustedMark = scaleDown(venuePrice, prospectiveFactor);
-			const storedOpenAmount = quantity - closedAmount;
-			const venueOpenAmount = scaleDown(storedOpenAmount, prospectiveFactor);
-			const venueClosedAmount = scaleDown(closedAmount, prospectiveFactor);
-			const venueQuantity = venueOpenAmount + venueClosedAmount;
-			const legacyVenueQuantity = scaleDown(quantity, prospectiveFactor);
-			const legacyVenueOpenAmount = legacyVenueQuantity - venueClosedAmount;
-			const upnlRaw = storedOpenAmount * (venuePrice - openedPrice);
-			const upnlAdjusted = storedOpenAmount * (adjustedMark - openedPrice);
+				// Adjusted-price route: external prices are lifted onto the stored quote basis.
+				const adjustedMark = scaleDown(venuePrice, prospectiveFactor);
+				const storedOpenAmount = quantity - closedAmount;
+				const venueOpenAmount = scaleDown(storedOpenAmount, prospectiveFactor);
+				const venueClosedAmount = scaleDown(closedAmount, prospectiveFactor);
+				const venueQuantity = checkedUint256(venueOpenAmount + venueClosedAmount);
+				const legacyVenueQuantity = scaleDown(quantity, prospectiveFactor);
+				const legacyVenueOpenAmount = legacyVenueQuantity - venueClosedAmount;
+				const upnlRaw = longPricePnl(storedOpenAmount, venuePrice - openedPrice);
+				const upnlAdjusted = longPricePnl(storedOpenAmount, adjustedMark - openedPrice);
 
-			// Physical route: a direct restatement converts by the prospective factor.
-			const position = convertAmountPricePair(quantity, openedPrice, prospectiveFactor, venueQuantity);
-			const closed = convertAmountPricePair(closedAmount, avgClosedPrice, prospectiveFactor);
-			const closeRequest = convertAmountPricePair(quantityToClose, requestedClosePrice, prospectiveFactor);
+				// Physical route: a direct restatement converts by the prospective factor.
+				const position = convertAmountPricePair(quantity, openedPrice, prospectiveFactor, venueQuantity);
+				const closed = convertAmountPricePair(closedAmount, avgClosedPrice, prospectiveFactor);
+				const scaledCloseAmount = scaleDown(quantityToClose, prospectiveFactor);
+				const closeRequest = convertAmountPricePair(quantityToClose, requestedClosePrice, prospectiveFactor, scaledCloseAmount, true);
 
-			const rejections = [];
-			if (position.adjustedAmount === 0n)
-				rejections.push(
-					`The whole position vanishes: converted open amount plus converted closed amount is <code>0</code>. Core will not store a zero-quantity position.`,
-				);
-			if (closedAmount > 0n && closed.adjustedAmount === 0n)
-				rejections.push(
-					`Recorded closed quantity vanishes: <code>floor(${escapeHtml(formatBigInt(closedAmount))} &times; factor) = 0</code>. Core will not erase closed history.`,
-				);
-			if (venueOpenAmount === 0n)
-				rejections.push(
-					`No open quantity survives: <code>floor((${escapeHtml(formatBigInt(quantity))} - ${escapeHtml(formatBigInt(closedAmount))}) &times; factor) = 0</code>. Core will not manufacture open size from total-quantity rounding.`,
-				);
-			if (quantityToClose > 0n && closeRequest.adjustedAmount === 0n)
-				rejections.push(
-					`The pending close request vanishes: <code>floor(${escapeHtml(formatBigInt(quantityToClose))} &times; factor) = 0</code>. Core will not keep a close request for zero quantity.`,
-				);
+				const rejections = [];
+				if (position.adjustedAmount === 0n)
+					rejections.push(
+						`The whole position vanishes: converted open amount plus converted closed amount is <code>0</code>. Core will not store a zero-quantity position.`,
+					);
+				if (closedAmount > 0n && closed.adjustedAmount === 0n)
+					rejections.push(
+						`Recorded closed quantity vanishes: <code>floor(${escapeHtml(formatBigInt(closedAmount))} &times; factor) = 0</code>. Core will not erase closed history.`,
+					);
+				if (venueOpenAmount === 0n)
+					rejections.push(
+						`No open quantity survives: <code>floor((${escapeHtml(formatBigInt(quantity))} - ${escapeHtml(formatBigInt(closedAmount))}) &times; factor) = 0</code>. Core will not manufacture open size from total-quantity rounding.`,
+					);
+				if (quantityToClose > 0n && scaledCloseAmount === 0n)
+					rejections.push(
+						`The pending close request vanishes: <code>floor(${escapeHtml(formatBigInt(quantityToClose))} &times; factor) = 0</code>. Core will not keep a close request for zero quantity.`,
+					);
 
-			const restatable = rejections.length === 0;
-			const totalDust = position.dust + closed.dust + closeRequest.dust;
-			const rateMagnitude = fundingRate < 0n ? -fundingRate : fundingRate;
-			const restoredMagnitude = (rateMagnitude * ADJUSTMENT_SCALE) / prospectiveFactor;
-			const restoredRate = fundingRate < 0n ? -restoredMagnitude : restoredMagnitude;
-			const fundingBefore = storedOpenAmount * fundingRate;
-			const fundingAfter = venueOpenAmount * restoredRate;
+				const restatable = rejections.length === 0;
+				const totalDust = position.dust + closed.dust + closeRequest.dust;
+				const rateMagnitude = fundingRate < 0n ? -fundingRate : fundingRate;
+				const restoredMagnitude = (rateMagnitude * ADJUSTMENT_SCALE) / prospectiveFactor;
+				if (restoredMagnitude > INT256_MAX) throw new RangeError("The rebased funding rate exceeds int256.max.");
+				const restoredRate = fundingRate < 0n ? -restoredMagnitude : restoredMagnitude;
+				const fundingBefore = perEpochFunding(storedOpenAmount, fundingRate);
+				const fundingAfter = perEpochFunding(venueOpenAmount, restoredRate);
 
-			const notes = [];
-			if (legacyVenueOpenAmount !== venueOpenAmount)
-				notes.push(
-					`The old independent-total method would produce open amount <code>${escapeHtml(formatBigInt(legacyVenueOpenAmount))}</code>. Core instead scales the actual stored open amount to <code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> and reconstructs quantity, preventing that ${escapeHtml(formatBigInt(legacyVenueOpenAmount - venueOpenAmount))}-wei carry from changing position size.`,
-				);
-			if (restatable && totalDust > 0n)
-				notes.push(
-					`Integer division discards <code>${escapeHtml(formatBigInt(totalDust))}</code> of notional across the converted pairs. Each pair’s dust is <code>oldNotional % adjustedAmount</code>, always smaller than the converted amount.`,
-				);
-			if (restatable && fundingBefore !== fundingAfter)
-				notes.push(
-					`Flooring the restored rate moves the funding amount from <code>${escapeHtml(formatBigInt(fundingBefore))}</code> to <code>${escapeHtml(formatBigInt(fundingAfter))}</code>.`,
-				);
-			if (activeFactor !== ADJUSTMENT_SCALE)
-				notes.push(
-					`A direct restatement converts by the prospective factor shown. A restatement opened later, after <code>confirmPriceAdjusted</code>, would instead convert by the active factor <code>${escapeHtml(formatFactor(activeFactor))}</code>.`,
-				);
+				const notes = [];
+				if (closeRequest.cancelled)
+					notes.push(
+						`The converted close price exceeds uint256. Core cancels this close intent, stores zero close quantity and price, sets <code>OPENED</code> and updates the modification timestamp, emitting <code>CloseRequestCancelledByAdjustment</code>. The underlying position can still be converted.`,
+					);
+				if (legacyVenueOpenAmount !== venueOpenAmount)
+					notes.push(
+						`The old independent-total method would produce open amount <code>${escapeHtml(formatBigInt(legacyVenueOpenAmount))}</code>. Core instead scales the actual stored open amount to <code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> and reconstructs quantity, preventing that ${escapeHtml(formatBigInt(legacyVenueOpenAmount - venueOpenAmount))}-wei carry from changing position size.`,
+					);
+				if (restatable && totalDust > 0n)
+					notes.push(
+						`Integer division discards <code>${escapeHtml(formatBigInt(totalDust))}</code> of the unscaled amount × price products (36 decimals). Each retained pair’s dust is <code>oldNotional % adjustedAmount</code>, always smaller than the converted amount. A cancelled close intent is excluded from dust.`,
+					);
+				if (restatable && fundingBefore !== fundingAfter)
+					notes.push(
+						`Amount and restored-rate rounding move the per-epoch funding illustration from <code>${escapeHtml(formatBigInt(fundingBefore))}</code> to <code>${escapeHtml(formatBigInt(fundingAfter))}</code> in raw 18-decimal units. Actual cumulative funding also depends on epoch timing and the quote’s paid-funding state.`,
+					);
+				if (activeFactor !== ADJUSTMENT_SCALE)
+					notes.push(
+						`A direct restatement converts by the prospective factor shown. Confirming this event first makes <code>${escapeHtml(formatFactor(prospectiveFactor))}</code> the active factor, so a restatement opened afterward uses that same factor, absent another event.`,
+					);
 
-			const html = `
+				const html = `
 				<div class="result-metrics">
 					<span><small>Prospective factor</small><strong>${escapeHtml(formatFactor(prospectiveFactor))}x</strong></span>
 					<span><small>Adjusted mark Muon publishes</small><strong>${escapeHtml(formatBigInt(adjustedMark))}</strong></span>
-					<span><small>Physical conversion</small><strong>${restatable ? "Accepted" : "Rejected"}</strong></span>
+					<span><small>Shown conversion arithmetic</small><strong>${restatable ? "Passes" : "Rejected"}</strong></span>
 					<span><small>Notional dust</small><strong>${restatable ? escapeHtml(formatBigInt(totalDust)) : "n/a"}</strong></span>
 				</div>
 				<h4>Adjusted-price route, storage untouched</h4>
@@ -1738,27 +1770,34 @@
 					Muon multiplies the raw venue price by the factor: <code>floor(${escapeHtml(formatBigInt(venuePrice))} &times; ${escapeHtml(formatFactor(prospectiveFactor))}) = ${escapeHtml(formatBigInt(adjustedMark))}</code>.
 					Feeding Core the raw <code>${escapeHtml(formatBigInt(venuePrice))}</code> instead would report a price UPNL of
 					<code>${escapeHtml(formatBigInt(upnlRaw))}</code> on this long, against the correct
-					<code>${escapeHtml(formatBigInt(upnlAdjusted))}</code>.
-					<code>getQuoteInVenueUnits</code> reports quantity <code>${escapeHtml(formatBigInt(venueQuantity))}</code>,
+					<code>${escapeHtml(formatBigInt(upnlAdjusted))}</code> in raw 18-decimal units, after dividing amount × price difference by <code>1e18</code>.
+					For this quote after confirmation, or while still unrestated in an open window, <code>getQuoteInVenueUnits</code> projects quantity <code>${escapeHtml(formatBigInt(venueQuantity))}</code>,
 					closed amount <code>${escapeHtml(formatBigInt(venueClosedAmount))}</code>, and open amount
-					<code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> for display only.
+					<code>${escapeHtml(formatBigInt(venueOpenAmount))}</code> for display only. Before confirmation or window opening, the getter uses the existing active factor, not this event’s prospective factor. The actual getter can also revert on conversion dust or overflow.
 				</p>
 				<h4>Physical route, storage rewritten</h4>
 				<div class="table-wrap">
 					<table>
-						<thead><tr><th>Field</th><th>Stored</th><th>Rewritten</th><th>Notional</th></tr></thead>
+						<thead><tr><th>Field</th><th>Stored</th><th>Rewritten</th><th>Product or exposure</th></tr></thead>
 						<tbody>
 							${row("quantity / openedPrice", `${escapeHtml(formatBigInt(quantity))} @ ${escapeHtml(formatBigInt(openedPrice))}`, `${escapeHtml(formatBigInt(position.adjustedAmount))} @ ${escapeHtml(formatBigInt(position.adjustedPrice))}`, `${escapeHtml(formatBigInt(position.oldNotional))} &rarr; ${escapeHtml(formatBigInt(position.newNotional))}${position.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(position.dust))})` : ""}`)}
-							${closedAmount > 0n ? row("closedAmount / avgClosedPrice", `${escapeHtml(formatBigInt(closedAmount))} @ ${escapeHtml(formatBigInt(avgClosedPrice))}`, `${escapeHtml(formatBigInt(closed.adjustedAmount))} @ ${escapeHtml(formatBigInt(closed.adjustedPrice))}`, `${escapeHtml(formatBigInt(closed.oldNotional))} &rarr; ${escapeHtml(formatBigInt(closed.newNotional))}${closed.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(closed.dust))})` : ""}`) : row("closedAmount / avgClosedPrice", "0", "0", "not converted while zero")}
-							${quantityToClose > 0n ? row("quantityToClose / requestedClosePrice", `${escapeHtml(formatBigInt(quantityToClose))} @ ${escapeHtml(formatBigInt(requestedClosePrice))}`, `${escapeHtml(formatBigInt(closeRequest.adjustedAmount))} @ ${escapeHtml(formatBigInt(closeRequest.adjustedPrice))}`, `${escapeHtml(formatBigInt(closeRequest.oldNotional))} &rarr; ${escapeHtml(formatBigInt(closeRequest.newNotional))}${closeRequest.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(closeRequest.dust))})` : ""}`) : row("quantityToClose / requestedClosePrice", "0", "0", "not converted while zero")}
-							${row("current funding rate", `${escapeHtml(formatBigInt(fundingRate))} per old unit`, `${escapeHtml(formatBigInt(restoredRate))} per new unit`, `${escapeHtml(formatBigInt(fundingBefore))} &rarr; ${escapeHtml(formatBigInt(fundingAfter))}`)}
+							${closedAmount > 0n ? row("closedAmount / avgClosedPrice", `${escapeHtml(formatBigInt(closedAmount))} @ ${escapeHtml(formatBigInt(avgClosedPrice))}`, `${escapeHtml(formatBigInt(closed.adjustedAmount))} @ ${escapeHtml(formatBigInt(closed.adjustedPrice))}`, `${escapeHtml(formatBigInt(closed.oldNotional))} &rarr; ${escapeHtml(formatBigInt(closed.newNotional))}${closed.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(closed.dust))})` : ""}`) : row("closedAmount / avgClosedPrice", `0 @ ${escapeHtml(formatBigInt(avgClosedPrice))}`, `0 @ ${escapeHtml(formatBigInt(avgClosedPrice))}`, "associated price unchanged")}
+							${quantityToClose > 0n ? row("quantityToClose / requestedClosePrice", `${escapeHtml(formatBigInt(quantityToClose))} @ ${escapeHtml(formatBigInt(requestedClosePrice))}`, `${escapeHtml(formatBigInt(closeRequest.adjustedAmount))} @ ${escapeHtml(formatBigInt(closeRequest.adjustedPrice))}`, closeRequest.cancelled ? "close intent cancelled; position retained" : `${escapeHtml(formatBigInt(closeRequest.oldNotional))} &rarr; ${escapeHtml(formatBigInt(closeRequest.newNotional))}${closeRequest.dust > 0n ? ` (dust ${escapeHtml(formatBigInt(closeRequest.dust))})` : ""}`) : row("quantityToClose / requestedClosePrice", `0 @ ${escapeHtml(formatBigInt(requestedClosePrice))}`, `0 @ ${escapeHtml(formatBigInt(requestedClosePrice))}`, "associated price unchanged")}
+							${row("current funding rate", `${escapeHtml(formatBigInt(fundingRate))} per old unit`, `${escapeHtml(formatBigInt(restoredRate))} per new unit`, `per-epoch exposure (18 decimals): ${escapeHtml(formatBigInt(fundingBefore))} &rarr; ${escapeHtml(formatBigInt(fundingAfter))}`)}
 						</tbody>
 					</table>
 				</div>
-				${rejections.length ? `<ul class="tool-warnings">${rejections.map(entry => `<li>${entry}</li>`).join("")}</ul>` : `<p class="tool-ok">Every amount survives the conversion, so <code>applyAdjustment</code> would rewrite this quote. The dust exception does not apply.</p>`}
+				${rejections.length ? `<ul class="tool-warnings">${rejections.map(entry => `<li>${entry}</li>`).join("")}</ul>` : `<p class="tool-ok">The shown fields survive the arithmetic checks. <code>applyAdjustment</code> also checks the other stored price fields, quote status, authorization, window phase, funding preparation, inventory and liquidation state; this calculator does not establish those prerequisites.</p>`}
 				${notes.length ? `<ul class="tool-notes">${notes.map(entry => `<li>${entry}</li>`).join("")}</ul>` : ""}
 			`;
-			return { html, summary: `Physical conversion ${restatable ? "Accepted" : "Rejected"}.` };
+				return { html, summary: `Shown conversion arithmetic ${restatable ? "passes" : "is rejected"}.` };
+			} catch (error) {
+				if (!(error instanceof RangeError)) throw error;
+				return {
+					html: `<ul class="tool-warnings"><li>${escapeHtml(error.message)} The panel cannot report a representable result for these inputs.</li></ul>`,
+					summary: "Input arithmetic exceeds the contract bounds.",
+				};
+			}
 		};
 		wireTool(mount, result, compute);
 	};

@@ -137,10 +137,11 @@ Total planned = 100; the buckets are paid as stored</code></pre>
 						settlements pay the capped amount. When the capped UPNL is above the signed value, the signed loss was larger than what the
 						quotes settle at, and the difference is collateral the settlements do not need: it is moved out of the allocation into
 						PartyA&rsquo;s deferred balance and returned at finalization instead of being stranded. When it is below, the signed profit
-						was larger than what PartyBs will pay, and the difference is recovered from the deferred balance first, then from the
-						liquidator fee, then from the vault credit; only a fee cap below three units per position can leave it uncovered, and that
-						liquidation is disputed. A dispute-role override replaces the planned amounts with the supplied ones; Clearing House takeover
-						abandons the plan. Neither path reverses payments already made.
+						was larger than what PartyBs will pay, and the difference is recovered from the deferred balance first, then from the actual
+						remaining liquidator fee, then from the available insurance-vault balance. If these sources cannot cover the correction, the
+						liquidation is disputed. A small configured fee cap can contribute, but it is not the only cause of a shortfall. A
+						dispute-role override replaces the planned amounts with the supplied ones; Clearing House takeover abandons the plan. Neither
+						path reverses payments already made.
 					</p>
 					<aside class="callout callout-note">
 						<strong>Keep the settlement PartyB list independently.</strong> Liquidators must retain the PartyBs from the liquidated quotes
@@ -271,9 +272,10 @@ New LONG price PnL: (price × amount − exact notional) / 1e18</code></pre>
 						<li>Verify repaired funding totals and exact-notional Muon calculations, then resume affected actions.</li>
 					</ol>
 					<p>
-						When the fixed allowance accepts a difference, both parties settle using the smaller same-direction amount. The discarded
-						difference is not a payment and is not emitted or assigned to a vault or account. Only the unapplied reduction is stored
-						temporarily while settlement batches are in progress.
+						For new liquidations, the last position close applies an accepted cap directly to the stored settlement buckets. NORMAL
+						liquidations reconcile the corresponding difference through deferred balance, remaining liquidator fee and insurance vault as
+						described above. The compatibility settlement path for a pre-upgrade liquidation whose positions were already closed may still
+						consume an existing stored reduction during settlement batches; that is separate from the new fixed plan.
 					</p>
 				</article>
 			</main>

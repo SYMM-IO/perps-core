@@ -86,14 +86,19 @@
 					<h3 id="doc-withdraw-system-legacy-system-limitations">Legacy System Limitations</h3>
 					<ol>
 						<li>
-							<strong>Fragmented Withdrawal Paths:</strong> Withdrawals were split between the Bridge facet (instant withdrawals with no
-							cooldown) and the standard withdrawal function (12-hour cooldown)
+							<strong>Fragmented Withdrawal Paths:</strong> The legacy paths differed: bridge requests could be initiated immediately,
+							but core release to the bridge waited a request-based cooldown. Any instant user payout depended on bridge fronting.
+							Classic withdrawal instead checked the user's last-deallocation cooldown.
 						</li>
 						<li>
 							<strong>Cooldown Reset Behavior:</strong> Each deallocation reset the 12-hour cooldown timer, creating friction for
 							PartyBs and automated trading systems
 						</li>
-						<li><strong>Single Queue Limitation:</strong> Only one withdrawal could be queued at a time</li>
+						<li>
+							<strong>Separate Destination Calls:</strong> In the v0.8.4 baseline, classic withdrawal paid one receiver per call. Bridge
+							requests had independent IDs and could coexist; the new system adds a multi-part request rather than removing a
+							one-request queue restriction.
+						</li>
 						<li>
 							<strong>Incompatibility with New Features:</strong> Virtual funds and cross-chain withdrawals required a fundamental
 							redesign
@@ -196,16 +201,22 @@
 						finalized.
 					</p>
 					<h2 id="doc-withdraw-system-withdrawal-flows">Withdrawal Flows</h2>
+					<p>
+						Core calls the request hook during <code>initiateWithdraw</code>. Provider acceptance must be a later call after initiation
+						returns: both entrypoints are <code>nonReentrant</code>. Provider payouts in these diagrams are integration responsibilities,
+						not instant or cross-chain delivery guarantees enforced by core. Any classic parts are paid before provider completion
+						callbacks.
+					</p>
 					<h3 id="doc-withdraw-system-normal-classic-withdraw">Normal (Classic) Withdraw</h3>
 					<p>The simplest withdrawal type with no providers involved.</p>
 					<pre><code class="language-mermaid">sequenceDiagram
     participant User
     participant Symmio
 
-    User-&gt;&gt;Symmio: initiateWithdraw()
+    User-&gt;&gt;Symmio: initiateWithdraw(parts, false, providerData)
     Note over Symmio: Status: PENDING
     Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
-    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest(user, requestId)
     Symmio-&gt;&gt;User: Transfer funds
     Note over Symmio: Status: COMPLETED
 </code></pre>
@@ -217,22 +228,24 @@
     participant Symmio
     participant Virtual as Virtual Provider
 
-    User-&gt;&gt;Symmio: initiateWithdraw()
+    User-&gt;&gt;Symmio: initiateWithdraw(parts, false, providerData)
     Note over Symmio: Status: PENDING
-    Symmio-&gt;&gt;Virtual: onWithdrawRequest()
-    Virtual-&gt;&gt;Symmio: acceptWithdrawRequest()
+    Symmio-&gt;&gt;Virtual: onWithdrawRequest(request)
+    Virtual-&gt;&gt;Symmio: acceptWithdrawRequest(user, requestId) in a later call
     Note over Symmio: Status: PROVIDER_ACCEPTED
     Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
-    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
-    Symmio-&gt;&gt;Virtual: onWithdrawComplete()
-    Virtual-&gt;&gt;User: Transfer funds (cross-chain)
-    Symmio-&gt;&gt;User: Transfer funds (non-provider parts)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest(user, requestId)
+    Symmio-&gt;&gt;User: Transfer funds for any classic parts
+    Symmio-&gt;&gt;Virtual: onWithdrawComplete(request)
+    Virtual-&gt;&gt;User: Provider-defined cross-chain delivery
     Note over Symmio: Status: COMPLETED
 </code></pre>
 					<p>
-						<strong>Cancellation:</strong> - Before provider accepts (<code>PENDING</code>): Cancels immediately - After acceptance,
-						outside blackout: Cancels immediately - After acceptance, inside blackout: Transitions to <code>CANCEL_REQUESTED</code>,
-						awaits provider approval
+						<strong>Cancellation:</strong> With a positive blackout, both <code>PENDING</code> and <code>PROVIDER_ACCEPTED</code> requests
+						require <code>block.timestamp + pureVirtualCancelBlackout &lt; cooldownEndTime</code>. If allowed, they cancel immediately; an
+						accepted provider is notified. At equality or later, including after cooldown expiry, cancellation reverts with
+						<code>WithdrawFacet : Cancel blackout active</code>. A zero blackout disables this guard. Pure virtual never uses
+						<code>CANCEL_REQUESTED</code> to bypass a blackout.
 					</p>
 					<h3 id="doc-withdraw-system-pure-express-withdraw">Pure Express Withdraw</h3>
 					<p>Only an express provider is specified for instant same-chain withdrawal.</p>
@@ -241,17 +254,17 @@
     participant Symmio
     participant Express as Express Provider
 
-    User-&gt;&gt;Symmio: initiateWithdraw()
+    User-&gt;&gt;Symmio: initiateWithdraw(parts, false, providerData)
     Note over Symmio: Status: PENDING
-    Symmio-&gt;&gt;Express: onWithdrawRequest()
-    Express-&gt;&gt;Symmio: acceptWithdrawRequest()
+    Symmio-&gt;&gt;Express: onWithdrawRequest(request, collateral)
+    Express-&gt;&gt;Symmio: acceptWithdrawRequest(user, requestId) in a later call
     Note over Symmio: Status: PROVIDER_ACCEPTED
     Express-&gt;&gt;User: Instant payment
     Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
-    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
-    Symmio-&gt;&gt;Express: onWithdrawComplete()
-    Symmio-&gt;&gt;Express: Reimburse funds
-    Symmio-&gt;&gt;User: Transfer funds (non-provider parts)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest(user, requestId)
+    Symmio-&gt;&gt;User: Transfer funds for any classic parts
+    Symmio-&gt;&gt;Express: Reimburse nonvirtual express parts and release their core lock
+    Symmio-&gt;&gt;Express: onWithdrawComplete(request)
     Note over Symmio: Status: COMPLETED
 </code></pre>
 					<h3 id="doc-withdraw-system-virtual-express-withdraw">Virtual Express Withdraw</h3>
@@ -262,18 +275,21 @@
     participant Express as Express Provider
     participant Virtual as Virtual Provider
 
-    User-&gt;&gt;Symmio: initiateWithdraw()
+    User-&gt;&gt;Symmio: initiateWithdraw(parts, false, providerData)
     Note over Symmio: Status: PENDING
-    Symmio-&gt;&gt;Express: onWithdrawRequest()
+    Symmio-&gt;&gt;Express: onWithdrawRequest(request, collateral)
     Note over Express,Virtual: Off-chain coordination
-    Express-&gt;&gt;Symmio: acceptWithdrawRequest()
+    Express-&gt;&gt;Symmio: acceptWithdrawRequest(user, requestId) in a later call
     Note over Symmio: Status: PROVIDER_ACCEPTED
     Express-&gt;&gt;User: Instant payment (cross-chain)
     Note over Symmio: Wait for cooldown&lt;br/&gt;(from last deallocation)
-    User-&gt;&gt;Symmio: finalizeWithdrawRequest()
-    Symmio-&gt;&gt;Express: onWithdrawComplete()
-    Virtual-&gt;&gt;Express: Reimburse funds
-    Symmio-&gt;&gt;User: Transfer funds (non-provider parts)
+    User-&gt;&gt;Symmio: finalizeWithdrawRequest(user, requestId)
+    Symmio-&gt;&gt;User: Transfer funds for any classic parts
+    opt Nonvirtual express parts exist
+        Symmio-&gt;&gt;Express: Reimburse those token parts
+    end
+    Symmio-&gt;&gt;Express: onWithdrawComplete(request)
+    Virtual-&gt;&gt;Express: Provider-defined virtual reimbursement
     Note over Symmio: Status: COMPLETED
 </code></pre>
 					<blockquote>
@@ -319,33 +335,49 @@
 					<h2 id="doc-withdraw-system-administrative-features">Administrative Features</h2>
 					<h3 id="doc-withdraw-system-force-cancel">Force Cancel</h3>
 					<p>
-						Administrators with <code>WITHDRAW_FORCE_CANCEL_ROLE</code> can force-cancel any withdrawal request
-						<strong>before</strong> the cooldown expires.
+						An address with <code>WITHDRAW_FORCE_CANCEL_ROLE</code> can force-cancel an eligible request for an
+						<strong>unsuspended user</strong> only when <code>block.timestamp &lt; cooldownEndTime</code>. A provider callback must also
+						succeed; a revert rolls back the refund and status change.
 					</p>
 					<ul>
 						<li>Works on all withdrawal types (classic, virtual, express)</li>
 						<li>Valid for <code>PENDING</code>, <code>PROVIDER_ACCEPTED</code>, or <code>CANCEL_REQUESTED</code> status</li>
 						<li>Returns locked balance to user's available balance</li>
-						<li>Notifies providers via <code>onForceWithdrawCancel</code> callback</li>
+						<li>Notifies the selected provider via <code>onForceWithdrawCancel</code>; failure reverts the whole cancellation</li>
+						<li>Does not claw back a provider's earlier payout; provider-side reconciliation is separate</li>
 					</ul>
 					<h3 id="doc-withdraw-system-pure-virtual-cancel-blackout">Pure Virtual Cancel Blackout</h3>
 					<p>
-						The <code>pureVirtualCancelBlackout</code> parameter creates a window before cooldown expiry during which users cannot cancel
-						pure virtual withdrawals. This gives virtual providers certainty that accepted requests won't be cancelled at the last moment.
+						When <code>pureVirtualCancelBlackout &gt; 0</code>, pure-virtual cancellation is allowed only while
+						<code>block.timestamp + pureVirtualCancelBlackout &lt; cooldownEndTime</code>. The restriction applies before and after
+						provider acceptance, and continues at and after expiry. Setting the blackout to zero disables this guard.
 					</p>
 					<h3 id="doc-withdraw-system-withdrawal-suspension">Withdrawal Suspension</h3>
 					<p>
-						A global flag can suspend users, preventing them from calling balance-changing functions. Suspended users' withdrawal requests
-						can be cancelled, returning locked balance to their available balance.
+						The per-address <code>suspendedAddresses</code> flag blocks operations with a suspension guard; it does not block every
+						balance-changing call, such as deposits. For an already suspended user, <code>SUSPENDER_ROLE</code> can call
+						<code>suspendWithdrawRequest</code> on an eligible pending/accepted/cancel-requested withdrawal. It refunds the account,
+						releases the real-token lock, sets <code>SUSPENDED</code> and notifies the provider. Callback failure rolls everything back.
+						The refunded request has no resume path; ordinary force cancellation is blocked while the user is suspended.
 					</p>
 					<h3 id="doc-withdraw-system-withdrawal-speed-up">Withdrawal Speed-Up</h3>
-					<p>Designated users can reduce their cooldown period:</p>
+					<p>
+						Whitelisted users can request a one-time cooldown modification for classic or pure-virtual withdrawals. Express requests
+						cannot use <code>speedUp = true</code>:
+					</p>
 					<ol>
 						<li>Admin adds user to speed-up whitelist</li>
 						<li>User initiates withdrawal with <code>speedUp</code> flag enabled</li>
-						<li>Admin accepts speed-up via <code>acceptSpeedUpRequest</code> with new cooldown duration</li>
+						<li>
+							An address with <code>WITHDRAW_SPEED_UP_ROLE</code> calls <code>acceptSpeedUpRequest(user, requestId, newCooldown)</code>
+						</li>
 					</ol>
-					<p>A system-wide <code>minWithdrawCooldown</code> enforces the minimum allowed cooldown.</p>
+					<p>
+						Approval sets <code>cooldownEndTime = request.timestamp + newCooldown</code>, where
+						<code>newCooldown &gt;= minWithdrawCooldown</code>. It does not compare the new expiry with the old one: an approval can
+						extend an already mature request. The operator must choose an earlier expiry for a true speed-up. The minimum bounds the
+						approved duration, not the initial waiting time of an ordinary request whose deallocation cooldown already elapsed.
+					</p>
 					<h2 id="doc-withdraw-system-technical-reference">Technical Reference</h2>
 					<h3 id="doc-withdraw-system-enums">Enums</h3>
 					<pre><code class="language-solidity">enum WithdrawStatus {
@@ -355,7 +387,7 @@
     COMPLETED,          // 3: Finalized successfully
     CANCEL_REQUESTED,   // 4: User requested cancellation, awaiting provider
     CANCELLED,          // 5: Request fully cancelled and refunded
-    SUSPENDED           // 6: Suspended due to user-level restriction
+    SUSPENDED           // 6: Refunded by suspension; no request-resume path
 }
 </code></pre>
 					<h3 id="doc-withdraw-system-structs">Structs</h3>
@@ -401,9 +433,10 @@ function getModifiedCooldownEndTime(address user, uint256 requestId) external vi
 						<li>
 							<p>
 								<strong>Filtered:</strong> Use <code>getPendingWithdrawRequests(user, start, size)</code> to scan a range of request
-								IDs and return only those with non-terminal status (<code>PENDING</code>, <code>PROVIDER_ACCEPTED</code>,
+								IDs and return the statuses included by this getter (<code>PENDING</code>, <code>PROVIDER_ACCEPTED</code>,
 								<code>CANCEL_REQUESTED</code>, <code>SUSPENDED</code>). Requests that are <code>COMPLETED</code>,
-								<code>CANCELLED</code>, or <code>PROVIDER_REJECTED</code> are excluded.
+								<code>CANCELLED</code>, or <code>PROVIDER_REJECTED</code> are excluded. <code>SUSPENDED</code> is included by the
+								filter but is already refunded and has no resume/finalization path.
 							</p>
 						</li>
 						<li>
@@ -430,8 +463,10 @@ function initiateWithdraw(
 function finalizeWithdrawRequest(address user, uint256 requestId) external;
 
 // Request cancellation
-// - Classic/pure-virtual (outside blackout): cancels immediately
-// - Express or pure-virtual (inside blackout): transitions to CANCEL_REQUESTED
+// - PENDING classic/express: cancels immediately.
+// - Pure virtual: requires blackout == 0 or now + blackout &lt; cooldownEndTime;
+//   if allowed, PENDING/PROVIDER_ACCEPTED cancel immediately; otherwise revert.
+// - PROVIDER_ACCEPTED express: transitions to CANCEL_REQUESTED.
 function requestCancelWithdraw(uint256 requestId) external;
 </code></pre>
 					<h3 id="doc-withdraw-system-admin-functions">Admin Functions</h3>
@@ -442,18 +477,24 @@ function forceCancelWithdraw(address user, uint256 requestId) external;
 function setPureVirtualCancelBlackout(uint256 blackout) external;
 </code></pre>
 					<h2 id="doc-withdraw-system-provider-callbacks">Provider Callbacks</h2>
-					<p>Providers must implement these callbacks:</p>
+					<p>
+						These withdrawal callbacks are part of the provider interfaces. The full virtual interface also includes speed-up,
+						external-transfer and express-deposit methods:
+					</p>
 					<h3 id="doc-withdraw-system-ivirtualprovider">IVirtualProvider</h3>
 					<pre><code class="language-solidity">function onWithdrawRequest(WithdrawRequest calldata request) external;
 function onWithdrawComplete(WithdrawRequest calldata request) external;
 function onWithdrawCancelRequest(WithdrawRequest calldata request) external;
 function onForceWithdrawCancel(WithdrawRequest calldata request) external;
+function onWithdrawSuspend(WithdrawRequest calldata request) external;
+function onSpeedUpWithdrawRequest(WithdrawRequest calldata request, uint256 newCooldown) external;
 </code></pre>
 					<h3 id="doc-withdraw-system-iexpressprovider">IExpressProvider</h3>
-					<pre><code class="language-solidity">function onWithdrawRequest(WithdrawRequest calldata request) external;
+					<pre><code class="language-solidity">function onWithdrawRequest(WithdrawRequest calldata request, address collateral) external;
 function onWithdrawComplete(WithdrawRequest calldata request) external;
 function onWithdrawCancelRequest(WithdrawRequest calldata request) external;
 function onForceWithdrawCancel(WithdrawRequest calldata request) external;
+function onWithdrawSuspend(WithdrawRequest calldata request) external;
 </code></pre>
 				</article>
 			</main>

@@ -52,18 +52,19 @@
 						<div>
 							<h1><strong>Oracle-Less Trading</strong></h1>
 							<p class="hero-copy">
-								Whenever partyA is trading exclusively with a single partyB, there is no risk of one partyB doing something that could
-								harm another. In this case, we can remove the Muon signature checks. If partyA trusts partyB, they can bind themselves
-								to that specific partyB, and from that moment onward, the signatures previously required for trading will no longer be
-								checked. PartyB can then pass any value they choose to the contract method.
+								A PartyA can bind to a governance-approved, bindable PartyB. Covered send, lock, open, ordinary close and
+								batch-trading paths then skip their Muon verification under the documented bound-mode conditions. The parties must
+								trust the supplied price and UPNL data on those paths. Binding does not disable every oracle check: emergency closes
+								and other oracle-dependent flows retain their own verification, and authorization and other execution guards still
+								apply.
 							</p>
 						</div>
 					</div>
 				</header>
 				<article class="doc-article" id="full-document">
 					<p>
-						This change will increase the overall speed of the system as partyBs don't have to wait for muon signatures before every
-						transaction.
+						Covered bound-mode trading paths can proceed without waiting for Muon signatures. Other operations may still require oracle
+						data.
 					</p>
 					<h2 id="doc-oracle-less-trading-binding-requirements">Binding Requirements</h2>
 					<p>Before partyA can bind to a partyB, they must meet the following conditions:</p>
@@ -73,13 +74,15 @@
 							CANCEL_PENDING status)
 						</li>
 						<li><strong>No open positions with other partyBs</strong> - All existing open positions must be with the target partyB</li>
+						<li>
+							<strong>Bindable target and valid caller</strong> - Governance must have enabled <code>isPartyBBindable</code> for the
+							nonzero target. The effective caller must not be a PartyB, must be unsuspended and in <code>NOT_BOUND</code> state; PartyA
+							actions must be unpaused.
+						</li>
 					</ol>
 					<p>This ensures a clean state before entering the bound relationship.</p>
 					<h2 id="doc-oracle-less-trading-binding-flow">Binding Flow</h2>
-					<p>
-						The <code>bindToPartyB</code> function lets a caller initiate a binding, ensuring the target address isn't zero, that they
-						have no pending quotes, no open positions with other partyBs, and that they're not already bound. Once bound, the caller can
-					</p>
+					<p>The <code>bindToPartyB</code> function checks the binding requirements above. Once bound, the caller can</p>
 					<p>
 						later request to unbind using <code>requestToUnbindFromPartyB</code>, which doesn't immediately break the link but instead
 						moves the status into a <code>PENDING_UNBIND</code> state, recording the time of the request. If the caller changes their

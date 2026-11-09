@@ -4,6 +4,12 @@
 	const escapeHtml = value =>
 		String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 	const formatCall = call => escapeHtml(call).replace(/([a-z0-9])([A-Z])/g, "$1<wbr>$2");
+	const formatSourceName = name => escapeHtml(name).replace(/_/g, "_<wbr>");
+	const formatSourceExpression = expression =>
+		expression
+			.split(" | ")
+			.map(term => `<span class="bit-expression-term">${formatSourceName(term)}</span>`)
+			.join(" |<wbr> ");
 	// Keep the existing shortcut in the header so it never covers a bit value.
 	const backToTop = document.querySelector("[data-back-to-top]");
 	const pageActions = document.querySelector(".docs-header .top-actions");
@@ -28,12 +34,22 @@
 	// The only five positions any of these words ever uses.
 	const TRACKED_BITS = [255, 254, 2, 1, 0];
 	const BIT_LABELS = {
-		255: { short: "SNAPSHOT_ACTIVE", live: null, snapshot: "This is a real snapshot, not the 0 sentinel." },
-		254: { short: "SNAPSHOT_TRANSIENT", live: null, snapshot: "The suspended authority came from transient storage." },
-		2: { short: "INSTANT_OPEN_MODE", live: "InstantOpen accounting mode is enabled.", snapshot: "Suspended InstantOpen accounting-mode flag." },
-		1: { short: "CALL_FROM_INSTANT_LAYER", live: "This call is routed by InstantLayer.", snapshot: "Suspended routing flag." },
+		255: { snapshotName: "EXTERNAL_CONTEXT_SNAPSHOT_ACTIVE", live: null, snapshot: "This is a real snapshot, not the 0 sentinel." },
+		254: { snapshotName: "EXTERNAL_CONTEXT_SNAPSHOT_TRANSIENT", live: null, snapshot: "The suspended authority came from transient storage." },
+		2: {
+			liveName: "INSTANT_OPEN_MODE",
+			snapshotName: "EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_OPEN",
+			live: "InstantOpen accounting mode is enabled.",
+			snapshot: "Suspended InstantOpen accounting-mode flag.",
+		},
+		1: {
+			liveName: "CALL_FROM_INSTANT_LAYER",
+			snapshotName: "EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_CALL",
+			live: "This call is routed by InstantLayer.",
+			snapshot: "Suspended routing flag.",
+		},
 		0: {
-			short: "INSTANT_CONTEXT_ACTIVE",
+			liveName: "INSTANT_CONTEXT_ACTIVE",
 			live: "A scope is open. Zero here is what makes every reader fall back.",
 			snapshot: "Inherited from the live word and restored with bits 1–2; bit 254, not bit 0, selects the restoration source.",
 		},
@@ -44,6 +60,12 @@
 	const ATTACKER_ADDRESS = "0x00000000000000000000000000000000000000EE";
 
 	const isBitSet = (word, index) => (word & bitMask(index)) !== 0n;
+	const sourceBitName = (word, kind, index) => {
+		const label = BIT_LABELS[index];
+		if (index >= 254) return kind === "snapshot" ? label.snapshotName : null;
+		if (kind === "snapshot" && !isBitSet(word, 254) && label.snapshotName) return label.snapshotName;
+		return label.liveName;
+	};
 	const toFullHex = word => `0x${word.toString(16).padStart(64, "0")}`;
 	const toShortHex = word => {
 		const hex = word.toString(16).padStart(64, "0");
@@ -63,7 +85,7 @@
 			if (changed.includes(index)) classes.push("is-changed");
 			if (interactive) classes.push("is-interactive");
 			const meaning = BIT_LABELS[index][kind === "snapshot" ? "snapshot" : "live"];
-			const title = meaning ? `bit ${index} — ${BIT_LABELS[index].short}: ${meaning}` : `bit ${index} — unused in a ${kind} word`;
+			const title = meaning ? `bit ${index} — ${sourceBitName(word, kind, index)}: ${meaning}` : `bit ${index} — unused in a ${kind} word`;
 			const tag = interactive ? "button" : "div";
 			const attributes = interactive ? ` type="button" data-bit="${index}" aria-label="${escapeHtml(title)}" aria-pressed="${on}"` : "";
 			return `<${tag} class="${classes.join(" ")}"${attributes} title="${escapeHtml(title)}"><small>${index}</small><b>${on ? "1" : "0"}</b></${tag}>`;
@@ -83,16 +105,16 @@
 		const set = setBitsOf(word);
 		const legend = set.length
 			? set
-					.map(
-						index =>
-							`<span class="bit-tag ${changed.includes(index) ? "is-changed" : ""}">bit ${index} <code>${BIT_LABELS[index].short}</code></span>`,
-					)
+					.map(index => {
+						const name = sourceBitName(word, kind, index);
+						return `<span class="bit-tag ${changed.includes(index) ? "is-changed" : ""}">bit ${index} ${name ? `<code>${formatSourceName(name)}</code>` : "unused in a live word"}</span>`;
+					})
 					.join("")
 			: `<span class="bit-tag is-empty">no bits set — the word is <code>0</code></span>`;
 		return `
 			<div class="bit-word ${changed.length ? "is-touched" : ""}">
 				<div class="bit-word-head">
-					<span class="bit-word-name">${label}${sublabel ? ` <small>${sublabel}</small>` : ""}</span>
+					<span class="bit-word-name">${label}<small>${sublabel ? `${formatSourceName(sublabel)} · ` : ""}${interactive ? "Toggle bits" : "Read only"}</small></span>
 					<span class="bit-word-value" title="${toFullHex(word)}"><code>${toShortHex(word)}</code><small>${word === 0n ? "0" : `0b${word & INSTANT_CONTEXT_FLAGS ? (word & INSTANT_CONTEXT_FLAGS).toString(2).padStart(3, "0") : "000"} in the low bits`}</small></span>
 				</div>
 				${renderWordStrip(word, { kind, changed, interactive, middle })}
@@ -220,7 +242,9 @@
 			rows.push(
 				`<div class="bit-readout-row"><span>Full binary (256 bits)</span><code class="is-wide">${word.toString(2).padStart(256, "0")}</code></div>`,
 			);
-			rows.push(`<div class="bit-readout-row"><span>As the code writes it</span><code>${describeWordAsSource(word, kind)}</code></div>`);
+			rows.push(
+				`<div class="bit-readout-row"><span>Equivalent bit expression</span><code class="bit-expression">${formatSourceExpression(describeWordAsSource(word, kind))}</code></div>`,
+			);
 			if (kind === "live") {
 				const active = (word & INSTANT_CONTEXT_ACTIVE) !== 0n;
 				rows.push(
@@ -265,6 +289,9 @@
 		if (isBitSet(word, 1))
 			parts.push(kind === "snapshot" && !isBitSet(word, 254) ? "EXTERNAL_CONTEXT_SNAPSHOT_PERSISTENT_CALL" : "CALL_FROM_INSTANT_LAYER");
 		if (isBitSet(word, 0)) parts.push("INSTANT_CONTEXT_ACTIVE");
+		const namedMask = kind === "snapshot" ? INSTANT_CONTEXT_FLAGS | SNAPSHOT_ACTIVE | SNAPSHOT_TRANSIENT : INSTANT_CONTEXT_FLAGS;
+		const unnamedBits = word & ~namedMask;
+		if (unnamedBits) parts.push(`0x${unnamedBits.toString(16)}`);
 		return parts.length ? parts.join(" | ") : "0";
 	};
 
@@ -740,7 +767,7 @@
 				<p>Core combines one namespace with <code>msg.sender</code>; the same namespace and different callers derive unrelated slots.</p>
 			</div>
 			<div class="bit-body">
-				<pre class="bit-code"><code>keccak256(abi.encode(EXTERNAL_CALL_CONTEXT_NAMESPACE, caller))</code><small>${LIB} · L362</small></pre>
+				<pre class="bit-code"><code>keccak256(abi.encode(<wbr>${formatSourceName("EXTERNAL_CALL_CONTEXT_NAMESPACE")}, caller))</code><small>${LIB} · L362</small></pre>
 				<p class="bit-reading">The addresses are illustrative. Their different hashes are the isolation boundary between routers.</p>
 				<div class="bit-slot-list">
 					${CALLER_SLOTS.map(

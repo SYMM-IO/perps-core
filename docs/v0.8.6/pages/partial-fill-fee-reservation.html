@@ -77,9 +77,9 @@ child   = floor((quantity - filledAmount) * price * tradingFee / 1e36)</code></p
 						The open path released <code>parent - child</code> from the reservation ledger, which includes the extra unit, and credited
 						the fee collector with the executed fee for the filled part. The reservation ledger and PartyA&rsquo;s allocation had both
 						been reduced by <code>parent</code> at <code>sendQuote</code>; after the fill the child held <code>child</code>, the collector
-						held <code>filled</code>, and the extra unit was in neither. It stayed in the diamond with no owner. The exact conservation
-						oracle in the repository fuzz runner reported the ledger one unit below the tokens held after every partial fill with
-						non-divisible fee arithmetic.
+						held <code>filled</code>, and, when <code>parent &gt; filled + child</code>, the extra unit was in neither. It stayed in the
+						diamond without a matching account-ledger credit. The source arithmetic establishes this gap for inputs where the floors
+						differ; it does not imply that every partial fill strands a unit.
 					</p>
 
 					<h2 id="fix">Returning the remainder</h2>

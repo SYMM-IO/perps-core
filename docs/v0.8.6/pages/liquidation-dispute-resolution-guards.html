@@ -85,10 +85,10 @@
 					<pre><code>require(liquidationStatus[partyA], "LiquidationFacet: PartyA is solvent");
 require(settlementStates[partyA][partyB].pending, "LiquidationFacet: PartyB is not in settlement");</code></pre>
 					<p>
-						The first is checked once; the second for every PartyB in the list, before anything is written. A resolution that lists an
-						already-settled PartyB therefore reverts as a whole, matching what <code>settlePartyALiquidation</code> does with the same
-						input. Amounts and the disputed flag are otherwise written exactly as before, and the planned amounts of unlisted PartyBs are
-						untouched.
+						The first runs once; each pending-bucket guard runs immediately before that bucket is overwritten. A later failure rolls back
+						all writes in the transaction. A resolution that lists an already-settled PartyB therefore reverts as a whole, matching what
+						<code>settlePartyALiquidation</code> does with the same input. Amounts and the disputed flag are otherwise written exactly as
+						before, and the planned amounts of unlisted PartyBs are untouched.
 					</p>
 				</article>
 			</main>

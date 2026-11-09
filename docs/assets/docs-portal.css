@@ -652,6 +652,7 @@ body.doc-page .doc-article p {
 
 .chapter-pager a {
 	display: grid;
+	align-content: start;
 	gap: 5px;
 	min-width: 0;
 	padding: 13px 14px;
@@ -689,13 +690,13 @@ body.doc-page .doc-article p {
 }
 
 .chapter-pager span {
-	overflow: hidden;
 	font-family: var(--display);
 	font-size: var(--text-ui);
 	font-weight: var(--weight-strong);
 	letter-spacing: -0.012em;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+	white-space: normal;
 }
 
 /* --- Back to top --------------------------------------------------------- */
@@ -802,9 +803,21 @@ body.doc-page .doc-article p {
 /* The catalog field is the one readers actually use, so it advertises the same
    shortcut the portal does. */
 .catalog-search-wrap {
+	display: grid;
+	gap: 6px;
+	min-width: 0;
+}
+
+.catalog-search-label {
+	color: var(--ink-soft);
+	font-size: var(--text-ui);
+	font-weight: var(--weight-strong);
+}
+
+.catalog-search-control {
 	position: relative;
-	display: flex;
-	align-items: center;
+	display: block;
+	min-width: 0;
 }
 
 .catalog-search-hint {
@@ -1013,6 +1026,7 @@ body.doc-page .doc-article p {
 
 .version-entry-main {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
 	gap: clamp(24px, 4vw, 54px);
 }
@@ -1125,7 +1139,7 @@ body.doc-page .doc-article p {
 
 .catalog-search {
 	width: 100%;
-	height: 38px;
+	min-height: 2.375rem;
 	padding-block: 8px;
 	padding-inline: 12px 46px;
 	border: 1px solid var(--line-control);
@@ -1506,4 +1520,92 @@ body.doc-page .doc-article p {
 	.reading-progress {
 		display: none !important;
 	}
+}
+
+/* Semantic annotation primitives. Editorial decisions live in annotation-decisions.json. */
+.doc-annotation-highlight {
+	color: var(--ink);
+	border-radius: 2px 6px 3px 4px;
+	background: linear-gradient(177deg, transparent 12%, color-mix(in srgb, var(--status-warning) 23%, transparent) 17% 85%, transparent 94%);
+	-webkit-box-decoration-break: clone;
+	box-decoration-break: clone;
+}
+.doc-annotation-underline {
+	text-decoration-line: underline;
+	text-decoration-style: wavy;
+	text-decoration-color: var(--accent);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 0.2em;
+	text-decoration-skip-ink: auto;
+}
+.doc-page .reader-main .doc-article .doc-annotation-note {
+	display: block;
+	width: fit-content;
+	max-width: min(100%, 44rem);
+	margin: 12px 0 24px;
+	padding: 0;
+	color: var(--status-info-text);
+	font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive;
+	font-size: 1.375rem;
+	font-weight: 700;
+	line-height: 1.4;
+	letter-spacing: 0;
+	text-align: start;
+	text-wrap: pretty;
+	overflow-wrap: break-word;
+}
+.doc-annotation-note a {
+	color: inherit;
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.15em;
+}
+.doc-annotation-note + .tool-panel {
+	margin-top: 8px;
+}
+.doc-annotation-circle {
+	position: relative;
+}
+.doc-annotation-circle > svg {
+	position: absolute;
+	inset: -4px -6px;
+	width: calc(100% + 12px);
+	height: calc(100% + 8px);
+	fill: none;
+	stroke: var(--accent);
+	stroke-width: 2;
+	stroke-linecap: round;
+	pointer-events: none;
+}
+.doc-annotation-circle > svg[hidden] {
+	display: none;
+}
+@media (forced-colors: active) {
+	.doc-annotation-highlight {
+		background: Mark;
+		color: MarkText;
+	}
+	.doc-annotation-underline {
+		text-decoration-color: CanvasText;
+	}
+	.doc-annotation-circle > svg {
+		stroke: CanvasText;
+	}
+}
+@media print {
+	.doc-page .reader-main .doc-article .doc-annotation-note {
+		color: #222;
+		font-family: sans-serif;
+		font-size: 11pt;
+	}
+	.doc-annotation-circle > svg {
+		display: none;
+	}
+}
+
+.doc-annotation-note[data-annotation-placement="before"] {
+	break-after: avoid;
+}
+.doc-annotation-note[data-annotation-placement="after"] {
+	break-before: avoid;
 }

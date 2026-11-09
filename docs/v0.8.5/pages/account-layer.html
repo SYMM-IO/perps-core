@@ -157,12 +157,12 @@ flowchart TB
 </code></pre>
 					<h3 id="doc-account-layer-market-one-va-per-market">MARKET — One VA per Market</h3>
 					<p>
-						Positions on the same market share a VA. All BTC-USD trades go to one VA, all ETH-USD trades to another. Different markets
-						remain fully isolated.
+						With <code>singleVAMode</code> enabled, positions on the same market share one active VA: BTC-USD trades use one VA and
+						ETH-USD trades another. Without it (the default), each quote creates or recycles a separate compatible VA.
 					</p>
 					<pre><code class="language-mermaid">graph LR
-    SA[SubAccount] --&gt; VA1["VA: BTC-USD&lt;br/&gt;(all BTC trades)"]
-    SA --&gt; VA2["VA: ETH-USD&lt;br/&gt;(all ETH trades)"]
+    SA[SubAccount] --&gt; VA1["VA: BTC-USD&lt;br/&gt;(singleVAMode enabled)"]
+    SA --&gt; VA2["VA: ETH-USD&lt;br/&gt;(singleVAMode enabled)"]
 </code></pre>
 					<p>
 						Without <strong>Single VA Mode</strong> (the default), each <code>sendQuote</code> creates a new VA even if one already exists
@@ -170,7 +170,10 @@ flowchart TB
 						setting can be toggled when no VAs are active on the SubAccount.
 					</p>
 					<h3 id="doc-account-layer-market_direction-one-va-per-market-direction">MARKET_DIRECTION — One VA per Market + Direction</h3>
-					<p>Like MARKET, but also separates by direction. All BTC longs share one VA; all BTC shorts share another.</p>
+					<p>
+						Like MARKET, but also separates by direction. With <code>singleVAMode</code> enabled, BTC longs share one active VA and BTC
+						shorts another; otherwise each quote gets a separate compatible VA. The diagram shows Single VA Mode.
+					</p>
 					<pre><code class="language-mermaid">graph LR
     SA[SubAccount] --&gt; VA1["VA: BTC Long"]
     SA --&gt; VA2["VA: BTC Short"]
@@ -184,14 +187,18 @@ flowchart TB
 					</p>
 					<hr />
 					<h2 id="doc-account-layer-the-trading-flow">The Trading Flow</h2>
-					<p>Here is how a trade moves through the system, end to end:</p>
+					<p>
+						Here is how a trade moves through the system, end to end. Core must route the relevant lifecycle hooks to AccountLayer, either
+						through the quote’s applicable <code>affiliateHooks[affiliate]</code> entry or the system
+						<code>affiliateHooks[address(0)]</code> entry. Access roles alone do not install either callback route.
+					</p>
 					<ol>
 						<li>
 							<p>
 								<strong>Pre-fund</strong> — The user transfers margin to the target VA address. For a new trade, this means calling
-								<code>addMarginToNextVA</code> with the predicted next VA address (which the
-								<code>ViewFacet.predictNextVirtualAccountAddress</code> helper can compute). For an existing VA,
-								<code>addMargin</code> works.
+								<code>addMarginToNextVA(subAccount, isolationType, symbolId, amount)</code>. The helper computes the target
+								internally; <code>ViewFacet.predictNextVirtualAccountAddress</code> optionally previews that address. For an existing
+								VA, <code>addMargin</code> works.
 							</p>
 						</li>
 						<li>
@@ -301,9 +308,10 @@ flowchart TB
 					<p>
 						Hooks preserve the customization power frontends had when they owned their MultiAccount contracts — NFT minting on signup,
 						cashback, auto-binding to a PartyB, analytics tracking. During execution, hooks can
-						<strong>call back into the Symmio core</strong> via <code>CoreFacet.executeForAccount(callData)</code>, gated by two
-						conditions: <code>hookContext.isActive</code> must be true (only during hook execution), and the function selector must be in
-						<code>hookAllowedSelectors[affiliate]</code> (controlled by <code>SETTER_ROLE</code>).
+						<strong>call back into the Symmio core</strong> via <code>CoreFacet.executeForAccount(callData)</code>, gated by three
+						conditions: <code>hookContext.isActive</code> must be true, <code>msg.sender</code> must equal the context’s
+						<code>activeHook</code>, and the function selector must be in <code>hookAllowedSelectors[affiliate]</code> (controlled by
+						<code>SETTER_ROLE</code>).
 					</p>
 					<p>
 						<strong>Audit note</strong>: Hooks are unsandboxed external calls. A malicious hook can revert and block the operation
@@ -335,13 +343,13 @@ flowchart TB
     participant AM as AccountManager
     participant AL as AccountLayer
 
-    U-&gt;&gt;AM: call withSigner()
-    AM-&gt;&gt;AM: globalSigner = msg.sender
-    AM-&gt;&gt;AL: delegate call
+    U-&gt;&gt;AM: Call an operation using withSigner
+    AM-&gt;&gt;AL: setSigner(user)
+    AM-&gt;&gt;AL: Forward operation by external call
     AL-&gt;&gt;AL: getSigner() returns globalSigner (the user)
     AL-&gt;&gt;AL: execute operation
     AL--&gt;&gt;AM: return
-    AM-&gt;&gt;AM: globalSigner = address(0)
+    AM-&gt;&gt;AL: setSigner(address(0))
     AM--&gt;&gt;U: return
 </code></pre>
 					<pre><code class="language-solidity">function getSigner() internal view returns (address) {
@@ -409,7 +417,7 @@ flowchart TB
 							</tr>
 							<tr>
 								<td><code>INSTANT_LAYER_ROLE</code></td>
-								<td>Bypass ownership checks for InstantLayer batched execution</td>
+								<td>Defined but unused in this archived AccountLayer implementation; does not bypass ownership checks</td>
 							</tr>
 						</tbody>
 					</table>
@@ -520,7 +528,8 @@ address(uint160(uint256(keccak256(abi.encodePacked(
 )))))
 
 // AccountManager (real deployment): deployer=AccountLayer diamond
-bytes32 salt = keccak256(abi.encodePacked(keccak256("ACM_V1"), registrant, name));
+// registrationNonce is the nonce recorded for this registrant’s affiliate registration
+bytes32 salt = keccak256(abi.encodePacked(keccak256("ACM_V1"), registrant, name, registrationNonce));
 bytes32 initCodeHash = keccak256(abi.encodePacked(implementation, abi.encode(diamond)));
 
 // Fee Distributor: deployer=affiliate, salt=keccak256(globalNonce), initCodeHash=keccak256("VFD_V1")
@@ -553,8 +562,9 @@ address(uint160(uint256(keccak256(abi.encodePacked(
 						</tbody>
 					</table>
 					<p>
-						The InstantLayer requires <code>INSTANT_LAYER_ROLE</code> on the AccountLayer to bypass ownership checks during batched
-						template execution.
+						The InstantLayer requires <code>SIGNER_SETTER_ROLE</code> on AccountLayer to install the account owner as signer before routed
+						calls. It also needs <code>INSTANT_LAYER_ROLE</code> on Symmio Core to set the batch context. AccountLayer ownership checks
+						still run.
 					</p>
 				</article>
 			</main>

@@ -75,7 +75,7 @@
 									<dd>4 <span aria-label="to">→</span> 2</dd>
 								</div>
 								<div>
-									<dt>Compact benchmark saving</dt>
+									<dt>Recorded compact benchmark saving</dt>
 									<dd>≈126k <span>gas</span></dd>
 								</div>
 								<div>
@@ -84,8 +84,9 @@
 								</div>
 							</dl>
 							<p class="gas-benchmark-note">
-								The saving is from the focused compact-template benchmark, with a 120k gas regression floor. It is not a per-trade
-								guarantee or a separate measurement of transient-storage savings.
+								The recorded result is from the focused compact-template fixture, whose test enforces a 120k gas regression floor.
+								Actual savings depend on compiler, calldata and state; this is not a per-trade guarantee or a separate measurement of
+								transient-storage savings.
 							</p>
 						</div>
 					</div>
@@ -190,7 +191,7 @@
 						A non-empty <code>solverFees</code> entry list is charged after the open, each entry routed to the receiver resolved for its
 						tag, subject to the quote&rsquo;s user-approved open-rate cap over the list total. The combined path uses the same solvency
 						guard and emits the same per-entry <code>SolverFeeCharged</code> events as fee-aware <code>openPosition</code>. Empty arrays
-						leave the open fee-free.
+						charge no solver fee; ordinary trading fees still apply.
 					</p>
 					<p>
 						Joining lock and open removes the solver&rsquo;s second signed operation and the extra SymmioPartyB routing round trip. The
@@ -209,9 +210,14 @@
     uint256 symbolId,
     uint256 marginAmount,
     bytes[] calldata callDatas
-) external whenNotPaused nonReentrant onlyAccountOwner(account) returns (bytes[] memory)</code></pre>
+) external whenNotPaused nonReentrant onlyAccountOwner(account)
+    timelockedWithInnerCalls(
+        account, callDatas,
+        abi.encodeCall(IMarginFacet.addMarginToNextVA, (account, isolationType, symbolId, marginAmount))
+    ) returns (bytes[] memory)</code></pre>
 					<p>
-						Both steps share one owner authorization and one reentrancy guard. The margin-to-next-VA logic lives in
+						Both steps share one owner authorization and one reentrancy guard. Timelock checks cover the entry selector, the implied
+						margin call, and each inner call. The margin-to-next-VA logic lives in
 						<code>LibAccountLayerMargin</code>, shared by <code>MarginFacet.addMarginToNextVA</code> and this function, so address
 						prediction and isolation validation still have one implementation.
 					</p>
@@ -484,10 +490,10 @@
 						struct. For a single hook the saved context is empty and the result is the same as clearing.
 					</p>
 					<aside class="callout callout-note">
-						<strong>Why both are saved.</strong> The first v0.8.6 build saved the signer and its source but not the scope, and the hook
-						caller cleared the outer hook context on return. No path in the current layers opens a trusted session inside an external
-						call, so nothing exercised either gap; v0.8.6 closes them so the restoration no longer depends on that property. The
-						fail-closed checks are unchanged: a callee that leaves any signer source populated still reverts with
+						<strong>Why both are saved.</strong> Restoration includes signer source, account-family scope, and the outer hook context. A
+						hook can open a separate, checked Core signer session through <code>executeForAccount</code>; that is distinct from a nested
+						AccountLayer signer session in the same diamond. The restoration guards do not rely on a claim that earlier gaps were
+						unreachable. The fail-closed checks are unchanged: a callee that leaves any signer source populated still reverts with
 						<code>ExternalCallSignerWasModified</code>, and the struct is an internal return type, so no storage layout or public
 						signature changed.
 					</aside>
@@ -656,10 +662,11 @@
 					</p>
 					<p>
 						A pre-Cancun deployment therefore needs a separate build targeting <code>evmVersion "paris"</code>. Its
-						<code>_transientLoad</code> and <code>_transientStore</code> helpers, together with their
-						<code>LibAccountLayerSigner</code> counterparts, use a slot-keyed persistent mapping instead. The packed context lifecycle,
-						active bit, signer marker, and snapshot encoding remain unchanged; the PRE-CANCUN PORT block in
-						<code>LibExecutionContext.sol</code> marks the implementation boundaries that change.
+						<code>LibExecutionContext</code> and <code>LibAccountLayerSigner</code> transient helpers would need persistent-storage
+						replacements, as would <code>LibTimelock</code>&rsquo;s transaction-scoped approval counts. That port must explicitly preserve
+						and clean up context, scope, signer and nested approval lifecycles. The PRE-CANCUN PORT block in
+						<code>LibExecutionContext.sol</code> covers only part of that work. This separate build is not implemented in the current
+						checkout; changing the InstantLayer runtime flag alone does not make the build pre-Cancun compatible.
 					</p>
 				</article>
 			</main>

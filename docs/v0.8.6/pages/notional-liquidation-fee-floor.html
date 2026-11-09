@@ -72,9 +72,9 @@
 						For this calculation, CVA is the credit valuation adjustment and <code>partyAmm</code> is PartyA maintenance margin. Those two
 						amounts and LF make up the PartyA collateral locked for the quote.
 					</p>
-					<pre><code>collateralFloor = minAcceptablePortionLF × (CVA + partyAmm + LF)
-notional = quantity × price
-notionalFloor = minAcceptableNotionalLFRate × notional
+					<pre><code>collateralFloor = floor(minAcceptablePortionLF * (CVA + partyAmm + LF) / 1e18)
+notional = ceil(quantity * price / 1e18)
+notionalFloor = ceil(minAcceptableNotionalLFRate * notional / 1e18)
 requiredLF = max(collateralFloor, notionalFloor)</code></pre>
 					<p>
 						Both rates use 1e18 precision. The notional and notional-floor calculations round upward, so integer division cannot leave LF

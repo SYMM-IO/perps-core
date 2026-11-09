@@ -82,15 +82,15 @@ function getAffiliateSelectorConfigs(address affiliate, bytes4[] calldata select
 						<code>AffiliateDetail</code> mirrors the stored <code>AffiliateData</code> with the fee details flattened, and adds the
 						affiliate&rsquo;s own address and its <code>pendingFeeUpdate</code>. That field reports a requested fee split waiting for
 						approval, including whether it exists, its timestamp, the proposed Symmio share, and proposed stakeholders. It previously had
-						no aggregate reader. An unregistered affiliate reads back as an empty struct with state <code>NONE</code> rather than
-						reverting.
+						no aggregate reader. An unregistered affiliate returns default stored fields with state <code>NONE</code> and echoes the
+						requested affiliate address; it does not revert.
 					</p>
 					<p>
 						Per-selector data is not included, because hooks and both allow-lists live in mappings and cannot be enumerated from on-chain
 						state. <code>getAffiliateSelectorConfigs</code> takes the selectors you care about and returns the hook address,
 						<code>hookAllowed</code>, and <code>callAllowed</code> for each, in the order requested. <code>hookAllowed</code> says whether
-						the selector may trigger the configured affiliate hook. <code>callAllowed</code> says whether the affiliate may submit that
-						selector through <code>callAsAffiliate</code>.
+						the active affiliate hook may request that Core selector through <code>executeForAccount</code>. <code>callAllowed</code> says
+						whether the affiliate may submit that selector through <code>callAsAffiliate</code>.
 					</p>
 					<aside class="callout callout-note">
 						<strong>The individual getters are unchanged.</strong> The aggregate reads are additive. Existing readers do not need to

@@ -1,0 +1,1826 @@
+{
+	"skill": "doc-annotations",
+	"policyRevision": 2,
+	"reviewedAt": "2026-11-08",
+	"pages": [
+		{
+			"key": "deployment-guide",
+			"reviewed": true,
+			"readerTask": "Follow the deployment/recovery workflow and distinguish one-time legacy replacement from diamond updates.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Secrets never enter the form state.",
+					"reason": "A strong existing callout carries this warning; a blue paraphrase would repeat it."
+				},
+				{
+					"quote": "Continue active task",
+					"reason": "The actual menu item, recovery paragraphs and handover instructions already name the action."
+				}
+			]
+		},
+		{
+			"key": "index",
+			"reviewed": true,
+			"readerTask": "Choose the current or archived release and find the cross-release operator guide.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Current",
+					"reason": "The release row is already uniquely styled and labelled Current."
+				},
+				{
+					"quote": "Operator guide",
+					"reason": "Its existing guide label and description state scope and next action."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/account-layer",
+			"reviewed": true,
+			"readerTask": "From the v0.8.5 release catalog, choose an isolation strategy and understand how funding and sendQuote create or reuse VAs.",
+			"accepted": [
+				{
+					"id": "v085-market-default-creates-new-va",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Prevent the plausible reading that choosing MARKET isolation automatically reuses a single VA for every quote on that market, a reading invited by the heading and all-BTC-trades diagram.",
+					"sourceQuote": "Without Single VA Mode (the default), each sendQuote creates a new VA even if one already exists for that market. With Single VA Mode enabled, subsequent quotes for the same market route to the existing active VA. This setting can be toggled when no VAs are active on the SubAccount.",
+					"targetQuote": "Without Single VA Mode (the default), each sendQuote creates a new VA even if one already exists for that market.",
+					"sectionId": "doc-account-layer-market-one-va-per-market",
+					"placement": "mark",
+					"whyExistingInsufficient": "MARKET — One VA per Market and the diagram depict grouped trades. Bolding only Single VA Mode identifies a feature but does not retain the unfavorable default behavior that qualifies that picture.",
+					"whyThisForm": "A highlight carries the entire off/default condition, sendQuote action and even-if-existing exception. Underlining only the mode name would identify a feature without carrying its consequence; a note would repeat the paragraph.",
+					"repeatCheck": "Read all four isolation types and the later trading-flow routing list. Mark only the specific MARKET qualification; do not repeat the general lifecycle/funding summary or infer an independent workflow from its anchor.",
+					"removeWhen": "Remove when the MARKET heading/diagram explains that reuse requires Single VA Mode, or this default behavior changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "Both SubAccounts and VAs are virtual addresses",
+					"reason": "NO: the complete virtual-address distinction is already bolded in its defining paragraph and is restated beside deterministic address generation; circling CREATE2 or an address would add no classification job."
+				},
+				{
+					"quote": "The user never manages VA lifecycle manually (unless using CUSTOM isolation). Funding is always manual.",
+					"reason": "NO: the trading flow explicitly labels Pre-fund, creation/routing and cleanup, then states this boundary directly; a handwritten summary would repeat that sequence."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/accumulated-funding",
+			"reviewed": true,
+			"readerTask": "From the release catalog, trace accumulated funding, duration-change snapshots, aggregate debt and migration before using the new funding calculations.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Scale only the current rate.",
+					"reason": "NO: the snapshot procedure already has a bold action label, the exact newDuration/oldDuration scaling rule and a checked 8-hour-to-hour example; another cue would duplicate the existing teaching."
+				},
+				{
+					"quote": "Per-position funding rate caps are not enforced in v0.8.5.",
+					"reason": "NO: the conflict discovered during this pass was corrected by root. The Settlement Revolution now explicitly states non-enforcement and references the existing Future Enhancement explanation; an annotation would duplicate that resolved boundary."
+				}
+			],
+			"issues": [
+				{
+					"type": "source-conflict",
+					"sourcePath": "docs/v0.8.5/pages/accumulated-funding.html",
+					"description": "Funding caps are described as postponed/not enforced, then described as enforced at position level. No annotation selects either disputed claim.",
+					"locations": [
+						{
+							"line": 273,
+							"sectionId": "doc-accumulated-funding-future-enhancement-funding-rate-caps",
+							"quote": "This feature is postponed to a later version. The field is kept in the struct for forward compatibility, but is currently set to a placeholder value and not enforced. When implemented, this will allow traders to set protective limits while we develop an efficient approach that preserves the O(symbols) calculation benefits."
+						},
+						{
+							"line": 293,
+							"sectionId": "doc-accumulated-funding-the-settlement-revolution",
+							"quote": "We enforce maximum funding rates at the position level. Even if market rates spike, a position's funding fee per epoch cannot exceed the cap set when the position was opened. This protects traders from extreme market conditions."
+						}
+					],
+					"status": "root-resolved-during-review",
+					"currentEvidence": {
+						"line": 293,
+						"sectionId": "doc-accumulated-funding-the-settlement-revolution",
+						"quote": "Per-position funding rate caps are not enforced in v0.8.5. The maxFundingRate field remains a placeholder, as described in Future Enhancement: Funding Rate Caps above."
+					},
+					"resolutionEvidence": "Root reported source trace in proofs/content-source-trace.md; current article text was re-read and matches the non-enforcement correction. Original locations above preserve discovered conflict evidence."
+				}
+			],
+			"issueDisposition": "Root corrected the source-traced doc contradiction before application; see council proofs/content-source-trace.md. The originally discovered issue is retained below."
+		},
+		{
+			"key": "v0.8.5/adl-close",
+			"reviewed": true,
+			"readerTask": "Enter from the release catalog or Pledge reference to understand ADL authorization, restored close-request state and best-effort batch behavior.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "No solvency checks",
+					"reason": "NO: the bold Key Characteristics label immediately contrasts ADL with fillCloseRequest and supplies the consequence; a mark would restate an already prominent boundary."
+				},
+				{
+					"quote": "does not revert",
+					"reason": "NO: the batch paragraph already bolds this exception, and the following Best-effort execution and No transaction revert labels separately explain skipped quotes versus precondition reverts. Event sequences are already labeled by starting status."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/affiliate-fees",
+			"reviewed": true,
+			"readerTask": "From the release catalog, choose the effective affiliate fee and determine when fillCloseRequestToLiquidation can partially fill a close request.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Only works with LIMIT orders (MARKET orders must be filled completely)",
+					"reason": "NO: the immediately preceding usage paragraph already says all LIMIT close requests, and the Key behaviors list supplies both sides of the LIMIT/MARKET boundary. No separate call-site retrieval gap is demonstrated."
+				},
+				{
+					"quote": "symbolId 0 is used as the default fee when no symbol-specific fee is set.",
+					"reason": "NO: the ordered precedence list already labels each zero-key default, followed by an explicit Note; another mark or note would repeat that explanation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/aggregated-positions",
+			"reviewed": true,
+			"readerTask": "From the release catalog, select aggregate position/funding views and use their outputs in an off-chain PartyA or PartyB UPNL calculation.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "both position data and funding debt in a single call",
+					"reason": "NO: bolding and the Recommended heading already identify the combined-view convenience; the function table resolves which PartyA/PartyB scope to use."
+				},
+				{
+					"quote": "Funding debt is signed from the queried party's perspective: positive means the party owes funding, so it is subtracted; negative means the party receives funding.",
+					"reason": "NO: the sign conflict discovered during this pass was corrected by root. The formula and usage example now both subtract funding debt, and this ordinary paragraph explicitly explains positive and negative debt. Another cue adds no distinction."
+				}
+			],
+			"issues": [
+				{
+					"type": "source-conflict",
+					"sourcePath": "docs/v0.8.5/pages/aggregated-positions.html",
+					"description": "The prose formula adds funding debt; the PartyA usage example subtracts the returned fundingDebt. The annotation review does not decide the correct convention.",
+					"locations": [
+						{
+							"line": 244,
+							"sectionId": "doc-aggregated-positions-upnl-calculation",
+							"quote": "UPNL = Position UPNL + Funding Debt"
+						},
+						{
+							"line": 250,
+							"sectionId": "doc-aggregated-positions-upnl-calculation",
+							"quote": "Total UPNL = Σ(Position UPNL for each active symbol) + Σ(Funding Debt for each active symbol)"
+						},
+						{
+							"line": 271,
+							"sectionId": "doc-aggregated-positions-partya-upnl-with-specific-partyb",
+							"quote": "totalUpnl += positionUpnl - data[i].fundingDebt;"
+						}
+					],
+					"status": "root-resolved-during-review",
+					"currentEvidence": {
+						"line": 244,
+						"sectionId": "doc-aggregated-positions-upnl-calculation",
+						"quote": "UPNL = Position UPNL - Funding Debt",
+						"explanation": "Funding debt is signed from the queried party's perspective: positive means the party owes funding, so it is subtracted; negative means the party receives funding."
+					},
+					"resolutionEvidence": "Root reported source trace in proofs/content-source-trace.md; current formula, explanation and example were re-read and agree on subtraction. Original locations above preserve discovered conflict evidence."
+				}
+			],
+			"issueDisposition": "Root corrected the source-traced doc contradiction before application; see council proofs/content-source-trace.md. The originally discovered issue is retained below."
+		},
+		{
+			"key": "v0.8.5/batch-positions",
+			"reviewed": true,
+			"readerTask": "From the release catalog, determine what batching changes about Muon signing and the openPositions/fillCloseRequests API.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "These methods still require new Muon signatures, but they allow multiple positions to be opened or closed in a single transaction using one batch signature.",
+					"reason": "NO: the short introduction already states the retained signature requirement and the changed transaction scope together; batch methods and batch signature are bold. No useful extra operation remains."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/clearing-house",
+			"reviewed": true,
+			"readerTask": "From the release catalog or Cross PartyB reference, follow the applicable ClearingHouse liquidation lifecycle without treating its overview arrows as mandatory ordering for every intermediate call.",
+			"accepted": [
+				{
+					"id": "v085-clearinghouse-repeatable-intermediate-steps",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent treating the lifecycle diagram’s chained arrows and the following Step 1–6 presentation as a requirement to call intermediate steps exactly once in that order.",
+					"sourceQuote": "Steps 2–5 are repeatable and can be called in any order and multiple times. The settlement step (6) requires all positions closed and the deallocated pool fully distributed.",
+					"targetQuote": "can be called in any order and multiple times",
+					"sectionId": "doc-clearing-house-lifecycle",
+					"placement": "mark",
+					"whyExistingInsufficient": "The lifecycle diagram visually imposes a linear chain and the next section repeats numbered steps. The plain paragraph is the only local correction that explicitly relaxes steps 2–5 while keeping step 6 gated.",
+					"whyThisForm": "The differentiating pivot is order and repeatability within a visible sentence already naming Steps 2–5. Underline that pivot; a full-paragraph highlight would also emphasize the separately understandable finalization conditions, and a note would paraphrase.",
+					"repeatCheck": "Read Flow 1 diagram, complete step-by-step explanation, Flow 2 and simultaneous-flow sequence. Keep this cue only at the diagram-qualified Flow 1 statement; do not copy it into every numbered workflow.",
+					"removeWhen": "Remove if the lifecycle diagram labels intermediate calls as repeatable/unordered, if ordinary structure supplies that distinction, or if the ordering rules change."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "The address(1) key (REIMBURSEMENT_KEY) is special",
+					"reason": "NO: the adjacent source table already names each party, allocation key and source balance; circling address(1) would repeat identity rather than teach a missing mapping."
+				},
+				{
+					"quote": "After a normal (non-takeover) PartyA liquidation settles as LATE or OVERDUE, the pending fee reimbursement is not returned to the PartyA.",
+					"reason": "NO: Liquidation Escrow Distribution is a dedicated section with an immediate mechanics link and a later paragraph explicitly separating this pool from takeover/cross lifecycles. Another summary note adds no operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/cross-mode-liquidation-settlement",
+			"reviewed": true,
+			"readerTask": "Enter from Cross PartyB or the release catalog to fund a cross PartyB settlement from solvent counterparties and distinguish its shortfall behavior from isolated mode.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Cross-mode PartyB: The transaction reverts with \"LiquidationFacet: Settle cross partyB uPNL first\".",
+					"reason": "NO: the labeled isolated/cross list, full liquidation flow and final side-by-side behavior table already carry the distinction and next actions; a comparison note would duplicate an existing comparison."
+				},
+				{
+					"quote": "None of the PartyAs in the settlement signature can be the liquidated PartyA",
+					"reason": "NO: Validations explicitly states this restriction and Concurrent liquidations explains the solvent-counterparty condition and ClearingHouse fallback. No missing relation needs a note."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/cross-party-b",
+			"reviewed": true,
+			"readerTask": "From the release catalog, prepare a solver for cross-mode funding, nonce handling, unified settlement and force-close fallbacks.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Allocated balances are not aggregated",
+					"reason": "NO: not is already bolded in activation, the Post-Activation Workflow labels Fund the cross bucket and Drain legacy per-PartyA allocations, and Allocation and Deallocation explains both paths. Another source-switch summary adds no operation."
+				},
+				{
+					"quote": "PartyB is never liquidated during cross-mode force close",
+					"reason": "NO: the full assertion is already bold inside the mode-labeled finalize behavior, with close-or-revert outcomes and off-chain events explained immediately. Do not add a second highlight."
+				},
+				{
+					"quote": "The net settlement loss across all PartyAs must not exceed partyBAllocatedBalances[partyB][address(0)].",
+					"reason": "NO: Quote Subset Constraints already separates the three balance scopes in labeled items and explains netting/order plus alternatives. Its heading supplies the action context."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/custom-quote-data",
+			"reviewed": true,
+			"readerTask": "From the release catalog, attach quote data and decode the new SendQuote event without confusing paramsData with the custom data payload.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Since paramsData uses standard abi.encode, you can decode it with any ABI decoder without manual byte slicing.",
+					"reason": "NO: separate Recommended AbiCoder and Manual Byte Slicing headings, the decoded-field list and complete labeled examples already direct the implementation choice. A note introducing those examples would duplicate their labels."
+				},
+				{
+					"quote": "When a quote is sent, two versions of the SendQuote event are emitted for backward compatibility:",
+					"reason": "NO: the two immediately following event headings explicitly identify deprecated versus new format; this short introductory statement already prevents treating them as unrelated quote operations."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/event-changelog",
+			"reviewed": true,
+			"readerTask": "From the release catalog, update ABIs and listeners using the removed/replacement tables and the role-specific migration checklist.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The event signatures and topic hashes are identical — only the source file changed.",
+					"reason": "NO: this is already an explicit Note beside the moved events, and the structural-change table repeats the file movement; no token ring or handwritten paraphrase is useful."
+				},
+				{
+					"quote": "Both events fire on each operation.",
+					"reason": "NO: an explicit Note already identifies both retained event overloads and their compatibility purpose; the migration checklist separately names the new formats. A mark would repeat the existing cue."
+				},
+				{
+					"quote": "Since Solidity event topic hashes are computed from event Name(type1,type2,...) (types only, no param names), the topic hash is unchanged.",
+					"reason": "NO: Typo Fix, What changed, paired signatures and bold unchanged already distinguish a name correction from a topic change."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/express-deposit",
+			"reviewed": true,
+			"readerTask": "From the release catalog or AccountLayer link, separate shipped core hooks from the proposed provider/bot infrastructure and understand how express liquidity is funded.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "What the core does NOT provide (not yet implemented):",
+					"reason": "NO: this bold label explicitly lists provider contracts, bot and signing gaps; the next section is headed The Future System and uses future tense. Another future/not-live note duplicates those boundaries."
+				},
+				{
+					"quote": "The protocol does not manage or guarantee these funds.",
+					"reason": "NO: the paragraph directly assigns affiliate choice and capital responsibility, and the adjacent diagram identifies the provider-held portion. No new comparison or missing qualification is supplied by another note."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/external-transfer",
+			"reviewed": true,
+			"readerTask": "From the release catalog, distinguish relayer-mediated real-token transfers from provider-mediated virtual-balance transfers.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The relayer receives the funds and a callback, and it's responsible for depositing or handling them at the target.",
+					"reason": "NO: the following trust paragraph explicitly says the relayer has full control, while the callback is shown at the API point. A handwritten restatement would add no relation."
+				},
+				{
+					"quote": "Virtual funds exist only as balance entries in storage — no actual collateral token was transferred to the contract.",
+					"reason": "NO: the dedicated Virtual External Transfer heading and the same paragraph already connect missing tokens to provider crediting. It would be redundant to add a no-token source-switch note."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/hook-system",
+			"reviewed": true,
+			"readerTask": "From the release catalog or AccountLayer reference, implement lifecycle callbacks while preserving signer isolation and understanding revert/liveness effects.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Hook failures cause the entire transaction to revert.",
+					"reason": "NO: Revert Behavior has its own heading, code rationale and consequences paragraph; Security Considerations repeats a bold Hook revert blocks operations label. Another highlight would duplicate the existing warning."
+				},
+				{
+					"quote": "Dual invocation.",
+					"reason": "NO: the system-wide hook section, lifecycle table and numbered four-call example already identify both hook paths; the bold security label explains the global dependency."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/index",
+			"reviewed": true,
+			"readerTask": "Search or browse the archived release chapters.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Search chapters",
+					"reason": "The labelled search and numbered chapter catalog already provide orientation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/instant-layer-overview",
+			"reviewed": true,
+			"readerTask": "From the release catalog, choose between signed operations, templates and delegation, then understand the lifetime of a signed multi-use operation.",
+			"accepted": [
+				{
+					"id": "v085-signed-operation-no-cancellation",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Distinguish the absence of a direct operation-hash cancellation API from the current authorization checks that can still prevent a previously signed operation from executing.",
+					"sourceQuote": "Every execution still requires current authorization, target whitelist, replay checks and downstream state guards. A fixed nonzero nonce succeeds only once, even if maxUses > 1; repeatable operations therefore use nonce zero. There is no direct operation-hash cancellation API, but delegation or role changes can invalidate execution. A zero deadline disables operation expiry.",
+					"targetQuote": "There is no direct operation-hash cancellation API, but delegation or role changes can invalidate execution.",
+					"sectionId": "doc-instant-layer-overview-multi-use-operations",
+					"placement": "mark",
+					"whyExistingInsufficient": "The earlier delegation-revocation explanation and multi-use list teach separate controls. This local sentence states how current authorization can invalidate a signature even without a direct hash-cancellation endpoint.",
+					"whyThisForm": "Keep the complete contrast, including the authorization exception; marking only no cancellation would imply irrevocable authority.",
+					"repeatCheck": "Read delegation creation/revocation, flex filler authorization, the full maxUses list and both flex examples. Apply once to signed-operation lifetime; do not repeat it on delegation text or in every example.",
+					"removeWhen": "Remove or re-review if operation-hash cancellation or current authorization semantics change, or if ordinary emphasis already communicates the full contrast."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "signature verification is skipped",
+					"reason": "NO: self-execution already bolds the skip, then Authorization is still fully enforced and security lists preserve owner/delegation, replay, nonce and deadline checks."
+				},
+				{
+					"quote": "The replacement value must have the exact same byte length as the original.",
+					"reason": "NO: this is already inside an Important blockquote, with the dynamic-ABI example and reqId/gatewaySignature constraints directly beside it. No additional mark is admitted."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/instant-layer-partyb-integration",
+			"reviewed": true,
+			"readerTask": "From the release catalog or overview reference, sign PartyB operations, choose templates and distinguish a third-party operator from PartyB self-execution.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Operator calls, executing PartyB operation",
+					"reason": "NO: the When to Use Self-Execution table directly maps this case to a PartyB signature and contrasts it with direct PartyB calls; the surrounding examples are already labeled."
+				},
+				{
+					"quote": "Admins can add, disable, or update template modes, so production clients should read the current state before relying on hardcoded IDs:",
+					"reason": "NO: the table is explicitly scoped to HyperEVM v0.8.5 and the next sentence already prompts current-state reads with concrete view calls. Another note would repeat the required prose."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/instant-layer-service-integration",
+			"reviewed": true,
+			"readerTask": "From the release catalog or overview link, build TPSL/trigger services and separate service execution delegation from session-key API authentication.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "When the trigger condition is met, the service uses its own delegation (from step 3) to execute the on-chain operation.",
+					"reason": "NO: its own delegation is already bold, the step names the earlier grant, and desktop/end-to-end diagrams repeat separate service authorization and API authentication. A note would restate that relation."
+				},
+				{
+					"quote": "The two operations target different contracts",
+					"reason": "NO: Important Details bolds different contracts and names each mapping, the Selectors Used table has a Target Contract column, and the trigger diagram labels both operations."
+				},
+				{
+					"quote": "QR transfer: The QR code contains the raw private key.",
+					"reason": "NO: the dedicated QR-transfer steps and bold security item already identify what is transferred and the handling warning. A ring on a key token would add no unmet identity task."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/liquidation-escrow",
+			"reviewed": true,
+			"readerTask": "Enter from Oracle-Less Trading or the release catalog to determine where pending-fee reimbursement and deferred excess go at settlement.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Deferred excess balance",
+					"reason": "NO: the definition names the balance and its return rule, and the table compares NORMAL/LATE/OVERDUE routing in separate reimbursement and excess columns. No added source/balance comparison is needed."
+				},
+				{
+					"quote": "ClearingHouse Takeover (Unaffected)",
+					"reason": "NO: the section heading already identifies the exception, then the list explicitly names settlePartyATakeover and direct release of both balances; another exclusion mark duplicates the structure."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/liquidation-insurance",
+			"reviewed": true,
+			"readerTask": "From the release catalog, configure the per-position LF cap and trace the NORMAL PartyA liquidation payout calculation.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Maximum LF a liquidator can earn per position (in collateral token units).",
+					"reason": "NO: the parameter table already bolds per position, and Compute maxLf plus the labeled numerical example shows multiplication by positions count. Do not ring the example answer."
+				},
+				{
+					"quote": "The insurance vault cap applies only to PartyA liquidations (specifically the NORMAL type).",
+					"reason": "NO: the dedicated Scope section already bolds only to PartyA liquidations, and the three-type table plus preceding paragraph establishes NORMAL-only applicability."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/migration",
+			"reviewed": true,
+			"readerTask": "From the release catalog, migrate active/pending quotes and locked-value aggregates, then verify status without confusing skipped terminal quotes or pooled locked values with funded allocation.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Allocated balances (partyBAllocatedBalances) are not aggregated.",
+					"reason": "NO: not is already bold, the paragraph distinguishes independently funded allocation, and Enabling Cross Mode later states that the solver must fund address(0). Another note would echo the same rule."
+				},
+				{
+					"quote": "Always check the on-chain status before treating a false result as a failure.",
+					"reason": "NO: the existing Note gives the exact terminal statuses and the adjacent verification example implements that check; no hidden checklist step belongs in handwriting."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/muon-keys",
+			"reviewed": true,
+			"readerTask": "From the release catalog, configure/rotate Muon keys and category permissions without assuming that key removal deletes its permission records.",
+			"accepted": [
+				{
+					"id": "v085-muon-permissions-survive-key-removal",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent assuming removePublicKey also clears the stored category permissions, as a lifecycle-based reading of the key-rotation/remove procedure could suggest.",
+					"sourceQuote": "The publicKeyPermissions mapping uses keccak256(abi.encodePacked(pubKey.x, pubKey.parity)) as the key identifier. Permission state is independent of the key lifecycle — permissions can be set before a key is added and persist after removal.",
+					"targetQuote": "persist after removal",
+					"sectionId": "doc-muon-keys-the-muonsignatureverifier-contract",
+					"placement": "mark",
+					"whyExistingInsufficient": "The later key-management procedure presents removal as retiring a key, while the opt-in overview says newly added keys start without permissions. Only this plain temporal qualification explains that the permission mapping itself survives key removal.",
+					"whyThisForm": "The local pivot is persist after removal within a complete visible sentence about permission state; underline the persistence phrase. Highlighting the whole mapping/hash paragraph would carry unrelated identifier implementation detail; a note would repeat the same fact.",
+					"repeatCheck": "Read the entire contract/verification sections, add/remove implementation, rotation procedure and opt-in overview. No other prose states permission persistence after removal; keep one cue here rather than inventing a new revocation duty in the procedure.",
+					"removeWhen": "Remove if permissions are cleared by removal, or ordinary key-rotation/lifecycle documentation explicitly distinguishes registration removal from stored permission deletion."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "supportsMuonFunction(functionId) is a capability check, not an authorization check.",
+					"reason": "NO: this is already the first direct statement of a paragraph that explains true-for-every-ID versus default unauthorized and names the granting role. The two distinct query families and call chain supply the rest of the comparison."
+				},
+				{
+					"quote": "The ViewFacet's verifyMuonTSSAndGateway is exempt from authorization",
+					"reason": "NO: the read-only exception is explicitly stated at the interface explanation, verification logic and authorization overview. No repeated warning or overload-token ring is needed."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/oracle-less-trading",
+			"reviewed": true,
+			"readerTask": "From the release catalog, understand binding prerequisites, delayed unbinding and the liquidation-escrow consequence of fabricated UPNL.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "No open positions with other partyBs",
+					"reason": "NO: the bold Binding Requirements item states the target-counterparty restriction and the binding-flow prose repeats it; an underline would add no missing condition."
+				},
+				{
+					"quote": "Security Consideration: Fee Draining via Fabricated UPNL",
+					"reason": "NO: this explicit heading and the immediate liquidation-escrow link already state the threat and mitigation path. Another handwritten security summary would be an immediate paraphrase."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/pledge",
+			"reviewed": true,
+			"readerTask": "Enter from ADL Close or the release catalog to deposit, request withdrawal or slash the separate PartyB pledge pool.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Amounts are in the token's native decimals.",
+					"reason": "NO: the short deposit paragraph places the units directly before depositPledge and states any ERC20 token in the same paragraph; no competing unit convention appears in this action section."
+				},
+				{
+					"quote": "Withdrawal follows a two-step request-approval flow to prevent rug-pulls:",
+					"reason": "NO: the immediately following numbered/commented calls label PartyB request, admin approval and PartyB cancellation. An example-introduction note would duplicate that introduction."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/role-admin-system",
+			"reviewed": true,
+			"readerTask": "From the release catalog, delegate role management while distinguishing holding a role from administering that role.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Delegation is one level deep.",
+					"reason": "NO: the hierarchy diagram, role-labeled list and bold Security Notes item all show that per-role admins cannot appoint further admins. A second mark would repeat the same boundary."
+				},
+				{
+					"quote": "No role enumeration on-chain.",
+					"reason": "NO: the security item is already bold and gives the off-chain-events alternative; a blue note would merely rephrase it."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/safe-deallocate",
+			"reviewed": true,
+			"readerTask": "From the release catalog, understand why off-chain pending solver requests reserve capacity before safe deallocation.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "availableBalance >= pendingBalance + deallocateAmount",
+					"reason": "NO: the complete inequality is already isolated as the result of the preceding pendingBalance explanation and ordered race scenario. Listings remain copyable and unmarked; no extra comparison is introduced."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/setup-task",
+			"reviewed": true,
+			"readerTask": "From the release catalog, configure and deploy the system, resume checkpoints and check role/verifier setup through the existing deployment and troubleshooting sections.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "On resume, already-completed steps are skipped automatically",
+					"reason": "NO: Checkpoint System, Commands and the deployment-fails troubleshooting path already teach resume versus fresh and show the commands. A note would repeat an already prompted action."
+				},
+				{
+					"quote": "If only one of those validity vars is set, setMuonConfig is skipped with a warning.",
+					"reason": "NO: the runtime-config list states the both-variable prerequisite and its single-variable outcome; Muon config was not applied repeats the precise condition at the troubleshooting point. No additional repeated cue is needed."
+				},
+				{
+					"quote": "The task automatically configures:",
+					"reason": "NO: the roles/integration lists identify automatically performed setup. Handwriting must not turn those automatic operations into new manual obligations."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/soft-liquidation",
+			"reviewed": true,
+			"readerTask": "From the release catalog or Cross PartyB reference, distinguish illustrative warning tiers from off-chain policy and identify which balance a penalty debits.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The tiers at which warnings and penalties trigger, as well as the penalty amounts, will be configurable off-chain.",
+					"reason": "NO: the preceding amounts are explicitly introduced with For example and suppose, and this paragraph states configurability directly. A note labeling them hypothetical would duplicate those cues."
+				},
+				{
+					"quote": "Cross-mode PartyBs",
+					"reason": "NO: the parameter table names address(0) and both Behavior items label cross versus non-cross with their debit source. A paired mark would duplicate the existing comparison."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/symbol-types",
+			"reviewed": true,
+			"readerTask": "From the release catalog, find symbol-type configuration and PartyB symbol-type whitelist APIs.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "in a backward compatible way and with adding a new mapping instead of changing the original symbol structure",
+					"reason": "NO: this short chapter directly states the storage strategy before the API list; circling symbolType would only repeat its code identifier, and a compatibility summary note would add no operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/two-step-ownership",
+			"reviewed": true,
+			"readerTask": "From the release catalog, transfer Diamond ownership by distinguishing pending assignment from acceptance and retained current-owner control.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Current owner calls transferOwnership(newOwner) — this sets a pending owner but does not change the active owner.",
+					"reason": "NO: the two-step title, role-labeled steps, retained-control paragraph and function-specific definitions already teach this exact state transition. Another highlight would repeat multiple existing cues."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/va-lifecycle-hooks",
+			"reviewed": true,
+			"readerTask": "Enter from AccountLayer or the release catalog to trace partial-close detection and VA cleanup across normal, PartyA and cross-PartyB liquidation paths.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "All hooks must fire after core state changes are complete",
+					"reason": "NO: after is already bold, the dedicated Hook Firing Order section explains the count comparison, and the earlier lifecycle steps repeatedly bold before/after timing at the action points."
+				},
+				{
+					"quote": "Deletion Deferral",
+					"reason": "NO: the three-check table supplies guard, cleared-by and recovery-hook columns; subsequent flows explicitly bold deferred versus deleted. A comparison note would duplicate the table’s operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/virtual-funds",
+			"reviewed": true,
+			"readerTask": "From AccountLayer or the release catalog, implement provider crediting/reconciliation and decode virtual-deposit events without reusing the input amount scale.",
+			"accepted": [
+				{
+					"id": "v085-virtual-deposit-event-collateral-scale",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent decoding the emitted Deposit.amount as the same 18-decimal quantity passed to virtualDepositFor, a plausible mistake because the paragraph uses amount for the input and then immediately presents the Deposit event.",
+					"sourceQuote": "The amount parameter is in 18-decimal precision (not collateral decimals). The emitted Deposit event converts back to collateral decimals for backward compatibility and includes an isVirtual = true flag:",
+					"targetQuote": "converts back to collateral decimals",
+					"sectionId": "doc-virtual-funds-virtualdepositfor",
+					"placement": "mark",
+					"whyExistingInsufficient": "Only the input’s 18-decimal precision is bold. The adjacent event declaration names amount without units; its different scale is conveyed by this plain conversion phrase rather than a separate event-units label.",
+					"whyThisForm": "Underline the local conversion pivot within the visible sentence naming the emitted Deposit event. Highlighting the entire paragraph would re-emphasize the already bold input scale and the unrelated isVirtual flag; a note would paraphrase the conversion.",
+					"repeatCheck": "Read virtualDepositFor, reconciliation, the Account Layer deposit flow and event reference. Keep the input/event distinction at the one paragraph where both scales meet; do not duplicate the already bold 18-decimal input rule elsewhere.",
+					"removeWhen": "Remove if Deposit uses the same scale as the API input or the event reference gains an explicit amount-units label that already resolves the comparison."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "without transferring any ERC-20 tokens",
+					"reason": "NO: this phrase is already bold in the primitive definition; the following reconciliation subsection explicitly says real tokens do not credit users again. A no-token note would immediately repeat the source."
+				},
+				{
+					"quote": "The Account Layer verifies the balance invariant",
+					"reason": "NO: the deposit-flow item already bolds balance invariant, states balance + allocated and the exact expected 18-decimal increase, then shows the check. Another summary would supply no additional operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.5/withdraw-system",
+			"reviewed": true,
+			"readerTask": "From the release catalog, choose a provider flow, compute the request cooldown and distinguish immediate cancellation from provider-approved cancellation.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The withdrawal cooldown is calculated from the user's last deallocation time",
+					"reason": "NO: last deallocation time is already bold, the formula and two timing cases are adjacent, and each flow diagram repeats from last deallocation. A new note or highlight would duplicate this teaching."
+				},
+				{
+					"quote": "Subsequent deallocations do not affect the cooldown of already-initiated withdrawals.",
+					"reason": "NO: not is already bold and its containing sentence retains already-initiated scope. No separate polarity cue is justified."
+				},
+				{
+					"quote": "After acceptance, inside blackout: Transitions to CANCEL_REQUESTED, awaits provider approval",
+					"reason": "NO: the Cancellation paragraph enumerates acceptance/blackout cases and the user-function comment repeats immediate versus requested cancellation; another comparison note would duplicate that local operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/account-layer-ownership-delegation",
+			"reviewed": true,
+			"readerTask": "From the ownership-resolution outline entry, determine which control changes and which approvals survive a SubAccount handoff.",
+			"accepted": [
+				{
+					"id": "v086-transfer-surviving-delegations",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Prevent reading the immediately preceding loss of direct owner access as removal of previously granted delegated access.",
+					"sourceQuote": "Existing InstantLayer delegations intentionally remain active after the transfer. See the security note below.",
+					"targetQuote": "Existing InstantLayer delegations intentionally remain active after the transfer.",
+					"sectionId": "ownership-resolution",
+					"placement": "mark",
+					"whyExistingInsufficient": "The implications list first gives the new owner control and says the old owner loses direct access. Its last, unmarked item changes that access model; the detailed delegation explanation is in a later security subsection. The heading Ownership resolution does not identify this exception.",
+					"whyThisForm": "Carry the complete surviving-grant assertion, including Existing, InstantLayer and after the transfer. An underline on remain active would detach the grant class and transfer condition; a note would repeat the assertion.",
+					"repeatCheck": "Reviewed the later Existing InstantLayer delegations subsection, its revocation procedure, and the implementation checklist. Keep the single cue at the local direct-access/delegated-access contrast; do not repeat it in the later detailed explanation.",
+					"removeWhen": "Remove if this implication becomes an equally explicit emphasized exception, or if transfer begins clearing these grants."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "The SubAccount owner is set to the supplied owner, not the caller.",
+					"reason": "The creation API already supplies a short behavior item that names both the supplied owner and the caller; the introduction and role security subsection repeat the same distinction. No additional token mark is needed."
+				},
+				{
+					"quote": "The transfer selector itself is delegable. If the owner grants an InstantLayer delegate the transferSubAccountOwnership selector for this account family, that delegate can choose newOwner and perform the transfer. Delegation scope prevents it from transferring a sibling SubAccount, but it does not add recipient acceptance or restrict the destination.",
+					"reason": "The existing styled security aside already states that the transfer selector is delegable and preserves the destination and scope qualifications. Do not duplicate the warning."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/accountlayer-behavior-changes",
+			"reviewed": true,
+			"readerTask": "Update AccountLayer affiliate readers, deletion-error handling and partial-fill child tracking.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "An unregistered affiliate reads back as an empty struct with state NONE rather than reverting.",
+					"reason": "The aggregate-view paragraph states this directly, and the additive-read callout covers compatibility; no unmet comparison or retrieval job."
+				},
+				{
+					"quote": "POSITION-isolated accounts cancel it immediately so the same account cannot later open a second position.",
+					"reason": "The mode contrast, observable-behavior callout and dedicated POSITION-path link already identify the distinction."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/accountlayer-callback-liveness",
+			"reviewed": true,
+			"readerTask": "Upgrade forwarding and cleanup facets together while preserving the exact-core callback boundary.",
+			"accepted": [
+				{
+					"id": "v086-callback-atomic-facet-upgrade",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Prevents deploying only the hook facet after reading about the cleanup guard; forwarding and callback code must change together.",
+					"sourceQuote": "Rebuild and replace CoreFacet, AffiliateFacet, MarginFacet, and SymmioHookFacet atomically. LibAccountLayerUtils and LibAccountLayerSigner are internal libraries whose changed code is inlined into those facet artifacts; they are not separately deployed. New callback code paired with old forwarding cannot identify an allowed core. New forwarding paired with old callback code still hits the original reentrancy failure.",
+					"targetQuote": "Rebuild and replace CoreFacet, AffiliateFacet, MarginFacet, and SymmioHookFacet atomically.",
+					"sectionId": "upgrade",
+					"placement": "mark",
+					"whyExistingInsufficient": "The implementation discussion names callbacks and a guard, which can focus a maintainer on SymmioHookFacet. This upgrade item is where the complete deployment set must be retained.",
+					"whyThisForm": "Highlight the complete four-facet atomic requirement. Underlining atomically alone would lose which forwarding facets belong to it; a note would repeat the instruction.",
+					"repeatCheck": "Checked flow, security and upgrade sections. Mark only the deployment action, without repeating callback-boundary prose.",
+					"removeWhen": "Remove when a grouped replacement checklist already supplies this guard, or the required facet set changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "During a routed operation, the callback must come from the exact core AccountLayer called.",
+					"reason": "The security heading/list already isolates caller and nesting boundaries; no duplicate guard highlight."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/accountlayer-timelock",
+			"reviewed": true,
+			"readerTask": "Integrate root-family timelocks without confusing schedule invalidation with approval revocation.",
+			"accepted": [
+				{
+					"id": "v086-timelock-approvals-survive-policy-change",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents treating the nonce change that invalidates schedules as cancellation of outstanding signed approvals.",
+					"sourceQuote": "Setting up or clearing selector timelocks invalidates old schedules for the account family. It does not cancel outstanding signed approvals. An unused approval can still be submitted until its deadline. For it to satisfy a call’s timelock, its signer must still be the unlocker required by the current settings.",
+					"targetQuote": "does not cancel outstanding signed approvals",
+					"sectionId": "execute-timelock-op",
+					"placement": "mark",
+					"whyExistingInsufficient": "The preceding sentence invalidates old schedules, inviting an overbroad reading of policy-change invalidation. No local comparison element distinguishes approval survival.",
+					"whyThisForm": "Underline the negative pivot and its complete complement within the visible paragraph. Following sentences retain deadline/current-unlocker conditions; a full-paragraph highlight would overemphasize other approval rules. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Checked schedules, policy changes, batch example and solver rules. Keep one approval-versus-schedule cue here; do not mark every nonce mention.",
+					"removeWhen": "Remove if a local approval/schedule comparison already states this difference or approval invalidation rules change."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "The batch can use both schedules from T + 10 through T + 12 minutes, inclusive.",
+					"reason": "The named example, window table and explicit interval already teach the intersection; no example introduction or number ring."
+				},
+				{
+					"quote": "Adding a function’s selector to the timelock settings has no effect if that function does not enforce a timelock check.",
+					"reason": "Gated-surface table, excluded-function paragraph and solver checklist already define policy coverage."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/affiliate-shutdown-flow",
+			"reviewed": true,
+			"readerTask": "Integrate affiliate shutdown scheduling, immediate close-only behavior and the later Clearing House backstop.",
+			"accepted": [
+				{
+					"id": "v086-affiliate-notice-period-not-enforced",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents reading the staged solver window as a protocol-enforced notice period.",
+					"sourceQuote": "The protocol does not decide the notice period. The affiliate chooses the timestamp, and the contract only requires it to be nonzero.",
+					"targetQuote": "only requires it to be nonzero",
+					"sectionId": "flow",
+					"placement": "mark",
+					"whyExistingInsufficient": "The flow describes a window and chosen date, but its steps do not identify the contract’s narrower timestamp constraint.",
+					"whyThisForm": "Underline the only-requires pivot inside the sentence naming the chosen timestamp. Highlighting the paragraph would also mark the already clear affiliate choice; a note would paraphrase. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Checked close-only, solver-window and Clearing House sections. They explain actions and deadlines, not a minimum notice period; no repeated cue there.",
+					"removeWhen": "Remove if the flow gains an adequate timestamp-constraint label or notice-period enforcement changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "Close-only means no new position can be opened through the affiliate once shutdown is scheduled.",
+					"reason": "The flow and What close-only means heading/list already state the immediate opening restriction."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/balance-change-event-cleanup",
+			"reviewed": true,
+			"readerTask": "Reconstruct allocated balances from events while separating economic attribution from ledger deltas.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Events that describe reimbursement, settlement, fees, or liquidation add context; they must not be applied as a second allocated-balance delta.",
+					"reason": "The Post-upgrade guarantee callout, reconstruction equation and Do not double count callout already distinguish replay from attribution."
+				},
+				{
+					"quote": "LF_OUT is not the liquidation-start fee calculation.",
+					"reason": "The LF table, equations, worked example and whole-liquidation callout already distinguish locked fee, live debit, full credit and gap."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/bound-mode-unified-settlement",
+			"reviewed": true,
+			"readerTask": "Migrate bound solvers to unified settlement and determine which checks remain enforced.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "All three conditions must hold; failing any one of them routes the call through full Muon verification:",
+					"reason": "The gate list and skipped/enforced table already carry the full applicability boundary."
+				},
+				{
+					"quote": "A partyA in the PENDING_UNBIND cooldown still counts as bound until the unbind completes",
+					"reason": "The containing paragraph states the complete temporal rule and its reason immediately after the gate."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/close-settlement-netting",
+			"reviewed": true,
+			"readerTask": "Read the worked close examples to distinguish bilateral funding/PnL netting inside a quote from liquidity needed across a batch.",
+			"accepted": [
+				{
+					"id": "v086-compare-single-and-cross-quote-netting",
+					"form": "note",
+					"job": "Guide",
+					"readerGain": "Compare the recurring 80 / 90 amounts across two settlement units: opposing components of one quote versus obligations in two sequential quotes. The earlier case starts PartyB at 70, owing 80 funding and receiving 90 on the same quote; this case separates the 80 payment and 90 receipt into different quotes.",
+					"sourceQuote": "A later quote cannot fund an earlier quote’s obligation. For example, if quote one requires PartyB to pay 80 and quote two would later pay PartyB 90, PartyB must still cover quote one’s own net when quote one executes.",
+					"targetQuote": "",
+					"sectionId": "batch-behavior",
+					"placement": "before",
+					"whyExistingInsufficient": "The heading and paragraph already state the no-sharing boundary, so highlighting them would add no job. They do not ask the reader to compare the deliberately similar amounts with the earlier worked case and identify the first solvency obligation.",
+					"whyThisForm": "A comparison note introduces a new reading operation before the second example. A highlight merely repeats the boundary; a ring on 80, 90 or a payer would isolate illustrative values; no leader is needed because the note is adjacent.",
+					"repeatCheck": "Checked the 70 / 80 / 90 case under Why gross ordering failed, the per-quote pipeline, and the batch subsection. No existing comparison instruction connects the two cases. Add one cue before the second case, with a link back rather than duplicate notes beside both examples.",
+					"removeWhen": "Remove if ordinary prose gains this explicit cross-case comparison, either example changes its numbers or settlement unit, or the link no longer reaches the first case.",
+					"note": "Compare this two-quote example with the single-quote 70 / 80 / 90 case.",
+					"links": [
+						{
+							"label": "single-quote 70 / 80 / 90 case",
+							"href": "#problem"
+						}
+					]
+				}
+			],
+			"rejected": [
+				{
+					"quote": "A later quote cannot fund an earlier quote’s obligation. For example, if quote one requires PartyB to pay 80 and quote two would later pay PartyB 90, PartyB must still cover quote one’s own net when quote one executes.",
+					"reason": "Quotes do not share settlement liquidity already states the scope boundary as the adjacent heading. A second highlight of the no-sharing rule would duplicate it."
+				},
+				{
+					"quote": "The old funding-first flow tried to debit 80 from PartyB’s 70 and reverted. The correct final movement is PartyA paying PartyB 10, leaving PartyB with 80. Reversing funding and PnL would make the opposite-direction case fail instead.",
+					"reason": "The named 70 / 80 / 90 example, arithmetic, and The correct final movement is wording already identify the answer. A ring on the result or a new summary note adds no classification task."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/close-to-liquidation",
+			"reviewed": true,
+			"readerTask": "Integrate close-to-liquidation previews and best-effort close handling without mistaking a fillability result for a solvency guarantee.",
+			"accepted": [
+				{
+					"id": "v086-can-close-all-overshoot-solvency",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent treating canCloseAll as proof of post-close PartyA solvency when a configured overshoot permits a negative balance.",
+					"sourceQuote": "The preview applies the same fallback. Its canCloseAll result means the full pending close fits within the configured allowance. With a nonzero overshoot, it does not mean PartyA remains solvent after that close.",
+					"targetQuote": "does not mean PartyA remains solvent after that close",
+					"sectionId": "fallback",
+					"placement": "mark",
+					"whyExistingInsufficient": "The scenarios table distinguishes permissible overshoot from nonnegative balance, but does not name the canCloseAll return value. Its field-specific limitation is plain prose under Remaining-value fallback, whose heading concerns remainder validity rather than preview meaning.",
+					"whyThisForm": "The condition plus negative solvency complement is the local pivot in the visible canCloseAll paragraph. Underline the whole qualified sentence; highlighting the entire paragraph would additionally emphasize the already-understood fallback and positive fillability definition. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Checked the scenarios table, overshoot explanation, preview API, and integration advice. None separately emphasizes this boolean-versus-solvency distinction; keep one mark where the return value is defined.",
+					"removeWhen": "Remove if canCloseAll is renamed to expose allowance semantics, its definition changes, or an ordinary labeled preview warning already supplies this exact limitation."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "The existing MARKET type cannot express that instruction. It is full-fill-only and is rejected by close-to-liquidation execution. v0.8.6 therefore appends MARKET_BEST_EFFORT as OrderType value 2. It is valid only for close requests. Opening a quote with value 2 reverts, including openings routed through AccountLayer or InstantLayer.",
+					"reason": "The order-type comparison table already separates ordinary full fills, close-to-liquidation support, and unfilled-remainder behavior. Do not ring enum value 2 or add a second summary of the table."
+				},
+				{
+					"quote": "The overshoot reduces the chance that a small favorable move makes PartyA solvent before liquidation starts. It does not guarantee liquidation. A favorable move larger than the overshoot can still restore solvency, and an adverse move can deepen the shortfall before the liquidator submits the next transaction.",
+					"reason": "The ordinary overshoot explanation explicitly says it reduces a risk without guaranteeing liquidation, and the preceding sequence diagram shows why. A second warning would repeat the existing teaching."
+				},
+				{
+					"quote": "After a partial MARKET_BEST_EFFORT fill returns the quote to OPENED, bots must stop retrying the completed request. PartyA must create a new close request and a new closeId for the remaining position.",
+					"reason": "The integration paragraph gives both stop retrying and the required new request/new closeId. No handwriting-only operational step is missing."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/cross-partyb-liquidation-reserve",
+			"reviewed": true,
+			"readerTask": "Trace reserve-adjusted cross-PartyB availability and recognize the deliberately narrow pre-settlement top-up exception.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "One path intentionally bypasses the reserve check: settlePartyBUpnlForLiquidation. That function exists so a liquidator can realize a cross PartyB’s positive uPNL from other solvent PartyAs before paying the pending liquidation settlement. If the reserve were applied to that pre-settlement solvency check, the top-up path could be blocked by the same reserve it is trying to fund.",
+					"reason": "The dedicated Settlement top-up exception heading, full rationale, following explicit flag behavior, and final invariant already distinguish this path from normal reserve enforcement."
+				},
+				{
+					"quote": "Core tracks each PartyA liquidation’s positive pending contribution in every PartyB margin mode. The availability helper returns zero for an isolated PartyB, but if that PartyB switches to cross mode before settlement completes, the recorded contribution becomes unavailable in the shared bucket. resolveLiquidationDispute resynchronizes the contribution when it overrides a pending amount. Normal PartyA settlement consumes it, and Clearing House takeover clears it. The aggregate reserve is subtracted only while the PartyB is currently in cross-mode accounting.",
+					"reason": "The source already states the isolated-to-cross timing condition, resynchronization, consumption and current-mode subtraction in one explanation. A short reserve or cross-mode label would omit those conditions."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/delegation-account-scope",
+			"reviewed": true,
+			"readerTask": "Determine the account family a delegated selector may reach and how scoped signer sessions are installed and cleared.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The grant stops there. A second SubAccount of the same owner, and any Virtual Account beneath it, is outside the delegation even though one person owns both.",
+					"reason": "The What a delegation covers section directly juxtaposes the included SubAccount/VA family with excluded sibling accounts. A second underline or a family-token ring adds no distinction."
+				},
+				{
+					"quote": "Scope does not replace ownership. Ownership is checked first and remains required. A confined session can reach only a subset of the accounts available to the owner.",
+					"reason": "The styled Scope does not replace ownership aside already supplies the ownership-plus-scope rule."
+				},
+				{
+					"quote": "ViewFacet.getSignerScope reports the active scope, or address(0) when the session is unconfined. Because the scope is opened and cleared inside one transaction, it reads zero between transactions and is only meaningful to an observer inside the call.",
+					"reason": "The getter paragraph explicitly restricts meaningful observation to inside the transaction. A note saying transient or reads zero would only paraphrase it."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/diamond-owner-getter",
+			"reviewed": true,
+			"readerTask": "Update owner reads for core and AccountLayer while keeping ExpressProvider and older deployment ABI behavior separate.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Both the core and AccountLayer ViewFacets renamed owner() to getOwner(). No alias is kept, so the old selector no longer resolves on either diamond.",
+					"reason": "The hero, summary, and before/after table all identify the getOwner rename and absence of an alias. A mark on either short selector is redundant."
+				},
+				{
+					"quote": "Current repository scripts call getOwner() for the core and AccountLayer diamonds; the separately deployed ExpressProvider still exposes owner(). External tooling that must support both pre-rename and post-rename core or AccountLayer deployments can try getOwner() first and explicitly fall back to owner() only for the older ABI.",
+					"reason": "The Effect on callers paragraph already names ExpressProvider as the exception and gives the ordered fallback for older deployments. Extra handwriting would restate that complete instruction."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/diamond-role-management",
+			"reviewed": true,
+			"readerTask": "Use the canonical account-first role interface and perform the ExpressProvider access-control migration correctly.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "ExpressProvider’s composite ABI contains same-name overloads. Clients that use it must select grantRole(address,bytes32), revokeRole(address,bytes32), and hasRole(address,bytes32) by full signature. Tooling bound to IDiamondAccessControl and IDiamondAccessControlView does not need overload disambiguation.",
+					"reason": "The existing compatibility callout names every overloaded full signature and the interface-only exception. Do not add ink to already explicit overload guidance."
+				},
+				{
+					"quote": "An existing v0.8.6.1 ExpressProvider needs one access-control migration. Its current owner does not automatically hold DEFAULT_ADMIN_ROLE. The upgrade procedure must call setAdmin(currentOwner), preferably in the same diamondCut initialization step that installs the new facets. Until that call succeeds, the new role-admin path cannot appoint role admins or use the canonical account-first grant and revoke calls.",
+					"reason": "The migration callout already names the existing owner, missing default-admin grant, setAdmin action, and blocked behavior until it succeeds."
+				},
+				{
+					"quote": "Do not run ExpressProvider Init.init again. v0.8.6.1 is already initialized, so a second call reverts with AlreadyInitialized. Fresh deployments receive DEFAULT_ADMIN_ROLE through Init.init; upgraded deployments receive it through setAdmin.",
+					"reason": "The adjacent do-not-reinitialize callout explicitly distinguishes fresh initialization from upgraded-deployment setAdmin. Another warning or selector ring performs no new job."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/explicit-clearing-house-settlements",
+			"reviewed": true,
+			"readerTask": "Submit and index typed Clearing House settlement with correct subject, account, signs and allocation keys.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Every component is from account’s perspective: positive means the account receives value; negative means the account pays value.",
+					"reason": "The existing Sign convention callout already retains account, polarity and direction."
+				},
+				{
+					"quote": "The component sum for an account/allocation group equals ClearingHouseAccountSettlement.amount.",
+					"reason": "Equations and Indexer contract table already map attribution to physical ledger records."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/express-deposit-removal",
+			"reviewed": true,
+			"readerTask": "Remove obsolete express-deposit APIs while retaining ordinary deposits and the current provider interface.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "This is not the Express Withdrawal system.",
+					"reason": "The dedicated callout already disambiguates deposit removal from withdrawal introduction."
+				},
+				{
+					"quote": "Treat a non-zero expressRate as stale data, not as configuration.",
+					"reason": "The storage heading and two short paragraphs already explain retained dead fields."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/express-withdrawal-system-design",
+			"reviewed": true,
+			"readerTask": "Implement Express options, credit exposure and recovery after processed-withdrawal suspension.",
+			"accepted": [
+				{
+					"id": "v086-express-repay-affiliate-debt-only",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents using repayCreditBadDebt as though it decremented the cumulative generalBadDebt counter or replenished the general pool.",
+					"sourceQuote": "generalBadDebt is a cumulative diagnostic counter: the current contract increments it for the unreplenished general-pool portion and exposes no function that decrements or resets it. repayCreditBadDebt applies only to an affiliate’s credit-line badDebt and credits that affiliate pool.",
+					"targetQuote": "only to an affiliate’s credit-line badDebt",
+					"sectionId": "post-payout-rollback",
+					"placement": "mark",
+					"whyExistingInsufficient": "The preceding rollback introduces both debt records, while the generic repayment name suggests both. The following ledger-only recovery callout does not classify these similarly named counters.",
+					"whyThisForm": "Underline the local restriction and destination. A full-paragraph highlight would also repeat the cumulative-counter explanation; an extra note would paraphrase. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Checked conceptual credit lifecycle, detailed loss handling, role/function references and recovery callout. Keep the exclusion at recovery, without marking every debt mention.",
+					"removeWhen": "Remove if recovery gets an adequate general/affiliate comparison or generalBadDebt gains a repayment/reset path."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "STANDARD always skips validator validation during acceptance, regardless of the configured minimum.",
+					"reason": "The option-specific paragraph, diagrams and acceleration discussion already identify the separate gate."
+				},
+				{
+					"quote": "For STANDARD, schedule or detect the remaining processWithdraw payout; Express status is FINALIZED, not terminal, until then.",
+					"reason": "The event/action table, STANDARD sequence and state machine already encode finalization-before-payout."
+				},
+				{
+					"quote": "New used capacity (reservedDebt + activeDebt + badDebt + creditAmount)",
+					"reason": "Cap arithmetic, funding calculator and polling workflow already expose capacity components; do not circle field names or add a generic reminder."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/force-close-request-binding",
+			"reviewed": true,
+			"readerTask": "Bind a multi-step force-close continuation to its live close request and plan recovery of pre-upgrade workflows.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Initialization now stores the quote’s current closeId as the operation binding. Every later force-close step uses one shared guard and proceeds only when all three conditions hold:",
+					"reason": "The fix introduces an explicit all-three-conditions list, and the failure-sequence table contrasts requests A and B. No new note is needed to restate request binding."
+				},
+				{
+					"quote": "Cancellation or expiry can leave historical detail with inProgress = true. Off-chain systems must not treat that flag alone as proof that the workflow can continue; quote status and request identity are also required.",
+					"reason": "ABI and operations notes explicitly say inProgress alone is not proof and name both missing checks. The earlier guard list and failure table already supply the same distinction."
+				},
+				{
+					"quote": "An uninitialized or pre-upgrade detail has closeId = 0 and cannot pass the continuation guard. Finish active multi-step workflows before upgrading. After the upgrade, an old workflow cannot continue. Cancel the old close request through the normal cancellation flow, or wait past its deadline and call expireQuote([quoteId]); a post-deadline cancellation may invoke the same expiry path. Confirm the quote has returned to OPENED, then create a replacement request and initialize a new workflow.",
+					"reason": "The upgrade list contains the full finish-before-upgrade and cancel/expire/recreate recovery sequence. Handwriting would repeat required operations already in normal content."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/gasless-layer",
+			"reviewed": true,
+			"readerTask": "Build Gasless fee quotes and funding prompts using the correct payer, balance source and amount units.",
+			"accepted": [
+				{
+					"id": "v086-gasless-core-fee-source",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Preserves the fee-source mapping for funding prompts: source 0 needs the payer Core account and allowance; source 1 needs collateral at the payer GaslessWallet. Prevents treating both as one balance or the browser wallet.",
+					"sourceQuote": "source = 0: the fee is charged to payer’s balance in SYMMIO Core. This is not the ERC20 balance in the user’s browser wallet. The account also needs sufficient operational-fee allowance for GaslessLayer.",
+					"targetQuote": "source = 0: the fee is charged to payer’s balance in SYMMIO Core.",
+					"sectionId": "quote-payment-source",
+					"placement": "mark",
+					"whyExistingInsufficient": "Both sources appear in the same quote interface; even a wallet execution can bill Core. Inline enum styling identifies a number but does not retain its complete balance mapping.",
+					"whyThisForm": "Highlight the full labeled source-to-balance assertion for funding preparation. Underlining Core or circling 0 would lose the mapping. Existing following prose retains the browser-wallet exclusion and allowance condition.",
+					"repeatCheck": "Shared pair: v086-gasless-core-fee-source and v086-gasless-wallet-fee-source. Checked deposit, withdrawal and relay examples; retain the reusable mapping here and do not repeat highlights in those examples.",
+					"removeWhen": "Remove the pair if an adequate shared funding table already carries this mapping or the quote source contract changes."
+				},
+				{
+					"id": "v086-gasless-wallet-fee-source",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Preserves the fee-source mapping for funding prompts: source 0 needs the payer Core account and allowance; source 1 needs collateral at the payer GaslessWallet. Prevents treating both as one balance or the browser wallet.",
+					"sourceQuote": "source = 1: the fee is taken from collateral tokens held by the GaslessWallet at payer. The user needs those tokens at that wallet address.",
+					"targetQuote": "source = 1: the fee is taken from collateral tokens held by the GaslessWallet at payer.",
+					"sectionId": "quote-payment-source",
+					"placement": "mark",
+					"whyExistingInsufficient": "Execution location does not select the fee source: the same chapter also shows wallet operations billed to Core. This plain item supplies the complementary mapping.",
+					"whyThisForm": "Highlight the source label, collateral balance and payer wallet as one assertion. A noun underline would not carry the relation; a ring would duplicate code styling.",
+					"repeatCheck": "Shared pair: v086-gasless-core-fee-source and v086-gasless-wallet-fee-source. Checked deposit, withdrawal and relay examples; retain the reusable mapping here and do not repeat highlights in those examples.",
+					"removeWhen": "Remove the pair if an adequate shared funding table already carries this mapping or the quote source contract changes."
+				},
+				{
+					"id": "v086-gasless-usdc-quotes-use-eighteen-decimals",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents formatting USDC quote amounts with token-transfer decimals instead of the quote’s 18-decimal accounting units.",
+					"sourceQuote": "Display every quote amount with formatUnits(amount, 18), including USDC fees. For example, 5000000000000000000n means 5 USDC when USDC is collateral. collateralDecimals describes the token’s raw transfer units; it does not change the quote’s 18-decimal units.",
+					"targetQuote": "including USDC fees",
+					"sectionId": "quote-payment-source",
+					"placement": "mark",
+					"whyExistingInsufficient": "The chapter also discusses collateralDecimals and a raw creation-fee getter in token units, making a token-specific formatter plausible at this display action.",
+					"whyThisForm": "Underline the USDC exception inside the full visible formatUnits(amount, 18) instruction. Highlighting the paragraph would also mark its example and repeated raw-unit explanation; a note would restate it.",
+					"repeatCheck": "Checked creation-fee getter, deposit example and fee limits. This single formatting cue is independent of the balance-source pair and is not repeated on amounts.",
+					"removeWhen": "Remove if an adequate quote/raw-getter unit label already resolves the distinction or the quote amount format changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "For a batch containing only that Core approval, with no flex fields, preview reads the multiplier in the approval calldata and quotes 1 USDC for the billing parent.",
+					"reason": "Unresolved prose conflict: this 50%-multiplier example contradicts Selector pricing, which floors sub-1x values at 1x. Annotation cannot repair required prose or safely direct this experiment; report separately."
+				},
+				{
+					"quote": "A zero balance alone does not mean a transfer is complete, since funds may still be in flight.",
+					"reason": "The existing Reserve the selected wallet callout already explains pending transfers, indices and concurrency."
+				},
+				{
+					"quote": "preview to show the price → prepare the funds and any required signatures → simulate the completed request → submit the real action.",
+					"reason": "Staged headings, worked deposit and explicit sequence already distinguish calculation, eth_call and submission."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/index",
+			"reviewed": true,
+			"readerTask": "Choose a role-based release path, then browse or search chapters.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "role-based overview",
+					"reason": "The opening paragraph already names and links the recommended start and Express design/checklist order."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/instant-layer-authorization-scope",
+			"reviewed": true,
+			"readerTask": "Replace ambient batch authorization with explicit delegations and direct-caller PartyB permissions.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "This binds authorization to msg.sender instead of a core-wide execution flag.",
+					"reason": "The before/after table and Effect on callers instructions already teach the authorization replacement."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/instant-layer-batch-delegation-grant",
+			"reviewed": true,
+			"readerTask": "Compose an owner-signed delegation grant with later delegate operations and understand migration overwrite and replay boundaries.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The operation signer must be the account owner. A delegate can never sign a grant — not even one holding a delegation over the grantDelegation or grantDelegations selector — so a session key cannot mint further delegations for itself or for anyone else.",
+					"reason": "The verification-rules list already carries the complete owner-only prohibition, including a delegate holding a grant selector. A ring on a grant selector would reduce the rule to an identifier."
+				},
+				{
+					"quote": "maxUses must be exactly 1. Granting clears pending revocation timestamps, so a replayable grant operation could silently cancel a revocation the owner had already scheduled.",
+					"reason": "The exact maxUses requirement and revocation-replay rationale are together in the rule item, followed by the named replay error. No extra summary is needed."
+				},
+				{
+					"quote": "Missing, expired and already effective revocations are skipped without changing the destination. Active source entries overwrite the destination expiry and revocation ETA. The trusted migrator may import from several older instances or repeat a batch; the last active entry copied for an account, delegate and selector wins. Identical imports leave the same stored permission, while a different source or an updated grant can replace a local grant or revocation.",
+					"reason": "The migration subsection directly explains active-overwrites-destination, last-active-entry-wins, and repeated import behavior. A snapshot note would merely compress this ordinary explanation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/instant-layer-upgradeability",
+			"reviewed": true,
+			"readerTask": "Plan the initial InstantLayer diamond migration separately from subsequent in-place upgrades.",
+			"accepted": [
+				{
+					"id": "v086-instant-diamond-initial-redeployment",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents interpreting future stable-address diamond upgrades as a promise that the initial transition needs no redeployment.",
+					"sourceQuote": "InstantLayer is now an upgradeable EIP-2535 diamond so future code updates can keep the same address and existing delegations. Previously, every code update required deploying a new instance, leaving users’ delegations on the old contract and requiring them to grant permissions again. That would interrupt our take-profit and stop-loss (TP/SL) services, which rely on InstantLayer delegations, and leave users’ session keys without permissions on the replacement. Moving to the diamond still requires a one-time redeployment, so we added a MigrationFacet with migrateDelegations to let an authorized migrator copy selected active delegations from the old layer, preserving their expiry and any pending revocation ETA.",
+					"targetQuote": "still requires a one-time redeployment",
+					"sectionId": "full-document",
+					"placement": "mark",
+					"whyExistingInsufficient": "The opening promise concerns future upgrades. The initial-transition exception is inside the same plain paragraph, without a separate migration heading or callout.",
+					"whyThisForm": "Underline the temporal exception without marking the whole history or a MigrationFacet identifier. A handwritten note would duplicate the migration explanation. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Read the single paragraph as a whole. No second cue on the facet/method. Root clarified article#full-document as the real fallback anchor when no heading ID exists.",
+					"removeWhen": "Remove if an adequate initial-migration callout separates this transition from later upgrades, or the migration path changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "MigrationFacet",
+					"reason": "Inline code and the migration explanation already identify the mechanism; shortness alone does not admit a ring."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/instant-open-gas-optimization",
+			"reviewed": true,
+			"readerTask": "Understand compact InstantOpen execution, live source selection, hook suspension and selector compatibility.",
+			"accepted": [
+				{
+					"id": "v086-instant-live-reader-preset-comparison",
+					"form": "note",
+					"job": "Guide",
+					"readerGain": "Adds a two-state experiment comparing no active transient source with an active routing-only source through the isInstantOpenMode() output.",
+					"sourceQuote": "Bit 0 decides which source answers the question. When it is set, the transient word is authoritative, so a clear bit 2 means InstantOpen mode is explicitly off. When bit 0 is clear, the reader ignores the transient flags and falls back to the persistent compatibility fields. isInstantOpenMode() follows the same structure.",
+					"targetQuote": "",
+					"sectionId": "fallback",
+					"placement": "before",
+					"whyExistingInsufficient": "The live reader labels presets and displays outputs, so its prose needs no mark. It does not prompt this specific fallback-versus-active-false comparison.",
+					"whyThisForm": "A note can ask for an operation across two reachable states. Highlighting would repeat the fallback prose; rings duplicate preset labels. Immediate pre-tool placement needs no leader.",
+					"repeatCheck": "Checked cards, live/snapshot readers, hook-authority figure and lifecycle tool. Add only this named reader-output comparison, without snapshot or compatibility summaries.",
+					"removeWhen": "Remove if the tool itself prompts this comparison, its presets/readout change, or faithful reading-order association is unavailable.",
+					"note": "Compare No scope with Routing only and watch the isInstantOpenMode() readout.",
+					"beforeSelector": "[data-word-reader-tool=\"live\"]"
+				}
+			],
+			"rejected": [
+				{
+					"quote": "The snapshot is saved data, not active authority.",
+					"reason": "The hook figure and saved/live displays already teach this distinction; no handwritten paraphrase."
+				},
+				{
+					"quote": "When it is set, the transient word is authoritative, so a clear bit 2 means InstantOpen mode is explicitly off.",
+					"reason": "No paragraph mark: the reader displays effective results. The accepted Guide adds a specific comparison instead of repeating bit 0 prose."
+				},
+				{
+					"quote": "This is a selector-compatibility control, not a storage rollback.",
+					"reason": "The Compatibility callout and pre-Cancun sections already explain selector-only switching."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/lazy-accumulated-funding",
+			"reviewed": true,
+			"readerTask": "Update accumulated-funding event expectations and numerical comparisons when moving from shared rolling state to lazy quote baselines.",
+			"accepted": [
+				{
+					"id": "v086-lazy-funding-integer-parity",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent inferring bit-for-bit integer parity with v0.8.5 from the adjacent assertion that the cumulative funding formula is unchanged.",
+					"sourceQuote": "Quote flows no longer pay for symbol-state storage writes or the state log. The cumulative funding formula is unchanged, but exact integer results can differ from v0.8.5 because the lazy path avoids the weighted-average division that each roll introduced.",
+					"targetQuote": "but exact integer results can differ from v0.8.5",
+					"sectionId": "what-changed",
+					"placement": "mark",
+					"whyExistingInsufficient": "The chapter presents the roll as unnecessary for correctness and uses the same lazy formula; those statements invite an unchanged-output assumption. This one plain clause distinguishes mathematical formula continuity from integer-rounding behavior, and no heading or callout names that difference.",
+					"whyThisForm": "The contrast after formula is unchanged is the local pivot. Underlining the qualified can differ clause preserves possibility and release scope; a highlight of the whole list item would also emphasize the unrelated storage/log cost claim.",
+					"repeatCheck": "Reviewed the introduction about one division per roll, the lazy formula, the baseline-equality explanation, and the state-event list. Keep a single parity cue in What changed on-chain, without repeating the performance or no-roll summaries.",
+					"removeWhen": "Remove if output parity is established by a changed implementation, the comparison release changes, or ordinary presentation gains a labeled integer-rounding compatibility statement."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "v0.8.6 removes that roll from ordinary quote processing. Quote-driven flows now compute the quote’s baseline with the same lazy formula every read path already used, and do not mutate the symbol/PartyB state. The weighted average is re-folded during solver configuration and at symbol-restatement boundaries. Both emit the state event after their final storage writes. Between those explicit transitions the persisted funding state is byte-stable.",
+					"reason": "The hero, summary and What changed list already specify which transitions mutate shared funding state. A byte-stable or no-roll handwritten note would repeat the chapter thesis."
+				},
+				{
+					"quote": "Funding charges, aggregate funding debt views, and the per-quote accumulatedPaidFunding baseline written at open, close, charge, liquidation, or migration all use this formula. Because the fee charged and the baseline written now come from the same expression, the amount a quote pays equals the change in its recorded baseline exactly, with no re-rounding of the weighted average in between.",
+					"reason": "The equality between amount charged and change in recorded baseline is already explained immediately after the shared formula. It needs no arbitrary mark on a formula variable."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/liquidation-dispute-resolution-guards",
+			"reviewed": true,
+			"readerTask": "Call dispute resolution only for an active PartyA liquidation and pending PartyB settlement buckets, while understanding the trusted-operator failure mode.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The role is trusted, so this is protection against an operator mistake rather than against an attacker, but the effect of the mistake was a silently inconsistent reserve.",
+					"reason": "The short paragraph already distinguishes operator-mistake protection from attacker control. There is no local competing classification to resolve with a ring."
+				},
+				{
+					"quote": "The first is checked once; the second for every PartyB in the list, before anything is written. A resolution that lists an already-settled PartyB therefore reverts as a whole, matching what settlePartyALiquidation does with the same input. Amounts and the disputed flag are otherwise written exactly as before, and the planned amounts of unlisted PartyBs are untouched.",
+					"reason": "The two complete require statements are directly under The guards and followed by checked-once/checked-per-PartyB and whole-call-revert prose. Marking either code condition is prohibited and a prose note would duplicate the explanation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/liquidation-funding-observability",
+			"reviewed": true,
+			"readerTask": "Reconcile raw quote-level liquidation calculations with final PartyB bucket funding and PnL events, including adjusted settlements.",
+			"accepted": [
+				{
+					"id": "v086-liquidation-pnl-residual-not-scaled",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent applying the ratio independently to both rawFunding and rawPnl; settledPnl is the residual of the funding/PnL settlement component, excluding the separately returned CVA.",
+					"sourceQuote": "Normally the final amount matches the expected amount and the scale is 1 / 1. A haircut, dispute override, or isolated-mode payout cap can reduce the final amount. When it reduces the amount without changing its direction, the scale is abs(final amount) / abs(expected amount); a zero or direction-changing override reduces funding to zero. The contract applies that scale to rawFunding, then assigns the rest of the funding/PnL settlement component to settledPnl. Thus settledFunding + settledPnl = -settleAmounts[i], excluding the separately returned CVA. The full allocation delta from this bucket settlement is cvaAmounts[i] + settledFunding + settledPnl. settledPnl is not independently scaled. Use the typed balance-change events as the storage ledger.",
+					"targetQuote": "is not independently scaled",
+					"sectionId": "aggregate-settlement-event",
+					"placement": "mark",
+					"whyExistingInsufficient": "The event exposes parallel raw/settled funding and PnL fields plus one ratio, which invites a symmetric scaling calculation. The field list identifies the numbers, but the asymmetry is stated only at the end of the following plain explanation.",
+					"whyThisForm": "Underline the field-specific negative pivot in its visible reconciliation sentence. The surrounding paragraph already explains ratio selection and funding scaling; highlighting all of it would add unrelated adjustment cases, while a note would paraphrase the residual calculation. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Checked the quote event sign convention, aggregate field definitions, ratio explanation and reconstruction list. No existing table or callout distinguishes independent PnL scaling; do not add another mark on the sum or duplicate the sign rule.",
+					"removeWhen": "Remove if settlement begins independently scaling PnL, the event contract changes, or ordinary field presentation explicitly labels settledPnl as a residual."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "rawFunding and rawPnl are signed from PartyB’s perspective: a positive value means PartyB receives that component, and a negative value means PartyB pays it.",
+					"reason": "The complete sign convention is already a short standalone paragraph immediately after the quote event; a bare sign or PartyB token mark would not improve it."
+				},
+				{
+					"quote": "If the Clearing House takes over before a pending normal settlement is completed, this event marks the normal funding settlement as abandoned. Observers should then reconcile the takeover through ClearingHouseSettlementComponent and ClearingHouseAccountSettlement instead of treating the earlier raw quote calculations as a completed normal settlement.",
+					"reason": "The Clearing House boundary has its own heading and abandonment event, with named links to replacement reconciliation events. An extra abandoned-settlement note adds no reading operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/liquidation-funding-snapshot-fix",
+			"reviewed": true,
+			"readerTask": "Run snapshot-backed PartyA liquidation, inspect recorded chunks safely, and distinguish the new accounting source from ongoing legacy workflows.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "An unset entry returns isSet = false with zero values and never reverts. A recorded entry can legitimately hold a zero price or zero funding, so callers must use isSet rather than zero checks.",
+					"reason": "The dedicated view-contract list explicitly contrasts unset entries with legitimately zero recorded values and names isSet as the test. A ring on zero or the flag would strip that relation."
+				},
+				{
+					"quote": "Because the Muon signature covers the complete states array, a partially recorded chunk cannot be trimmed and resubmitted. The intended use is to skip a signed chunk only when every entry is set and its price and both funding values match the signed payload exactly, and otherwise submit the whole chunk again.",
+					"reason": "The retry paragraph already supplies the whole-chunk signature constraint and exact skip-versus-resubmit rule. A note saying do not trim would merely repeat it."
+				},
+				{
+					"quote": "Snapshot-backed pricing is all-or-nothing for an active liquidation. Once the snapshot marker is set, the liquidation cannot silently mix signed funding for some quotes with live-storage funding for others.",
+					"reason": "The two source branches, comparison table and all-or-nothing paragraph already establish signed-versus-live accounting. A source-switch shorthand would omit the active-liquidation scope."
+				},
+				{
+					"quote": "The flag does not abort a legacy liquidation that was already started: its later price, position-processing, and settlement steps remain available so the in-flight liquidation can finish.",
+					"reason": "The deprecation section explicitly preserves later steps for an already-started legacy liquidation. Its beginning/future-start distinction is already locally complete."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/liquidation-rounding-and-funding-aggregate-repair",
+			"reviewed": true,
+			"readerTask": "Roll out liquidation rounding and repair existing funding totals before activating exact-notional Muon inputs.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Before resuming activity: repair incorrect saved funding totals and update Muon’s calculation.",
+					"reason": "The existing callout and Safe rollout sequence already retain the joint prerequisite."
+				},
+				{
+					"quote": "No separate payment is created for the difference or assigned to another account.",
+					"reason": "Rounding explanation and rollout repeat the boundary and specify accounting units; no invented payment/destination."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/liquidation-settlement-plan",
+			"reviewed": true,
+			"readerTask": "Consume final liquidation settlement plans and distinguish net sharing from gross quote losses.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "A payer is never debited beyond the amount counted against its allocation when its bucket closed.",
+					"reason": "Already a complete scoped invariant in the solver list, backed by raw buckets and worked examples; importance is insufficient."
+				},
+				{
+					"quote": "Settlement amounts are final when the last position closes: getSettlementStates returns what will be paid, not a provisional value.",
+					"reason": "The summary, Plan step heading and integration list already repeat final-plan timing."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/market-open-fee-execution-price",
+			"reviewed": true,
+			"readerTask": "Reconcile market-order reserved open fees with the execution-price fee and account for the allocated-balance adjustment at fill.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Reserved uses requestedOpenPrice for limit quotes and marketPrice for market quotes. This is what sendQuote debits from allocated balance and mirrors into partyAReservedOpenFees.",
+					"reason": "The Reserved and executed fees heading and adjacent labeled list items already provide the two complete price-basis mappings. Extra paired marks would repeat an adequate comparison."
+				},
+				{
+					"quote": "PartyA has then paid exactly the executed fee, and the reservation ledger has unwound exactly what it recorded. The difference is applied before the caller verifies solvency, so a shortfall PartyA cannot afford reverts the entire open rather than leaving the account short.",
+					"reason": "The fee-lifecycle list and immediate conclusion already explain exact unwind, actual fee payment and full-open revert on insufficient shortfall coverage."
+				},
+				{
+					"quote": "The reservation is still sized from the request-time price. A bound PartyA that supplies a low market price reserves less than the trade will cost, so the shortfall is collected at open instead. The fee is charged either way, but the open can fail late if the account cannot cover it by then.",
+					"reason": "The integration aside already makes the late-failure boundary explicit; do not add a second warning or highlight a bare price field."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/muon-upnl-validity-overrides",
+			"reviewed": true,
+			"readerTask": "Configure a Muon operation category freshness override without confusing authorization-only categories or zero inheritance with a zero-second window.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "0 means \"unset\" for per-function overrides. Do not use 0 as an intentional validity window. Operators should keep the global upnlValidTime configured to a nonzero value.",
+					"reason": "Zero-as-unset is stated in summary, setter behavior, event semantics, storage invariant and effective resolution. Another zero mark would repeat the same rule."
+				},
+				{
+					"quote": "The category is passed to the signature verifier for key and gateway authorization on all grouped calls, but the per-function validity window only applies where Core checks signature freshness against block.timestamp through its UPNL resolver. ExpressCredit deliberately does not use that resolver.",
+					"reason": "The category table gives method-specific freshness applicability, including lifecycle exceptions and ExpressCredit, while the following prose explicitly separates authorization from the UPNL resolver. A short category note would erase exceptions."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/narrower-admin-roles",
+			"reviewed": true,
+			"readerTask": "Assign the narrower roles and perform pause-role selector/grant cutover without inheriting broad-role authority assumptions.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Review the intended holders and per-role administrators. Explicitly grant each required new role before replacing the pause facet, or include the grants in an atomic, rehearsed governance batch. Preserve a working UNPAUSER_ROLE holder. Existing broad-role holders and administrators do not automatically inherit the new roles.",
+					"reason": "The Pause-role cutover checklist already gives the before-facet-replacement grant order, preserves unpause authority and says existing holders inherit nothing. Required migration instructions should remain normal checklist content."
+				},
+				{
+					"quote": "Fresh Core setup grants all nine roles to the configured admin, and deployment verification checks each grant. An emergency operator receives only the roles selected by governance; holding a pause role does not authorize granting another role. DEFAULT_ADMIN_ROLE can still administer every role but does not itself authorize pause calls.",
+					"reason": "The complete paragraph distinguishes fresh setup, governance-selected emergency roles and DEFAULT_ADMIN not directly authorizing pauses. The granular role table already maps each role to its functions."
+				},
+				{
+					"quote": "The AccountLayer holds BALANCE_SETTLER_ROLE and uses this function for its margin moves (addMargin, addMarginToNextVA and _callWithMargin), so they keep working while internal transfers are paused. The AccountLayer refuses this selector inside _call, so an account owner cannot use it to reach an arbitrary recipient. Calls routed through _call to internalTransfer stay paused.",
+					"reason": "The routing explanation explicitly names the AccountLayer margin operations that survive an internal-transfer pause and the rejected arbitrary-recipient route. A selector underline alone would lose these boundaries."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/notional-liquidation-fee-floor",
+			"reviewed": true,
+			"readerTask": "Configure the collateral-relative and notional-relative LF floors and anticipate rechecking an existing locked quote at open.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The existing minAcceptablePortionLF protects the liquidation fee (LF) relative to PartyA’s locked collateral. The new minAcceptableNotionalLFRate protects the same fee relative to the position’s notional value. A quote must satisfy both limits.",
+					"reason": "The summary says a quote must satisfy both floors, and How the two floors work supplies both equations. No arbitrary highlight on one rate is needed."
+				},
+				{
+					"quote": "setSymbolMinAcceptableNotionalLFRate(symbolId, rate) sets an explicit per-symbol override. Zero is a valid override and disables the notional floor for that symbol.",
+					"reason": "The per-symbol configuration list already states that zero is a valid disabling override and separately names the clear method that restores inheritance."
+				},
+				{
+					"quote": "The open-time checks use the current configuration. Raising a default or override can stop an existing locked quote from opening when its LF no longer satisfies the new floor.",
+					"reason": "The quote/open check list immediately precedes the complete current-configuration consequence for locked quotes. A note would restate the action-point explanation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/operational-fees",
+			"reviewed": true,
+			"readerTask": "Configure operational-fee allowances without mistaking remaining-allowance setters for additive top-ups.",
+			"accepted": [
+				{
+					"id": "v086-operational-allowance-not-increment",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents adding amounts[i] to the remaining operational-fee allowance instead of replacing it.",
+					"sourceQuote": "Both approval methods are batch setters: each amounts[i] replaces the payer’s remaining allowance for chargers[i]; it is not an increment. Charges decrement this value. An increase applies immediately, while a reduction follows the delay explained under Timelocked reductions.",
+					"targetQuote": "it is not an increment",
+					"sectionId": "setup-api",
+					"placement": "mark",
+					"whyExistingInsufficient": "Approval names and the amounts array can suggest a top-up at the API. The earlier summary demonstrates replacement, but callers must retrieve the exact setter rule while constructing this call.",
+					"whyThisForm": "Underline the complete negative pivot within the visible replacement statement. A full highlight would duplicate that relation; an example-number ring identifies no rule.",
+					"repeatCheck": "Checked summary and delayed-reduction examples. Keep one cue at the API integration action point, not repeated prose or merely because an H2 has an anchor.",
+					"removeWhen": "Remove if API labeling already makes absolute remaining-allowance semantics adequate or those semantics change."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "min(10, 20) = 10",
+					"reason": "The labeled reduction example already demonstrates non-replenishment; its answer needs no identity ring."
+				},
+				{
+					"quote": "the trader’s own maintenance margin is deliberately not part of the floor",
+					"reason": "The solvency table and Why the floor exists callout already distinguish CVA + LF from full liquidatability."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/overview",
+			"reviewed": true,
+			"readerTask": "Choose the release chapters and companion runbooks appropriate to the reader’s integration task.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Choose a reader path below when you need the smallest useful subset for a review or integration.",
+					"reason": "Reader-path headings, links and change map already provide navigation operations."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/partial-fill-fee-reservation",
+			"reviewed": true,
+			"readerTask": "Reconcile the partial-fill fee remainder while preserving executed fees and child reservations.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "parent - filled - child",
+					"reason": "Floor formulas and the conservation equation already explain remainder and destination; do not mark a bare expression."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/partya-liquidation-fee-recipient",
+			"reviewed": true,
+			"readerTask": "Attribute PartyA liquidation fees and distinguish the full starter credit from the allocation-funded debit.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The starter receives the full capped LF as a direct allocated credit.",
+					"reason": "Before/after list, final-settlement code and accounting bullets already distinguish full credit from allocation-funded debit."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/partyb-allocation-suspension-gates",
+			"reviewed": true,
+			"readerTask": "Check effective PartyB suspension before allocation or allocation transfer, including calls relayed through AccountLayer.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "v0.8.6 aligns PartyB allocation management with suspension semantics. When a PartyB is suspended, it can no longer call allocateForPartyB or transferAllocation.",
+					"reason": "The summary and short What changed list already name both blocked actions. A selector ring would only repeat the list identity."
+				},
+				{
+					"quote": "The gate follows the effective signer returned by LibSigner.getSigner(), so relayed and AccountLayer calls are checked against the PartyB they represent rather than the transport address.",
+					"reason": "The Effect on callers paragraph explicitly contrasts effective PartyB signer with transport address. No separate comparison or experiment is required to understand the gate."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/partyb-funding-nonces",
+			"reviewed": true,
+			"readerTask": "Integrate per-symbol funding nonces and successful skips without assuming equal nonces are single-use.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "An equal nonce is accepted",
+					"reason": "The next paragraph explains replay/idempotency, and integration explicitly instructs nonce reuse; no repeated warning."
+				},
+				{
+					"quote": "A skip is a normal outcome, not a failure.",
+					"reason": "The Reporting callout and acceptance table already distinguish successful skips from applied updates."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/pledge-token-whitelist",
+			"reviewed": true,
+			"readerTask": "Prepare explicit pledge-token approvals and the dedicated manager role.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Existing tokens are not automatically approved after the upgrade.",
+					"reason": "The changes table and upgrade list already require explicit role grants and token approval."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/position-isolation-partial-fill",
+			"reviewed": true,
+			"readerTask": "Handle a POSITION-isolated partial fill, account for its cancelled child and retained VA margin, and re-quote only with new-VA margin.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "On POSITION-isolated accounts, a LIMIT order is effectively partial-fill-and-kill: the solver keeps whatever it filled, and the unfilled remainder does not rest on the book. MARKET orders are unaffected because the core requires them to fill completely, and instant opens are unaffected for the same reason.",
+					"reason": "The Order semantics paragraph explicitly names partial-fill-and-kill and contrasts MARKET and instant full-fill paths. A second label would duplicate the complete comparison."
+				},
+				{
+					"quote": "The refunded fee and released reservation stay on the virtual account as free allocated margin, where they buffer the position that just opened. Moving them off the account follows the normal rules for an account with an open position: a Muon-attested deallocation, or the automatic sweep to the parent SubAccount when the position closes and the virtual account is deleted.",
+					"reason": "The funds destination and allowed removal routes are already stated together, followed immediately by the fresh-VA re-quote requirement. A note combining them would paraphrase adjacent prose."
+				},
+				{
+					"quote": "While PartyA actions are paused, the nested cancel reverts, so a partial fill on a POSITION-isolated account reverts with it. Solvers can still fill such quotes completely.",
+					"reason": "The integration list explicitly states the pause coupling and preserves the complete-fill exception. It needs no isolated reverts underline."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/session-keys",
+			"reviewed": true,
+			"readerTask": "Implement session-key delegation and identify where GaslessWallet selector authority is broader than the trading account-family scope.",
+			"accepted": [
+				{
+					"id": "v086-session-wallet-selector-scope",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Prevent carrying the preceding one-account-family restriction over to wallet IDs or target contracts when granting GaslessWallet selectors.",
+					"sourceQuote": "To sign operations for the owner’s GaslessWallets, the key needs WALLET_EXECUTION_SENTINEL_SELECTOR plus the selector of every call inside the wallet operation. It cannot send native currency from a wallet. Wallet permissions are checked by selector, not by target contract or wallet ID, so a granted selector works through every wallet the owner has. With the sentinel and a general token selector such as ERC-20 transfer or approve, the key could move any wallet’s tokens. See GaslessWallet operations.",
+					"targetQuote": "Wallet permissions are checked by selector, not by target contract or wallet ID, so a granted selector works through every wallet the owner has.",
+					"sectionId": "limits-wallets",
+					"placement": "mark",
+					"whyExistingInsufficient": "The chapter hero and the preceding account-family rule teach a narrow account grant. The generic GaslessWallet operations subheading does not announce that this surface uses a different scope key; its full selector-to-all-wallets relation is plain prose in the paragraph.",
+					"whyThisForm": "The reader must carry the whole scope rule, including the excluded target/ID dimensions and every-wallet consequence. A short underline on not by target contract or wallet ID leaves the breadth unstated; a ring on the sentinel merely identifies an already styled token.",
+					"repeatCheck": "Reviewed the account-family list, wallet subsection, checking guidance and final security advice. The final minimum-grant instruction is an action recommendation, not a second explanation of every-wallet scope. Keep this one rule at wallet permission definition, with no repeated security mark.",
+					"removeWhen": "Remove if wallet permissions acquire target/ID scope, the chapter gains an equally explicit scope warning or comparison table, or the one-family-to-wallet entry context changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "No amount limits. A grant restricts the account, the functions, and the expiry, nothing else. Each operation carries its own amounts. A key granted withdrawal functions can withdraw, so grant those only if the front end lets the key sign withdrawals.",
+					"reason": "No amount limits is already the bold item label and the item names the account/function/expiry boundary plus withdrawal consequence. A second mark would repeat it."
+				},
+				{
+					"quote": "Deleting a key locally is not revocation. Any other copy, for example on a linked phone, keeps its authority until the delegation expires or a revocation takes effect. Operations the key already signed also stay valid until their deadline. Revoke on-chain when a key may have leaked, and keep expiries short.",
+					"reason": "The existing important callout explicitly distinguishes local deletion from on-chain revocation, other copies and signed-operation deadlines. Do not duplicate that warning."
+				},
+				{
+					"quote": "Give the device its own key. Generate a new key on the second device and have the owner authorize it. This costs one more owner signature, but each device can be revoked on its own.",
+					"reason": "The two device options are already presented as paired labeled list items with their separate signature and revocation tradeoffs. A comparison note adds no missing operation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/settlement-pause-and-deallocation-guards",
+			"reviewed": true,
+			"readerTask": "Handle corrected settlement-index, cancel-unbind pause and liquidation-time deallocation guards.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "The function now carries notLiquidatedPartyA like every other allocation change.",
+					"reason": "The dedicated heading and causal paragraph already connect empty position lists with unfinished liquidation settlement."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/single-step-partya-liquidation",
+			"reviewed": true,
+			"readerTask": "Choose the compact snapshot liquidation only when the entire account can finish in one transaction, rather than treating it as a resume call.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "This is an alternative start-to-finish entrypoint, not a resume function. Liquidation must be unpaused, the caller must hold LIQUIDATOR_ROLE, and PartyA must not already be in liquidation. Use the wrapper when those prerequisites hold, the caller can supply every open quoteId and every involved PartyB, and the complete liquidation fits within one transaction’s gas limit. Use the multi-step snapshot flow for larger accounts or when work must be divided across transactions.",
+					"reason": "When to use it already states start-to-finish rather than resume, names the preconditions and contrasts the multi-step path for larger accounts."
+				},
+				{
+					"quote": "All or nothing. Omitting a required quote or PartyB causes the transaction to revert with LiquidationFacet: Incomplete single-step liquidation. The account is not left in a partially completed single-step state; retry with complete arrays or switch to the multi-step flow.",
+					"reason": "The All or nothing callout and preceding completion checks already explain missing-array-entry reverts and retry/switch recovery. Another note would duplicate the required workflow."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/solver-fees",
+			"reviewed": true,
+			"readerTask": "Integrate tagged solver fees and align preview and execution quantity bases.",
+			"accepted": [
+				{
+					"id": "v086-solver-preview-full-quantity-fee-basis",
+					"form": "highlight",
+					"job": "Guard",
+					"readerGain": "Prevents passing a fee total quoted for a capped execution maxFillAmount unchanged to preview maxSolverFee, whose basis is the full pending close quantity.",
+					"sourceQuote": "Bots can also preview the uncapped close-to-liquidation sizing before submitting the transaction. Because this existing view does not take maxFillAmount, maxSolverFee is the planned fee-list total quoted for the quote’s full pending quantityToClose, or 0 for a fee-less close. The preview uses that per-quantity rate for every candidate. At execution, quote the same rate against the chosen maxFillAmount and apply that cap to the preview result:",
+					"targetQuote": "Because this existing view does not take maxFillAmount, maxSolverFee is the planned fee-list total quoted for the quote’s full pending quantityToClose, or 0 for a fee-less close.",
+					"sectionId": "api-surface",
+					"placement": "mark",
+					"whyExistingInsufficient": "Nearby execution APIs price fee lists for maxFillAmount, but the similar preview name omits that quantity input. The signature and generic API heading do not expose this basis change.",
+					"whyThisForm": "Highlight the complete argument-to-quantity mapping and fee-less zero case. Underlining quantityToClose alone loses which fee argument it qualifies; a note would paraphrase the rate-matching instruction.",
+					"repeatCheck": "Checked execution proration, MARKET_BEST_EFFORT and edge cases. Keep one cue at the preview definition rather than duplicate execution-proration rules.",
+					"removeWhen": "Remove if preview gains an explicit quantity input or an adequate adjacent fee-basis comparison."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "Tags are routing keys, not authorization proofs",
+					"reason": "The routing heading, resolution list and per-entry guard paragraph already classify tags."
+				},
+				{
+					"quote": "Legacy methods store zero solver fee caps",
+					"reason": "The API migration paragraph and Edge cases already repeat the cap requirement."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/strict-deallocation",
+			"reviewed": true,
+			"readerTask": "Implement safe-removal accounting while keeping net uPnL availability separate from gross funding debt retained in raw collateral.",
+			"accepted": [
+				{
+					"id": "v086-safe-removal-no-second-upnl-debit",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevent subtracting fundingDebt from already net uPnL again merely because the preceding retention equation adds fundingDebt to the raw-allocation floor.",
+					"sourceQuote": "fundingDebt is a uint256 gross liability inside the Muon-signed payload: it is the accrued funding amount owed by the party whose account is being safe-deallocated. Funding receivables are excluded. Net uPnL continues to include funding exactly as before; the debt is not subtracted from uPnL a second time. It is separately retained in raw collateral so favorable price PnL cannot mask it.",
+					"targetQuote": "not subtracted from uPnL a second time",
+					"sectionId": "scaled-floor",
+					"placement": "mark",
+					"whyExistingInsufficient": "The preceding equation adds fundingDebt to retention, and the payload carries debt beside uPnL. That arithmetic invites reusing debt as another solvency debit. The surrounding definition distinguishes raw retention from net uPnL, but no heading, equation label or callout highlights this two-ledger boundary.",
+					"whyThisForm": "The otherwise understood definition changes at one negative pivot: no second uPnL subtraction. Underline that complete complement inside the paragraph, which retains the party, gross-liability and receivable qualifications. A full-paragraph highlight would also emphasize unrelated type and receivable definitions; a note would only restate the correction. Root review selects only the local differentiating pivot; its complete condition and subject remain in the visible containing statement.",
+					"repeatCheck": "Checked the raw/scaled floor equations, safety aside, safe signature packing, party policies, preview instructions and uPnL-counter section. They describe field use or signature lifecycle; none repeats this specific no-double-subtraction instruction. Keep one local mark.",
+					"removeWhen": "Remove if the signed uPnL definition changes, funding debt ceases to be a separate raw-retention amount, or ordinary equation presentation directly separates the two accounting checks."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "A preview is not transaction eligibility. The view does not verify its inputs and omits operational gates such as pause state, cooldown or debounce timing, caller authorization, and signature validity. The deallocation transaction remains authoritative.",
+					"reason": "The dedicated preview warning already states that a maximum view is not eligibility and lists the omitted operational gates. It needs no second annotation."
+				},
+				{
+					"quote": "The per-party value that Muon signatures embed was historically named partyANonces / partyBNonces. The name was wrong in a way that misleads design work: a nonce implies per-use consumption, but this value is a version counter of the inputs to uPnL. Fills, funding charges, settlement, liquidation, and force actions bump it whenever position or PnL state changes. A signature does not consume it. A signature therefore stays valid for its whole validity window until uPnL-relevant state changes, which is exactly why the RemoveMargin freshness window, not the counter, is the binding control on stale signatures.",
+					"reason": "The heading names the nonce-to-counter change, the definition bolds version counter of the inputs to uPnL, and not is already emphasized. Another underline would duplicate existing polarity treatment."
+				},
+				{
+					"quote": "Upgrade ordering constraint. safeRemoveMargin is a new AccountLayer route, while the existing core safeDeallocate selector changes because its tuple expands. The normal removeMargin and core deallocate selectors remain compatible. Upgrade the core before enabling the new AccountLayer safe route and cut safe clients over with it; the normal route remains available until legacyDeallocateDeprecated is enabled.",
+					"reason": "The upgrade ordering warning already names core-first safe-route enabling and normal-route compatibility. Do not paraphrase it into handwriting."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/symbol-adjustment",
+			"reviewed": true,
+			"readerTask": "Coordinate corporate-action bases, funding preparation, rewrites, liquidation signatures and finalization evidence.",
+			"accepted": [
+				{
+					"id": "v086-symbol-hash-upgrade-includes-untouched-symbols",
+					"form": "underline",
+					"job": "Guard",
+					"readerGain": "Prevents migrating the liquidation-price hash only for restating symbols while continuing to use the previous hash for untouched symbols.",
+					"sourceQuote": "Opening a window increments its epoch and sets restating = true. The flag stays true throughout abort/finalization restoration and changes to false only at completion. A later window increments the epoch again. These transitions invalidate the previous price signatures permanently, regardless of their timestamps. Changes to unrelated symbols do not invalidate a payload. Release the Muon/gateway hash update together with these contract changes: signatures over the previous hash are no longer accepted, including for symbols that have never been restated. There is no fallback to the previous hash.",
+					"targetQuote": "including for symbols that have never been restated",
+					"sectionId": "liquidation-price-signature-domain",
+					"placement": "mark",
+					"whyExistingInsufficient": "This section focuses on per-symbol state and says unrelated-symbol changes do not invalidate a payload. That may be confused with release-level compatibility of the old hash.",
+					"whyThisForm": "Underline the local scope qualifier inside the visible previous-hashes-no-longer-accepted assertion. A full-paragraph highlight would conflate per-symbol invalidation with global hash migration; a note repeats the rollout instruction.",
+					"repeatCheck": "Checked hash code, lifecycle figures, actor table and full runbook. No separate untouched-symbol migration comparison exists; do not repeat the cue on timestamp rules.",
+					"removeWhen": "Remove if release-wide hash migration gains an adequate callout/table or old-hash compatibility changes."
+				}
+			],
+			"rejected": [
+				{
+					"quote": "The venue-unit views have one blind spot.",
+					"reason": "The callout and Safe/Safe/Wrong cases already explain the effective-time gap and double-counting trap."
+				},
+				{
+					"quote": "The nonce closes only the check-to-transaction race.",
+					"reason": "The callout, nonce example and runbook already distinguish race protection from a complete liquidation scan."
+				},
+				{
+					"quote": "Do not treat the initial transaction’s success as lifecycle completion, signature-expiry proof, or proof that no PartyB was omitted.",
+					"reason": "The full runbook instruction, terminal-event requirement, funding table and lifecycle figures already explain staged finalization."
+				},
+				{
+					"quote": "Every quantity and every price or per-unit rate used with it must use the same unit basis.",
+					"reason": "The One invariant callout, 4:1 comparison, route table and calculator already teach this relation."
+				}
+			]
+		},
+		{
+			"key": "v0.8.6/zero-quantity-quote-rejection",
+			"reviewed": true,
+			"readerTask": "Reject new zero-quantity quotes and clear stored zero-size positions so liquidation can finish.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "After upgrading, scan the deployment for OPENED quotes whose quantity is zero and clear them.",
+					"reason": "Operator notes and Clearing stored positions already provide this required ordinary action."
+				}
+			]
+		}
+	],
+	"redirects": [
+		{
+			"path": "v0.8.5/complete.html",
+			"purpose": "Legacy hash-aware URL mapping; retain navigation, annotate destination only."
+		},
+		{
+			"path": "v0.8.6/pages/market-best-effort.html",
+			"destination": "v0.8.6/pages/close-to-liquidation.html#market-best-effort"
+		},
+		{
+			"path": "v0.8.6/pages/per-solver-liquidation-overshoot.html",
+			"destination": "v0.8.6/pages/close-to-liquidation.html#overshoot"
+		}
+	],
+	"contentCorrections": [
+		{
+			"page": "v0.8.5/accumulated-funding",
+			"change": "Removed contradictory enforced-cap claim; historical v0.8.5 PartyAFacet marks maxFundingRate unused."
+		},
+		{
+			"page": "v0.8.5/aggregated-positions",
+			"change": "Funding debt is subtracted, matching the historical view contract and existing usage example."
+		},
+		{
+			"page": "v0.8.6/gasless-layer",
+			"change": "Approval-only multiplier example is150% of2USDC=3USDC; current library floors sub1x values."
+		},
+		{
+			"page": "deployment-guide",
+			"change": "Distinguishes legacy replacement from current diamond facet upgrades and selected grant imports."
+		},
+		{
+			"page": "v0.8.6/narrower-admin-roles",
+			"change": "Documents diamond Init rather than an immutable constructor/redeployment-only design."
+		}
+	]
+}

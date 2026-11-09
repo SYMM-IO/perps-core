@@ -60,11 +60,12 @@
 							<h1>Muon Signature Verification and Key Management</h1>
 							<p class="hero-copy">
 								SYMMIO relies on the Muon oracle network to provide off-chain data that is verified on-chain: unrealized PnL, asset
-								prices, liquidation parameters, and settlement values. Every state-changing operation that depends on external market
-								data passes through the Muon signature verification layer. This document covers the external
+								prices, liquidation parameters, and settlement values. Oracle-verified flows use this verification layer. Bound
+								trading shortcuts can skip Muon checks, and trusted ClearingHouse callers supply prices through separate role-gated
+								paths. This archived v0.8.5 document covers the external
 								<code>MuonSignatureVerifier</code> contract, how it replaced the original single-key storage fields, the Schnorr-based
-								verification flow that underpins every critical protocol operation, and the per-category authorization system that
-								controls which keys can sign for which operations.
+								verification flow used by oracle-verified protocol operations, and the per-category authorization system that controls
+								which keys can sign for which operations.
 							</p>
 						</div>
 					</div>
@@ -73,33 +74,35 @@
 					<h2 id="doc-muon-keys-why-this-exists">Why This Exists</h2>
 					<p>
 						In the original design, SYMMIO stored a single Muon public key and a single valid gateway address directly in
-						<code>MuonStorage</code> inside the diamond. This had three problems:
+						<code>MuonStorage</code> inside the diamond. This had four problems:
 					</p>
 					<ol>
 						<li>
 							<p>
-								<strong>Single point of failure.</strong> If the sole Muon TSS key was compromised, every signature check in the
-								protocol was compromised. There was no way to have redundant keys.
+								<strong>One shared trust pair.</strong> Oracle-verified operations shared one configured TSS public key and gateway
+								signer. Verification required both signatures; compromising the TSS key alone did not remove the gateway requirement.
+								Compromise of the shared pair affected every category using it, and Core could not register an overlapping set of
+								active pairs.
 							</p>
 						</li>
 						<li>
 							<p>
-								<strong>Key rotation required contract changes.</strong> Rotating the Muon public key or gateway signer meant calling
-								<code>setMuonConfig</code> on the diamond, coordinating the cutover, and accepting a window where either the old or
-								new key could be invalid.
+								<strong>Rotation replaced Core configuration.</strong> Rotating the Muon public key or gateway signer meant calling
+								<code>setMuonIds</code> on the diamond, coordinating the cutover, and accepting a window where either the old or new
+								key could be invalid.
 							</p>
 						</li>
 						<li>
 							<p>
-								<strong>No decentralized signer set.</strong> The Muon network itself uses threshold signature schemes (TSS) where the
-								signing committee can change over time. A single on-chain key cannot represent a rotating committee.
+								<strong>No on-chain signer registry.</strong> Core stored one active public key and gateway rather than a registry of
+								independently enabled keys. Off-chain committee membership and its rotation were not represented by this storage.
 							</p>
 						</li>
 						<li>
 							<p>
 								<strong>No function-level isolation.</strong> Every registered key could sign for every operation — liquidations,
-								quote locking, funding rate charges, and settlements all shared the same trust set. A compromised key authorized for
-								routine operations could also sign liquidation data.
+								quote locking, funding rate charges, and settlements all shared the same trust set. A compromised TSS-and-gateway pair
+								used for routine operations could also authorize liquidation data.
 							</p>
 						</li>
 					</ol>
@@ -151,9 +154,7 @@ enum MuonFunction {
     ForceClose,        // ForceClose, InitializeForceClose, SettleUpnlForForceClose, etc.
     Funding,           // ChargeFundingRate, ChargeAccumulatedFundingFee
     LiquidationPartyA, // LiquidatePartyA, SetSymbolsPrice, DeferredLiquidatePartyA, DeferredSetSymbolsPrice
-    LiquidationPartyB, // LiquidatePartyB, LiquidatePositionsPartyB
-    RemoveMargin,      // SafeDeallocate, SafeDeallocateForPartyB
-    ExpressCredit      // Express withdrawal credit reservation
+    LiquidationPartyB  // LiquidatePartyB, LiquidatePositionsPartyB
 }
 
 interface IMuonSignatureVerifier {
@@ -169,7 +170,7 @@ interface IMuonSignatureVerifier {
     }
 
     // === Signature Verification ===
-    function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature, uint8 functionId) external view;
+    function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature, MuonFunction func) external view;
     function verify(bytes32 hash, SchnorrSign memory sign, bytes calldata gatewaySignature) external view; // no authorization check
 
     // === Public Key Management ===
@@ -183,28 +184,25 @@ interface IMuonSignatureVerifier {
     function getAllGatewaySigners() external view returns (address[] memory);
 
     // === Per-Function Authorization ===
-    function setPublicKeyPermissions(PublicKey memory pubKey, uint8[] calldata functionIds, bool allowed) external;
-    function setGatewaySignerPermissions(address signer, uint8[] calldata functionIds, bool allowed) external;
-    function isPublicKeyAuthorized(PublicKey memory pubKey, uint8 functionId) external view returns (bool);
-    function isGatewaySignerAuthorized(address signer, uint8 functionId) external view returns (bool);
+    function setPublicKeyPermissions(PublicKey memory pubKey, MuonFunction[] calldata functions, bool allowed) external;
+    function setGatewaySignerPermissions(address signer, MuonFunction[] calldata functions, bool allowed) external;
+    function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool);
+    function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool);
 
-    // === Capability Discovery ===
-    function supportsMuonFunction(uint8 functionId) external view returns (bool);
+    // No capability-discovery method exists in this archived interface.
 }
 </code></pre>
 					<p>
 						The <code>MuonFunction</code> enum is defined at file level (not inside the interface) so it can be imported independently.
-						Each enum value represents a category of related operations and its numeric value is cast to <code>uint8</code> at the
-						verifier boundary. Enum values are append-only. Using an opaque <code>uint8</code> boundary lets the verifier accept future
-						category IDs without redeployment. The <code>verify</code> overload without <code>MuonFunction</code> skips authorization
-						checks — it is used by the ViewFacet's <code>verifyMuonTSSAndGateway</code>, a read-only utility. State-changing flows,
-						including Express credit reservation, must use the category-aware overload.
+						This archived API takes <code>MuonFunction</code> directly and accepts its seven values (IDs 0–6). Solidity encodes the enum
+						canonically as <code>uint8</code>, so valid-category ABI selectors match that encoding, but its decoder rejects out-of-range
+						IDs. The overload without the enum skips category authorization; ViewFacet uses it for the read-only
+						<code>verifyMuonTSSAndGateway</code> utility. Oracle-verified state-changing paths use the category-aware overload.
 					</p>
 					<p>
-						<code>supportsMuonFunction(functionId)</code> is a capability check, not an authorization check. The current
-						<code>MuonSignatureVerifier</code> returns <code>true</code> for every <code>uint8</code> ID because all IDs share the same
-						verification and permission path. A new or unknown ID still starts unauthorized for every key and gateway until
-						<code>SETTER_ROLE</code> explicitly grants it.
+						The archived verifier has no <code>supportsMuonFunction</code> capability API and no <code>RemoveMargin</code> or
+						<code>ExpressCredit</code> categories. Safe deallocation uses <code>AccountManagement</code> in this revision; later-release
+						capabilities must not be assumed.
 					</p>
 					<p>
 						<strong>PublicKey</strong> represents a compressed secp256k1 public key. The <code>x</code> coordinate must be less than
@@ -233,8 +231,8 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
     address[] public gatewaySigners;
 
     // Per-function authorization
-    mapping(bytes32 =&gt; mapping(uint8 =&gt; bool)) public publicKeyPermissions;
-    mapping(address =&gt; mapping(uint8 =&gt; bool)) public gatewaySignerPermissions;
+    mapping(bytes32 =&gt; mapping(MuonFunction =&gt; bool)) public publicKeyPermissions;
+    mapping(address =&gt; mapping(MuonFunction =&gt; bool)) public gatewaySignerPermissions;
 
     constructor(address _admin) {
         _setupRole(DEFAULT_ADMIN_ROLE, _admin);
@@ -251,13 +249,13 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 					</p>
 					<h3 id="doc-muon-keys-verification-logic">Verification Logic</h3>
 					<p>The <code>verify</code> function performs three checks. All must pass or the call reverts:</p>
-					<pre><code class="language-solidity">function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, uint8 functionId) external view {
+					<pre><code class="language-solidity">function verify(bytes32 hash, SchnorrSign memory sign, bytes memory gatewaySignature, MuonFunction func) external view {
     // 1. Verify TSS (Threshold Signature Scheme) via Schnorr
     bool verifiedTSS = false;
     for (uint256 i = 0; i &lt; publicKeys.length; i++) {
         if (LibMuonV04ClientBase.muonVerify(uint256(hash), sign, publicKeys[i])) {
             // 2. Check per-function authorization for this key
-            require(publicKeyPermissions[_publicKeyId(publicKeys[i])][functionId],
+            require(publicKeyPermissions[_publicKeyId(publicKeys[i])][func],
                 "MuonSignatureVerifier: Key not authorized for function");
             verifiedTSS = true;
             break;
@@ -270,7 +268,7 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
     bool gatewayVerified = false;
     for (uint256 i = 0; i &lt; gatewaySigners.length; i++) {
         if (signer == gatewaySigners[i]) {
-            require(gatewaySignerPermissions[signer][functionId],
+            require(gatewaySignerPermissions[signer][func],
                 "MuonSignatureVerifier: Gateway not authorized for function");
             gatewayVerified = true;
             break;
@@ -308,19 +306,22 @@ contract MuonSignatureVerifier is IMuonSignatureVerifier, AccessControlEnumerabl
 }
 
 function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE) {
+    bool found = false;
     for (uint256 i = 0; i &lt; publicKeys.length; i++) {
         if (publicKeys[i].x == pubKey.x &amp;&amp; publicKeys[i].parity == pubKey.parity) {
             publicKeys[i] = publicKeys[publicKeys.length - 1];
             publicKeys.pop();
+            found = true;
             break;
         }
     }
+        require(found, "MuonSignatureVerifier: public key not found");
     emit PublicKeyRemoved(pubKey.x, pubKey.parity);
 }
 </code></pre>
 					<p>
-						Removal uses the swap-and-pop pattern for gas efficiency. The same pattern applies to <code>addGatewaySigner</code> /
-						<code>removeGatewaySigner</code>.
+						Removal uses swap-and-pop and reverts if the public key is absent. Gateway removal also uses swap-and-pop, but does not revert
+						for an absent signer. Neither removal clears category permissions.
 					</p>
 					<p>
 						Key rotation procedure: 1. Call <code>addPublicKey</code> with the new TSS committee's public key. 2. Call
@@ -336,8 +337,9 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 						permission for each operation category it needs to sign for.
 					</p>
 					<p>
-						The model is <strong>opt-in</strong>: newly added keys and gateway signers start with no permissions and cannot validate any
-						signatures until explicitly authorized.
+						The category-aware model is <strong>opt-in</strong>: an identity with no prior permission configuration defaults to
+						unauthorized. Permissions may be granted before registration and survive removal/re-addition, so pre-authorized or re-added
+						identities can validate immediately. The overload without a category does not enforce these permissions.
 					</p>
 					<p>
 						The ViewFacet's <code>verifyMuonTSSAndGateway</code> is exempt from authorization — it is a read-only utility that verifies
@@ -365,7 +367,7 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 								<td><code>AccountManagement</code></td>
 								<td>
 									<code>deallocate</code>, <code>safeDeallocate</code>, <code>deallocateForPartyB</code>,
-									<code>transferAllocation</code>
+									<code>safeDeallocateForPartyB</code>, <code>transferAllocation</code>
 								</td>
 							</tr>
 							<tr>
@@ -394,14 +396,6 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 								<td><code>LiquidationPartyB</code></td>
 								<td><code>liquidatePartyB</code>, <code>liquidatePositionsPartyB</code></td>
 							</tr>
-							<tr>
-								<td><code>RemoveMargin</code></td>
-								<td><code>safeDeallocate</code>, <code>safeDeallocateForPartyB</code></td>
-							</tr>
-							<tr>
-								<td><code>ExpressCredit</code></td>
-								<td>Express withdrawal <code>reserveDebt</code> during initial acceptance or acceleration</td>
-							</tr>
 						</tbody>
 					</table>
 					<h3 id="doc-muon-keys-permission-management">Permission Management</h3>
@@ -409,26 +403,25 @@ function removePublicKey(PublicKey memory pubKey) external onlyRole(SETTER_ROLE)
 					<pre><code class="language-solidity">// Grant or revoke permissions for a TSS public key
 function setPublicKeyPermissions(
     PublicKey memory pubKey,
-    uint8[] calldata functionIds,
+    MuonFunction[] calldata functions,
     bool allowed
 ) external onlyRole(SETTER_ROLE);
 
 // Grant or revoke permissions for a gateway signer
 function setGatewaySignerPermissions(
     address signer,
-    uint8[] calldata functionIds,
+    MuonFunction[] calldata functions,
     bool allowed
 ) external onlyRole(SETTER_ROLE);
 </code></pre>
 					<p>
-						Both functions accept an array of <code>uint8</code> category IDs to set in a single transaction. Current enum values can be
-						passed by casting them with <code>uint8(MuonFunction.X)</code>. Setting <code>allowed = true</code> grants permission;
+						Both functions take a <code>MuonFunction[]</code> array. In Solidity, pass enum values directly; JavaScript ABI callers encode
+						the corresponding IDs 0–6. Out-of-range enum values are rejected. Setting <code>allowed = true</code> grants permission;
 						<code>allowed = false</code> revokes it.
 					</p>
 					<p>Query functions are available for off-chain verification:</p>
-					<pre><code class="language-solidity">function isPublicKeyAuthorized(PublicKey memory pubKey, uint8 functionId) external view returns (bool);
-function isGatewaySignerAuthorized(address signer, uint8 functionId) external view returns (bool);
-function supportsMuonFunction(uint8 functionId) external view returns (bool);
+					<pre><code class="language-solidity">function isPublicKeyAuthorized(PublicKey memory pubKey, MuonFunction func) external view returns (bool);
+function isGatewaySignerAuthorized(address signer, MuonFunction func) external view returns (bool);
 </code></pre>
 					<h3 id="doc-muon-keys-call-chain">Call Chain</h3>
 					<p>
@@ -438,7 +431,7 @@ function supportsMuonFunction(uint8 functionId) external view returns (bool);
 					<pre><code>FacetImpl (e.g. PartyBQuoteActionsFacetImpl.lockQuote)
   → LibMuonPartyB.verifyPartyBUpnl(..., MuonFunction.Trading)
     → LibMuon.verifyTSSAndGateway(..., MuonFunction.Trading)
-      → IMuonSignatureVerifier.verify(..., uint8(MuonFunction.Trading))
+      → IMuonSignatureVerifier.verify(..., MuonFunction.Trading)
         → publicKeyPermissions[keyId][Trading] must be true
         → gatewaySignerPermissions[signer][Trading] must be true
 </code></pre>
@@ -450,12 +443,12 @@ function supportsMuonFunction(uint8 functionId) external view returns (bool);
 						<li>
 							Grant permissions for the required categories:
 							<code
-								>solidity uint8[] memory functionIds = new uint8[](2); functionIds[0] = uint8(MuonFunction.Trading); functionIds[1] =
-								uint8(MuonFunction.AccountManagement); verifier.setPublicKeyPermissions(pubKey, functionIds, true);
-								verifier.setGatewaySignerPermissions(signerAddress, functionIds, true);</code
+								>MuonFunction[] memory functions = new MuonFunction[](2); functions[0] = MuonFunction.Trading; functions[1] =
+								MuonFunction.AccountManagement; verifier.setPublicKeyPermissions(pubKey, functions, true);
+								verifier.setGatewaySignerPermissions(signerAddress, functions, true);</code
 							>
 						</li>
-						<li>To grant all permissions (e.g. for a fully trusted key), pass all 9 enum values.</li>
+						<li>To grant all permissions (e.g. for a fully trusted key), pass all 7 enum values.</li>
 					</ol>
 				</article>
 			</main>

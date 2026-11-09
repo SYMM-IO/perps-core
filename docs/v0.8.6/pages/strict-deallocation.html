@@ -138,9 +138,10 @@ remainingRawAllocation &gt;= protectedFloor</code></pre>
 					<p>
 						<strong>Profit-financed collateral stripping.</strong> Positive uPnL raises the availability limit, so an account holding
 						large unrealized profit can deallocate real collateral down to exactly the stored floor. The position then has no raw buffer
-						above that floor: the liquidation trigger for PartyA is <code>allocated &minus; (cva + lf) + upnl &lt; 0</code>, so the first
-						adverse tick makes the account liquidatable. With realistic liquidator latency, the account reaches late liquidation, where
-						the counterparty absorbs a haircut.
+						above that floor. At <code>allocated = cva + lf</code>, the liquidation trigger
+						<code>allocated &minus; (cva + lf) + upnl &lt; 0</code> becomes <code>upnl &lt; 0</code>: profit must first reverse through
+						zero. Once uPnL is negative, there is no extra raw buffer. Liquidator latency can then lead to late liquidation and a
+						counterparty haircut.
 					</p>
 					<p>
 						<strong>Notional drift.</strong> After a large price move, a guarantee sized at open covers a much larger live exposure. A
@@ -165,11 +166,16 @@ remainingRawAllocation &gt;= retention</code></pre>
 						collateral so favorable price PnL cannot mask it.
 					</p>
 					<p>
-						The Muon app derives the attested value from state the chain already stores. Per open quote, the locked values are scaled by
-						the ratio of the live mark price to <code>initialOpenedPrice</code>, and each quote contributes the larger of its stored and
-						scaled figure:
+						The following is the required oracle integration model, rather than a calculation performed by Core. The Muon integration must
+						derive the attested value from the relevant chain state. Per open quote, the locked values are scaled by the ratio of the live
+						mark price to <code>initialOpenedPrice</code>, and each quote contributes the larger of its stored and scaled figure:
 					</p>
 					<pre><code>scaledLockedBalance = &Sigma; max(storedLocked_q, storedLocked_q &times; markPrice_q / initialOpenedPrice_q)</code></pre>
+					<p>
+						Core authenticates the supplied fields and enforces the retention inequality; it does not recompute this oracle formula or
+						prove inventory completeness. Confirm the deployed Muon app uses the agreed price snapshot, exposure inventory and
+						integer-rounding rules before enabling the safe selectors.
+					</p>
 					<p>
 						<code>initialOpenedPrice</code> is used rather than <code>openedPrice</code> because funding charges and settlement rewrite
 						<code>openedPrice</code>; dividing by it would leak funding payments into the margin rate. The ratio against the initial price
@@ -300,7 +306,11 @@ isPartyBStrictDeallocationEnabled(address partyB) returns (bool)</code></pre>
 						<li>Normal PartyA <code>deallocate</code>: <code>maxDeallocatableForPartyA</code>.</li>
 						<li>Current PartyA <code>safeDeallocate</code>: <code>maxRemovableMarginForPartyA</code> with every signed field.</li>
 						<li>Normal PartyB <code>deallocateForPartyB</code>: <code>maxDeallocatableForPartyB</code>.</li>
-						<li>PartyB <code>safeDeallocateForPartyB</code>: <code>maxRemovableMarginForPartyB</code>.</li>
+						<li>
+							PartyB <code>safeDeallocateForPartyB</code>: <code>maxRemovableMarginForPartyB</code>. For a legacy bucket, this view can
+							return zero when cross availability is below signed <code>pendingBalance</code>, even though the legacy-drain transaction
+							branch ignores that pending reservation. The preview is conservative in that case; the transaction is authoritative.
+						</li>
 					</ul>
 					<p>Three view functions were added with the raw floor:</p>
 					<pre><code class="language-solidity">maxDeallocatableForPartyA(address partyA, int256 upnl)

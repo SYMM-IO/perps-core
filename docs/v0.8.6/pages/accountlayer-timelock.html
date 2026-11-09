@@ -706,8 +706,9 @@ ScheduleGracePeriodUpdated(uint256 scheduleGracePeriod)</code></pre>
 							Each signed approval has a digest, a hash of the data being signed. The wrapper stores that digest as used so later
 							transactions cannot reuse the approval. During execution, it also keeps a temporary count of available approvals for each
 							combination of root account, calldata hash, and unlocker. When a timelock check uses an approval, it reduces the matching
-							count. The wrapper clears the remaining counts before returning. If the wrapper reverts, the records of used approvals and
-							any schedule consumption are rolled back.
+							count. The wrapper requires all approvals it supplied to be consumed before returning; unused supplied approvals revert.
+							Nested wrappers preserve approvals still available to their caller. If the wrapper reverts, the records of used approvals
+							and any schedule consumption are rolled back.
 						</p>
 						<p>
 							The wrapper uses a delegatecall to run another function on the same diamond while preserving the caller and signer

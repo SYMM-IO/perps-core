@@ -84,10 +84,11 @@
 					</p>
 					<h2 id="doc-external-transfer-virtual-external-transfer">Virtual External Transfer</h2>
 					<p>
-						Virtual funds exist only as balance entries in storage — no actual collateral token was transferred to the contract. So we
-						can't send tokens from the source diamond to a relayer. Instead, we use a virtual provider as intermediary. The source diamond
-						deducts the user's virtual balance and notifies the virtual provider, which is expected to credit the receiver on the target
-						contract via <code>virtualDepositFor</code> or equivalent.
+						A virtual deposit credits the same internal free-balance mapping as a real deposit, without transferring tokens in that
+						deposit transaction. <code>virtualExternalTransfer</code> debits that ordinary free balance and sends no tokens on this path;
+						Core does not identify virtual-only units or track their deposit origin. It notifies a registered virtual provider, which is
+						responsible for crediting the receiver on the target via <code>virtualDepositFor</code> or equivalent. Source acceptance only
+						marks the request completed; it does not prove target delivery.
 					</p>
 					<pre><code class="language-solidity">function virtualExternalTransfer(address receiver, uint256 amount, address target, address virtualProvider);
 </code></pre>

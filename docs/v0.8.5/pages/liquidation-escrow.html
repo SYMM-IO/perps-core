@@ -83,16 +83,18 @@
 					<p>During PartyA liquidation, two types of funds accumulate before settlement:</p>
 					<p>
 						<strong>Pending fee reimbursement</strong> (<code>partyAReimbursement</code>) — When
-						<code>liquidatePendingPositionsPartyA</code> cancels pending quotes (SENT, LOCKED, CANCEL_PENDING), each quote's trading fee
-						is refunded to <code>partyAReimbursement</code>. This is the attack vector — these fees were deducted from
-						<code>allocatedBalances</code> when the quote was created, and the attacker wants them back.
+						<code>liquidatePendingPositionsPartyA</code> cancels pending quotes (<code>PENDING</code>, <code>LOCKED</code>,
+						<code>CANCEL_PENDING</code>), each quote's trading fee is refunded to <code>partyAReimbursement</code>. This is the attack
+						vector — these fees were deducted from <code>allocatedBalances</code> when the quote was created, and the attacker wants them
+						back.
 					</p>
 					<p>
 						<strong>Deferred excess balance</strong> (<code>partyADeferredBalance</code>) — In
 						<a href="clearing-house.html">deferred liquidation</a>, where the Muon oracle proves historical insolvency, the PartyA may
-						have deposited additional funds since the insolvency point. The difference between the current
-						<code>allocatedBalances</code> and the historical <code>liquidationAllocatedBalance</code> is the excess. This excess is
-						legitimate — it's funds the PartyA added after the fact — and is always returned to the PartyA regardless of liquidation type.
+						have deposited additional funds since the insolvency point. The historical allocation is used to prove insolvency; the amount
+						extracted is instead <code>max(0, currentAllocated - lockedCVA - lockedLF + signedHistoricalUPNL)</code>. Only this current
+						positive liquidation-available surplus is set aside and returned to PartyA regardless of liquidation type. Deposits that
+						merely reduce a remaining deficit do not create a deferred surplus.
 					</p>
 					<p>At settlement (<code>settlePartyALiquidation</code>), the routing depends on the liquidation type:</p>
 					<table>
@@ -126,9 +128,9 @@
 						fairness concern with returning fees to the PartyA.
 					</p>
 					<p>
-						In <code>LATE</code> and <code>OVERDUE</code> liquidation, the deficit exceeds the locked LF and eats into CVA. PartyBs absorb
-						losses (haircuts). Returning fees to the PartyA in this case would be unfair — the ClearingHouse needs these funds to
-						compensate affected PartyBs.
+						<code>LATE</code> starts when the deficit is at least the locked LF; at exact equality its CVA haircut is zero. A deficit
+						above LF consumes CVA, and <code>OVERDUE</code> starts only above LF + CVA. The escrow lets the ClearingHouse direct
+						pending-fee reimbursement to affected counterparties rather than automatically returning it to PartyA.
 					</p>
 					<h2 id="doc-liquidation-escrow-settlement-code">Settlement Code</h2>
 					<p>The routing logic in <code>settlePartyALiquidation</code>:</p>
@@ -158,9 +160,10 @@ accountLayout.partyAReimbursement[partyA] = 0;
 					<h2 id="doc-liquidation-escrow-clearinghouse-distribution">ClearingHouse Distribution</h2>
 					<p>
 						After settlement, the escrowed funds sit in <code>liquidationEscrow[partyA]</code> until the ClearingHouse distributes them
-						via <code>distributeFromLiquidationEscrow</code>. This function follows the same routing pattern as
-						<code>distributeForClearingHouse</code> — it supports distributing to both PartyA addresses (<code>allocatedBalances</code>)
-						and PartyBs (<code>partyBAllocatedBalances</code>):
+						via <code>distributeFromLiquidationEscrow</code>. Registered PartyB receivers are credited in
+						<code>partyBAllocatedBalances[receiver][allocationKey]</code>. Every other receiver is credited directly in
+						<code>allocatedBalances[receiver]</code>, even if currently liquidating. Unlike <code>distributeForClearingHouse</code>, this
+						escrow-distribution method does not divert a liquidating PartyA receiver into <code>partyAReimbursement</code>:
 					</p>
 					<pre><code class="language-solidity">function distributeFromLiquidationEscrow(
     address partyA,
@@ -206,15 +209,16 @@ accountLayout.partyAReimbursement[partyA] = 0;
 					</ul>
 					<h2 id="doc-liquidation-escrow-deferred-liquidation-and-escrow">Deferred Liquidation and Escrow</h2>
 					<p>
-						In a deferred liquidation with excess balance, the deferred extraction always zeroes out the PartyA's available balance. This
-						means <code>determineLiquidationType</code> always classifies the result as <code>NORMAL</code> (since
-						<code>-availableBalance = 0 &lt; lockedLf</code>). Consequently, a deferred liquidation with positive excess never triggers
-						the escrow — both the deferred balance and the pending fee reimbursement are returned to the PartyA.
+						In this v0.8.5 implementation, extracting a positive current surplus leaves liquidation-available balance at zero. If locked
+						LF is positive, <code>0 &lt; lockedLf</code> makes the later classifier choose <code>NORMAL</code>, so both the deferred
+						balance and reimbursement return to PartyA. At zero locked LF, the strict NORMAL comparison fails; zero deficit falls into
+						<code>LATE</code>, and positive reimbursement can still be escrowed. This describes the archived code, not a guarantee for
+						later versions.
 					</p>
 					<p>
-						The only way a deferred liquidation produces <code>LATE</code> or <code>OVERDUE</code> is when there is no excess (i.e., the
-						PartyA hasn't deposited additional funds since the historical insolvency). In that case, the behavior is identical to a
-						non-deferred liquidation.
+						When there is no positive current surplus, no amount is extracted and the classifier uses the remaining current deficit. This
+						can produce <code>LATE</code> or <code>OVERDUE</code> even if PartyA deposited additional funds that were insufficient to
+						reach the current solvency boundary.
 					</p>
 					<h2 id="doc-liquidation-escrow-storage">Storage</h2>
 					<p>Two new mappings in <code>AccountStorage.Layout</code>:</p>

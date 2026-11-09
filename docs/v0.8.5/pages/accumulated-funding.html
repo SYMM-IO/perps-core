@@ -104,13 +104,13 @@
 					<p>
 						This led us to adopt an <strong>accumulated weighted average system</strong>. The core insight is elegant: we don't need to
 						store a history of rates or process positions in real-time. Instead, we maintain <strong>the average so far</strong> and
-						<strong>the current value</strong>. Whenever time advances, we update the average by mixing in the current value for the new
+						<strong>the current value</strong>. Contract operations that roll the accumulator mix in the current value for newly elapsed
 						epochs.
 					</p>
 					<p>
 						Think of it like calculating your semester GPA. You don't recalculate from scratch each time - you take your existing GPA
-						(weighted by credit hours so far) and blend in your new grades (weighted by new credit hours). The math maintains perfect
-						accuracy while being computationally efficient.
+						(weighted by credit hours so far) and blend in your new grades (weighted by new credit hours). The weighted average is
+						computationally efficient, but fixed-point integer division truncates; it does not preserve perfect mathematical accuracy.
 					</p>
 					<h2 id="doc-accumulated-funding-how-the-accumulated-system-works">How the Accumulated System Works</h2>
 					<p>Each (symbol, market maker) pair now has its own <code>FundingFee</code> structure that tracks everything we need:</p>
@@ -120,6 +120,8 @@
     int256 accumulatedLongRate;  // Average rate for longs over time
     int256 accumulatedShortRate; // Average rate for shorts over time
     uint256 lastUpdatedEpoch;    // When we last updated
+    uint256 lastUpdatedTimeStamp;
+    uint256 startEpochTimeStamp;
     uint256 startEpoch;          // When tracking began
     uint256 epochDuration;       // How long each epoch is
     int256 snapshotLongFee;     // Frozen cumulative long fee from previous durations
@@ -131,12 +133,12 @@
 						average. The calculation is straightforward:
 					</p>
 					<p>
-						Let's say we've been tracking for 2 epochs at 0.05%, and now we're setting a new rate of 0.03% that will apply for the next 3
-						epochs. Our new average becomes: <code>(0.05% × 2 + 0.03% × 3) / 5 = 0.038%</code>
+						After 2 elapsed epochs at 0.05% and another 3 elapsed epochs at 0.03%, the ideal weighted average is:
+						<code>(0.05% × 2 + 0.03% × 3) / 5 = 0.038%</code>
 					</p>
 					<p>
-						This average represents the effective rate over all 5 epochs. When we eventually charge a position, we can calculate exactly
-						what they owe based on how long they've been open and what rates were in effect during that time.
+						This average represents the effective rate over all 5 epochs. When we eventually charge a position, we calculate the fee from
+						the stored accumulator and the position baseline, subject to the implementation's integer rounding.
 					</p>
 					<h2 id="doc-accumulated-funding-a-clever-optimization-price-adjusted-rates">A Clever Optimization: Price-Adjusted Rates</h2>
 					<p>
@@ -185,9 +187,10 @@
 					<ol>
 						<li>
 							<p>
-								<strong>Read the odometer.</strong> Calculate the exact cumulative fee under the old duration:
-								<code>snapshot = accumulatedRate × (lastUpdatedEpoch - startEpoch)</code>. This is a single scalar — no division, no
-								rounding error.
+								<strong>Read the odometer.</strong> First roll the weighted average through elapsed old-duration epochs, then freeze
+								<code>snapshot = accumulatedRate × (lastUpdatedEpoch - startEpoch)</code>. This multiplication preserves the
+								already-rounded stored history without re-dividing its timestamps; it does not recover rounding lost in earlier
+								updates.
 							</p>
 						</li>
 						<li>
@@ -198,26 +201,31 @@
 						</li>
 						<li>
 							<p>
-								<strong>Reset the odometer.</strong> Set <code>startEpoch</code> and <code>startEpochTimeStamp</code> to the current
-								time. The weighted average (<code>accumulatedRate</code>) resets to <code>currentRate</code>. Epoch tracking begins
-								from zero under the new duration.
+								<strong>Scale only the current rate.</strong> The implementation first computes
+								<code>durationRatio = newDuration × 1e18 / oldDuration</code>, then
+								<code>currentRate = currentRate × durationRatio / 1e18</code>, with integer truncation. A divisible 0.04% rate per 8
+								hours becomes 0.005% per hour.
 							</p>
 						</li>
 						<li>
 							<p>
-								<strong>Scale only the current rate.</strong> The <code>currentRate</code> is scaled by
-								<code>newDuration / oldDuration</code> so the per-second economic impact stays the same. A 0.04% rate per 8 hours
-								becomes 0.005% per hour.
+								<strong>Reset the odometer.</strong> Set <code>accumulatedRate</code> to the scaled <code>currentRate</code>,
+								<code>startEpochTimeStamp = lastUpdatedTimeStamp</code>, and both <code>startEpoch</code> and
+								<code>lastUpdatedEpoch</code> to <code>lastUpdatedTimeStamp / newDuration</code>. In v0.8.5, the rate-update helper
+								returns early when both historical and newly elapsed old-duration epoch counts are zero. On that path,
+								<code>lastUpdatedTimeStamp</code> can precede this transaction, so the reset is not unconditionally anchored to now.
 							</p>
 						</li>
 					</ol>
 					<p>From this point on, the total fee is always:</p>
-					<pre><code>totalFee = snapshotFee + accumulatedRate × epochsSinceStart + currentRate × epochsSinceLastUpdate
+					<pre><code>epochsBeforeLastUpdate = lastUpdatedEpoch - startEpoch
+epochsSinceLastUpdate = currentEpoch - lastUpdatedEpoch
+totalFee = snapshotFee + accumulatedRate × epochsBeforeLastUpdate + currentRate × epochsSinceLastUpdate
 </code></pre>
 					<p>
-						The snapshot captures all history as an exact number. The new tracking runs cleanly under the new duration. The two pieces
-						simply add together. If the duration changes again, the current tracking gets folded into the snapshot and the process repeats
-						-- snapshots compose without compounding any error.
+						Snapshots add the stored historical totals across duration changes. Weighted-average updates, price adjustment, duration-ratio
+						scaling and final fee division still use integer arithmetic, so the result need not equal an unrounded rate history. The
+						reset-timestamp behavior above also matters when changing duration before an old-duration epoch has elapsed.
 					</p>
 					<p>
 						This flexibility is crucial for market makers who need to adapt to changing market conditions. During volatile periods, they
@@ -235,16 +243,21 @@
 						We solved this with aggregate funding tracking. The key mathematical insight is that for quotes sharing the same (partyA,
 						partyB, symbolId, positionType):
 					</p>
-					<pre><code class="language-solidity">Total Funding = Σ [openAmount_i × (currentFee - accumulatedPaidFunding_i)] / 1e18
-= currentFee × Σ(openAmount_i) / 1e18 - Σ(openAmount_i × accumulatedPaidFunding_i) / 1e18
-= currentFee × totalOpenAmount / 1e18 - totalWeightedPaidFunding / 1e18
+					<pre><code class="language-text">// weightedPaidFunding is the stored incremental accumulator of rounded deltas.
+// Ideal identity before operation-rounding residue:
+// weightedPaidFunding ≈ Σ trunc(openAmount_i × accumulatedPaidFunding_i / 1e18)
+if (totalOpenAmount == 0 || epochDuration == 0) aggregateFundingDebt = 0;
+else aggregateFundingDebt = trunc(currentFee × totalOpenAmount / 1e18) - storedWeightedPaidFunding;
 </code></pre>
 					<p>
-						By maintaining totalWeightedPaidFunding = Σ(openAmount × accumulatedPaidFunding), we can calculate total funding debt in
-						O(symbols) instead of O(quotes). This is tracked in the PartiesAggregatedFunding structure:
+						By maintaining the already-scaled <code>weightedPaidFunding</code>, the views calculate aggregate debt in O(symbols) instead
+						of O(quotes). Here <code>trunc</code> means signed division toward zero. Because integer truncation does not distribute over
+						sums, aggregate debt can differ from independently rounded per-quote fees. Opens, closes and funding-baseline updates each add
+						or subtract separately truncated contributions, so the stored accumulator can also retain residue relative to a sum recomputed
+						from current open quotes. Use the stored value in the getter formula. The storage is:
 					</p>
 					<pre><code class="language-solidity">struct PartiesAggregatedFunding {
-    int256 weightedPaidFunding; // Σ(openAmount × accumulatedPaidFunding / 1e18)
+    int256 weightedPaidFunding; // Incremental sum of rounded open/close/baseline-update deltas
 }
 </code></pre>
 					<p>The aggregate is updated incrementally whenever:</p>
@@ -255,8 +268,8 @@
 					</ul>
 					<p>
 						This enables efficient aggregate views like getPartyAAggregateFundingDebt() and getPartyBGlobalAggregateFundingDebt() that
-						return accurate funding obligations without iterating through individual positions. We will see later in the docs on how to
-						calculate UPNL with newly added methods.
+						return the implemented aggregate funding debt without iterating through individual positions. We will see later in the docs
+						how to calculate UPNL with newly added methods.
 					</p>
 					<h2 id="doc-accumulated-funding-future-enhancement-funding-rate-caps">Future Enhancement: Funding Rate Caps</h2>
 					<p>
@@ -290,8 +303,8 @@
 						as a clear line item rather than a mysterious price adjustment.
 					</p>
 					<p>
-						We enforce maximum funding rates at the position level. Even if market rates spike, a position's funding fee per epoch cannot
-						exceed the cap set when the position was opened. This protects traders from extreme market conditions.
+						Per-position funding rate caps are not enforced in v0.8.5. The maxFundingRate field remains a placeholder, as described in
+						Future Enhancement: Funding Rate Caps above.
 					</p>
 					<p>
 						After charging funding, we verify that both parties remain solvent. The funding transfer cannot cause either party's available
@@ -315,10 +328,10 @@
 					<p>
 						As we update the funding fee calculation, now we have an accumulated funding fee that party A should pay to party B or vice
 						versa. So we now add this parameter to UPnL calculation. Because of this update, we updated the method
-						<code>liquidatePartyAPositions</code> where party A accumulated upnl and settlement amounts are calculated.
+						<code>liquidatePositionsPartyA</code> where party A accumulated upnl and settlement amounts are calculated.
 					</p>
-					<p>To find the accumulated funding fee for a list of quotes, we have this view call function :</p>
-					<pre><code class="language-solidity">function getSumAccumulatedFundingFees(uint256[] memory quoteIds) external view returns (int256)
+					<p>To sum accumulated funding debt for a list of quotes, use this <code>ViewFacetQuote</code> function:</p>
+					<pre><code class="language-solidity">function getSumQuoteFundingDebts(uint256[] memory quoteIds) external view returns (int256);
 </code></pre>
 				</article>
 			</main>

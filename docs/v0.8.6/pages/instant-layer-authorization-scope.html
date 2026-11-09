@@ -109,16 +109,21 @@
 									<td>delegation entry only</td>
 								</tr>
 								<tr>
-									<td>
-										<code>SymmioPartyB._call</code>, <code>_multicastCall</code>, <code>adlClose</code>, and
-										<code>setFundingFee</code>
-									</td>
+									<td><code>SymmioPartyB._call</code>, <code>_multicastCall</code>, and <code>adlClose</code></td>
 									<td><code>isCallFromInstantLayer()</code></td>
 									<td>
-										<code>adlClose</code> and <code>setFundingFee</code> accept <code>MANAGER_ROLE</code>,
-										<code>TRUSTED_ROLE</code>, or core <code>INSTANT_LAYER_ROLE</code>. Routed calls apply per-leg gates:
-										restricted core selectors require <code>MANAGER_ROLE</code>; other core selectors accept manager, trusted, or
-										core InstantLayer role; non-core destinations must be whitelisted and require <code>TRUSTED_ROLE</code>.
+										<code>adlClose</code> accepts <code>MANAGER_ROLE</code>, <code>TRUSTED_ROLE</code>, or core
+										<code>INSTANT_LAYER_ROLE</code>. Routed calls apply per-leg gates: restricted core selectors require
+										<code>MANAGER_ROLE</code>; other core selectors accept manager, trusted, or core InstantLayer role; non-core
+										destinations must be whitelisted and require <code>TRUSTED_ROLE</code>.
+									</td>
+								</tr>
+								<tr>
+									<td><code>SymmioPartyB.setFundingFee</code> wrapper</td>
+									<td>New in v0.8.6</td>
+									<td>
+										Accepts <code>MANAGER_ROLE</code>, <code>TRUSTED_ROLE</code>, or Core <code>INSTANT_LAYER_ROLE</code> on the
+										direct caller.
 									</td>
 								</tr>
 							</tbody>

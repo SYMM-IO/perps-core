@@ -56,8 +56,10 @@
 				</header>
 				<article class="doc-article" id="full-document">
 					<p>
-						To address this, we added <strong>batch methods</strong> to the contract. These methods still require new Muon signatures, but
-						they allow multiple positions to be opened or closed in a single transaction using one <strong>batch signature</strong>.
+						To address this, we added <strong>batch methods</strong> to the contract. In normal mode they open or close multiple positions
+						in one transaction using a shared <strong>batch Muon signature</strong>. For a PartyA bound to a bindable caller PartyB, the
+						oracle-less branch skips Muon verification and the associated solvency checks. Both branches retain the per-quote caller,
+						state, amount and price constraints; a batch must use the same PartyA and PartyB with nonempty, equal-length input arrays.
 					</p>
 					<h2 id="doc-batch-positions-openpositions-fillcloserequests">
 						<strong><code>openPositions</code> / <code>fillCloseRequests</code></strong>
