@@ -72,7 +72,7 @@
 						<kbd class="catalog-search-hint" aria-hidden="true" data-search-hint>⌘K</kbd>
 					</span>
 				</label>
-				<span class="catalog-count" id="catalog-result-count" data-catalog-count>45 chapters</span>
+				<span class="catalog-count" id="catalog-result-count" data-catalog-count>44 chapters</span>
 			</div>
 			<div class="catalog-empty" data-catalog-empty hidden>
 				<strong>No chapters found</strong>
@@ -259,7 +259,7 @@
 				</section>
 				<section class="version-catalog-group minor-improvements" aria-labelledby="other-changes-title" data-catalog-group>
 					<div class="section-heading">
-						<p class="eyebrow" data-catalog-group-count>30 chapters</p>
+						<p class="eyebrow" data-catalog-group-count>29 chapters</p>
 						<h2 id="other-changes-title">Other changes</h2>
 					</div>
 					<div class="minor-improvement-list">
@@ -441,13 +441,14 @@
 								AccountLayer and ExpressProvider entry points used by existing integrations.</span
 							>
 						</a>
-						<a class="minor-improvement-item" href="pages/liquidation-rounding-and-funding-aggregate-repair.html" data-catalog-item>
+						<a class="minor-improvement-item" href="pages/liquidation-settlement-plan.html" data-catalog-item>
 							<span class="doc-list-index">37</span>
 							<span class="category">Liquidation &amp; Funding</span>
-							<strong>Liquidation Rounding and Funding Aggregate Repair</strong>
+							<strong>PartyA Liquidation Settlement and Rounding</strong>
 							<span
-								>Accepts only a governed, position-count-scaled rounding difference and keeps partial-close funding totals exact, with
-								a repair path for older groups.</span
+								>Every PartyA liquidation calculation that changed from v0.8.5: a rounding allowance that settles at the total closer
+								to zero, one net plan per PartyB fixed at the last close, exact funding totals with a repair path, and exact-notional
+								Muon inputs.</span
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/narrower-admin-roles.html" data-catalog-item>
@@ -477,18 +478,8 @@
 								redeployment.</span
 							>
 						</a>
-						<a class="minor-improvement-item" href="pages/liquidation-settlement-plan.html" data-catalog-item>
-							<span class="doc-list-index">41</span>
-							<span class="category">Liquidation</span>
-							<strong>Exact Liquidation Settlement Plan</strong>
-							<span
-								>LATE and OVERDUE liquidations reduced each quote as it closed against a signed total, so a mixed-book solver could be
-								billed more than the close step had checked and rounding created wei. The plan is now fixed once, from on-chain
-								totals, when the last position closes.</span
-							>
-						</a>
 						<a class="minor-improvement-item" href="pages/zero-quantity-quote-rejection.html" data-catalog-item>
-							<span class="doc-list-index">42</span>
+							<span class="doc-list-index">41</span>
 							<span class="category">Trading</span>
 							<strong>Zero-Quantity Quote Rejection</strong>
 							<span
@@ -497,7 +488,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/liquidation-dispute-resolution-guards.html" data-catalog-item>
-							<span class="doc-list-index">43</span>
+							<span class="doc-list-index">42</span>
 							<span class="category">Liquidation</span>
 							<strong>Liquidation Dispute Resolution Guards</strong>
 							<span
@@ -506,7 +497,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/settlement-pause-and-deallocation-guards.html" data-catalog-item>
-							<span class="doc-list-index">44</span>
+							<span class="doc-list-index">43</span>
 							<span class="category">Hardening</span>
 							<strong>Settlement, Pause and Deallocation Guards</strong>
 							<span
@@ -515,7 +506,7 @@
 							>
 						</a>
 						<a class="minor-improvement-item" href="pages/partial-fill-fee-reservation.html" data-catalog-item>
-							<span class="doc-list-index">45</span>
+							<span class="doc-list-index">44</span>
 							<span class="category">Fees</span>
 							<strong>Partial Fill Fee Reservation Remainder</strong>
 							<span

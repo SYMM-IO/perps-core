@@ -258,7 +258,6 @@ window.__DOC_ANNOTATION_RECORDS__ = {
 		},
 	],
 	"v0.8.6/liquidation-funding-snapshot-fix": [],
-	"v0.8.6/liquidation-rounding-and-funding-aggregate-repair": [],
 	"v0.8.6/liquidation-settlement-plan": [],
 	"v0.8.6/market-open-fee-execution-price": [],
 	"v0.8.6/muon-upnl-validity-overrides": [],

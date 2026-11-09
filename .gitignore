@@ -74,3 +74,4 @@ tasks/data/checkpoints/*.lock
 
 # Compiled perps-core-ui assets.
 /perps-core-ui/dist/
+.codestory

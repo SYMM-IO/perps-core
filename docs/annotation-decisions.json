@@ -1368,25 +1368,9 @@
 			]
 		},
 		{
-			"key": "v0.8.6/liquidation-rounding-and-funding-aggregate-repair",
-			"reviewed": true,
-			"readerTask": "Roll out liquidation rounding and repair existing funding totals before activating exact-notional Muon inputs.",
-			"accepted": [],
-			"rejected": [
-				{
-					"quote": "Before resuming activity: repair incorrect saved funding totals and update Muon’s calculation.",
-					"reason": "The existing callout and Safe rollout sequence already retain the joint prerequisite."
-				},
-				{
-					"quote": "No separate payment is created for the difference or assigned to another account.",
-					"reason": "Rounding explanation and rollout repeat the boundary and specify accounting units; no invented payment/destination."
-				}
-			]
-		},
-		{
 			"key": "v0.8.6/liquidation-settlement-plan",
 			"reviewed": true,
-			"readerTask": "Consume final liquidation settlement plans and distinguish net sharing from gross quote losses.",
+			"readerTask": "Read final PartyA liquidation settlement plans, including the rounding cap, net loss sharing and the funding repair that keeps the rounding allowance safe.",
 			"accepted": [],
 			"rejected": [
 				{
@@ -1799,6 +1783,10 @@
 		{
 			"path": "v0.8.6/pages/per-solver-liquidation-overshoot.html",
 			"destination": "v0.8.6/pages/close-to-liquidation.html#overshoot"
+		},
+		{
+			"path": "v0.8.6/pages/liquidation-rounding-and-funding-aggregate-repair.html",
+			"destination": "v0.8.6/pages/liquidation-settlement-plan.html#rounding"
 		}
 	],
 	"contentCorrections": [

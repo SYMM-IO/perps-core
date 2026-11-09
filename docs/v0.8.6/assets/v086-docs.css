@@ -1654,6 +1654,20 @@ tbody tr:hover td {
 	color: var(--ink);
 }
 
+/* A row header labels a body row, so it reads like the cells beside it: same font,
+   same border, and it wraps inside a fixed-width column. Column headers keep the
+   label style above. */
+tbody th[scope="row"] {
+	border-bottom-color: var(--line);
+	color: var(--ink);
+	font-family: inherit;
+	font-size: inherit;
+	font-weight: 500;
+	letter-spacing: normal;
+	text-transform: none;
+	white-space: normal;
+}
+
 tbody tr:last-child > th,
 tbody tr:last-child > td {
 	border-bottom: 0;
@@ -3549,6 +3563,10 @@ body.doc-page .doc-article .adjustment-interval p {
 
 	th {
 		background: #f3f3f3 !important;
+	}
+
+	tbody th[scope="row"] {
+		border-bottom-color: #d8d8d8;
 	}
 
 	code {

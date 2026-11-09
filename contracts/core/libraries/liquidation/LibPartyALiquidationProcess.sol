@@ -219,9 +219,10 @@ library LibPartyALiquidationProcess {
 	/// @dev Runs once, in the close that brings PartyA's position count to zero. The signed uPNL is checked against the
 	///      on-chain total with three raw rounding units per position captured at start (the bound assumes repaired
 	///      funding aggregates and exact aggregate notional in the oracle); a larger difference disputes. An accepted
-	///      difference settles at the smaller amount supported by both calculations, applied to the buckets now. Every
-	///      bucket then receives its final amounts from on-chain totals, so what the buckets pay out, plus the liquidator
-	///      fee and vault credit carved out at start, is exactly PartyA's allocation.
+	///      difference settles at whichever total is closer to zero, or at zero when one is a profit and the other a
+	///      loss, and the buckets are trimmed to match now. Every bucket then receives its final amounts from on-chain
+	///      totals. For an undisputed plan, what the buckets pay out plus the final liquidator fee, the net vault credit
+	///      and the change in PartyA's deferred balance during planning equals PartyA's allocation.
 	function _planSettlement(
 		AccountStorage.Layout storage accountLayout,
 		address partyA,
@@ -252,8 +253,9 @@ library LibPartyALiquidationProcess {
 		}
 	}
 
-	/// @dev Settles at the smaller of the signed and on-chain uPNL (zero when they disagree on direction) and applies
-	///      the reduction to the buckets in open order, so the stored plan is final once the last position closes.
+	/// @dev Settles at whichever of the signed and on-chain uPNL is closer to zero (zero when they disagree on direction).
+	///      The gap comes off buckets on the on-chain total's side, in first-close order, each down to zero at most, so
+	///      the stored plan is final once the last position closes.
 	function _applyRoundingCap(
 		AccountStorage.Layout storage accountLayout,
 		address partyA,
@@ -278,8 +280,9 @@ library LibPartyALiquidationProcess {
 	/// @dev NORMAL only. The liquidator fee and vault credit were sized at start from the signed uPNL, while the buckets
 	///      settle at the capped on-chain amount. A positive difference is collateral the buckets do not need: it is set
 	///      aside with PartyA's deferred balance instead of being stranded in the diamond. A negative one is paid by
-	///      PartyA's deferred balance, then the liquidator fee, then the vault credit; the allocation finalization
-	///      consumes then covers the buckets exactly. Returns false only if those three cannot cover it.
+	///      PartyA's deferred balance, then the liquidator fee, then the insurance vault's available balance (not only this
+	///      liquidation's credit); the allocation finalization consumes then covers the buckets exactly. Returns false only
+	///      if those three cannot cover it.
 	function _settleRoundingDifference(
 		AccountStorage.Layout storage accountLayout,
 		address partyA,
