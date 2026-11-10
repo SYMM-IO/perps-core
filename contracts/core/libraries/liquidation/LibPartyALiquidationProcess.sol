@@ -115,6 +115,7 @@ library LibPartyALiquidationProcess {
 		_requireActivePartyALiquidationAndRecordAction(maLayout, partyA);
 		require(quoteIds.length > 0, "LiquidationFacet: Empty quote list");
 
+		uint256 listEndingClosePrice;
 		for (uint256 index = 0; index < quoteIds.length; index++) {
 			Quote storage quote = quoteLayout.quotes[quoteIds[index]];
 
@@ -174,7 +175,12 @@ library LibPartyALiquidationProcess {
 			// Track the settlement reserve for all modes; LibAccount applies it only in cross mode.
 			LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, quote.partyB, settlementState.actualAmount);
 
-			LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
+			if (quoteLayout.partyAPositionsCount[partyA] == 0) {
+				// This close ends the position list; its hook runs below, once the settlement plan is fixed.
+				listEndingClosePrice = liquidationPrice;
+			} else {
+				LibHook.callClosePositionHooks(quote.id, liquidatedAmounts[index], liquidationPrice, quote.partyA, quote.partyB, quote.affiliate);
+			}
 			averageClosedPrices[index] = quote.avgClosedPrice;
 
 			emit SharedEvents.TradeVolumeRecorded(
@@ -188,9 +194,21 @@ library LibPartyALiquidationProcess {
 			);
 		}
 
-		// The close that ends the position list checks the signed uPNL and fixes the settlement plan.
+		// The close that ends the position list checks the signed uPNL and fixes the settlement plan before its hook
+		// runs, so no hook sees every position closed while the plan is unfinished.
 		if (quoteLayout.partyAPositionsCount[partyA] == 0) {
-			return (_planSettlement(accountLayout, partyA, liquidationDetail), liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
+			bool disputed = _planSettlement(accountLayout, partyA, liquidationDetail);
+			uint256 last = quoteIds.length - 1;
+			Quote storage lastQuote = quoteLayout.quotes[quoteIds[last]];
+			LibHook.callClosePositionHooks(
+				lastQuote.id,
+				liquidatedAmounts[last],
+				listEndingClosePrice,
+				partyA,
+				lastQuote.partyB,
+				lastQuote.affiliate
+			);
+			return (disputed, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 		}
 		return (false, liquidatedAmounts, closeIds, averageClosedPrices, liquidationId);
 	}
@@ -614,6 +632,7 @@ library LibPartyALiquidationProcess {
 		maLayout.liquidationStatus[partyA] = false;
 		maLayout.partyALiquidatorLastActionTimestamp[partyA] = 0;
 		LibAccount.increasePartyAUpnlCounter(partyA);
+		// Runs last, once the liquidation is fully closed.
 		LibHook.callLiquidationSettledHooks(partyA);
 	}
 

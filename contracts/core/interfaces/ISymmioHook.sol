@@ -5,6 +5,18 @@
 pragma solidity >=0.8.18;
 
 /// @notice Hook interface called by Symmio core on trading lifecycle events
+/// @dev Core calls hooks synchronously inside the operation they report, with the signer and InstantLayer scope cleared.
+///      Registering a hook (`registerHook`, INTEGRATION_ADMIN_ROLE) is a trust decision: core relies on every registered
+///      hook following these rules.
+///      1. Act only for the account the callback reports, through core's normal permission checks.
+///      2. Never call PartyA or PartyB liquidation, liquidation settlement, dispute resolution or Clearing House functions.
+///         Core does not guard every liquidation step against a callback re-entering it.
+///      3. Revert only on purpose. A hook revert reverts the whole operation with `HookReverted`, closes and liquidations
+///         included, so a failing hook blocks that operation for every account it covers.
+///      4. Expect intermediate state when one call handles several quotes. Each callback runs as its own quote is handled,
+///         so later quotes in the same call may still be open or pending. In a PartyA liquidation, the close that ends the
+///         position list runs its hook after the settlement plan is fixed.
+///      5. Keep gas bounded. The sender of the core transaction pays for it.
 interface ISymmioHook {
 	/// @notice Whether a trading fee is charged on open or close
 	enum TradingFeeType {

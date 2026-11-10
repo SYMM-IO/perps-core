@@ -6,6 +6,7 @@ pragma solidity >=0.8.18;
 
 import { LibAccount } from "../LibAccount.sol";
 import { SharedEvents } from "../SharedEvents.sol";
+import { LibPartyBState } from "../extensions/LibPartyBState.sol";
 import { AccountStorage, LiquidationDetail, LiquidationType } from "../../storages/AccountStorage.sol";
 import { ClearingHouseStorage } from "../../storages/ClearingHouseStorage.sol";
 import { MAStorage } from "../../storages/MAStorage.sol";
@@ -27,6 +28,12 @@ library LibPartyALiquidationShared {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
 
+		// A PartyB liquidation closes PartyA positions without opening or planning PartyA settlement buckets, so the
+		// two must not overlap. PartyB start already rejects a liquidating PartyA; this rejects the reverse order.
+		address[] storage partyBs = accountLayout.connectedPartyBs[partyA];
+		for (uint256 i = 0; i < partyBs.length; i++) {
+			LibPartyBState.requireNotLiquidatingAgainst(partyBs[i], partyA);
+		}
 		uint256 allocatedBalance = accountLayout.allocatedBalances[partyA];
 		require(allocatedBalance >= liquidationAllocatedBalance, "LiquidationFacet: Invalid allocated balance");
 

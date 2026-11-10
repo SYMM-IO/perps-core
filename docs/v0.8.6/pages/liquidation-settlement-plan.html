@@ -192,6 +192,16 @@
 						raw units of CVA across three PartyBs with equal CVA gives 0, 1 and 1, with the rounded-down share going to the PartyB that
 						closed first.
 					</aside>
+					<p>
+						Close hooks run as each position closes. The close that ends the position list fixes the plan before its own hook runs, so no
+						hook sees every position closed while the plan is unfinished. The liquidation-settled hook runs after finalization.
+					</p>
+					<p>
+						Only PartyA liquidation&rsquo;s own closes build and plan buckets. A PartyB liquidation that closed PartyA&rsquo;s last
+						position would skip the plan, so PartyA liquidation cannot start while a connected PartyB&rsquo;s liquidation against that
+						PartyA is open; start it again once the PartyB liquidation finishes. PartyB liquidation already cannot start against a
+						liquidating PartyA.
+					</p>
 
 					<h2 id="rounding">Rounding dust: why Muon and the contract differ by a few units</h2>
 					<aside class="callout callout-note">
