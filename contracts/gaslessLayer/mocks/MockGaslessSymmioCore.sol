@@ -79,6 +79,13 @@ contract MockGaslessSymmioCore is ISymmioCore {
 		return allocatedBalances[partyA];
 	}
 
+	/// @notice This mock has no positions; retained-margin cases use the real core integration fixture.
+	function balanceInfoOfPartyA(
+		address partyA
+	) external view returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint256) {
+		return (allocatedBalances[partyA], 0, 0, 0, 0, 0, 0, 0, 0);
+	}
+
 	function getCollateral() external view returns (address) {
 		return collateralToken;
 	}

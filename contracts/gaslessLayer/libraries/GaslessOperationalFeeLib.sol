@@ -36,8 +36,9 @@ library GaslessOperationalFeeLib {
 	// ─────────────────── Settlement (state-changing) ───────────────────
 
 	/// @notice Assign fees to the billing parent or signer VA, then charge each payer once through core.
-	/// @dev Process operations in order. The parent pays while its effective allowance and free plus allocated
-	///      balance cover its running total. Otherwise, try the signer VA if it still exists on the account layer
+	/// @dev Process operations in order. The parent pays while its effective allowance and spendable
+	///      balance cover its running total. Allocation backing open/pending CVA and LF cannot fund fees.
+	///      Otherwise, try the signer VA if it still exists on the account layer
 	///      and its allowance and balance cover the fee at its own multiplier. If neither can pay, leave the fee
 	///      on the parent so core reverts as usual.
 	/// @return totalFee Total charged across all payers.
@@ -184,11 +185,16 @@ library GaslessOperationalFeeLib {
 		}
 		// The core view applies ready timelocked reductions to `allowance`, as chargeOperationalFee does.
 		(uint256 allowance, , , uint256 feeMultiplier) = ISymmioCore(core).getOperationalFeeAllowance(payer, address(this));
+		(uint256 allocated, uint256 cva, uint256 lf, , , uint256 pendingCva, uint256 pendingLf, , ) = ISymmioCore(core).balanceInfoOfPartyA(payer);
+		// Match LibOperationalFee's retention floor, including pending quotes. Free collateral can still pay
+		// when allocation is below the floor; clamp only the spendable allocation to zero.
+		uint256 retained = cva + lf + pendingCva + pendingLf;
+		uint256 spendableAllocation = allocated > retained ? allocated - retained : 0;
 		states[slot] = PayerState({
 			payer: payer,
 			due: 0,
 			allowance: allowance,
-			balanceCapacity: ISymmioCore(core).balanceOf(payer) + ISymmioCore(core).allocatedBalanceOfPartyA(payer),
+			balanceCapacity: ISymmioCore(core).balanceOf(payer) + spendableAllocation,
 			feeMultiplier: _effectiveMultiplier(feeMultiplier)
 		});
 		newStateCount = stateCount + 1;

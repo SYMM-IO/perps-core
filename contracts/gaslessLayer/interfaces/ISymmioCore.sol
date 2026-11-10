@@ -25,8 +25,23 @@ interface ISymmioCore {
 	/// @notice Free (deposited, unallocated) collateral balance of `user` in 18 decimals.
 	function balanceOf(address user) external view returns (uint256);
 
-	/// @notice Allocated (margin) balance of partyA `partyA` in 18 decimals. Non-partyA accounts return 0.
-	function allocatedBalanceOfPartyA(address partyA) external view returns (uint256);
+	/// @notice Allocation and open/pending locks, matching core's existing ViewFacet tuple.
+	function balanceInfoOfPartyA(
+		address partyA
+	)
+		external
+		view
+		returns (
+			uint256 allocated,
+			uint256 cva,
+			uint256 lf,
+			uint256 partyAmm,
+			uint256 partyBmm,
+			uint256 pendingCva,
+			uint256 pendingLf,
+			uint256 pendingPartyAmm,
+			uint256 pendingPartyBmm
+		);
 
 	/// @notice Remaining operational-fee budget and priority multiplier this charger can draw from `payer`.
 	/// @dev Matches perps-core v0.8.6 ViewFacet.getOperationalFeeAllowance. `feeMultiplier` uses

@@ -7,8 +7,11 @@ import { initializeFixture } from "./Initialize.fixture.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { cloneTypes } from "./helpers/instantLayerEIP712Types.js"
 import { loadFixture } from "./helpers/network-helpers.js"
+import { Hedger } from "./models/Hedger.js"
 import { RunContext } from "./models/RunContext.js"
+import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp } from "./utils/Common.js"
+import { getDummyPairUpnlAndPriceSig } from "./utils/SignatureUtils.js"
 
 // End-to-end onboarding against the real core + AccountLayer + InstantLayer + GaslessLayer stack:
 //
@@ -123,6 +126,209 @@ describe("GaslessLayer onboarding scenario", function () {
 		await gateway.connect(relayer).settleDepositToNewAccount(user.address, 0n, affiliate, accountData)
 		return subAccount
 	}
+
+	describe("fee routing with retained margin", function () {
+		async function setupFeePayers(mode: "pending" | "open" | "mixed" = "pending", surplus = decimal(5n)) {
+			const parent = await settleFundedAccount()
+			const fee = decimal(10n)
+			await gateway.connect(context.signers.admin).setDefaultSelectorFee(fee)
+			const va = await context.alCoreFacet.connect(user).createCustomVirtualAccount.staticCall(parent, "0x", 0, 0)
+			await context.alCoreFacet.connect(user).createCustomVirtualAccount(parent, "0x", 0, 0)
+			await context.collateral.mint(user.address, decimal(210n))
+			await context.collateral.connect(user).approve(symmioAddress, ethers.MaxUint256)
+			await context.accountFacet.connect(user).depositAndAllocateFor(parent, decimal(200n))
+			await context.accountFacet.connect(user).depositFor(va, fee)
+			await context.alCoreFacet
+				.connect(user)
+				._call(parent, [context.accountFacet.interface.encodeFunctionData("allocate", [BRIDGED_AMOUNT - DEPOSIT_FEE])])
+			const request = limitQuoteRequestBuilder().build()
+			await context.alCoreFacet
+				.connect(user)
+				._call(parent, [
+					context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+						request.partyBWhiteList,
+						request.symbolId,
+						request.positionType,
+						request.orderType,
+						request.price,
+						request.quantity,
+						request.cva,
+						request.lf,
+						request.partyAmm,
+						request.partyBmm,
+						request.maxFundingRate,
+						await request.deadline,
+						ethers.ZeroAddress,
+						await request.upnlSig,
+					]),
+				])
+			if (mode !== "pending") {
+				const quoteId = await context.viewFacetQuote.getNextQuoteId()
+				const hedger = new Hedger(context, context.signers.hedger)
+				await hedger.setup()
+				await hedger.setBalances(decimal(10000n), decimal(10000n))
+				await hedger.lockQuote(quoteId)
+				await context.partyBPositionActionsFacet
+					.connect(hedger.signer)
+					.openPosition(quoteId, request.quantity, request.price, await getDummyPairUpnlAndPriceSig(decimal(1n), 0n, 0n))
+				if (mode === "mixed") {
+					await context.alCoreFacet
+						.connect(user)
+						._call(parent, [
+							context.partyAFacet.interface.encodeFunctionData("sendQuoteWithAffiliate", [
+								request.partyBWhiteList,
+								request.symbolId,
+								request.positionType,
+								request.orderType,
+								request.price,
+								request.quantity,
+								request.cva,
+								request.lf,
+								request.partyAmm,
+								request.partyBmm,
+								request.maxFundingRate,
+								await request.deadline,
+								ethers.ZeroAddress,
+								await request.upnlSig,
+							]),
+						])
+				}
+			}
+			const charger = context.signers.admin
+			await context.controlFacet.connect(charger).registerOperationalFeeCharger(charger.address)
+			await context.alCoreFacet.connect(user)._call(parent, [
+				context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [
+					[charger.address, gatewayAddr],
+					[ethers.MaxUint256, FEE_ALLOWANCE],
+				]),
+			])
+			// Retain 25 per quote plus a small surplus; create this state through core's actual fee collector.
+			const retained = decimal(mode === "mixed" ? 50n : 25n)
+			const allocated = await context.viewFacet.allocatedBalanceOfPartyA(parent)
+			await context.accountFacet.connect(charger).chargeOperationalFee(parent, allocated - retained - surplus)
+			expect(await context.viewFacet.balanceOf(parent)).to.equal(0n)
+			const balances = await context.viewFacet.balanceInfoOfPartyA(parent)
+			expect(balances[1]).to.equal(decimal(mode === "pending" ? 0n : 22n))
+			expect(balances[2]).to.equal(decimal(mode === "pending" ? 0n : 3n))
+			expect(balances[5]).to.equal(decimal(mode === "open" ? 0n : 22n))
+			expect(balances[6]).to.equal(decimal(mode === "open" ? 0n : 3n))
+			const op = createSignedOperation(
+				user.address,
+				symmioAddress,
+				context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [FEE_ALLOWANCE]]),
+				va,
+			)
+			const signature = await user.signTypedData(domain, types, op)
+			const args = [[op], [signature], [[]], [[]], [0n]] as const
+			return { parent, va, fee, op, args, retained }
+		}
+
+		for (const mode of ["pending", "open", "mixed"] as const) {
+			it(`charges the signer VA when the real core retains the parent's ${mode} CVA and LF`, async function () {
+				const { parent, va, fee, args, retained } = await setupFeePayers(mode)
+				const callData = gateway.interface.encodeFunctionData("relayInstantBatch", args)
+				{
+					const quoted = await quoteGaslessFee({ gateway, callData, mode: "exact", from: relayer.address })
+					expect(quoted.status).to.equal("quoted")
+					if (quoted.status !== "quoted") throw new Error(quoted.data)
+					expect(quoted.quote.payments).to.have.length(1)
+					expect(quoted.quote.payments[0].payer).to.equal(va)
+					expect(quoted.quote.totalFee18).to.equal(fee)
+				}
+				// Exact simulation preserves both the payment balances and the fee approval it executes.
+				expect(await context.viewFacet.balanceOf(va)).to.equal(fee)
+				expect((await context.viewFacet.getOperationalFeeAllowance(va, gatewayAddr))[0]).to.equal(0n)
+				await expect(gateway.connect(relayer).relayInstantBatch(...args))
+					.to.emit(gateway, "OperationalFeeRouted")
+					.withArgs(va, va, fee)
+				expect(await context.viewFacet.allocatedBalanceOfPartyA(parent)).to.equal(retained + decimal(5n))
+				expect(await context.viewFacet.balanceOf(va)).to.equal(0n)
+				expect((await context.viewFacet.getOperationalFeeAllowance(parent, gatewayAddr))[0]).to.equal(FEE_ALLOWANCE)
+				expect((await context.viewFacet.getOperationalFeeAllowance(va, gatewayAddr))[0]).to.equal(0n)
+			})
+		}
+
+		it("previews the same retained-margin fallback used by real execution", async function () {
+			const { parent, va, fee, retained } = await setupFeePayers()
+			await context.alCoreFacet
+				.connect(user)
+				._call(va, [context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [FEE_ALLOWANCE]])])
+			// Unlike an approval-only estimate, this operation leaves fee inputs unchanged.
+			const partyB = await context.symmioPartyB.getAddress()
+			const op = createSignedOperation(user.address, symmioAddress, context.bindingFacet.interface.encodeFunctionData("bindToPartyB", [partyB]), va)
+			const args = [[op], [await user.signTypedData(domain, types, op)], [[]], [[]], [0n]] as const
+			const callData = gateway.interface.encodeFunctionData("relayInstantBatch", args)
+			for (const mode of ["preview", "exact"] as const) {
+				const quoted = await quoteGaslessFee({ gateway, callData, mode, from: relayer.address })
+				expect(quoted.status).to.equal("quoted")
+				if (quoted.status !== "quoted") throw new Error(quoted.data)
+				expect(quoted.quote.payments[0].payer).to.equal(va)
+				expect(quoted.quote.totalFee18).to.equal(fee)
+			}
+			expect((await context.viewFacet.getBindState(va)).partyB).to.equal(ethers.ZeroAddress)
+			await expect(gateway.connect(relayer).relayInstantBatch(...args))
+				.to.emit(gateway, "OperationalFeeRouted")
+				.withArgs(va, va, fee)
+			expect((await context.viewFacet.getBindState(va)).partyB).to.equal(partyB)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(parent)).to.equal(retained + decimal(5n))
+		})
+
+		it("uses the parent's allocation down to the exact retention floor", async function () {
+			const { parent, va, fee, args, retained } = await setupFeePayers("pending", decimal(10n))
+			await expect(gateway.connect(relayer).relayInstantBatch(...args))
+				.to.emit(gateway, "OperationalFeeRouted")
+				.withArgs(va, parent, fee)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(parent)).to.equal(retained)
+			expect(await context.viewFacet.balanceOf(va)).to.equal(fee)
+		})
+
+		it("lets free collateral pay while all parent allocation is retained", async function () {
+			const { parent, va, fee, args, retained } = await setupFeePayers("pending", 0n)
+			await context.collateral.mint(user.address, fee)
+			await context.accountFacet.connect(user).depositFor(parent, fee)
+			await expect(gateway.connect(relayer).relayInstantBatch(...args))
+				.to.emit(gateway, "OperationalFeeRouted")
+				.withArgs(va, parent, fee)
+			expect(await context.viewFacet.balanceOf(parent)).to.equal(0n)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(parent)).to.equal(retained)
+			expect(await context.viewFacet.balanceOf(va)).to.equal(fee)
+		})
+
+		it("consumes spendable capacity once across a batch before falling back to the VA", async function () {
+			const { parent, va, fee, op, retained } = await setupFeePayers("pending", decimal(15n))
+			await context.alCoreFacet
+				.connect(user)
+				._call(parent, [context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[gatewayAddr], [decimal(100n)]])])
+			const second = createSignedOperation(user.address, symmioAddress, op.callData, va)
+			const tx = await gateway
+				.connect(relayer)
+				.relayInstantBatch(
+					[op, second],
+					[await user.signTypedData(domain, types, op), await user.signTypedData(domain, types, second)],
+					[[], []],
+					[[], []],
+					[0n, 0n],
+				)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(va, parent, fee)
+			await expect(tx).to.emit(gateway, "OperationalFeeRouted").withArgs(va, va, fee)
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(parent)).to.equal(retained + decimal(5n))
+			expect(await context.viewFacet.balanceOf(va)).to.equal(0n)
+		})
+
+		it("reverts atomically when neither the parent nor the VA can cover the fee", async function () {
+			const { parent, va, fee, args, retained } = await setupFeePayers()
+			// Spend the VA's free collateral through core, leaving both candidate payers unable to cover the fee.
+			await context.alCoreFacet
+				.connect(user)
+				._call(va, [context.accountFacet.interface.encodeFunctionData("approveOperationalFee", [[context.signers.admin.address], [fee]])])
+			await context.accountFacet.connect(context.signers.admin).chargeOperationalFee(va, fee)
+			await expect(gateway.connect(relayer).relayInstantBatch(...args)).to.be.revertedWith("OperationalFee: Would unback positions")
+			expect(await context.viewFacet.allocatedBalanceOfPartyA(parent)).to.equal(retained + decimal(5n))
+			expect(await context.viewFacet.balanceOf(va)).to.equal(0n)
+			expect((await context.viewFacet.getOperationalFeeAllowance(va, gatewayAddr))[0]).to.equal(0n)
+			expect((await context.viewFacet.getOperationalFeeAllowance(parent, gatewayAddr))[0]).to.equal(FEE_ALLOWANCE)
+		})
+	})
 
 	it("quotes real fee approval execution and honors the fee limit bound into the InstantLayer signature", async function () {
 		const subAccount = await settleFundedAccount()

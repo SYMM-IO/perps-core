@@ -505,9 +505,14 @@ await gateway.connect(owner).executeWithFeeLimit(callData, result.quote.totalDeb
 					<h3 id="billing-identity">Billing identity and fallback</h3>
 					<p>
 						A SubAccount, PartyB, EOA, or unknown address pays as itself. A Virtual Account normally bills its parent SubAccount. If the
-						parent cannot cover an operation with both its remaining allowance and its free plus allocated balance, an existing signer
-						Virtual Account may pay that operation from its own allowance and balance. When neither can pay, the charge stays assigned to
-						the parent and Core reverts.
+						parent cannot cover an operation with both its remaining allowance and its spendable balance, an existing signer Virtual
+						Account may pay that operation from its own allowance and balance. When neither can pay, the charge stays assigned to the
+						parent and Core reverts.
+					</p>
+					<p>
+						Spendable balance is free collateral plus allocation above the open and pending CVA + LF requirement. Allocation below that
+						requirement contributes zero; free collateral can still fund a fee. The same rule applies to the parent and the signer VA, and
+						fees already assigned earlier in the batch consume that payer&rsquo;s remaining capacity.
 					</p>
 					<p>
 						Billing and authorization deliberately use different account resolution. A deleted Virtual Account keeps its parent for
