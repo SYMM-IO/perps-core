@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Oracle-verified batch open and close require one signed market price per quote ID, so a packed Muon signature cannot be reused with a different boundary between the two arrays."
+		/>
+		<title>Batch Price Array Validation - Symmio Core v0.8.6</title>
+		<link rel="icon" type="image/svg+xml" href="../assets/symmio-mark.svg" />
+		<script>
+			// Apply the saved preference before first paint.
+			try {
+				if (localStorage.getItem("v086-docs-theme") === "light") document.documentElement.dataset.theme = "light";
+			} catch (_error) {}
+		</script>
+		<link rel="stylesheet" href="../assets/v086-docs.css" />
+		<link rel="stylesheet" href="../../assets/docs-portal.css" />
+		<script src="../assets/v086-docs.js" defer></script>
+		<script src="../../assets/docs-portal.js" defer></script>
+	</head>
+	<body class="doc-page" data-version="0.8.6">
+		<a class="skip-link" href="#full-document">Skip to document</a>
+
+		<header class="docs-header">
+			<div class="doc-topbar">
+				<nav class="docs-trail" aria-label="Breadcrumb">
+					<a class="brand" href="../../index.html"
+						><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Symmio Core</span></a
+					>
+					<span class="trail-sep" aria-hidden="true">/</span>
+					<a class="trail-link" href="../index.html">v0.8.6</a>
+				</nav>
+				<nav class="top-actions" aria-label="Page actions">
+					<button class="button ghost" type="button" data-theme-toggle aria-label="Switch theme">Theme</button>
+				</nav>
+			</div>
+		</header>
+
+		<div class="reader-shell">
+			<div class="rail-sections-source" data-rail-sections hidden>
+				<a class="toc-link level-2" href="#packed-boundary">Why the array boundary matters</a>
+				<a class="toc-link level-2" href="#validation">One price for each quote</a>
+				<a class="toc-link level-2" href="#integration">Keep the existing signing schema</a>
+			</div>
+
+			<main class="reader-main">
+				<header class="reader-hero">
+					<div class="reader-title-row">
+						<div>
+							<h1>Batch Price Array Validation</h1>
+							<p class="hero-copy">
+								Oracle-verified batch open and close require one signed market price per quote ID, so a packed Muon signature cannot
+								be reused with a different boundary between the two arrays.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<article class="doc-article" id="full-document">
+					<h2 id="packed-boundary">Why the array boundary matters</h2>
+					<p>
+						Muon signs <code>quoteIds</code> followed by <code>prices</code> using packed encoding. Neither array carries a length prefix,
+						so moving the final quote ID into the first price slot leaves the encoded words unchanged:
+					</p>
+					<table>
+						<thead>
+							<tr>
+								<th>Payload</th>
+								<th>Quote IDs</th>
+								<th>Prices</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Signed batch</td>
+								<td><code>[q1, q2]</code></td>
+								<td><code>[p1, p2]</code></td>
+							</tr>
+							<tr>
+								<td>Repartitioned batch</td>
+								<td><code>[q1]</code></td>
+								<td><code>[q2, p1, p2]</code></td>
+							</tr>
+						</tbody>
+					</table>
+					<p>
+						Both encode the words <code>q1, q2, p1, p2</code>. Without a length check, the second payload could verify the same signature
+						while treating <code>q2</code> as the price of the first quote.
+					</p>
+
+					<h2 id="validation">One price for each quote</h2>
+					<p>
+						<code>openPositions</code> and <code>fillCloseRequests</code> now require
+						<code>upnlSig.prices.length == quoteIds.length</code> in the shared Muon verifier. A mismatch reverts with
+						<code>PartyBFacet: Invalid length</code> before timestamp or signature verification. The rejected call changes no quote state
+						and consumes no uPNL counter.
+					</p>
+					<p>
+						This check applies to the oracle-verified path. Bound-mode batches continue to bypass Muon verification; their ignored oracle
+						payload does not acquire a new price-array requirement.
+					</p>
+
+					<h2 id="integration">Keep the existing signing schema</h2>
+					<p>
+						Clients must supply exactly one price for each submitted quote ID, in the same order. The Muon packed hash, TSS signature and
+						gateway signature formats remain unchanged. A correctly formed signed batch needs no schema migration.
+					</p>
+					<p>
+						The batch facet also replaces two string reverts with the compact custom errors <code>SymbolNotAllowedForPartyA()</code> and
+						<code>DifferentPartyB()</code>. Update error decoding when replacing the facet.
+					</p>
+				</article>
+			</main>
+		</div>
+
+		<footer class="site-footer">
+			<span>Symmio Core v0.8.6 &middot; <a href="../../index.html">All releases</a></span>
+		</footer>
+	</body>
+</html>

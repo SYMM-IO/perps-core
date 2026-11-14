@@ -21,6 +21,7 @@ describe("upgrade facet deployment", function () {
 			const firstCore = await deployFacets(coreFile, "core")
 			const coreOutput = JSON.parse(fs.readFileSync(coreFile, "utf-8")) as DeploymentOutput
 			for (const library of [
+				"LibExecutionContext",
 				"LibQuoteFunding",
 				"LibQuoteClose",
 				"LibForceActions",

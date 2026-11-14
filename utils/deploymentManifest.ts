@@ -25,6 +25,12 @@ type EnsureLibrariesArgs = {
 }
 
 const CORE_LIBRARY_SPECS: Record<string, DeploymentSpec> = {
+	LibExecutionContext: {
+		name: "LibExecutionContext",
+		artifact: "contracts/core/libraries/LibExecutionContext.sol:LibExecutionContext",
+		libraries: [],
+		linkReference: "project/contracts/core/libraries/LibExecutionContext.sol:LibExecutionContext",
+	},
 	LibQuoteFunding: {
 		name: "LibQuoteFunding",
 		artifact: "contracts/core/libraries/LibQuoteFunding.sol:LibQuoteFunding",
@@ -40,7 +46,7 @@ const CORE_LIBRARY_SPECS: Record<string, DeploymentSpec> = {
 	PartyBPositionActionsFacetImpl: {
 		name: "PartyBPositionActionsFacetImpl",
 		artifact: "contracts/core/facets/PartyBPositionActions/PartyBPositionActionsFacetImpl.sol:PartyBPositionActionsFacetImpl",
-		libraries: ["LibQuoteFunding"],
+		libraries: ["LibQuoteFunding", "LibExecutionContext"],
 		linkReference: "project/contracts/core/facets/PartyBPositionActions/PartyBPositionActionsFacetImpl.sol:PartyBPositionActionsFacetImpl",
 	},
 	ClearingHouseFacetImpl: {
@@ -95,12 +101,12 @@ const ACCOUNT_LAYER_LIBRARY_SPECS: Record<string, DeploymentSpec> = {
 const INSTANT_LAYER_LIBRARY_SPECS: Record<string, DeploymentSpec> = {}
 
 const CORE_FACET_LIBRARIES: Record<string, string[]> = {
-	PartyAFacet: ["LibQuoteClose"],
+	PartyAFacet: ["LibQuoteClose", "LibExecutionContext"],
 	PartyBExecutionFacet: ["LibQuoteClose"],
 	PartyBPositionActionsFacet: ["PartyBPositionActionsFacetImpl", "LibQuoteClose"],
-	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding"],
+	PartyBBatchActionsFacet: ["LibQuoteClose", "LibQuoteFunding", "LibExecutionContext"],
 	PartyBEmergencyActionsFacet: ["LibQuoteClose"],
-	PartyBQuoteActionsFacet: ["LibQuoteClose"],
+	PartyBQuoteActionsFacet: ["LibQuoteClose", "LibExecutionContext"],
 	ForceActionsFacet: ["LibForceActions", "LibSettlement"],
 	ForceCloseStepsFacet: ["LibForceActions", "LibSettlement"],
 	ViewFacetQuote: ["LibQuoteFunding"],

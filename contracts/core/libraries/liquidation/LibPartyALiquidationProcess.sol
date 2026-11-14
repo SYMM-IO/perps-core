@@ -154,6 +154,7 @@ library LibPartyALiquidationProcess {
 			// return and the share of any uncovered loss are fixed once, from on-chain totals, when the last position closes.
 			if (!settlementState.pending) {
 				settlementState.pending = true;
+				accountLayout.partyBPendingLiquidationSettlements[quote.partyB] += 1;
 				liquidationDetail.involvedPartyBCounts += 1;
 				accountLayout.partyALiquidationPartyBs[partyA].push(quote.partyB);
 			}
@@ -473,6 +474,7 @@ library LibPartyALiquidationProcess {
 			require(settlementState.pending, "LiquidationFacet: PartyB is not in settlement");
 			remainingReduction = _capSettlementToSmallerUpnl(settlementState, remainingReduction);
 			settlementState.pending = false;
+			accountLayout.partyBPendingLiquidationSettlements[partyB] -= 1;
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;
 
 			// Positive means PartyB owes PartyA; negative means PartyA owes PartyB.

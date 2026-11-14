@@ -4,6 +4,8 @@
 // For more information, see https://docs.symm.io/legal-disclaimer/license
 pragma solidity >=0.8.18;
 
+import { LibAccount } from "../../libraries/LibAccount.sol";
+
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { Ownable } from "../../utils/Ownable.sol";
 import { Accessibility } from "../../utils/Accessibility.sol";
@@ -773,7 +775,10 @@ contract ControlFacet is Accessibility, Ownable, IControlEvents {
 	function setCrossPartyB(address partyB, bool enabled) external onlyRole(LibAccessibility.PARTY_B_MANAGER_ROLE) {
 		require(GlobalAppStorage.layout().crossPartyBModeActivated, "ControlFacet: Cross feature disabled");
 		require(MAStorage.layout().partyBStatus[partyB], "ControlFacet: Address is not PartyB");
-		MAStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;
+		if (MAStorage.layout().crossModeEnabledForPartyB[partyB] != enabled) {
+			LibAccount.requireNoPendingLiquidationSettlements(partyB);
+			MAStorage.layout().crossModeEnabledForPartyB[partyB] = enabled;
+		}
 		emit SetCrossPartyB(partyB, enabled);
 	}
 }

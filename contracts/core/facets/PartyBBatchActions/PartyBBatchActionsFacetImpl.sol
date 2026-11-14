@@ -25,6 +25,8 @@ import { LibSendQuoteEvents } from "../../libraries/LibSendQuoteEvents.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBBatchActionsFacetImpl {
+	error SymbolNotAllowedForPartyA();
+	error DifferentPartyB();
 	using LockedValuesOps for LockedValues;
 	using LibPartyBState for address;
 
@@ -39,6 +41,7 @@ library PartyBBatchActionsFacetImpl {
 		GlobalAppStorage.Layout storage appLayout = GlobalAppStorage.layout();
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		address signer = LibSigner.getSigner();
 
 		require(
 			quoteIds.length == filledAmounts.length && quoteIds.length == openedPrices.length && quoteIds.length > 0,
@@ -46,8 +49,8 @@ library PartyBBatchActionsFacetImpl {
 		);
 
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
-		bool requireMuonAndSolvencyChecks = (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() ||
-			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]);
+		bool requireMuonAndSolvencyChecks = (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != signer ||
+			!TradingModeStorage.layout().isPartyBBindable[signer]);
 
 		// Check symbol restrictions for all quotes
 		for (uint256 i = 0; i < quoteIds.length; i++) {
@@ -57,10 +60,7 @@ library PartyBBatchActionsFacetImpl {
 				quote.affiliate == address(0) || appLayout.affiliateShutdownTime[quote.affiliate] == 0,
 				"PartyBFacet: Affiliate shutdown scheduled"
 			);
-			require(
-				LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId),
-				"PartyBFacet: Symbol not allowed due to connection restrictions"
-			);
+			if (!LibConnections.isSymbolAllowedForPartyA(quote.partyA, quote.symbolId)) revert SymbolNotAllowedForPartyA();
 		}
 
 		// PartyB open positions not paused for this specific PartyB
@@ -88,7 +88,7 @@ library PartyBBatchActionsFacetImpl {
 		for (uint256 i = 0; i < quoteIds.length; i++) {
 			uint256 quoteId = quoteIds[i];
 			Quote storage quote = quoteLayout.quotes[quoteId];
-			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
+			require(quote.partyB == signer, "PartyBFacet: Sender should be the partyB");
 			require(firstQuote.partyA == quote.partyA, "PartyBFacet: All positions should belong to one partyA");
 			uint256 newId = LibPartyBPositionsActions.openPosition(quoteId, filledAmounts[i], openedPrices[i]);
 			if (quote.quoteStatus == QuoteStatus.OPENED) {
@@ -149,6 +149,7 @@ library PartyBBatchActionsFacetImpl {
 	) internal returns (QuoteStatus[] memory quoteStatuses, uint256[] memory closeIds) {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		QuoteStorage.Layout storage quoteLayout = QuoteStorage.layout();
+		address signer = LibSigner.getSigner();
 
 		require(
 			quoteIds.length == filledAmounts.length && quoteIds.length == closedPrices.length && quoteIds.length > 0,
@@ -158,8 +159,8 @@ library PartyBBatchActionsFacetImpl {
 		Quote storage firstQuote = quoteLayout.quotes[quoteIds[0]];
 		address firstQuotePartyA = firstQuote.partyA;
 		address firstQuotePartyB = firstQuote.partyB;
-		bool requireMuonAndSolvencyChecks = (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != LibSigner.getSigner() ||
-			!TradingModeStorage.layout().isPartyBBindable[LibSigner.getSigner()]);
+		bool requireMuonAndSolvencyChecks = (TradingModeStorage.layout().bindState[firstQuote.partyA].partyB != signer ||
+			!TradingModeStorage.layout().isPartyBBindable[signer]);
 
 		if (requireMuonAndSolvencyChecks) {
 			// Verify the upnl and prices
@@ -189,9 +190,9 @@ library PartyBBatchActionsFacetImpl {
 			uint256 quoteId = quoteIds[i];
 			Quote storage quote = quoteLayout.quotes[quoteId];
 
-			require(quote.partyB == firstQuotePartyB, "PartyBBatchActionsFacet: All positions must have same partyB");
+			if (quote.partyB != firstQuotePartyB) revert DifferentPartyB();
 			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
-			require(quote.partyB == LibSigner.getSigner(), "PartyBFacet: Sender should be the partyB");
+			require(quote.partyB == signer, "PartyBFacet: Sender should be the partyB");
 			LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);
 			quoteStatuses[i] = quote.quoteStatus;
 			closeIds[i] = quoteLayout.closeIds[quoteId];

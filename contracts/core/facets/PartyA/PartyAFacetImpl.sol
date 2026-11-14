@@ -129,43 +129,32 @@ library PartyAFacetImpl {
 		// NOTE: maxFundingRate is set to 1 (effectively disabled) because funding rate caps
 		// for the accumulated funding system are postponed to a later version.
 		// The field is kept for backward compatibility with existing quotes.
-		Quote memory quote = Quote({
-			id: currentId,
-			partyBsWhiteList: partyBsWhiteList,
-			symbolId: symbolId,
-			positionType: positionType,
-			orderType: orderType,
-			openedPrice: 0,
-			initialOpenedPrice: 0,
-			requestedOpenPrice: price,
-			marketPrice: upnlSig.price,
-			quantity: quantity,
-			closedAmount: 0,
-			lockedValues: lockedValues,
-			initialLockedValues: lockedValues,
-			maxFundingRate: 1, // Funding caps postponed to a later version
-			partyA: signer,
-			partyB: address(0),
-			quoteStatus: QuoteStatus.PENDING,
-			avgClosedPrice: 0,
-			requestedClosePrice: 0,
-			parentId: 0,
-			createTimestamp: block.timestamp,
-			statusModifyTimestamp: block.timestamp,
-			quantityToClose: 0,
-			lastFundingPaymentTimestamp: 0,
-			deadline: deadline,
-			tradingFee: fee.openFee,
-			affiliate: affiliate,
-			accumulatedPaidFunding: 0,
-			closeFee: fee.closeFee,
-			data: data
-		});
+		// Write the fresh ID directly: a memory struct plus the atomic-open library call exceeds the viaIR stack limit.
+		Quote storage quote = quoteLayout.quotes[currentId];
+		quote.id = currentId;
+		quote.partyBsWhiteList = partyBsWhiteList;
+		quote.symbolId = symbolId;
+		quote.positionType = positionType;
+		quote.orderType = orderType;
+		quote.requestedOpenPrice = price;
+		quote.marketPrice = upnlSig.price;
+		quote.quantity = quantity;
+		quote.lockedValues = lockedValues;
+		quote.initialLockedValues = lockedValues;
+		quote.maxFundingRate = 1;
+		quote.partyA = signer;
+		quote.quoteStatus = QuoteStatus.PENDING;
+		quote.createTimestamp = block.timestamp;
+		quote.statusModifyTimestamp = block.timestamp;
+		quote.deadline = deadline;
+		quote.tradingFee = fee.openFee;
+		quote.affiliate = affiliate;
+		quote.closeFee = fee.closeFee;
+		quote.data = data;
 		quoteLayout.quoteIdsOf[signer].push(currentId);
 		if (!_instantOpenMode) {
 			quoteLayout.partyAPendingQuotes[signer].push(currentId);
 		}
-		quoteLayout.quotes[currentId] = quote;
 		quoteLayout.solverFeeStates[currentId].openRateCap = solverFeeCaps.openRateCap;
 		quoteLayout.solverFeeStates[currentId].closeRateCap = solverFeeCaps.closeRateCap;
 
@@ -174,6 +163,8 @@ library PartyAFacetImpl {
 		LibAccount.decreasePartyAAllocatedBalance(signer, feeAmount, SharedEvents.BalanceChangeType.PLATFORM_FEE_OUT);
 		if (!_instantOpenMode) {
 			LibAccount.reserveOpenTradingFee(signer, feeAmount);
+		} else {
+			LibExecutionContext.recordInstantOpenQuote(currentId);
 		}
 	}
 

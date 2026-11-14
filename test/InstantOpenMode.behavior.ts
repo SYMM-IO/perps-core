@@ -12,7 +12,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitOpenRequestBuilder, marketOpenRequestBuilder, OpenRequest } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder, marketQuoteRequestBuilder, QuoteRequest } from "./models/requestModels/QuoteRequest.js"
-import { decimal, getBlockTimestamp, getTradingFeeAtPrice, getOpenFeeDeltaInsolvencyUpnl } from "./utils/Common.js"
+import { decimal, getBlockTimestamp, getTradingFeeAtPrice } from "./utils/Common.js"
 import { getDummyPairUpnlAndPriceSig, getDummySingleUpnlAndPriceSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -414,53 +414,9 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 			expect(hookFeeAmount).to.equal(expectedExecutedFee)
 		})
 
-		it("should fail when the executed-fee true-up makes the direct instant-open core path insolvent", async function () {
-			const regularUser = new User(context, context.signers.user2)
-			await regularUser.setup()
-			await regularUser.setBalances(decimal(2000n), decimal(1000n), decimal(500n))
-
-			const regularHedger = new Hedger(context, context.signers.hedger2)
-			await regularHedger.setup()
-			await regularHedger.setBalances(decimal(4000n), decimal(4000n))
-
-			const signedMarketPrice = decimal(9n, 17)
-			const openedPrice = decimal(1n)
-			const quoteRequest = marketQuoteRequestBuilder()
-				.partyBWhiteList([await regularHedger.getAddress()])
-				.price(decimal(1n))
-				.upnlSig(getDummySingleUpnlAndPriceSig(signedMarketPrice))
-				.build()
-			await context.controlFacet.connect(context.signers.admin).setInstantOpenMode(true)
-			const quoteId = await regularUser.sendQuote(quoteRequest)
-			await regularHedger.lockQuote(quoteId)
-
-			const quoteBeforeOpen = await context.viewFacetQuote.getQuote(quoteId)
-			const allocatedBefore = await context.viewFacet.allocatedBalanceOfPartyA(await regularUser.getAddress())
-			const reservedFee = getTradingFeeAtPrice(quoteBeforeOpen.quantity, quoteBeforeOpen.marketPrice, quoteBeforeOpen.tradingFee)
-			const executedFee = getTradingFeeAtPrice(quoteBeforeOpen.quantity, openedPrice, quoteBeforeOpen.tradingFee)
-			const { feeShortfall, freeBalanceBeforeDelta, upnlPartyA } = getOpenFeeDeltaInsolvencyUpnl(
-				allocatedBefore,
-				quoteBeforeOpen.lockedValues.cva,
-				quoteBeforeOpen.lockedValues.lf,
-				reservedFee,
-				executedFee,
-			)
-
-			expect(feeShortfall).to.be.greaterThan(0n)
-			expect(freeBalanceBeforeDelta + upnlPartyA).to.equal(feeShortfall - 1n)
-			expect(freeBalanceBeforeDelta - feeShortfall + upnlPartyA).to.equal(-1n)
-
-			await expect(
-				regularHedger.openPosition(
-					quoteId,
-					marketOpenRequestBuilder()
-						.filledAmount(quoteBeforeOpen.quantity)
-						.openPrice(openedPrice)
-						.price(signedMarketPrice)
-						.upnlPartyA(upnlPartyA)
-						.build(),
-				),
-			).to.be.revertedWith("LibSolvency: Available balance is lower than zero")
+		it("rejects enabling persistent instant-open accounting outside a transaction scope", async function () {
+			await expect(context.controlFacet.connect(context.signers.admin).setInstantOpenMode(true)).to.be.reverted
+			expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
 		})
 	})
 
@@ -543,6 +499,73 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 	// ──────────────────────────────────────────────────────────────────────────
 
 	describe("Safety", function () {
+		for (const [includeLock, nativeContext] of [
+			[false, false],
+			[true, false],
+			[false, true],
+			[true, true],
+		]) {
+			it(`rejects an instant-open ${nativeContext ? "native" : "legacy"} template that ends after send${includeLock ? " and lock" : ""}`, async function () {
+				await context.instantLayer.setTransientContextEnabled(nativeContext)
+				const id = await context.instantLayer.getNextTemplateId()
+				await context.instantLayer.addTemplate("incomplete instant open", [
+					{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] },
+					...(includeLock ? [{ insertionPoints: [0], sourceIndices: [0], sourceOffsets: [0] }] : []),
+				])
+				await context.instantLayer.setTemplateInstantOpenMode(id, true)
+				const account = accounts[0].accountAddress
+				const before = await context.viewFacet.allocatedBalanceOfPartyA(account)
+				const nextId = await context.viewFacetQuote.getNextQuoteId()
+				const send = createSignedOperation(
+					context.signers.admin.address,
+					symmioAddress,
+					quoteCallData,
+					{ addr: account, isPartyB: false },
+					0n,
+					deadline,
+				)
+				const ops = [send]
+				const signatures = ["0x"] // The executor is the delegated sendQuote signer.
+				if (includeLock) {
+					const partyB = await context.symmioPartyB.getAddress()
+					const lock = createSignedOperation(partyB, symmioAddress, lockQuoteCallData, { addr: partyB, isPartyB: true }, 0n, deadline)
+					ops.push(lock)
+					signatures.push(await signOperation(partyB1.signer, domain, types, lock))
+				}
+				await expect(
+					context.instantLayer.executeTemplate(
+						id,
+						ops,
+						signatures,
+						ops.map(() => []),
+						ops.map(() => []),
+					),
+				).to.be.revertedWith("InstantOpen: Unopened quotes")
+				expect(await context.viewFacetQuote.getNextQuoteId()).to.equal(nextId)
+				expect(await context.viewFacet.allocatedBalanceOfPartyA(account)).to.equal(before)
+				expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
+			})
+		}
+
+		it("rejects atomic locking of a quote whose pending bookkeeping was already recorded outside the scope", async function () {
+			const account = accounts[0].accountAddress
+			await context.accountManager.connect(partyA1.signer)._call(account, [quoteCallData])
+			const quoteId = await context.viewFacetQuote.getNextQuoteId()
+			const id = await context.instantLayer.getNextTemplateId()
+			await context.instantLayer.addTemplate("old pending quote", [{ insertionPoints: [], sourceIndices: [], sourceOffsets: [] }])
+			await context.instantLayer.setTemplateInstantOpenMode(id, true)
+			const partyB = await context.symmioPartyB.getAddress()
+			const callData = context.partyBQuoteActionsFacet.interface.encodeFunctionData("lockQuote", [quoteId, await getDummySingleUpnlSig(10n)])
+			const op = createSignedOperation(partyB, symmioAddress, callData, { addr: partyB, isPartyB: true }, 0n, deadline)
+			const signature = await signOperation(partyB1.signer, domain, types, op)
+			await expect(context.instantLayer.executeTemplate(id, [op], [signature], [[]], [[]])).to.be.revertedWithCustomError(
+				context.instantLayer,
+				"OperationFailed",
+			)
+			expect((await context.viewFacetQuote.getQuote(quoteId)).quoteStatus).to.equal(QuoteStatus.PENDING)
+			await expect(context.symmioPartyB.connect(partyA1.signer)._call([callData])).to.not.be.reverted
+		})
+
 		it("should clear instantOpenMode flag after template execution", async function () {
 			await context.instantLayer.setTemplateInstantOpenMode(templateId, true)
 			await executeSendLockOpen()

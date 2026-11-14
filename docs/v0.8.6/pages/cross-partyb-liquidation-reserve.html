@@ -45,6 +45,8 @@
 				<a class="toc-link level-2" href="#affected-paths">Affected paths</a>
 				<a class="toc-link level-2" href="#fix">Fix</a>
 				<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement top-up exception</a>
+				<a class="toc-link level-2" href="#pending-mode">Allocation mode stays fixed until settlement</a>
+				<a class="toc-link level-2" href="#upgrade">Upgrade after clearing pending buckets</a>
 				<a class="toc-link level-2" href="#invariant">Resulting invariant</a>
 			</div>
 
@@ -52,7 +54,7 @@
 				<header class="reader-hero">
 					<div class="reader-title-row">
 						<div>
-							<h1>Cross-PartyB Liquidation Reserve Enforcement</h1>
+							<h1>Cross-PartyB Liquidation Reserve Enforce<wbr />ment</h1>
 							<p class="hero-copy">
 								v0.8.6 makes pending cross-PartyB liquidation settlement reserves reduce the shared PartyB availability used by quote,
 								solvency, and liquidation checks.
@@ -98,10 +100,10 @@
 					</ul>
 					<p>
 						Core tracks each PartyA liquidation&rsquo;s positive pending contribution in every PartyB margin mode. The availability helper
-						returns zero for an isolated PartyB, but if that PartyB switches to cross mode before settlement completes, the recorded
-						contribution becomes unavailable in the shared bucket. <code>resolveLiquidationDispute</code> resynchronizes the contribution
-						when it overrides a pending amount. Normal PartyA settlement consumes it, and Clearing House takeover clears it. The aggregate
-						reserve is subtracted only while the PartyB is currently in cross-mode accounting.
+						returns zero for an isolated PartyB. Its contribution remains recorded, but the PartyB cannot change allocation mode while any
+						liquidation settlement bucket is pending. <code>resolveLiquidationDispute</code> resynchronizes the contribution when it
+						overrides a pending amount. Normal PartyA settlement consumes it, and Clearing House takeover clears it. The aggregate reserve
+						is subtracted only while the PartyB is currently in cross-mode accounting.
 					</p>
 
 					<h2 id="fix">Fix</h2>
@@ -146,6 +148,40 @@ require(
     "SettlementFacet: PartyB balance decreased"
 );
 </code></pre>
+
+					<h2 id="pending-mode">Allocation mode stays fixed until settlement</h2>
+					<p>
+						A pending settlement must use the same allocation mode when it is paid as when its bucket opened. Switching an isolated PartyB
+						to cross mode, or a cross PartyB to isolated mode, could otherwise direct settlement to a different allocation bucket.
+					</p>
+					<p>
+						<code>partyBPendingLiquidationSettlements[partyB]</code> counts all pending PartyA liquidation buckets involving that PartyB,
+						including amounts where the PartyB owes nothing or is owed money. Checking only the positive reserve would miss those buckets.
+					</p>
+					<ul>
+						<li>
+							<code>activateCrossPartyB()</code> and an actual mode change through <code>setCrossPartyB(partyB, enabled)</code> require
+							both the pending count and the recorded positive reserve to be zero. Otherwise they revert with
+							<code>PartyB: Pending liquidation settlements</code>.
+						</li>
+						<li>
+							The count increases once when a bucket becomes pending. Normal PartyA liquidation settlement or Clearing House takeover
+							settlement releases that bucket&rsquo;s count. Settling one of several pending buckets does not unlock mode changes.
+						</li>
+						<li>An admin call that reapplies the current mode remains allowed under its existing role and feature checks.</li>
+					</ul>
+
+					<h2 id="upgrade">Upgrade after clearing pending buckets</h2>
+					<p>
+						The pending-count mapping is appended to <code>AccountStorage.Layout</code>; existing members and the settlement tuple retain
+						their layout. Complete every active PartyA liquidation and takeover before upgrading. The upgrade does not enumerate or
+						backfill historical pending buckets, so they must not cross the upgrade.
+					</p>
+					<p>
+						Replace both mode-changing implementations, the PartyA liquidation library and the Clearing House settlement implementation
+						together, including facets that link the changed libraries. Follow the
+						<a href="liquidation-settlement-plan.html#rollout">coordinated liquidation upgrade order</a>.
+					</p>
 
 					<h2 id="invariant">Resulting invariant</h2>
 					<ul>

@@ -169,6 +169,7 @@ library PartyBAccountFacetImpl {
 		MAStorage.Layout storage maLayout = MAStorage.layout();
 		address signer = LibSigner.getSigner();
 		require(!maLayout.crossModeEnabledForPartyB[signer], "AccountFacet: Cross partyB mode is active");
+		LibAccount.requireNoPendingLiquidationSettlements(signer);
 		maLayout.crossModeEnabledForPartyB[signer] = true;
 	}
 }

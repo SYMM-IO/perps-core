@@ -38,6 +38,7 @@ const CORE_FACETS = [
 
 const CORE_LIBRARIES = [
 	"LibQuoteFunding",
+	"LibExecutionContext",
 	"LibQuoteClose",
 	"PartyBPositionActionsFacetImpl",
 	"ClearingHouseFacetImpl",

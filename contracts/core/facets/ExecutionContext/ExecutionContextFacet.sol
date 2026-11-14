@@ -36,18 +36,10 @@ contract ExecutionContextFacet is Accessibility, IExecutionContextFacet {
 	}
 
 	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
-	/// @dev Inside an active transient scope, the deployed InstantLayer sequence always calls
-	///      setCallFromInstantLayer(true) first in the same transaction, so this updates the scope.
-	///      Outside one it keeps the v0.8.6 persistent behavior, so a solver driving core directly
-	///      can still hold instant-open mode across transactions. Mirrors setSigner's
-	///      context-dependent routing.
+	/// @dev Atomic-open shortcuts require a live transaction scope; they cannot be enabled persistently across transactions.
 	/// @param instantOpenMode True when entering instant open execution, false when exiting.
 	function setInstantOpenMode(bool instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
-		if (LibExecutionContext.isTransientContextActive()) {
-			LibExecutionContext.setInstantOpenMode(instantOpenMode);
-		} else {
-			GlobalAppStorage.layout().instantOpenMode = instantOpenMode;
-		}
+		LibExecutionContext.setInstantOpenMode(instantOpenMode);
 	}
 
 	/// @notice Opens one explicit InstantLayer authority scope for the current transaction.

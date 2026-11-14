@@ -591,10 +591,10 @@ Exact LONG PnL:         (price &times; amount &minus; exact notional) / 1e18</co
 
 					<h2 id="integration">Storage and in-flight liquidations</h2>
 					<p>
-						Three mappings are appended to the end of <code>AccountStorage.Layout</code>: <code>liquidationStartPositionCounts</code>,
-						<code>partyALiquidationRoundingReduction</code> and <code>partyALiquidationPartyBs</code>. Each liquidation start records the
-						position count and clears the other two. Completion clears all three; takeover settlement clears the count and the PartyB
-						list. A takeover start and a dispute override also clear the rounding reduction.
+						The settlement plan appends <code>liquidationStartPositionCounts</code>, <code>partyALiquidationRoundingReduction</code> and
+						<code>partyALiquidationPartyBs</code> to <code>AccountStorage.Layout</code>. Each liquidation start records the position count
+						and clears the other two. Completion clears all three; takeover settlement clears the count and the PartyB list. A takeover
+						start and a dispute override also clear the rounding reduction.
 					</p>
 					<p>
 						Finish every active PartyA liquidation, including Clearing House takeovers, before switching implementations. The new code
@@ -639,6 +639,14 @@ Exact LONG PnL:         (price &times; amount &minus; exact notional) / 1e18</co
 						In LATE and OVERDUE, the last close can walk every recorded PartyB three times in one transaction, even when positions were
 						closed in batches: once to trim rounding dust and twice to distribute. NORMAL walks them at most once, and only while trimming
 						a rounding gap. Validate the LATE and OVERDUE worst case on the target deployment; this page supplies no gas bound.
+					</p>
+
+					<p>
+						The <a href="cross-partyb-liquidation-reserve.html#pending-mode">allocation-mode guard</a> also appends
+						<code>partyBPendingLiquidationSettlements</code>. It counts every pending bucket involving each PartyB, including zero and
+						negative amounts. Normal settlement and Clearing House takeover settlement decrement it. The upgrade does not backfill
+						historical pending buckets, so finishing all active liquidations and takeovers before the cut is also required for this
+						counter.
 					</p>
 
 					<h2 id="rollout">Upgrade and repair order</h2>

@@ -100,6 +100,7 @@ library LibPartyBPositionsActions {
 		bool _instantOpenMode = LibExecutionContext.isInstantOpenMode();
 		if (_instantOpenMode) {
 			require(quote.quantity == filledAmount, "PartyBFacet: InstantOpen requires full fill");
+			LibExecutionContext.completeInstantOpenQuote(quoteId);
 		}
 
 		uint256 quoteFeeBeforeOpen = LibQuote.getReservedOpenTradingFee(quote, LibQuote.quoteOpenAmount(quote));

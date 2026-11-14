@@ -1769,6 +1769,23 @@
 					"reason": "Operator notes and Clearing stored positions already provide this required ordinary action."
 				}
 			]
+		},
+		{
+			"key": "v0.8.6/batch-price-array-validation",
+			"reviewed": true,
+			"reviewedAt": "2026-11-12",
+			"readerTask": "From the v0.8.6 catalog, construct oracle-verified batch price arrays and distinguish the packed-boundary check from the bound-mode exemption.",
+			"accepted": [],
+			"rejected": [
+				{
+					"quote": "Both encode the words q1, q2, p1, p2.",
+					"reason": "The adjacent Signed batch / Repartitioned batch table already places both boundaries side by side. A comparison note would repeat that explicit comparison."
+				},
+				{
+					"quote": "Bound-mode batches continue to bypass Muon verification; their ignored oracle payload does not acquire a new price-array requirement.",
+					"reason": "The oracle-verified scope is stated in the hero and validation paragraph, then the complete bound-mode exception follows directly. No additional cue was selected in this review."
+				}
+			]
 		}
 	],
 	"redirects": [

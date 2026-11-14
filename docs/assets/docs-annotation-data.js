@@ -330,4 +330,5 @@ window.__DOC_ANNOTATION_RECORDS__ = {
 		},
 	],
 	"v0.8.6/zero-quantity-quote-rejection": [],
+	"v0.8.6/batch-price-array-validation": [],
 };

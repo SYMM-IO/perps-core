@@ -15,7 +15,7 @@ import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 ///      facet reached through Diamond delegatecall and cleared at transaction end.
 ///      Persistent fields remain the compatibility fallback for existing integrations.
 ///
-///      THREE PIECES OF STATE
+///      FOUR PIECES OF STATE
 ///      1. The InstantLayer context word (one transient slot). Packs "a scope is live",
 ///         "routed by InstantLayer" and "atomic-open allowed" into three bits.
 ///      2. The signer, held as TWO transient slots: a value slot and an active marker.
@@ -25,6 +25,8 @@ import { GlobalAppStorage } from "../storages/GlobalAppStorage.sol";
 ///         restore. Value cleared + marker set is the "suspended signer" state.
 ///      3. Per-caller snapshots (one transient slot per address), used when a trusted
 ///         router suspends the context across its own untrusted call.
+///      4. Atomic-open quote markers and an outstanding count. Every quote created
+///         without pending bookkeeping must be fully opened before the scope closes.
 ///
 ///      READ FALLBACK
 ///      Every public reader prefers the live transient scope and otherwise returns the
@@ -55,6 +57,8 @@ library LibExecutionContext {
 	bytes32 private constant TRANSIENT_SIGNER_ACTIVE_SLOT = keccak256("symmio.core.transient.signer.active");
 	bytes32 private constant TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT = keccak256("symmio.core.transient.instant-layer.context");
 	bytes32 private constant EXTERNAL_CALL_CONTEXT_NAMESPACE = keccak256("symmio.core.external-call.execution-context");
+	bytes32 private constant INSTANT_OPEN_QUOTE_NAMESPACE = keccak256("symmio.core.instant-open.quote");
+	bytes32 private constant INSTANT_OPEN_PENDING_SLOT = keccak256("symmio.core.instant-open.pending");
 
 	// ── Live InstantLayer context word ────────────────────────────────────────
 	// Held in TRANSIENT_INSTANT_LAYER_CONTEXT_SLOT.
@@ -123,6 +127,7 @@ library LibExecutionContext {
 	///      its privileges. EIP-1153 still guarantees cleanup if the transaction reverts.
 	function beginInstantLayerExecution(bool instantOpenMode) internal {
 		if (_instantLayerContext() & INSTANT_CONTEXT_ACTIVE != 0) revert TransientContextAlreadyActive();
+		_requireInstantOpenComplete();
 		uint256 context = INSTANT_CONTEXT_ACTIVE | CALL_FROM_INSTANT_LAYER;
 		if (instantOpenMode) context |= INSTANT_OPEN_MODE;
 		_setInstantLayerContext(context);
@@ -137,6 +142,7 @@ library LibExecutionContext {
 	function endInstantLayerExecution() internal {
 		if (_instantLayerContext() & INSTANT_CONTEXT_ACTIVE == 0) revert TransientContextNotActive();
 		if (isTransientSignerActive()) revert TransientSignerNotCleared();
+		_requireInstantOpenComplete();
 		_setInstantLayerContext(0);
 	}
 
@@ -149,9 +155,38 @@ library LibExecutionContext {
 		if (enabled) {
 			context |= INSTANT_OPEN_MODE;
 		} else {
+			_requireInstantOpenComplete();
 			context &= ~INSTANT_OPEN_MODE;
 		}
 		_setInstantLayerContext(context);
+	}
+
+	/// @notice Register a quote whose pending bookkeeping was skipped in this scope.
+	/// @dev Linked public helpers keep the checks shared instead of inlining them into the size-constrained trading facets.
+	function recordInstantOpenQuote(uint256 quoteId) public {
+		require(isTransientContextActive() && isInstantOpenMode(), "InstantOpen: No active scope");
+		_transientStore(_instantOpenQuoteSlot(quoteId), 1);
+		_transientStore(INSTANT_OPEN_PENDING_SLOT, _transientLoad(INSTANT_OPEN_PENDING_SLOT) + 1);
+	}
+
+	/// @notice Only quotes created with skipped pending bookkeeping in the same scope may use atomic locking/opening.
+	function requireInstantOpenQuote(uint256 quoteId) public view {
+		require(_transientLoad(_instantOpenQuoteSlot(quoteId)) == 1, "InstantOpen: Quote not created");
+	}
+
+	/// @notice Consume the marker exactly once when a quote is fully opened. Any later failure rolls this back.
+	function completeInstantOpenQuote(uint256 quoteId) public {
+		requireInstantOpenQuote(quoteId);
+		_transientStore(_instantOpenQuoteSlot(quoteId), 0);
+		_transientStore(INSTANT_OPEN_PENDING_SLOT, _transientLoad(INSTANT_OPEN_PENDING_SLOT) - 1);
+	}
+
+	function _instantOpenQuoteSlot(uint256 quoteId) private pure returns (bytes32) {
+		return keccak256(abi.encode(INSTANT_OPEN_QUOTE_NAMESPACE, quoteId));
+	}
+
+	function _requireInstantOpenComplete() private view {
+		require(_transientLoad(INSTANT_OPEN_PENDING_SLOT) == 0, "InstantOpen: Unopened quotes");
 	}
 
 	/// @notice Returns whether the effective context is an InstantLayer call.

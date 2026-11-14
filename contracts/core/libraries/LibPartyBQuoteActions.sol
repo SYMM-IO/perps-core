@@ -64,6 +64,8 @@ library LibPartyBQuoteActions {
 		if (!LibExecutionContext.isInstantOpenMode()) {
 			LibAccount.addToPartyBPendingLockedBalances(signer, quote.partyA, quote);
 			quoteLayout.partyBPendingQuotes[signer][quote.partyA].push(quote.id);
+		} else {
+			LibExecutionContext.requireInstantOpenQuote(quoteId);
 		}
 	}
 }

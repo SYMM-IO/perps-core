@@ -356,6 +356,14 @@ library LibAccount {
 		return MAStorage.layout().crossModeEnabledForPartyB[partyB] ? accountLayout.partyBLiquidationSettlementReserve[partyB] : 0;
 	}
 
+	function requireNoPendingLiquidationSettlements(address partyB) internal view {
+		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		require(
+			accountLayout.partyBPendingLiquidationSettlements[partyB] == 0 && accountLayout.partyBLiquidationSettlementReserve[partyB] == 0,
+			"PartyB: Pending liquidation settlements"
+		);
+	}
+
 	function syncPartyBLiquidationSettlementReserve(
 		AccountStorage.Layout storage accountLayout,
 		address partyA,

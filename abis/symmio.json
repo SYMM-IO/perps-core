@@ -1225,6 +1225,16 @@
     },
     {
         "inputs": [],
+        "name": "DifferentPartyB",
+        "type": "error"
+    },
+    {
+        "inputs": [],
+        "name": "SymbolNotAllowedForPartyA",
+        "type": "error"
+    },
+    {
+        "inputs": [],
         "name": "ExternalCallContextNotSuspended",
         "type": "error"
     },
@@ -24269,5 +24279,18 @@
         ],
         "name": "LogUint",
         "type": "event"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "quoteId",
+                "type": "uint256"
+            }
+        ],
+        "name": "requireInstantOpenQuote",
+        "outputs": [],
+        "stateMutability": "view",
+        "type": "function"
     }
 ]

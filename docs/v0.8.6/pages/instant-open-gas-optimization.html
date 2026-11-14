@@ -57,6 +57,7 @@
 				<a class="toc-link level-3" href="#signer-restoration">How a transient signer is restored after a hook</a>
 				<a class="toc-link level-3" href="#snapshot">How the snapshot is encoded</a>
 				<a class="toc-link level-3" href="#lifecycle">Closing the batch scope</a>
+				<a class="toc-link level-2" href="#atomic-completion">Every atomic quote must open</a>
 				<a class="toc-link level-2" href="#compat">Compatibility and pre-Cancun porting</a>
 			</div>
 
@@ -608,6 +609,49 @@
 							JavaScript to step through clean and rejected callbacks.
 						</p>
 					</section>
+					<h2 id="atomic-completion">Every atomic quote must open before the scope closes</h2>
+					<p>
+						InstantOpen skips pending-quote bookkeeping because the quote is expected to become a fully opened position in the same
+						transaction. Core now tracks every quote created with that shortcut in a transient marker and an outstanding count.
+					</p>
+					<ol>
+						<li><code>sendQuote</code> records the new quote in the live InstantOpen scope.</li>
+						<li>
+							Atomic locking requires that marker. An existing normally tracked pending quote cannot be locked through the shortcut.
+						</li>
+						<li>A full open consumes the marker exactly once and reduces the outstanding count.</li>
+						<li>
+							Disabling InstantOpen or closing the scope requires the count to be zero. Otherwise the call reverts with
+							<code>InstantOpen: Unopened quotes</code>.
+						</li>
+					</ol>
+					<p>
+						A template that only sends a quote, or sends and locks without opening it, reverts at cleanup. The transaction rolls back
+						quote state, fees, nonces and usage counters. An ordinary batch with InstantOpen disabled may still leave normally tracked
+						pending quotes.
+					</p>
+					<p>
+						Both the native begin/end sequence and the historical setter sequence enforce these checks.
+						<code>setInstantOpenMode(bool)</code> requires a live scope for either value and reverts with
+						<code>TransientContextNotActive</code> outside it. It cannot enable a persistent shortcut across transactions. Authorized
+						routers must pair entry and cleanup within the same transaction; transient storage clearing at transaction end does not itself
+						run a completion check.
+					</p>
+
+					<h3 id="scope-upgrade">Upgrade the accounting paths together</h3>
+					<p>
+						<code>LibExecutionContext</code> now has linked public quote-tracking helpers. Deploy it and relink the affected PartyA,
+						PartyBQuoteActions and PartyBBatchActions facets and <code>PartyBPositionActionsFacetImpl</code>. Replace the position facet
+						that links that implementation and the ExecutionContext facet in the same coordinated cut. Use the deployment manifest and
+						compiled link references to include every dependent deployment. Mixing old quote mutators with new cleanup code leaves the
+						completion checks incomplete.
+					</p>
+					<p>
+						Before upgrading, confirm that the persistent <code>callFromInstantLayer</code> and <code>instantOpenMode</code> fields are
+						both zero. On a legacy version whose setters still write those fields, clear them before replacing those setters. The current
+						scope entrypoints reject persistent flags, and the current mode setter cannot reset them outside a scope.
+					</p>
+
 					<h2 id="compat">Compatibility and pre-Cancun porting</h2>
 					<aside class="gas-rule">
 						<strong>The runtime switch changes selectors, not storage.</strong>
@@ -655,10 +699,10 @@
 					<h3>What a pre-Cancun build requires</h3>
 					<p>
 						The current source compiles with solc 0.8.36 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
-						batch paths initiate transient authority. Authorized direct callers can still set the persistent
-						<code>instantOpenMode</code> by calling the legacy selector outside a transient scope, and suspension/restoration continues to
-						protect that compatibility state. Core&rsquo;s legacy <code>setSigner</code> likewise writes the persistent core signer when
-						no transient execution scope is active.
+						batch paths initiate transient authority, and the legacy InstantOpen mode setter also requires a live scope. Core&rsquo;s
+						legacy
+						<code>setSigner</code> still writes the persistent core signer when no transient execution scope is active. Persistent
+						compatibility readers and hook restoration remain, but they do not provide a persistent InstantOpen activation path.
 					</p>
 					<p>
 						A pre-Cancun deployment therefore needs a separate build targeting <code>evmVersion "paris"</code>. Its

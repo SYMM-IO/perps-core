@@ -8,6 +8,17 @@ import { resetDeploymentTransactionJournal } from "../../tasks/deploy/tx.js"
 import { createVanityContext } from "../../tasks/deploy/vanityDeploy.js"
 import { buildVanityPlan } from "../../tasks/deploy/vanityPlan.js"
 import { ethers, hre } from "../helpers/hardhat-connection.js"
+import { loadFixture } from "../helpers/network-helpers.js"
+
+async function factoryFixture(): Promise<string> {
+	const [deployer] = await ethers.getSigners()
+	const factoryDeployer = new ethers.Wallet(ethers.id("vanity-deployment-test-factory"), ethers.provider)
+	await deployer.sendTransaction({ to: factoryDeployer.address, value: ethers.parseEther("1") })
+	const factory = await ethers.getContractFactory("Create2Factory", factoryDeployer)
+	const create2Factory = await factory.deploy(deployer.address, deployer.address)
+	await create2Factory.waitForDeployment()
+	return create2Factory.getAddress()
+}
 
 describe("vanity address deployment", function () {
 	let factoryAddress: string
@@ -16,15 +27,8 @@ describe("vanity address deployment", function () {
 		// The journal is process-wide and deliberately refuses two creation records for one
 		// component. Each case here deploys the same components again, so it starts clean.
 		resetDeploymentTransactionJournal()
-		const [deployer] = await ethers.getSigners()
-		// A dedicated wallet deploys the factory, so its address and every salt mined against it
-		// do not depend on how many transactions earlier suites sent from the shared signers.
-		const factoryDeployer = new ethers.Wallet(ethers.id("vanity-deployment-test-factory"), ethers.provider)
-		await deployer.sendTransaction({ to: factoryDeployer.address, value: ethers.parseEther("1") })
-		const factory = await ethers.getContractFactory("Create2Factory", factoryDeployer)
-		const create2Factory = await factory.deploy(deployer.address, deployer.address)
-		await create2Factory.waitForDeployment()
-		factoryAddress = await create2Factory.getAddress()
+		// Restore both deployers' nonces and prior contracts, so the library graph in another case cannot change this search.
+		factoryAddress = await loadFixture(factoryFixture)
 	})
 
 	it("gives every facet an address ending in the configured suffix", async function () {
@@ -113,8 +117,9 @@ describe("vanity address deployment", function () {
 })
 
 describe("vanity address deployment with a run-deployed factory", function () {
-	beforeEach(function () {
+	beforeEach(async function () {
 		resetDeploymentTransactionJournal()
+		await loadFixture(factoryFixture)
 	})
 
 	it("deploys its own factory and mines every facet against it", async function () {

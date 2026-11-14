@@ -274,6 +274,10 @@ library AccountStorage {
 		///      without changing the public settlement-state tuple. Bounded by the PartyA's counterparties.
 		///      Cleared on settlement completion, takeover, and a new liquidation.
 		mapping(address => address[]) partyALiquidationPartyBs;
+		/// @notice Number of pending PartyA liquidation settlement buckets involving each PartyB, including zero/negative claims.
+		/// @dev Mode changes are blocked until normal settlement or takeover clears every bucket.
+		///      Upgrade only after completing existing liquidations; historical pending buckets cannot be enumerated here.
+		mapping(address => uint256) partyBPendingLiquidationSettlements;
 	}
 
 	function layout() internal pure returns (Layout storage l) {

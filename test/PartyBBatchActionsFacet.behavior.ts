@@ -990,7 +990,7 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 
 			await expect(
 				context.partyBBatchActionsFacet.connect(context.signers.hedger2).openPositions([2n], [decimal(100n)], [quote2.requestedOpenPrice], upnlSig),
-			).to.be.revertedWith("PartyBFacet: Symbol not allowed due to connection restrictions")
+			).to.be.revertedWithCustomError(context.partyBBatchActionsFacet, "SymbolNotAllowedForPartyA")
 		})
 	})
 

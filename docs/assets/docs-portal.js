@@ -124,6 +124,7 @@
 			["liquidation-dispute-resolution-guards", "Liquidation", "Liquidation Dispute Resolution Guards"],
 			["settlement-pause-and-deallocation-guards", "Hardening", "Settlement, Pause and Deallocation Guards"],
 			["partial-fill-fee-reservation", "Fees", "Partial Fill Fee Reservation Remainder"],
+			["batch-price-array-validation", "Muon", "Batch Price Array Validation"],
 		],
 	};
 

@@ -404,6 +404,11 @@ export async function deployDiamond(
 				constructorArguments: [],
 			},
 			{
+				name: "LibExecutionContext",
+				address: libraryAddresses["LibExecutionContext"],
+				constructorArguments: [],
+			},
+			{
 				name: "LibQuoteClose",
 				address: libraryAddresses["LibQuoteClose"],
 				constructorArguments: [],
