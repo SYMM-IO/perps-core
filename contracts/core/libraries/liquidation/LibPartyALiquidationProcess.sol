@@ -474,7 +474,7 @@ library LibPartyALiquidationProcess {
 			require(settlementState.pending, "LiquidationFacet: PartyB is not in settlement");
 			remainingReduction = _capSettlementToSmallerUpnl(settlementState, remainingReduction);
 			settlementState.pending = false;
-			accountLayout.partyBPendingLiquidationSettlements[partyB] -= 1;
+			LibAccount.decreasePendingLiquidationSettlements(accountLayout, partyB);
 			accountLayout.liquidationDetails[partyA].involvedPartyBCounts -= 1;
 
 			// Positive means PartyB owes PartyA; negative means PartyA owes PartyB.

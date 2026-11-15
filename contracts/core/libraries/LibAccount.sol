@@ -364,6 +364,13 @@ library LibAccount {
 		);
 	}
 
+	/// @dev Removes one settled or cleared bucket from the PartyB's count. A bucket opened before the count existed
+	///      was never added, so the count stops at zero instead of underflowing.
+	function decreasePendingLiquidationSettlements(AccountStorage.Layout storage accountLayout, address partyB) internal {
+		uint256 pending = accountLayout.partyBPendingLiquidationSettlements[partyB];
+		if (pending != 0) accountLayout.partyBPendingLiquidationSettlements[partyB] = pending - 1;
+	}
+
 	function syncPartyBLiquidationSettlementReserve(
 		AccountStorage.Layout storage accountLayout,
 		address partyA,

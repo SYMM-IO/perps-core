@@ -1225,11 +1225,6 @@
     },
     {
         "inputs": [],
-        "name": "DifferentPartyB",
-        "type": "error"
-    },
-    {
-        "inputs": [],
         "name": "SymbolNotAllowedForPartyA",
         "type": "error"
     },

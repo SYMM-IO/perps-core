@@ -276,7 +276,8 @@ library AccountStorage {
 		mapping(address => address[]) partyALiquidationPartyBs;
 		/// @notice Number of pending PartyA liquidation settlement buckets involving each PartyB, including zero/negative claims.
 		/// @dev Mode changes are blocked until normal settlement or takeover clears every bucket.
-		///      Upgrade only after completing existing liquidations; historical pending buckets cannot be enumerated here.
+		///      A bucket opened before this count existed was never added, and removing one stops at zero. The count for
+		///      its PartyB can then read low until that PartyB has no pending bucket left.
 		mapping(address => uint256) partyBPendingLiquidationSettlements;
 	}
 

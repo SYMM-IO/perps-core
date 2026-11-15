@@ -108,8 +108,12 @@
 						gateway signature formats remain unchanged. A correctly formed signed batch needs no schema migration.
 					</p>
 					<p>
-						The batch facet also replaces two string reverts with the compact custom errors <code>SymbolNotAllowedForPartyA()</code> and
-						<code>DifferentPartyB()</code>. Update error decoding when replacing the facet.
+						Two batch reverts also differ from the earlier facet. A batch open of a symbol that connection restrictions block reverts with
+						the custom error <code>SymbolNotAllowedForPartyA()</code> instead of
+						<code>PartyBFacet: Symbol not allowed due to connection restrictions</code>, which the single-quote paths still use. A batch
+						close that includes another PartyB&rsquo;s quote reverts with <code>PartyBFacet: Sender should be the partyB</code> instead of
+						<code>PartyBBatchActionsFacet: All positions must have same partyB</code>. Update error decoding for the batch facet when
+						replacing it.
 					</p>
 				</article>
 			</main>

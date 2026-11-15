@@ -468,11 +468,11 @@ Group total:    cut(4.8 + 5.8)      = cut(10.6) = 10</code></pre>
 					</ul>
 					<p>
 						While PartyA is liquidated, an isolated PartyB cannot deallocate from it, transfer allocation from or to it, or be liquidated
-						against it. Two paths can still change the allocation a counted bucket settles against. <code>softPartyBLiquidation</code>,
-						called with <code>SOFT_LIQUIDATOR_ROLE</code>, debits it without checking for an active PartyA liquidation.
-						<code>activateCrossPartyB</code> switches an isolated PartyB to its shared cross allocation without checking for pending
-						settlement; the allocation it held for this PartyA stays behind, and the bucket then settles against the shared one. A cross
-						PartyB&rsquo;s shared allocation can also fall through ordinary cross activity.
+						against it. The <a href="cross-partyb-liquidation-reserve.html#pending-mode">allocation-mode guard</a> also rejects
+						<code>activateCrossPartyB</code> and a <code>setCrossPartyB</code> change while it counts a pending bucket for that PartyB.
+						One path can still change the allocation a counted bucket settles against. <code>softPartyBLiquidation</code>, called with
+						<code>SOFT_LIQUIDATOR_ROLE</code>, debits it without checking for an active PartyA liquidation. A cross PartyB&rsquo;s shared
+						allocation can also fall through ordinary cross activity.
 					</p>
 					<p>
 						A revert fails only its own batch, so settle the other PartyBs in separate calls. The liquidation cannot finish until the
@@ -623,7 +623,7 @@ Exact LONG PnL:         (price &times; amount &minus; exact notional) / 1e18</co
 						build before <code>version_0.8.6.2</code>, also has no start position count, so its allowance is zero and any rounding gap
 						disputes it. The new code backfills neither the list nor the count. A v0.8.5 bucket owed by a cross PartyB also stays in that
 						PartyB&rsquo;s settlement reserve after settlement or takeover: v0.8.5 kept no per-PartyA record of it, so nothing releases
-						it, and it keeps reducing the PartyB&rsquo;s available balance.
+						it, and it keeps reducing the PartyB&rsquo;s available balance and blocking any change of that PartyB&rsquo;s mode.
 					</p>
 					<p>
 						A liquidation that passed its last close on older code keeps its old per-quote amounts, and an isolated PartyB whose
@@ -644,9 +644,10 @@ Exact LONG PnL:         (price &times; amount &minus; exact notional) / 1e18</co
 					<p>
 						The <a href="cross-partyb-liquidation-reserve.html#pending-mode">allocation-mode guard</a> also appends
 						<code>partyBPendingLiquidationSettlements</code>. It counts every pending bucket involving each PartyB, including zero and
-						negative amounts. Normal settlement and Clearing House takeover settlement decrement it. The upgrade does not backfill
-						historical pending buckets, so finishing all active liquidations and takeovers before the cut is also required for this
-						counter.
+						negative amounts. Normal settlement and Clearing House takeover settlement decrement it. The upgrade does not backfill buckets
+						that are already pending. The decrement stops at zero, so those buckets still settle and still clear in a takeover. Until a
+						PartyB with such a bucket has no pending bucket left, the guard
+						<a href="cross-partyb-liquidation-reserve.html#upgrade">does not reliably cover it</a>.
 					</p>
 
 					<h2 id="rollout">Upgrade and repair order</h2>

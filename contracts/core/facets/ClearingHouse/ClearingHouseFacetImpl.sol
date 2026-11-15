@@ -357,7 +357,7 @@ library ClearingHouseFacetImpl {
 			// Clear any settlement reserve contribution before deleting state.
 			if (pendingSettlement) {
 				LibAccount.syncPartyBLiquidationSettlementReserve(accountLayout, partyA, partyB, 0);
-				accountLayout.partyBPendingLiquidationSettlements[partyB] -= 1;
+				LibAccount.decreasePendingLiquidationSettlements(accountLayout, partyB);
 				clearedSettlements += 1;
 				emit IPartyALiquidationEvents.LiquidationFundingSettlementAbandoned(partyA, partyB, rawFunding, liquidationId);
 			}

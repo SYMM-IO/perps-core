@@ -370,6 +370,19 @@ export function shouldBehaveLikePartyBBatchActionsFacet(): void {
 			).to.be.revertedWith("PartyBBatchActionsFacet: All positions must have same partyA")
 		})
 
+		it("Should fail when a quote belongs to another partyB", async function () {
+			await context.controlFacet.connect(context.signers.admin).setMaxPartyAConnectionLimit(10)
+			const otherPartyBQuote = await openWith(hedger2)
+			await user.requestToClosePosition(otherPartyBQuote, limitCloseRequestBuilder().build())
+			const upnlSig = await getDummyPairUpnlAndPricesSig([decimal(1n), decimal(1n)], [1n, 1n])
+
+			await expect(
+				context.partyBBatchActionsFacet
+					.connect(context.signers.hedger)
+					.fillCloseRequests([1n, otherPartyBQuote], [decimal(50n), decimal(50n)], [decimal(1n), decimal(1n)], upnlSig),
+			).to.be.revertedWith("PartyBFacet: Sender should be the partyB")
+		})
+
 		it("Should successfully fill multiple close requests", async function () {
 			const quoteIds = [1n, 2n]
 			const filledAmounts = [decimal(50n), decimal(50n)]

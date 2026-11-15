@@ -37,8 +37,14 @@ contract ExecutionContextFacet is Accessibility, IExecutionContextFacet {
 
 	/// @notice Sets the flag to skip pending balance tracking in atomic open flows.
 	/// @dev Atomic-open shortcuts require a live transaction scope; they cannot be enabled persistently across transactions.
+	///      Switching the mode off with no scope open clears the stored flag instead, so a flag left in storage by an
+	///      older build can always be removed.
 	/// @param instantOpenMode True when entering instant open execution, false when exiting.
 	function setInstantOpenMode(bool instantOpenMode) external onlyRole(LibAccessibility.INSTANT_LAYER_ROLE) {
+		if (!instantOpenMode && !LibExecutionContext.isTransientContextActive()) {
+			GlobalAppStorage.layout().instantOpenMode = false;
+			return;
+		}
 		LibExecutionContext.setInstantOpenMode(instantOpenMode);
 	}
 

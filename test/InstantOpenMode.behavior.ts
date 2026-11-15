@@ -2,6 +2,7 @@ import { expect } from "chai"
 import { ZeroAddress, TypedDataDomain, toUtf8Bytes } from "ethers"
 
 import { initializeFixture } from "./Initialize.fixture.js"
+import { scalarGetterSlot } from "./helpers/diamond-storage.js"
 import { ethers } from "./helpers/hardhat-connection.js"
 import { cloneTypes } from "./helpers/instantLayerEIP712Types.js"
 import type { InstantLayer } from "./helpers/instantLayerTypes.js"
@@ -417,6 +418,21 @@ export function shouldBehaveLikeInstantOpenMode(): void {
 		it("rejects enabling persistent instant-open accounting outside a transaction scope", async function () {
 			await expect(context.controlFacet.connect(context.signers.admin).setInstantOpenMode(true)).to.be.reverted
 			expect(await context.viewFacet.isCallFromInstantLayer()).to.equal(false)
+		})
+
+		it("clears an instant-open flag left in storage by an older build", async function () {
+			// The signer and the four mode flags share one storage word; instantOpenMode is its byte 23.
+			const slot = ethers.toBeHex(await scalarGetterSlot(context.viewFacet, "isCallFromInstantLayer", []), 32)
+			const word = BigInt(await ethers.provider.getStorage(context.diamond, slot))
+			await ethers.provider.send("hardhat_setStorageAt", [context.diamond, slot, ethers.toBeHex(word | (1n << 184n), 32)])
+			const account = accounts[0].accountAddress
+			// A stored flag selects atomic-open bookkeeping, which needs a live scope, so it blocks quote creation.
+			await expect(context.accountManager.connect(partyA1.signer)._call(account, [quoteCallData])).to.be.revertedWith("InstantOpen: No active scope")
+
+			await context.controlFacet.connect(context.signers.admin).setInstantOpenMode(false)
+
+			expect(BigInt(await ethers.provider.getStorage(context.diamond, slot))).to.equal(word)
+			await expect(context.accountManager.connect(partyA1.signer)._call(account, [quoteCallData])).to.not.be.reverted
 		})
 	})
 

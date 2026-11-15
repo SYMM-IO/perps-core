@@ -9,7 +9,7 @@ import { limitCloseRequestBuilder } from "../models/requestModels/CloseRequest.j
 import { decimal } from "../utils/Common.js"
 import { deterministicMuonKey, signMuonHash } from "../utils/MuonSignature.js"
 
-describe("Hardening F-001: batch signature array boundaries", function () {
+describe("Batch signature array boundaries", function () {
 	async function setup(close: boolean) {
 		const context = await loadFixture(initializeFixture)
 		const user = new User(context, context.signers.user)

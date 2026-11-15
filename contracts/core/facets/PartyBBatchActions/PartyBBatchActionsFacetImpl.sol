@@ -26,7 +26,6 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library PartyBBatchActionsFacetImpl {
 	error SymbolNotAllowedForPartyA();
-	error DifferentPartyB();
 	using LockedValuesOps for LockedValues;
 	using LibPartyBState for address;
 
@@ -190,7 +189,6 @@ library PartyBBatchActionsFacetImpl {
 			uint256 quoteId = quoteIds[i];
 			Quote storage quote = quoteLayout.quotes[quoteId];
 
-			if (quote.partyB != firstQuotePartyB) revert DifferentPartyB();
 			require(quote.partyA == firstQuotePartyA, "PartyBBatchActionsFacet: All positions must have same partyA");
 			require(quote.partyB == signer, "PartyBFacet: Sender should be the partyB");
 			LibPartyBPositionsActions.fillCloseRequest(quoteId, filledAmounts[i], closedPrices[i]);

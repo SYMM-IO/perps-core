@@ -632,8 +632,9 @@
 					</p>
 					<p>
 						Both the native begin/end sequence and the historical setter sequence enforce these checks.
-						<code>setInstantOpenMode(bool)</code> requires a live scope for either value and reverts with
-						<code>TransientContextNotActive</code> outside it. It cannot enable a persistent shortcut across transactions. Authorized
+						<code>setInstantOpenMode(true)</code> requires a live scope and reverts with <code>TransientContextNotActive</code> outside
+						it, so it cannot enable a persistent shortcut across transactions. Outside a scope,
+						<code>setInstantOpenMode(false)</code> clears the stored <code>instantOpenMode</code> field and does nothing else. Authorized
 						routers must pair entry and cleanup within the same transaction; transient storage clearing at transaction end does not itself
 						run a completion check.
 					</p>
@@ -648,8 +649,12 @@
 					</p>
 					<p>
 						Before upgrading, confirm that the persistent <code>callFromInstantLayer</code> and <code>instantOpenMode</code> fields are
-						both zero. On a legacy version whose setters still write those fields, clear them before replacing those setters. The current
-						scope entrypoints reject persistent flags, and the current mode setter cannot reset them outside a scope.
+						both zero. The current scope entrypoints reject either flag. A stored <code>instantOpenMode</code> also stops new positions.
+						Quote creation reverts with <code>InstantOpen: No active scope</code>, locking reverts with
+						<code>InstantOpen: Quote not created</code>, and opening fails too. To clear the field after the upgrade, call
+						<code>setInstantOpenMode(false)</code> directly from an account that holds <code>INSTANT_LAYER_ROLE</code>. InstantLayer
+						itself makes that call only inside a scope, which the stored flag prevents. Nothing in the current build clears
+						<code>callFromInstantLayer</code>, so clear it on the legacy version before replacing its setter.
 					</p>
 
 					<h2 id="compat">Compatibility and pre-Cancun porting</h2>
@@ -699,8 +704,8 @@
 					<h3>What a pre-Cancun build requires</h3>
 					<p>
 						The current source compiles with solc 0.8.36 for the Cancun EVM and cannot execute on a pre-Cancun chain. Current InstantLayer
-						batch paths initiate transient authority, and the legacy InstantOpen mode setter also requires a live scope. Core&rsquo;s
-						legacy
+						batch paths initiate transient authority, and the legacy InstantOpen mode setter switches the mode on only inside a live
+						scope. Core&rsquo;s legacy
 						<code>setSigner</code> still writes the persistent core signer when no transient execution scope is active. Persistent
 						compatibility readers and hook restoration remain, but they do not provide a persistent InstantOpen activation path.
 					</p>

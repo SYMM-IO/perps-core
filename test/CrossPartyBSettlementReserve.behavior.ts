@@ -3,6 +3,7 @@ import { ethers, toUtf8Bytes, ZeroAddress } from "ethers"
 
 import type { UnifiedQuoteSettlementDataStruct } from "../src/types/facets/Settlement/ISettlementFacet.js"
 import { initializeFixture } from "./Initialize.fixture.js"
+import { ethers as hardhatEthers } from "./helpers/hardhat-connection.js"
 import { loadFixture } from "./helpers/network-helpers.js"
 import { PositionType } from "./models/Enums.js"
 import { Hedger } from "./models/Hedger.js"
@@ -451,6 +452,60 @@ export function shouldBehaveLikeCrossPartyBSettlementReserve(): void {
 			await expect(
 				scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator).settlePartyATakeover(scenarioUserAddr, [scenarioHedgerAddr]),
 			).to.be.revertedWith("ClearingHouseFacet: Unsettled PartyB remaining")
+		})
+
+		describe("Buckets opened before the pending-settlement count existed", function () {
+			// partyBPendingLiquidationSettlements is member 31 of AccountStorage.Layout and has no view.
+			const pendingSettlementCountSlot = (partyB: string) =>
+				ethers.keccak256(
+					ethers.AbiCoder.defaultAbiCoder().encode(
+						["address", "uint256"],
+						[partyB, BigInt(ethers.keccak256(toUtf8Bytes("diamond.standard.storage.account"))) + 31n],
+					),
+				)
+
+			/** Leaves every bucket pending but uncounted, as a liquidation closed on an older build is. */
+			async function setupUncountedBuckets() {
+				const scenario = await setupIsolatedPositiveSettlement()
+				const partyBs = [scenario.scenarioHedgerAddr, scenario.scenarioContext.signers.hedger2.address]
+				for (const partyB of partyBs) {
+					const slot = pendingSettlementCountSlot(partyB)
+					// Guards the layout offset: the word being cleared must be this PartyB's live count.
+					expect(BigInt(await hardhatEthers.provider.getStorage(scenario.scenarioContext.diamond, slot))).to.equal(1n)
+					await hardhatEthers.provider.send("hardhat_setStorageAt", [scenario.scenarioContext.diamond, slot, ethers.ZeroHash])
+				}
+				return { ...scenario, partyBs }
+			}
+
+			it("settles them", async function () {
+				const { scenarioContext, scenarioUserAddr, partyBs } = await setupUncountedBuckets()
+
+				await scenarioContext.partyALiquidationFacet.connect(scenarioContext.signers.liquidator).settlePartyALiquidation(scenarioUserAddr, partyBs)
+
+				expect(await scenarioContext.viewFacet.isPartyALiquidated(scenarioUserAddr)).to.equal(false)
+			})
+
+			it("clears them in a takeover", async function () {
+				const { scenarioContext, scenarioUserAddr, partyBs } = await setupUncountedBuckets()
+				await scenarioContext.controlFacet
+					.connect(scenarioContext.signers.admin)
+					.grantRole(scenarioContext.signers.liquidator.address, ethers.keccak256(toUtf8Bytes("CLEARING_HOUSE_ROLE")))
+				const clearingHouse = scenarioContext.clearingHouseFacet.connect(scenarioContext.signers.liquidator)
+				await clearingHouse.takeoverPartyALiquidation(scenarioUserAddr)
+
+				await clearingHouse.settlePartyATakeover(scenarioUserAddr, partyBs)
+
+				expect(await scenarioContext.viewFacet.getPartyBLiquidationSettlementReserve(partyBs[0])).to.equal(0n)
+			})
+
+			it("still blocks a mode change by the PartyB that owes, through its reserve", async function () {
+				const { scenarioContext, scenarioHedger } = await setupUncountedBuckets()
+				await scenarioContext.controlFacet.setCrossPartyBModeActivated(true)
+
+				await expect(scenarioContext.partyBAccountFacet.connect(scenarioHedger.signer).activateCrossPartyB()).to.be.revertedWith(
+					"PartyB: Pending liquidation settlements",
+				)
+			})
 		})
 	})
 

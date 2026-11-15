@@ -46,7 +46,7 @@
 				<a class="toc-link level-2" href="#fix">Fix</a>
 				<a class="toc-link level-2" href="#settlement-top-up-exception">Settlement top-up exception</a>
 				<a class="toc-link level-2" href="#pending-mode">Allocation mode stays fixed until settlement</a>
-				<a class="toc-link level-2" href="#upgrade">Upgrade after clearing pending buckets</a>
+				<a class="toc-link level-2" href="#upgrade">Upgrading with buckets still pending</a>
 				<a class="toc-link level-2" href="#invariant">Resulting invariant</a>
 			</div>
 
@@ -101,9 +101,10 @@
 					<p>
 						Core tracks each PartyA liquidation&rsquo;s positive pending contribution in every PartyB margin mode. The availability helper
 						returns zero for an isolated PartyB. Its contribution remains recorded, but the PartyB cannot change allocation mode while any
-						liquidation settlement bucket is pending. <code>resolveLiquidationDispute</code> resynchronizes the contribution when it
-						overrides a pending amount. Normal PartyA settlement consumes it, and Clearing House takeover clears it. The aggregate reserve
-						is subtracted only while the PartyB is currently in cross-mode accounting.
+						liquidation settlement bucket is pending. <a href="#upgrade">Buckets carried across the upgrade</a> are the exception.
+						<code>resolveLiquidationDispute</code> resynchronizes the contribution when it overrides a pending amount. Normal PartyA
+						settlement consumes it, and Clearing House takeover clears it. The aggregate reserve is subtracted only while the PartyB is
+						currently in cross-mode accounting.
 					</p>
 
 					<h2 id="fix">Fix</h2>
@@ -166,16 +167,23 @@ require(
 						</li>
 						<li>
 							The count increases once when a bucket becomes pending. Normal PartyA liquidation settlement or Clearing House takeover
-							settlement releases that bucket&rsquo;s count. Settling one of several pending buckets does not unlock mode changes.
+							settlement releases that bucket&rsquo;s count. Settling one of several counted buckets does not unlock mode changes.
 						</li>
 						<li>An admin call that reapplies the current mode remains allowed under its existing role and feature checks.</li>
 					</ul>
 
-					<h2 id="upgrade">Upgrade after clearing pending buckets</h2>
+					<h2 id="upgrade">Upgrading with buckets still pending</h2>
 					<p>
 						The pending-count mapping is appended to <code>AccountStorage.Layout</code>; existing members and the settlement tuple retain
-						their layout. Complete every active PartyA liquidation and takeover before upgrading. The upgrade does not enumerate or
-						backfill historical pending buckets, so they must not cross the upgrade.
+						their layout. The upgrade does not enumerate or backfill buckets that are already pending, so the count never includes them.
+						The count&rsquo;s decrement stops at zero, so they still settle and still clear in a takeover.
+					</p>
+					<p>
+						Finish every active PartyA liquidation and takeover before the upgrade, which leaves no uncounted bucket. If one is carried
+						across anyway, do not rely on the guard for its PartyB until that PartyB has no pending bucket left. The count can read zero
+						while a bucket is still pending, including one opened after the upgrade. The reserve then covers only an amount the PartyB
+						owes that a v0.8.6 build recorded. v0.8.5 recorded a reserve only for a cross PartyB, and nothing releases that one, so the
+						PartyB cannot change mode afterwards.
 					</p>
 					<p>
 						Replace both mode-changing implementations, the PartyA liquidation library and the Clearing House settlement implementation
