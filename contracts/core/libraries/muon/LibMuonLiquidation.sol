@@ -21,6 +21,7 @@ import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
 
 library LibMuonLiquidation {
 	bytes32 private constant LIQUIDATION_PRICE_BASIS_DOMAIN = keccak256("SYMMIO_LIQUIDATION_PRICE_BASIS_V1");
+	uint256 private constant LIQUIDATION_ID_LENGTH = 32;
 
 	/// @notice Verifies Party B UPNL signature for liquidation (uses per-partyA nonce in normal mode, zero in cross mode).
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, MuonFunction func) internal view {
@@ -30,6 +31,7 @@ library LibMuonLiquidation {
 	/// @notice Verifies a liquidation signature containing symbol prices and UPNL for Party A.
 	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		_requireCanonicalLiquidationId(liquidationSig.liquidationId);
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -59,6 +61,7 @@ library LibMuonLiquidation {
 	/// @notice Verifies a liquidation snapshot signature that commits historical insolvency plus PartyB-symbol price and funding states.
 	function verifyLiquidationSnapshotSig(LiquidationSnapshotSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		_requireCanonicalLiquidationId(liquidationSig.liquidationId);
 		bytes32 hash = keccak256(
 			abi.encodePacked(
 				muonLayout.muonAppId,
@@ -92,6 +95,7 @@ library LibMuonLiquidation {
 	/// @notice Verifies a deferred liquidation signature that includes block number and timestamp data.
 	function verifyDeferredLiquidationSig(DeferredLiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		_requireCanonicalLiquidationId(liquidationSig.liquidationId);
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -153,5 +157,9 @@ library LibMuonLiquidation {
 			priceBases[i] = keccak256(abi.encode(symbolIds[i], adjustment.restatementEpoch, adjustment.restating));
 		}
 		return keccak256(abi.encode(LIQUIDATION_PRICE_BASIS_DOMAIN, payloadHash, priceBases));
+	}
+
+	function _requireCanonicalLiquidationId(bytes memory liquidationId) private pure {
+		require(liquidationId.length == LIQUIDATION_ID_LENGTH, "LibMuon: Invalid liquidationId length");
 	}
 }

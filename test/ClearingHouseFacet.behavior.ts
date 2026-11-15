@@ -2155,7 +2155,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 
 				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, []))
 					.to.emit(context.clearingHouseFacet, "SettlePartyATakeover")
-					.withArgs(context.signers.user.address, "0x10")
+					.withArgs(context.signers.user.address, ethers.zeroPadValue("0x10", 32))
 
 				await validator.after(context, { user, settledPartyBs: [], beforeOutput: beforeOut })
 
@@ -2311,7 +2311,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 			it("should emit SettlePartyATakeover event", async () => {
 				await expect(context.clearingHouseFacet.connect(context.signers.liquidator).settlePartyATakeover(context.signers.user.address, []))
 					.to.emit(context.clearingHouseFacet, "SettlePartyATakeover")
-					.withArgs(context.signers.user.address, "0x10")
+					.withArgs(context.signers.user.address, ethers.zeroPadValue("0x10", 32))
 			})
 
 			it("should allow partyA to trade again after settlement", async () => {
@@ -2423,7 +2423,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 						.liquidatePositionsForClearingHouse(context.signers.hedger.address, [1n], [decimal(1n)]),
 				)
 					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
-					.withArgs(context.signers.user.address, "0x10")
+					.withArgs(context.signers.user.address, ethers.zeroPadValue("0x10", 32))
 
 				// After: takeover in progress
 				const detailsAfter = await context.viewFacet.getPartyATakeoverDetails(context.signers.user.address)
@@ -2483,7 +2483,7 @@ export function shouldBehaveLikeClearingHouseFacet(): void {
 					.liquidatePendingPositionsForClearingHouse(context.signers.hedger.address, [context.signers.user.address])
 				await expect(pendingLiquidationTx)
 					.to.emit(context.clearingHouseFacet, "AutoTakeoverPartyALiquidation")
-					.withArgs(context.signers.user.address, "0x10")
+					.withArgs(context.signers.user.address, ethers.zeroPadValue("0x10", 32))
 				const pendingLiquidationReceipt = await pendingLiquidationTx.wait()
 				const partyABalanceEvents = (pendingLiquidationReceipt?.logs ?? []).flatMap(log => {
 					try {

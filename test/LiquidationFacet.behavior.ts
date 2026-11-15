@@ -1561,8 +1561,8 @@ export function shouldBehaveLikeLiquidationFacet(): void {
 		})
 
 		describe("getPartyALiquidationSnapshots", async function () {
-			const liquidationId = "0x10"
-			const otherLiquidationId = "0x11"
+			const liquidationId = ethers.zeroPadValue("0x10", 32)
+			const otherLiquidationId = ethers.zeroPadValue("0x11", 32)
 
 			const startSnapshotLiquidation = async (states: any[]) => {
 				const price = decimal(8n)

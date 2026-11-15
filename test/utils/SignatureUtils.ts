@@ -67,7 +67,8 @@ export async function getDummyLiquidationSig(
 		liquidationBlockNumber: 1,
 		liquidationTimestamp: await getBlockTimestamp(),
 		liquidationAllocatedBalance: allocatedBalance,
-		liquidationId: liquidationId,
+		// Most callers use compact labels (e.g. 0x10); pad them to the contract's required 32 bytes.
+		liquidationId: ethers.zeroPadValue(liquidationId, 32),
 		upnl: upnl,
 		totalUnrealizedLoss: totalUnrealizedLoss,
 		prices: prices,
