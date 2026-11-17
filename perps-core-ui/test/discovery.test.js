@@ -104,6 +104,70 @@ test("roles cover helper contracts, unknown event hashes, effective admins and c
 	assert.ok(!edges.some(e => e.status === "missing"), "observed absence does not invent an expected grant");
 });
 
+test("every candidate role is checked with hasRole, including revoked roles retained in member discovery", async () => {
+	const core = node("core", "core", 1),
+		holder = node("holder", "authority", 2);
+	const revoked = "DEFAULT_ADMIN_ROLE",
+		held = "GLOBAL_PAUSER_ROLE",
+		calls = [];
+	core.state.roles = { [revoked]: [holder.address] };
+	core.roleHistory = [{ hash: id(revoked), holder: holder.address, admin: false }];
+	const edges = await inspectRoleConnections({
+		nodes: [core, holder],
+		profile: {},
+		read: async (target, signature, args) => {
+			if (signature.includes("hasRole(address")) {
+				calls.push({ target, holder: args[0], role: args[1] });
+				return args[0] === holder.address && args[1] === id(held);
+			}
+			if (signature.includes("isRoleAdmin")) return false;
+			throw Error("No enumerable getter");
+		},
+	});
+	const checked = calls.filter(call => call.holder === holder.address);
+	assert.equal(checked.length, core.roleCatalog.length);
+	assert.ok(checked.some(call => call.role === id(revoked)));
+	assert.equal(
+		edges.find(edge => edge.from === holder.id && edge.roleHash === id(revoked)),
+		undefined,
+	);
+	assert.equal(edges.find(edge => edge.from === holder.id && edge.roleHash === id(held))?.actual, true);
+	assert.deepEqual(core.state.roles, { [held]: [holder.address] });
+});
+
+test("a discovered member with a failed hasRole read stays unknown rather than verified or absent", async () => {
+	const core = node("core", "core", 1),
+		holder = node("holder", "authority", 2);
+	core.state.roles = { DEFAULT_ADMIN_ROLE: [holder.address] };
+	const edges = await inspectRoleConnections({
+		nodes: [core, holder],
+		profile: {},
+		read: async () => {
+			throw Error("Read unavailable");
+		},
+	});
+	const edge = edges.find(edge => edge.from === holder.id && edge.roleHash === id("DEFAULT_ADMIN_ROLE"));
+	assert.equal(edge?.status, "unknown");
+	assert.equal(edge?.actual, null);
+	assert.deepEqual(core.state.roles, {});
+});
+
+test("rechecking a discovered role retains its real hash without inventing one from its display name", async () => {
+	const core = node("core", "core", 1),
+		holder = node("holder", "authority", 2),
+		hash = id("DEPLOYED_ONLY_ROLE");
+	core.roleHistory = [{ hash, holder: holder.address, admin: false }];
+	const input = {
+		nodes: [core, holder],
+		profile: {},
+		read: async (target, signature, args) => signature.includes("hasRole(address") && args[0] === holder.address && args[1] === hash,
+	};
+	await inspectRoleConnections(input);
+	const catalogue = [...core.roleCatalog];
+	await inspectRoleConnections(input);
+	assert.deepEqual(core.roleCatalog, catalogue);
+});
+
 test("facets and implementations remain discoverable without crowding the default system graph", async () => {
 	const iface = new Interface(["function config() view returns((address owner,address[] targets) settings)"]);
 	const values = addressesIn(iface.fragments[0].outputs[0], [address(1), [address(2), ZeroAddress]], "config");

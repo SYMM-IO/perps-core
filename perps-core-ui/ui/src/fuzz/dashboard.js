@@ -173,7 +173,6 @@ export function mountFuzzDashboard(root, { authorization }) {
       'replay-command',
       'copy-replay-panel',
       'retention-list',
-      'footer-source',
       'announcer',
     ]) {
       dom[id] = element(id)
@@ -1447,10 +1446,6 @@ export function mountFuzzDashboard(root, { authorization }) {
     renderActivity(report)
     renderReplay(report)
     renderRetention(report)
-    setText(
-      dom['footer-source'],
-      state.selectedRunId ? `Source: /api/fuzz/runs/${state.selectedRunId} · archived run` : 'Source: /api/fuzz/report · current run',
-    )
     window.requestAnimationFrame(() => {
       if (!disposed && state.report === report) renderCharts(report)
     })

@@ -1,4 +1,4 @@
-import { duration, relations, rolesOn, settingsOf } from '../src/lib/inspect'
+import { duration, groupRoles, relations, rolesOn, settingsOf } from '../src/lib/inspect'
 import type { ContractNode } from '../src/types'
 import { expect, test } from 'vitest'
 
@@ -48,6 +48,43 @@ test('roles are listed with who holds each and who can grant it, a missing grant
       ],
       admins: ['admin'],
     },
+  ])
+})
+
+test('roles held by the same addresses share one block, whatever order either list came in', () => {
+  const rows = [
+    { role: 'SETTER_ROLE', holders: [{ id: 'gov', missing: false }], admins: ['gov'] },
+    { role: 'PAUSER_ROLE', holders: [{ id: 'gov', missing: false }], admins: ['gov'] },
+    {
+      role: 'LISTER_ROLE',
+      holders: [
+        { id: 'bot', missing: false },
+        { id: 'gov', missing: false },
+      ],
+      admins: [],
+    },
+    {
+      role: 'UNLISTER_ROLE',
+      holders: [
+        { id: 'gov', missing: false },
+        { id: 'bot', missing: false },
+      ],
+      admins: [],
+    },
+    // The same address, but not granted: a different block.
+    { role: 'IDLE_ROLE', holders: [{ id: 'gov', missing: true }], admins: [] },
+  ]
+  expect(groupRoles(rows)).toEqual([
+    { roles: ['SETTER_ROLE', 'PAUSER_ROLE'], holders: [{ id: 'gov', missing: false }], admins: ['gov'] },
+    {
+      roles: ['LISTER_ROLE', 'UNLISTER_ROLE'],
+      holders: [
+        { id: 'bot', missing: false },
+        { id: 'gov', missing: false },
+      ],
+      admins: [],
+    },
+    { roles: ['IDLE_ROLE'], holders: [{ id: 'gov', missing: true }], admins: [] },
   ])
 })
 

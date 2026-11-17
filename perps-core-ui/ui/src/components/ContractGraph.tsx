@@ -1,7 +1,7 @@
 import { power, stackModel } from '../../../shared/graph-insight.js'
 import { bundleEdges, EDGE_GROUPS, isImplementation, SYSTEM_LANES } from '../../../shared/graph-model.js'
 import { changeView, filterView, findContracts, finishView, looksLikeAddress, placeNodes, scopeKey, stacksOf } from '../../../shared/map-view.js'
-import { FAMILIES, familyOf, familyTones, graphStyles, NODE_FONT, TEXT_WIDTH, type Family } from '../lib/graph-styles'
+import { FAMILIES, familyOf, familyTones, glyphFor, graphStyles, NODE_FONT, TEXT_WIDTH, type Family } from '../lib/graph-styles'
 import { fitBox, fitLabel, panToKeep, savedScrollMode, saveScrollMode, wheelReader, type ScrollMode } from '../lib/map-gesture'
 import { short } from '../lib/state'
 import type { PatchOptions } from '../lib/url'
@@ -14,7 +14,9 @@ import {
   Button,
   FocusTrap,
   Group,
+  Modal,
   Popover,
+  Stack,
   Select,
   Text,
   TextInput,
@@ -25,8 +27,24 @@ import {
   type OptionsFilter,
 } from '@mantine/core'
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
-import { Check, CircleHelp, Expand, Focus, Info, LayoutGrid, Minimize, Minus, Move, Plus, Scan, Search, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import {
+  Check,
+  CircleHelp,
+  Expand,
+  Focus,
+  Info,
+  LayoutGrid,
+  Minimize,
+  Minus,
+  Move,
+  Plus,
+  Scan,
+  Search,
+  SlidersHorizontal,
+  MoreHorizontal,
+  X,
+} from 'lucide-react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 interface Props {
   snapshot?: Snapshot
@@ -41,6 +59,8 @@ interface Props {
   onPrepare: (node: ContractNode) => void
   /** Disables Prepare upgrade while another operation runs. */
   prepareDisabled?: boolean
+  /** A new request moves keyboard focus from a workspace drill-down into its detail panel. */
+  focusDetails?: number
   /** What changed between the previous inspection and this one, and which inspection that was. */
   delta?: any[]
   since?: { blockNumber: number; at?: string } | null
@@ -310,13 +330,21 @@ export function ContractGraph({
   onLink,
   onPrepare,
   prepareDisabled = false,
+  focusDetails = 0,
   delta = NO_CHANGES,
   since,
 }: Props) {
   const canvas = useRef<HTMLDivElement>(null),
     panel = useRef<HTMLElement>(null),
-    searchBox = useRef<HTMLInputElement>(null)
+    searchBox = useRef<HTMLInputElement>(null),
+    filterButton = useRef<HTMLButtonElement>(null),
+    toolsButton = useRef<HTMLButtonElement>(null)
   const color = useComputedColorScheme('dark')
+  useEffect(() => {
+    if (!focusDetails) return
+    const frame = requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>('.graph-inspector .inspector-heading')?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [focusDetails])
   // One map for the whole visit: fullscreen is the same map pinned over the page, so nothing on it is lost.
   const [fullscreen, setFullscreen] = useState(false)
   // The contract whose neighbours stay lit while the rest of the map steps back.
@@ -334,6 +362,11 @@ export function ContractGraph({
   // The question being asked of one contract: what it can change, or who can change it.
   const [reach, setReach] = useState<{ id: string; direction: Direction } | null>(null)
   const [help, setHelp] = useState(false)
+  const [filterPanel, setFilterPanel] = useState(false)
+  const [tools, setTools] = useState(false)
+  const [coverage, setCoverage] = useState(false)
+  const [legend, setLegend] = useState(false)
+  const filterId = useId()
   // The search box answers each keystroke; the map and the URL follow once typing pauses.
   const [query, setQuery] = useState(filters.query)
   const [centerTick, setCenterTick] = useState(0)
@@ -370,7 +403,8 @@ export function ContractGraph({
     stack = stacks.get(selected) as StackNode | undefined
   const nameOf = (id: string) => named.find((n) => n.id === id)?.name || source.nodes.find((n) => n.id === id)?.name || 'this contract'
   const update = (patch: Partial<GraphFilters>, options?: PatchOptions) => onFilters({ ...filters, ...patch }, options)
-  const filtered = filters.hide.length > 0 || !!filters.query || filters.missingOnly
+  const filterCount = filters.hide.length + Number(!!filters.query) + Number(filters.missingOnly) + Number(!!filters.focus) + Number(implementation)
+  const filtered = filterCount > 0
   const drawnIds = new Set(model.nodes.map((n: any) => n.id as string))
 
   // Lighting one contract and lighting a family are the same spotlight, so choosing either drops the other.
@@ -392,7 +426,7 @@ export function ContractGraph({
   }
   const close = () => {
     setFullscreen(false)
-    requestAnimationFrame(() => panel.current?.querySelector<HTMLButtonElement>('[data-fullscreen-toggle]')?.focus())
+    requestAnimationFrame(() => toolsButton.current?.focus())
   }
   // Escape steps back one thing at a time: the open line, the question or highlight, then fullscreen.
   const escape = () => {
@@ -434,12 +468,28 @@ export function ContractGraph({
     // Double-clicking a stack opens it; double-clicking a contract redraws the map around it.
     focus: (id) => (stacks.has(id) ? setExpanded([...expanded, id]) : update({ focus: id })),
     link: onLink,
+    // Tapping empty canvas steps back to the summary: the problems first, then the way back to the map.
     clear: () => {
       if (link) onLink('')
       light('')
+      if (selected) onSelect('')
     },
     preview: (id) => highlight(id),
     rest,
+  }
+
+  /** Both Fit and selection use the same space left clear by the floating detail panel. */
+  function availableRoom() {
+    const graph = cy.current,
+      canvasBox = canvas.current?.getBoundingClientRect(),
+      detailBox = panel.current?.querySelector<HTMLElement>('.graph-inspector')?.getBoundingClientRect()
+    const width = graph?.width() || 0,
+      height = graph?.height() || 0
+    return {
+      width: detailBox?.width && canvasBox && window.innerWidth > 900 ? Math.max(120, Math.min(width, detailBox.left - canvasBox.left - 24)) : width,
+      height:
+        detailBox?.height && canvasBox && window.innerWidth <= 900 ? Math.max(100, Math.min(height, detailBox.top - canvasBox.top - 24)) : height,
+    }
   }
 
   /** Fits the map to the room left between the overlays on its edges. The first view of a scope stays readable. */
@@ -453,12 +503,18 @@ export function ContractGraph({
       top = height('.graph-top'),
       bottom = Math.max(height('.graph-key'), height('.graph-zoom')),
       size = { width: graph.width(), height: graph.height() },
+      room = availableRoom(),
       anchor = graph.getElementById(filters.focus || selected || 'core')
     graph.viewport(
       fitBox(
         graph.elements().boundingBox(),
         size,
-        { top: top ? top + 24 : 28, bottom: bottom ? bottom + 24 : 28, left: 28, right: 28 },
+        {
+          top: top ? top + 24 : 28,
+          bottom: Math.max(bottom ? bottom + 24 : 28, size.height - room.height),
+          left: 28,
+          right: Math.max(28, size.width - room.width),
+        },
         {
           min: readable ? READABLE : size.width < 600 ? 0.5 : ZOOM.min,
           max: 1,
@@ -514,7 +570,7 @@ export function ContractGraph({
           was = graph.getElementById(id)
         return {
           group: 'nodes' as const,
-          data: { id, label: s.name },
+          data: { id, label: s.label || s.name },
           position: !fresh && was.length ? { ...was.position() } : positions[id],
           classes: 'lane',
           selectable: false,
@@ -528,6 +584,7 @@ export function ContractGraph({
           // A stack has no address of its own; its second line says what each of its members has.
           label: `${fitLabel(n.stack ? n.title : n.name, TEXT_WIDTH, NAME_FONT)}\n${n.stack ? fitLabel(n.summary, TEXT_WIDTH, NAME_FONT) : short(n.address)}`,
           kind: n.kind,
+          glyph: glyphFor(n),
           ...(n.stack ? { count: n.members.length } : {}),
         },
         position: placed[n.id],
@@ -641,11 +698,14 @@ export function ContractGraph({
     if (!target.length || (!moved && !asked)) return
     centerOn.current = ''
     const box = target.renderedBoundingBox(),
-      inside = box.x1 >= 0 && box.y1 >= 0 && box.x2 <= graph.width() && box.y2 <= graph.height()
+      { width, height } = availableRoom(),
+      inside = box.x1 >= 0 && box.y1 >= 0 && box.x2 <= width && box.y2 <= height
     if (inside && !asked) return
     graph.stop()
-    if (still()) graph.center(target)
-    else graph.animate({ center: { eles: target }, duration: 220, easing: 'ease-out' })
+    const position = target.boundingBox(),
+      pan = { x: width / 2 - ((position.x1 + position.x2) / 2) * graph.zoom(), y: height / 2 - ((position.y1 + position.y2) / 2) * graph.zoom() }
+    if (still()) graph.pan(pan)
+    else graph.animate({ pan, duration: 220, easing: 'ease-out' })
   }, [selected, link, links, centerTick])
 
   // The search box: what is typed reaches the map and the URL 150 ms after the last key, as one history entry.
@@ -669,7 +729,7 @@ export function ContractGraph({
   const resetFilters = () => {
     sent.current = ''
     setQuery('')
-    update({ hide: [], query: '', missingOnly: false }, { replace: true })
+    update({ mode: 'all', focus: '', hide: [], query: '', missingOnly: false }, { replace: true })
   }
   // The contracts a search can select. Within one contract's neighbourhood, the ones drawn come first.
   const contracts = source.nodes.filter((n) => implementation || !isImplementation(n.kind)),
@@ -773,51 +833,6 @@ export function ContractGraph({
         }}
       >
         <div className="graph-toolbar">
-          {/* Two plain choices: the whole system, or one contract and what it touches. */}
-          <div className="seg" role="group" aria-label="How much of the system the map shows">
-            <button type="button" aria-pressed={!filters.focus} onClick={() => update({ focus: '' })}>
-              Whole system
-            </button>
-            <button
-              type="button"
-              aria-pressed={!!filters.focus}
-              onClick={() => {
-                const id = contracts.some((n) => n.id === selected) ? selected : 'core'
-                update({ focus: id })
-                onSelect(id)
-              }}
-            >
-              One contract
-            </button>
-          </div>
-          {filters.focus && (
-            <Select
-              aria-label="Contract the map is drawn around"
-              data={contractGroups}
-              value={filters.focus}
-              searchable
-              allowDeselect={false}
-              leftSection={<span className="graph-focus-label">Around</span>}
-              leftSectionWidth={70}
-              leftSectionPointerEvents="none"
-              filter={contractFilter}
-              renderOption={({ option }) => (
-                <span className="contract-option">
-                  <span>{option.label}</span>
-                  <code>{short(addressOf.get(option.value) || '')}</code>
-                </span>
-              )}
-              nothingFoundMessage="No contract matches"
-              comboboxProps={{ width: 360, position: 'bottom-start' }}
-              maxDropdownHeight={380}
-              onChange={(value) => {
-                if (!value) return
-                update({ focus: value })
-                onSelect(value)
-              }}
-              className="graph-focus"
-            />
-          )}
           <TextInput
             ref={searchBox}
             aria-label="Find contract, role or getter"
@@ -853,190 +868,303 @@ export function ContractGraph({
             }}
             className="graph-query"
           />
-          <div className="graph-filters" role="group" aria-label="Connections shown">
-            {!implementation &&
-              EDGE_GROUPS.map((group: { id: string; label: string }) => {
-                const count = plain.tally.groups[group.id] as number
-                return (
-                  <FilterChip
-                    key={group.id}
-                    on={!filters.hide.includes(group.id) && count > 0}
-                    count={count}
-                    disabled={!count}
-                    onClick={() => toggle(group.id)}
-                  >
-                    {group.label}
-                  </FilterChip>
-                )
-              })}
-            <FilterChip
-              on={filters.missingOnly}
-              count={plain.tally.issues}
-              tone="bad"
-              disabled={!plain.tally.issues && !filters.missingOnly}
-              onClick={() => update({ missingOnly: !filters.missingOnly }, { replace: true })}
-            >
-              Issues only
-            </FilterChip>
-            <span className="filter-sep" aria-hidden />
-            <FilterChip on={implementation} onClick={() => update({ mode: implementation ? 'all' : 'implementation', hide: [] })}>
-              Facets & libraries
-            </FilterChip>
-            <FilterChip
-              on={stacking && stackCount > 0}
-              count={stackCount}
-              disabled={!stackCount}
-              onClick={() => {
-                setStacking(!stacking || expanded.length > 0)
-                setExpanded([])
-              }}
-            >
-              Stack look-alikes
-            </FilterChip>
-            {overlay.count > 0 && (
-              <FilterChip on={showChanges} count={overlay.count} tone="warn" onClick={() => setChanges(!changes)}>
-                Changes
-              </FilterChip>
-            )}
-            {filtered && (
-              <Button size="compact-sm" variant="subtle" onClick={resetFilters}>
-                Reset
-              </Button>
-            )}
-          </div>
-          <Group gap={4} ml="auto" wrap="nowrap">
+          <Button
+            ref={filterButton}
+            variant={filterPanel ? 'light' : 'default'}
+            leftSection={<SlidersHorizontal size={15} aria-hidden />}
+            aria-expanded={filterPanel}
+            aria-controls={filterId}
+            onClick={() => setFilterPanel(!filterPanel)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && filterPanel) {
+                event.preventDefault()
+                setFilterPanel(false)
+              }
+            }}
+          >
+            Filters{filterCount ? ` · ${filterCount}` : ''}
+          </Button>
+          {filtered && (
+            <Tooltip label="Clear filters">
+              <ActionIcon variant="subtle" color="gray" aria-label="Clear filters" onClick={resetFilters}>
+                <X size={14} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+          <div className="map-toolbar-actions">
             <Tooltip label="Fit to view (0)">
               <ActionIcon variant="default" size="lg" aria-label="Fit to view" onClick={() => fit()}>
                 <Scan size={16} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label={arrange ? 'Stop arranging: dragging moves the map again' : 'Arrange: drag contracts to new places'}>
-              <ActionIcon
-                variant={arrange ? 'filled' : 'default'}
-                size="lg"
-                aria-label="Arrange contracts by dragging"
-                aria-pressed={arrange}
-                onClick={() => setArrange(!arrange)}
-              >
-                <Move size={16} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Reset layout">
-              <ActionIcon
-                variant="default"
-                size="lg"
-                aria-label="Reset layout"
+            <Popover opened={tools} onChange={setTools} position="bottom-end" width={240}>
+              <Popover.Target>
+                <Button ref={toolsButton} variant="default" leftSection={<MoreHorizontal size={16} aria-hidden />} onClick={() => setTools(!tools)}>
+                  Tools
+                </Button>
+              </Popover.Target>
+              <Popover.Dropdown>
+                <Stack gap={4}>
+                  <Button
+                    variant="subtle"
+                    color="gray"
+                    leftSection={<Move size={15} />}
+                    aria-pressed={arrange}
+                    onClick={() => {
+                      setArrange(!arrange)
+                      setTools(false)
+                    }}
+                  >
+                    {arrange ? 'Stop arranging' : 'Arrange contracts'}
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    color="gray"
+                    leftSection={<LayoutGrid size={15} />}
+                    onClick={() => {
+                      cy.current?.nodes().positions((n) => positions[n.id()] || n.position())
+                      fit()
+                      setTools(false)
+                    }}
+                  >
+                    Reset layout
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    color="gray"
+                    leftSection={<Info size={15} />}
+                    onClick={() => {
+                      setCoverage(true)
+                      setTools(false)
+                    }}
+                  >
+                    Scan coverage
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    color="gray"
+                    leftSection={<CircleHelp size={15} />}
+                    onClick={() => {
+                      setHelp(true)
+                      setTools(false)
+                    }}
+                  >
+                    Gestures and shortcuts
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    color="gray"
+                    leftSection={fullscreen ? <Minimize size={15} /> : <Expand size={15} />}
+                    data-fullscreen-toggle
+                    onClick={() => {
+                      fullscreen ? close() : setFullscreen(true)
+                      setTools(false)
+                    }}
+                  >
+                    {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                  </Button>
+                </Stack>
+              </Popover.Dropdown>
+            </Popover>
+          </div>
+        </div>
+        {filterPanel && (
+          <div
+            id={filterId}
+            className="graph-filter-panel"
+            role="region"
+            aria-label="Map filters"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !(event.target as HTMLElement).closest('[aria-expanded="true"]')) {
+                event.preventDefault()
+                event.stopPropagation()
+                setFilterPanel(false)
+                filterButton.current?.focus()
+              }
+            }}
+          >
+            {/* Two plain choices: the whole system, or one contract and what it touches. */}
+            <div className="seg" role="group" aria-label="How much of the system the map shows">
+              <button type="button" aria-pressed={!filters.focus} onClick={() => update({ focus: '' })}>
+                Whole system
+              </button>
+              <button
+                type="button"
+                aria-pressed={!!filters.focus}
                 onClick={() => {
-                  cy.current?.nodes().positions((n) => positions[n.id()] || n.position())
-                  fit()
+                  const id = contracts.some((n) => n.id === selected) ? selected : 'core'
+                  update({ focus: id })
+                  onSelect(id)
                 }}
               >
-                <LayoutGrid size={16} />
-              </ActionIcon>
-            </Tooltip>
-            <Popover width={380} position="bottom-end" withArrow>
-              <Popover.Target>
-                <Tooltip label="Scan coverage">
-                  <ActionIcon variant="default" size="lg" aria-label="Scan coverage and limitations">
-                    <Info size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              </Popover.Target>
-              <Popover.Dropdown>
-                <Text size="xs">{snapshot?.coverage ? String(snapshot.coverage) : 'Inspect the deployment to read its connections.'}</Text>
-                {snapshot?.roleHistory && (
-                  <Text size="xs" c="dimmed" mt="xs">
-                    Role events: {snapshot.roleHistory.complete ? 'complete history' : 'incomplete history'}
-                    {snapshot.roleHistory.unreadRanges ? ` · ${snapshot.roleHistory.unreadRanges} block ranges unread` : ''}
-                  </Text>
+                One contract
+              </button>
+            </div>
+            {filters.focus && (
+              <Select
+                aria-label="Contract the map is drawn around"
+                data={contractGroups}
+                value={filters.focus}
+                searchable
+                allowDeselect={false}
+                leftSection={<span className="graph-focus-label">Around</span>}
+                leftSectionWidth={70}
+                leftSectionPointerEvents="none"
+                filter={contractFilter}
+                renderOption={({ option }) => (
+                  <span className="contract-option">
+                    <span>{option.label}</span>
+                    <code>{short(addressOf.get(option.value) || '')}</code>
+                  </span>
                 )}
-                <Text size="xs" c="dimmed" mt="xs">
-                  Left to right: {layout.sections.map((s: any) => s.name).join(' → ')}
-                </Text>
-              </Popover.Dropdown>
-            </Popover>
-            <Popover opened={help} onChange={setHelp} width={400} position="bottom-end" withArrow>
-              <Popover.Target>
-                <Tooltip label="Gestures and shortcuts (?)">
-                  <ActionIcon variant="default" size="lg" aria-label="Gestures and shortcuts">
-                    <CircleHelp size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              </Popover.Target>
-              <Popover.Dropdown>
-                <dl className="map-help" aria-label="Gestures and shortcuts">
-                  {SHORTCUTS.map(([key, what]) => (
-                    <div key={key}>
-                      <dt>{key}</dt>
-                      <dd>{what}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Popover.Dropdown>
-            </Popover>
-            <Tooltip label={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}>
-              <ActionIcon
-                variant="default"
-                size="lg"
-                aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                onClick={() => (fullscreen ? close() : setFullscreen(true))}
-                data-fullscreen-toggle
-                data-autofocus={fullscreen || undefined}
+                nothingFoundMessage="No contract matches"
+                comboboxProps={{ width: 360, position: 'bottom-start' }}
+                maxDropdownHeight={380}
+                onChange={(value) => {
+                  if (!value) return
+                  update({ focus: value })
+                  onSelect(value)
+                }}
+                className="graph-focus"
+              />
+            )}
+            <div className="graph-filters" role="group" aria-label="Connections shown">
+              {!implementation &&
+                EDGE_GROUPS.map((group: { id: string; label: string }) => {
+                  const count = plain.tally.groups[group.id] as number
+                  return (
+                    <FilterChip
+                      key={group.id}
+                      on={!filters.hide.includes(group.id) && count > 0}
+                      count={count}
+                      disabled={!count}
+                      onClick={() => toggle(group.id)}
+                    >
+                      {group.label}
+                    </FilterChip>
+                  )
+                })}
+              <FilterChip
+                on={filters.missingOnly}
+                count={plain.tally.issues}
+                tone="bad"
+                disabled={!plain.tally.issues && !filters.missingOnly}
+                onClick={() => update({ missingOnly: !filters.missingOnly }, { replace: true })}
               >
-                {fullscreen ? <Minimize size={16} /> : <Expand size={16} />}
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        </div>
+                Issues only
+              </FilterChip>
+              <span className="filter-sep" aria-hidden />
+              <FilterChip on={implementation} onClick={() => update({ mode: implementation ? 'all' : 'implementation', hide: [] })}>
+                Facets & libraries
+              </FilterChip>
+              <FilterChip
+                on={stacking && stackCount > 0}
+                count={stackCount}
+                disabled={!stackCount}
+                onClick={() => {
+                  setStacking(!stacking || expanded.length > 0)
+                  setExpanded([])
+                }}
+              >
+                Stack look-alikes
+              </FilterChip>
+              {overlay.count > 0 && (
+                <FilterChip on={showChanges} count={overlay.count} tone="warn" onClick={() => setChanges(!changes)}>
+                  Changes
+                </FilterChip>
+              )}
+            </div>
+          </div>
+        )}
+        <Modal opened={coverage} onClose={() => setCoverage(false)} title="Scan coverage" size="md">
+          <Text size="sm">{snapshot?.coverage ? String(snapshot.coverage) : 'Inspect the deployment to read its connections.'}</Text>
+          {snapshot?.roleHistory && (
+            <Text size="sm" c="dimmed" mt="sm">
+              Role events: {snapshot.roleHistory.complete ? 'complete history' : 'incomplete history'}
+              {snapshot.roleHistory.unreadRanges ? ` · ${snapshot.roleHistory.unreadRanges} block ranges unread` : ''}
+            </Text>
+          )}
+        </Modal>
+        <Modal opened={help} onClose={() => setHelp(false)} title="Gestures and shortcuts" size="md">
+          <dl className="map-help" aria-label="Gestures and shortcuts">
+            {SHORTCUTS.map(([key, what]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{what}</dd>
+              </div>
+            ))}
+          </dl>
+        </Modal>
         <ResizableSidebar
           storageKey="workbench:inspector-width"
           label="contract inspector"
           sidebar={
-            selectedLink ? (
-              <LinkDetail
-                link={selectedLink}
-                nodes={named}
-                block={snapshot?.blockNumber}
-                back={selectedNode?.name}
-                explorer={profile.explorer}
-                onSelect={pick}
-                onClose={() => onLink('')}
-              />
-            ) : reached ? (
-              <PowerDetail
-                result={reached}
-                nodes={named}
-                onLink={onLink}
-                onDirection={(direction) => setReach({ id: reached.root, direction })}
-                onClose={() => setReach(null)}
-              />
-            ) : stack ? (
-              <StackDetail
-                stack={stack}
-                links={links}
-                nodes={named}
-                onSelect={pick}
-                onLink={onLink}
-                onExpand={() => setExpanded([...expanded, stack.id])}
-              />
-            ) : (
-              <Inspector
-                node={selectedNode}
-                nodes={drawn.nodes}
-                edges={drawn.edges}
-                links={allLinks}
-                profile={profile}
-                changes={delta.filter((d) => d.node === selected || d.to === selected)}
-                onPrepare={(node) => {
-                  setFullscreen(false)
-                  onPrepare(node)
-                }}
-                prepareDisabled={prepareDisabled}
-                onSelect={pick}
-                onLink={onLink}
-                onPower={snapshot ? ask : undefined}
-              />
-            )
+            selectedLink || reached || stack || selectedNode ? (
+              <>
+                <div className="inspector-close">
+                  <ActionIcon
+                    size={30}
+                    aria-label="Close details"
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => {
+                      onLink('')
+                      onSelect('')
+                      setReach(null)
+                      light('')
+                      canvas.current?.focus()
+                    }}
+                  >
+                    <X size={16} aria-hidden />
+                  </ActionIcon>
+                </div>
+                {selectedLink ? (
+                  <LinkDetail
+                    link={selectedLink}
+                    nodes={named}
+                    block={snapshot?.blockNumber}
+                    back={selectedNode?.name}
+                    explorer={profile.explorer}
+                    onSelect={pick}
+                    onClose={() => onLink('')}
+                  />
+                ) : reached ? (
+                  <PowerDetail
+                    result={reached}
+                    nodes={named}
+                    onLink={onLink}
+                    onDirection={(direction) => setReach({ id: reached.root, direction })}
+                    onClose={() => setReach(null)}
+                  />
+                ) : stack ? (
+                  <StackDetail
+                    stack={stack}
+                    links={links}
+                    nodes={named}
+                    onSelect={pick}
+                    onLink={onLink}
+                    onExpand={() => setExpanded([...expanded, stack.id])}
+                  />
+                ) : selectedNode ? (
+                  <Inspector
+                    node={selectedNode}
+                    nodes={drawn.nodes}
+                    edges={drawn.edges}
+                    links={allLinks}
+                    profile={profile}
+                    changes={delta.filter((d) => d.node === selected || d.to === selected)}
+                    onPrepare={(node) => {
+                      setFullscreen(false)
+                      onPrepare(node)
+                    }}
+                    prepareDisabled={prepareDisabled}
+                    onSelect={pick}
+                    onLink={onLink}
+                    onPower={snapshot ? ask : undefined}
+                  />
+                ) : null}
+              </>
+            ) : null
           }
         >
           <div className="graph-main">
@@ -1046,7 +1174,7 @@ export function ContractGraph({
                 ref={canvas}
                 tabIndex={0}
                 role="group"
-                aria-label="Interactive contract graph. Choose Whole system or One contract above to set what is drawn; a contract's connections are listed in the inspector. Arrow keys move the map, plus and minus zoom, zero fits, slash finds a contract, question mark lists the shortcuts, Escape closes the open line, then the highlight."
+                aria-label="Interactive contract graph. Open Filters to choose the whole system or one contract; a contract's connections are listed in the inspector. Arrow keys move the map, plus and minus zoom, zero fits, slash finds a contract, question mark lists the shortcuts, Escape closes the open line, then the highlight."
                 onKeyDown={(e) => {
                   const graph = cy.current
                   if (!graph || !['+', '=', '-', '0', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
@@ -1131,24 +1259,6 @@ export function ContractGraph({
                   )}
                 </div>
               )}
-              <div className="graph-key" role="group" aria-label="Kinds of contract on the map. Choose one to light it up.">
-                {present.map((f) => (
-                  <button
-                    type="button"
-                    className="legend-node"
-                    key={f.id}
-                    aria-pressed={family === f.id}
-                    onClick={() => {
-                      setSpot('')
-                      setFamily(family === f.id ? '' : f.id)
-                    }}
-                  >
-                    <i data-shape={f.shape} style={{ background: tones[f.id].bg, boxShadow: `inset 0 0 0 1px ${tones[f.id].ink}40` }} aria-hidden />
-                    {f.label}
-                    <b>{f.count}</b>
-                  </button>
-                ))}
-              </div>
               <Group className="graph-zoom" gap={6}>
                 <Tooltip
                   label={
@@ -1177,26 +1287,76 @@ export function ContractGraph({
                 </ActionIcon>
               </Group>
             </div>
-            <div className="graph-legend">
-              <p className="graph-tip">
-                {arrange ? 'Drag a contract to place it' : 'Drag to move'} ·{' '}
-                {scroll === 'zoom' ? 'scroll to zoom' : 'scroll to move, pinch or ⌘-scroll to zoom'} · click a contract to light up its connections,
-                double-click to draw around it · ? for shortcuts
-              </p>
-              <div className="legend-lines">
-                {(showChanges ? (['added', 'changed', 'removed'] as const) : (['set', 'missing', 'unknown'] as const)).map((state) => (
-                  <span className="legend-key" data-state={state} key={state}>
-                    <i aria-hidden />
-                    {{ set: 'Set', missing: 'Missing', unknown: 'Unavailable', added: 'New', changed: 'Changed', removed: 'Gone' }[state]}
-                  </span>
-                ))}
-                <Text size="xs" c="dimmed" ml="auto">
-                  {plural(tally.addresses, 'address', 'addresses')}
-                  {tally.stacks ? ` in ${plural(tally.nodes, 'node')}` : ''} · {tally.connections.toLocaleString()} of{' '}
-                  {plural(tally.of, 'connection')}
+            <div className="map-key-bar">
+              <Button
+                variant="subtle"
+                color="gray"
+                size="compact-sm"
+                aria-expanded={legend}
+                onClick={() => {
+                  setLegend(!legend)
+                  if (legend) setFamily('')
+                }}
+              >
+                {legend ? 'Hide map key' : 'Map key'}
+              </Button>
+              {!!filters.focus && (
+                <Text size="xs" c="dimmed">
+                  Around {nameOf(filters.focus)}
                 </Text>
-              </div>
+              )}
+              {arrange && (
+                <Button size="compact-sm" variant="default" onClick={() => setArrange(false)}>
+                  Stop arranging
+                </Button>
+              )}
             </div>
+            {legend && (
+              <div className="graph-legend">
+                <div className="graph-key" role="group" aria-label="Kinds of contract on the map. Choose one to light it up.">
+                  {present.map((f) => (
+                    <button
+                      type="button"
+                      className="legend-node"
+                      key={f.id}
+                      aria-pressed={family === f.id}
+                      onClick={() => {
+                        setSpot('')
+                        setFamily(family === f.id ? '' : f.id)
+                      }}
+                    >
+                      <i data-shape={f.shape} style={{ background: tones[f.id].bg, boxShadow: `inset 0 0 0 1px ${tones[f.id].ink}40` }} aria-hidden />
+                      {f.label}
+                      <b>{f.count}</b>
+                    </button>
+                  ))}
+                </div>
+                <p className="graph-tip">
+                  {arrange ? 'Drag a contract to place it' : 'Drag to move'} ·{' '}
+                  {scroll === 'zoom' ? 'scroll to zoom' : 'scroll to move, pinch or ⌘-scroll to zoom'} · click a contract to light up its connections,
+                  double-click to draw around it · ? for shortcuts
+                </p>
+                <div className="legend-lines">
+                  {(showChanges ? (['added', 'changed', 'removed'] as const) : (['set', 'missing', 'unknown'] as const)).map((state) => (
+                    <span className="legend-key" data-state={state} key={state}>
+                      <i aria-hidden />
+                      {{ set: 'Set', missing: 'Missing', unknown: 'Unavailable', added: 'New', changed: 'Changed', removed: 'Gone' }[state]}
+                    </span>
+                  ))}
+                  {tally.stacks > 0 && (
+                    <span className="legend-key" data-state="stack" title="Several identically wired addresses drawn as one node">
+                      <i aria-hidden />
+                      Stack
+                    </span>
+                  )}
+                  <Text size="xs" c="dimmed" ml="auto">
+                    {plural(tally.addresses, 'address', 'addresses')}
+                    {tally.stacks ? ` in ${plural(tally.nodes, 'node')}` : ''} · {tally.connections.toLocaleString()} of{' '}
+                    {plural(tally.of, 'connection')}
+                  </Text>
+                </div>
+              </div>
+            )}
             <VisuallyHidden role="status" aria-live="polite">
               {announcement}
             </VisuallyHidden>

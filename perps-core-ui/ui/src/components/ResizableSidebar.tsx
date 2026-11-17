@@ -1,8 +1,20 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-const MIN_WIDTH = 260
-const DEFAULT_WIDTH = 300
+export const SIDEBAR_MIN = 320
+const SIDEBAR_DEFAULT = 360
+/** Below this viewport the inspector stacks under the map (see styles.css) and cannot be dragged. */
+const NARROW = 900
 
+/** 320px to 60% of the viewport, the room the inspector's content is laid out for. */
+export function clampSidebarWidth(width: number, viewport: number): number {
+  return Math.round(Math.max(SIDEBAR_MIN, Math.min(viewport * 0.6, Number.isFinite(width) && width > 0 ? width : SIDEBAR_DEFAULT)))
+}
+
+/**
+ * The map with its inspector beside it, the divider draggable between them. While a drag runs only a CSS
+ * variable moves, once per animation frame; React, persistence and the map settle once on release, so
+ * resizing never re-renders the inspector or writes storage for every pixel.
+ */
 export function ResizableSidebar({
   children,
   sidebar,
@@ -10,30 +22,36 @@ export function ResizableSidebar({
   label,
 }: {
   children: ReactNode
-  sidebar: ReactNode
+  sidebar?: ReactNode
   storageKey: string
   label: string
 }) {
   const host = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ x: number; width: number } | null>(null)
+  const drag = useRef<{ x: number; width: number; next: number; pointer: number } | null>(null)
+  const frame = useRef<number | null>(null)
   const id = useId()
-  const [limit, setLimit] = useState(640)
+  // The host's own room, measured once it has any; until then the viewport bound alone applies.
+  const [hostCap, setHostCap] = useState(Infinity)
   const [width, setWidth] = useState(() => {
     try {
-      const saved = Number(localStorage.getItem(storageKey))
-      return Number.isFinite(saved) && saved >= MIN_WIDTH ? Math.min(saved, 640) : DEFAULT_WIDTH
+      return clampSidebarWidth(Number(localStorage.getItem(storageKey)), window.innerWidth)
     } catch {
-      return DEFAULT_WIDTH
+      return clampSidebarWidth(SIDEBAR_DEFAULT, window.innerWidth)
     }
   })
-  const [resizing, setResizing] = useState(false)
-  const actualWidth = Math.max(MIN_WIDTH, Math.min(width, limit))
+  const limit = Math.max(SIDEBAR_MIN, Math.min(window.innerWidth * 0.6, hostCap))
+  const actualWidth = Math.max(SIDEBAR_MIN, Math.min(width, limit))
+  const narrow = () => window.innerWidth <= NARROW
+
   useEffect(() => {
     const element = host.current!
-    const observer = new ResizeObserver(() => setLimit(Math.max(MIN_WIDTH, Math.min(640, element.clientWidth - 328))))
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth > 0) setHostCap(element.clientWidth - 328)
+    })
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
+  // The committed width only: a drag writes once, when it ends.
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, String(width))
@@ -41,63 +59,104 @@ export function ResizableSidebar({
       /* Resizing works when storage is unavailable. */
     }
   }, [storageKey, width])
-  const update = (next: number) => setWidth(Math.max(MIN_WIDTH, Math.min(next, limit)))
+
+  const apply = (next: number) => host.current?.style.setProperty('--sidebar-width', `${next}px`)
+  const finish = () => {
+    const current = drag.current
+    if (!current) return
+    drag.current = null
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    frame.current = null
+    apply(current.next)
+    setWidth(current.next)
+    delete document.body.dataset.inspectorResizing
+  }
+  useEffect(() => {
+    const resize = () => {
+      finish()
+      setWidth((w) => clampSidebarWidth(w, window.innerWidth))
+    }
+    window.addEventListener('resize', resize)
+    window.addEventListener('blur', finish)
+    return () => {
+      window.removeEventListener('resize', resize)
+      window.removeEventListener('blur', finish)
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+      delete document.body.dataset.inspectorResizing
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const update = (next: number) => setWidth(clampSidebarWidth(Math.min(next, hostCap), window.innerWidth))
   return (
     <div
       ref={host}
-      className={`graph-workspace resizable-workspace${resizing ? ' is-resizing' : ''}`}
+      className={`graph-workspace resizable-workspace${sidebar ? '' : ' without-inspector'}`}
       style={{ '--sidebar-width': `${actualWidth}px` } as CSSProperties}
     >
       {children}
-      <div
-        className="sidebar-resizer"
-        role="separator"
-        tabIndex={0}
-        aria-label={`Resize ${label}`}
-        aria-orientation="vertical"
-        aria-controls={id}
-        aria-valuemin={MIN_WIDTH}
-        aria-valuemax={limit}
-        aria-valuenow={actualWidth}
-        aria-valuetext={`${Math.round(actualWidth)} pixels`}
-        title="Drag to resize · Arrow keys to adjust · Double-click to reset"
-        onDoubleClick={() => update(DEFAULT_WIDTH)}
-        onKeyDown={(event) => {
-          const step = event.shiftKey ? 40 : 10
-          const next = { ArrowLeft: actualWidth + step, ArrowRight: actualWidth - step, Home: MIN_WIDTH, End: limit }[event.key]
-          if (next !== undefined) {
+      {sidebar && (
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          tabIndex={0}
+          aria-label={`Resize ${label}`}
+          aria-orientation="vertical"
+          aria-controls={id}
+          aria-valuemin={SIDEBAR_MIN}
+          aria-valuemax={Math.round(limit)}
+          aria-valuenow={actualWidth}
+          aria-valuetext={`${Math.round(actualWidth)} pixels`}
+          title="Drag to resize · Arrow keys to adjust · Double-click to reset"
+          onDoubleClick={() => update(SIDEBAR_DEFAULT)}
+          onKeyDown={(event) => {
+            if (narrow()) return
+            const step = event.shiftKey ? 50 : 10
+            const next = {
+              ArrowLeft: actualWidth + step,
+              ArrowRight: actualWidth - step,
+              Home: SIDEBAR_MIN,
+              End: limit,
+            }[event.key]
+            if (next !== undefined) {
+              event.preventDefault()
+              update(next)
+            }
+          }}
+          onPointerDown={(event) => {
+            if (narrow() || event.button !== 0 || drag.current) return
             event.preventDefault()
-            update(next)
-          }
-        }}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return
-          event.preventDefault()
-          event.currentTarget.focus()
-          event.currentTarget.setPointerCapture(event.pointerId)
-          drag.current = { x: event.clientX, width: actualWidth }
-          setResizing(true)
-        }}
-        onPointerMove={(event) => {
-          if (drag.current) update(drag.current.width + drag.current.x - event.clientX)
-        }}
-        onPointerUp={(event) => {
-          drag.current = null
-          setResizing(false)
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-        }}
-        onPointerCancel={() => {
-          drag.current = null
-          setResizing(false)
-        }}
-        onLostPointerCapture={() => {
-          drag.current = null
-          setResizing(false)
-        }}
-      />
-      <aside id={id} className="graph-inspector">
-        {sidebar}
-      </aside>
+            event.currentTarget.focus()
+            event.currentTarget.setPointerCapture(event.pointerId)
+            drag.current = { x: event.clientX, width: actualWidth, next: actualWidth, pointer: event.pointerId }
+            document.body.dataset.inspectorResizing = 'true'
+          }}
+          onPointerMove={(event) => {
+            const current = drag.current
+            if (!current || current.pointer !== event.pointerId) return
+            current.next = clampSidebarWidth(Math.min(current.width + current.x - event.clientX, hostCap), window.innerWidth)
+            if (frame.current === null)
+              frame.current = requestAnimationFrame(() => {
+                frame.current = null
+                if (drag.current) apply(drag.current.next)
+              })
+          }}
+          onPointerUp={(event) => {
+            if (drag.current?.pointer !== event.pointerId) return
+            // The last position counts even when it arrives before the pending frame ran.
+            drag.current.next = clampSidebarWidth(Math.min(drag.current.width + drag.current.x - event.clientX, hostCap), window.innerWidth)
+            finish()
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+          }}
+          onPointerCancel={finish}
+          onLostPointerCapture={finish}
+        />
+      )}
+      {sidebar && (
+        <aside id={id} className="graph-inspector">
+          {sidebar}
+        </aside>
+      )}
     </div>
   )
 }

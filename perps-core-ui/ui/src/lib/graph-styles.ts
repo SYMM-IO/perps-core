@@ -1,5 +1,6 @@
 import { __iconData as bookOpen } from 'lucide-react/dist/esm/icons/book-open.mjs'
 import { __iconData as circleDollarSign } from 'lucide-react/dist/esm/icons/circle-dollar-sign.mjs'
+import { __iconData as circleUserRound } from 'lucide-react/dist/esm/icons/circle-user-round.mjs'
 import { __iconData as diamond } from 'lucide-react/dist/esm/icons/diamond.mjs'
 import { __iconData as fileCode } from 'lucide-react/dist/esm/icons/file-code.mjs'
 import { __iconData as fuel } from 'lucide-react/dist/esm/icons/fuel.mjs'
@@ -44,6 +45,9 @@ export const FAMILIES = [
 export type Family = (typeof FAMILIES)[number]['id']
 
 const KINDS: Record<string, { family: Family; icon: Icon }> = {
+  // Not an address-book kind: an authority the inspection proved is a wallet (no code) is drawn as a person,
+  // so EOAs, multisigs and contract authorities tell apart at a glance. See `glyphFor`.
+  eoa: { family: 'governance', icon: circleUserRound },
   core: { family: 'core', icon: diamond },
   accountLayer: { family: 'protocol', icon: layers },
   instantLayer: { family: 'protocol', icon: zap },
@@ -69,6 +73,13 @@ const KINDS: Record<string, { family: Family; icon: Icon }> = {
 export const NODE_KINDS = Object.keys(KINDS)
 /** A kind the map has no entry for is drawn as an outside address, never left unstyled. */
 export const familyOf = (kind?: string): Family => KINDS[kind || '']?.family || 'external'
+/**
+ * Which icon a node carries. An authority the inspection proved is a wallet (no code on chain) is drawn
+ * as a person; an authority that has code — or was never inspected — keeps the key. Lanes and families
+ * still use `kind`, so this only changes the disc.
+ */
+export const glyphFor = (node: { kind?: string; codeSize?: number }): string =>
+  node.kind === 'authority' && node.codeSize === 0 ? 'eoa' : node.kind || 'external'
 
 export interface Tone {
   /** The node's fill and the text on it. */
@@ -187,6 +198,9 @@ export function graphStyles(light: boolean): any[] {
       },
     },
     ...NODE_KINDS.map((kind) => ({ selector: `node[kind="${kind}"]`, style: look(kind) })),
+    // Wallets carry the person glyph whatever address-book kind named them. Set after the kind entries so
+    // it wins; stacks and attention states below still win over it.
+    { selector: 'node[glyph="eoa"]', style: look('eoa') },
     // The diamond everything hangs off is the one node that is larger and bolder than the rest.
     { selector: 'node[kind="core"]', style: { height: 66, 'corner-radius': 22, 'font-size': 14, 'font-weight': 700 } },
     // Several addresses drawn as one: the disc is filled and carries their number instead of an icon.
@@ -201,7 +215,7 @@ export function graphStyles(light: boolean): any[] {
       selector: 'node.diff-removed',
       style: { 'border-color': dim, 'border-width': 2, 'border-style': 'dashed', 'background-opacity': 0.45, 'text-opacity': 0.7 },
     },
-    { selector: 'node:selected', style: { 'border-color': primary, 'border-width': 3, 'border-style': 'solid' } },
+    { selector: 'node:selected', style: { 'border-color': ink, 'border-width': 2, 'border-style': 'solid' } },
     {
       selector: 'node.lane',
       style: {
@@ -290,7 +304,7 @@ export function graphStyles(light: boolean): any[] {
     },
     { selector: 'edge:selected', style: { 'line-color': ink, 'target-arrow-color': ink, color: ink } },
     // Everything outside the highlighted contract's neighbourhood steps back but stays readable as context.
-    { selector: '.faded', style: { opacity: 0.16 } },
+    { selector: '.faded', style: { opacity: 0.32 } },
     { selector: 'edge.faded', style: { 'text-opacity': 0, 'text-background-opacity': 0 } },
   ]
 }

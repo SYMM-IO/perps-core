@@ -188,6 +188,17 @@ it('offers a reconnect instead of Continue and Cancel when the task has lost its
   fireEvent.click(screen.getByRole('button', { name: 'Reconnect to arbitrum to continue' }))
   await waitFor(() => expect(mock.api.request).toHaveBeenCalledWith('reconnect', {}))
 })
+it('uses an RPC that arrives after the upgrade form has mounted', async () => {
+  mock.api.system = { ...mock.api.system, profile: { ...mock.api.system.profile, rpc: undefined }, profiles: [] }
+  const page = render(<Upgrade />, { wrapper })
+  expect((screen.getByRole('button', { name: 'Inspect & compile' }) as HTMLButtonElement).disabled).toBe(true)
+  mock.api.system = { ...mock.api.system, profiles: [{ ...mock.api.system.profile, rpc: 'http://localhost:8545' }] }
+  page.rerender(<Upgrade />)
+  expect((screen.getByRole('button', { name: 'Inspect & compile' }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect & compile' }))
+  await waitFor(() => expect(mock.api.request).toHaveBeenCalledWith('connect', { rpc: 'http://localhost:8545', target: address }))
+})
+
 it('retains edited target across polling updates and sends the AccountLayer scope', async () => {
   const page = render(<Upgrade />, { wrapper })
   const target = '0x2222222222222222222222222222222222222222'
@@ -219,6 +230,7 @@ it('does not treat a Diamond read on another chain at the same address as this d
   mock.api.engine = engineOn(42161)
   page.rerender(<Upgrade />)
   expect(screen.queryByText(/Connected to base/)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Source & baseline tools' }))
   expect(screen.getByText('arbitrum (42161) · Block 1,234')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Prepare upgrade plan' })).toBeTruthy()
 })
@@ -229,6 +241,18 @@ it('pins the deployment, environment, chain and target above the upgrade flow', 
   expect(bar.textContent).toContain('Vibe Arbitrum')
   expect(bar.textContent).toContain('Staging')
   expect(bar.textContent).toContain('arbitrum (42161)')
+})
+it('keeps baseline/build tools behind disclosure while leaving the required signer and prepare action visible', async () => {
+  mock.api.engine = engineOn(31337)
+  render(<Upgrade />, { wrapper })
+  expect(screen.queryByRole('button', { name: 'Import deployed baseline' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Export build' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Source & baseline tools' }).getAttribute('aria-expanded')).toBe('false')
+  expect(screen.getByLabelText('Deployment signer address')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Prepare upgrade plan' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Source & baseline tools' }))
+  expect(await screen.findByRole('button', { name: 'Import deployed baseline' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Export build' })).toBeTruthy()
 })
 it('works out the reconcile removal set and fills it with one acknowledgement', async () => {
   const keep = '0xaaaaaaaa',

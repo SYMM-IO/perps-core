@@ -22,7 +22,7 @@ export async function connectWallet() {
   return address as string
 }
 /** The browser wallet's account and chain, read without prompting and kept current through the wallet's events. */
-function useWalletState() {
+function useWalletState(revision = 0) {
   const [state, setState] = useState<{ account?: string; chainId?: number }>({})
   useEffect(() => {
     const eth = window.ethereum
@@ -42,7 +42,7 @@ function useWalletState() {
       eth.removeListener?.('accountsChanged', read)
       eth.removeListener?.('chainChanged', read)
     }
-  }, [])
+  }, [revision])
   return state
 }
 const TASK_ADAPTERS: Record<string, 'diamond' | 'system'> = {
@@ -276,6 +276,42 @@ export function stepSummary(steps: ExecutionStep[]) {
     next = steps.find((s) => s.state !== 'done')
   return `${done} of ${steps.length} steps done${next ? `; next: ${next.title} (${STEP_LABELS[next.state].summary})` : ''}`
 }
+function ExecutionRows({ steps, explorer }: { steps: (ExecutionStep & { number: number })[]; explorer?: string }) {
+  return (
+    <ol className="exec-steps" start={steps[0]?.number || 1}>
+      {steps.map((step) => {
+        const href = step.hash ? explorerTx(explorer, step.hash) : undefined
+        return (
+          <li key={step.id} data-state={step.state} data-step={step.number} style={{ counterReset: `step ${step.number - 1}` }}>
+            <div className="exec-step-body">
+              <Text size="sm" fw={600}>
+                {step.title}
+              </Text>
+              {step.signer && (
+                <Text size="xs" c="dimmed" className="break">
+                  Signer <code>{step.signer}</code>
+                </Text>
+              )}
+              {step.hash && (
+                <Group gap={8} wrap="nowrap">
+                  <Code className="break">{step.hash}</Code>
+                  {href && (
+                    <Anchor href={href} target="_blank" rel="noopener noreferrer" size="xs">
+                      Explorer ↗
+                    </Anchor>
+                  )}
+                </Group>
+              )}
+            </div>
+            <Badge variant="light" color={STEP_LABELS[step.state].color}>
+              {STEP_LABELS[step.state].label}
+            </Badge>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
 /** Who can authorize the upgrade, as far as the plan and the inspected snapshot say. */
 function authorityOf(p: Plan, nodes: ContractNode[] = []) {
   if (p.kind !== 'peripheral') {
@@ -318,8 +354,9 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
     [cancelOpen, setCancelOpen] = useState(false),
     [pending, setPending] = useState<string | null>(null),
     [hash, setHash] = useState(''),
-    [reconnectRpc, setReconnectRpc] = useState('')
-  const wallet = useWalletState()
+    [reconnectRpc, setReconnectRpc] = useState(''),
+    [walletRevision, setWalletRevision] = useState(0)
+  const wallet = useWalletState(walletRevision)
   // The authority can become known after mount (the workspace snapshot loads later); keep the choice within what it allows.
   useEffect(() => {
     if (upgradeModes.length && !upgradeModes.includes(upgradeMode as keyof typeof MODES)) setUpgradeMode(upgradeModes[0])
@@ -340,7 +377,10 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
       ownActive,
       engine?.prompts?.filter((x) => x.planId === p.id),
     ),
-    summary = stepSummary(steps)
+    summary = stepSummary(steps),
+    numbered = steps.map((step, index) => ({ ...step, number: index + 1 })),
+    completedSteps = numbered.filter((step) => step.state === 'done'),
+    remainingSteps = numbered.filter((step) => step.state !== 'done')
   const explorer =
     profiles.find((x) => x.id === deployment?.id)?.explorer ||
     profiles.find((x) => x.chainId === chain && x.explorer)?.explorer ||
@@ -421,7 +461,22 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
               {!window.ethereum ? (
                 <li data-ok="false">No browser wallet in this browser.</li>
               ) : !wallet.account ? (
-                <li data-ok="false">Browser wallet not connected. Connect it from the header to check it against the plan.</li>
+                <li data-ok="false">
+                  <Button
+                    size="compact-sm"
+                    variant="default"
+                    disabled={busy}
+                    onClick={() =>
+                      run('Connecting wallet', async () => {
+                        const account = await connectWallet()
+                        setWalletRevision((value) => value + 1)
+                        return account
+                      })
+                    }
+                  >
+                    Connect wallet
+                  </Button>
+                </li>
               ) : (
                 browserRoles.map(({ role, address }) => (
                   <li key={role} data-ok={same(wallet.account, address)}>
@@ -471,38 +526,13 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
             {summary}
           </Text>
         </Group>
-        <ol className="exec-steps">
-          {steps.map((s) => {
-            const href = s.hash ? explorerTx(explorer, s.hash) : undefined
-            return (
-              <li key={s.id} data-state={s.state}>
-                <div className="exec-step-body">
-                  <Text size="sm" fw={600}>
-                    {s.title}
-                  </Text>
-                  {s.signer && (
-                    <Text size="xs" c="dimmed" className="break">
-                      Signer <code>{s.signer}</code>
-                    </Text>
-                  )}
-                  {s.hash && (
-                    <Group gap={8} wrap="nowrap">
-                      <Code className="break">{s.hash}</Code>
-                      {href && (
-                        <Anchor href={href} target="_blank" rel="noopener noreferrer" size="xs">
-                          Explorer ↗
-                        </Anchor>
-                      )}
-                    </Group>
-                  )}
-                </div>
-                <Badge variant="light" color={STEP_LABELS[s.state].color}>
-                  {STEP_LABELS[s.state].label}
-                </Badge>
-              </li>
-            )
-          })}
-        </ol>
+        {!!completedSteps.length && (
+          <details className="completed-steps">
+            <summary>Completed steps ({completedSteps.length})</summary>
+            <ExecutionRows steps={completedSteps} explorer={explorer} />
+          </details>
+        )}
+        {!!remainingSteps.length && <ExecutionRows steps={remainingSteps} explorer={explorer} />}
         {active && !ownActive && (
           <Alert mt="sm">
             Another task is active.{' '}

@@ -21,13 +21,14 @@
 :root {
   /* Material-style tonal roles. Depth comes from the step between two fills, never from blur, glow or shadow.
      Surfaces are neutral grey; coral appears only where it means something (primary action, brand, Core). */
-  --r-card: 24px;
-  --r-inner: 16px;
+  --r-card: 16px;
+  --r-inner: 10px;
   --r-pill: 999px;
   --panel: #f1f1f2;
   --panel-soft: #e7e7e9;
   --raise: #dbdbde;
   --line: #d2d2d6;
+  --focus-ring: var(--mantine-color-dimmed);
   --canvas: #fafafa;
   --primary: #b3392b;
   --on-primary: #ffffff;
@@ -99,6 +100,9 @@ input,
 select,
 textarea {
   font: inherit;
+}
+body :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline-color: var(--focus-ring);
 }
 a {
   color: var(--primary);
@@ -177,7 +181,7 @@ h3 {
 }
 .chip-button:focus-visible,
 .chip[tabindex]:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .checkout-label {
@@ -245,7 +249,7 @@ h3 {
   color: var(--on-secondary-container);
 }
 .app-nav a:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 /* Every view uses the full width and shares one left edge. */
@@ -463,7 +467,7 @@ button.stat[data-tone='bad']:hover {
 .link-row:focus-visible,
 .upgrade-choice:focus-visible,
 button.stat:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 /* Three flat discs instead of a blank box: nothing here yet, and that is fine. */
@@ -552,8 +556,10 @@ button.stat:focus-visible {
   overflow: auto;
 }
 .facet-item {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
+  margin-block: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--panel-soft);
 }
 .facet-item > .mantine-Text-root {
   margin: 6px 0 0 30px;
@@ -568,8 +574,10 @@ button.stat:focus-visible {
   align-items: start;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  margin-block: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--panel-soft);
 }
 .diff-row code {
   overflow-wrap: anywhere;
@@ -585,13 +593,235 @@ button.stat:focus-visible {
   overflow: hidden;
   background: var(--panel);
 }
+/* The workspace starts with one maintenance question. Technical views are explicit destinations. */
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 20px 4px 12px;
+}
+.workspace-heading > div:first-child {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.workspace-heading .hero-select {
+  max-width: 580px;
+}
+.workspace-heading .hero-select .mantine-Select-input {
+  font-size: 24px;
+  font-weight: 700;
+  min-height: 40px;
+}
+.workspace-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+}
+.workspace-metadata .chip {
+  height: auto;
+  padding: 2px 0;
+  background: transparent;
+  font-size: inherit;
+}
+.workspace-metadata .chip-date {
+  display: inline-flex;
+}
+.workspace-metadata .chip-button {
+  min-height: 28px;
+  padding-inline: 8px;
+  background: var(--panel);
+}
+.workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.maintenance-overview {
+  width: 100%;
+  max-width: 940px;
+  margin: 28px auto 48px;
+}
+.maintenance-status {
+  padding: 8px 4px 24px;
+}
+.maintenance-status h1 {
+  margin-bottom: 10px;
+  text-wrap: balance;
+}
+.maintenance-status p {
+  max-width: 65ch;
+  line-height: 1.6;
+}
+.maintenance-review {
+  margin: 0 0 28px;
+  padding: 12px 18px;
+  border-radius: var(--r-inner);
+  background: var(--panel);
+}
+.maintenance-review summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.maintenance-review summary::after {
+  content: '+';
+  margin-inline-start: auto;
+  font-size: 20px;
+  color: var(--mantine-color-dimmed);
+}
+.maintenance-review[open] summary::after {
+  content: '−';
+}
+.maintenance-review summary::-webkit-details-marker {
+  display: none;
+}
+.maintenance-review summary:focus-visible,
+.maintenance-contract-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.maintenance-contracts {
+  padding: 20px;
+  border-radius: var(--r-card);
+  background: var(--panel);
+}
+.maintenance-contracts h2 {
+  padding: 4px 12px 8px;
+}
+.maintenance-contract-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.maintenance-contract-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.maintenance-contract-row > span:last-child {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  color: var(--mantine-color-dimmed);
+}
+.maintenance-contract-row .component-status {
+  color: var(--warn);
+}
+@media (hover: hover) {
+  .maintenance-contract-row:hover {
+    background: var(--panel-soft);
+  }
+}
+@media (max-width: 600px) {
+  .workspace-toolbar .mantine-Tabs-list {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .workspace-toolbar .mantine-Tabs-tab {
+    flex: 1;
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+  .workspace-toolbar .mantine-Tabs-tabSection {
+    display: none;
+  }
+  .workspace-heading {
+    gap: 12px;
+    padding-block: 12px;
+  }
+  .workspace-heading .hero-select .mantine-Select-input {
+    font-size: 20px;
+  }
+  .maintenance-overview {
+    margin-block: 20px 32px;
+  }
+  .maintenance-contracts {
+    padding: 12px;
+  }
+  .graph-toolbar .graph-query {
+    flex-basis: 100%;
+  }
+  .maintenance-contract-row {
+    gap: 8px;
+  }
+  .maintenance-contract-row > span:last-child {
+    gap: 6px;
+  }
+}
 .graph-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--line);
+}
+.graph-filter-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+.graph-panel .graph-filter-panel .graph-filters {
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  min-width: 0;
+  overflow: visible;
+}
+.map-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.graph-workspace.without-inspector {
+  grid-template-columns: minmax(0, 1fr);
+}
+.inspector-close {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  background: var(--panel);
+}
+.map-key-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 12px;
+}
+.graph-legend .graph-key {
+  position: static;
+  max-width: 100%;
+  flex-basis: 100%;
+  background: transparent;
+}
+.graph-legend .legend-lines {
+  flex-wrap: wrap;
+  white-space: normal;
 }
 /* A small two-way switch, in the same pattern as the navigation: the chosen side gets the tonal pill. */
 .seg {
@@ -622,7 +852,7 @@ button.stat:focus-visible {
   color: var(--on-secondary-container);
 }
 .seg button:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .graph-focus {
@@ -669,7 +899,7 @@ button.stat:focus-visible {
   gap: 6px;
   height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--mantine-color-dimmed);
@@ -710,7 +940,7 @@ button.stat:focus-visible {
 }
 .filter-chip:focus-visible,
 .graph-scope button:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .filter-sep {
@@ -771,7 +1001,7 @@ button.stat:focus-visible {
   touch-action: none;
   position: relative;
   background: var(--panel);
-  border-inline: 1px solid var(--line);
+  border: 0;
 }
 .sidebar-resizer::after {
   content: '';
@@ -785,14 +1015,16 @@ button.stat:focus-visible {
 }
 .sidebar-resizer:hover,
 .sidebar-resizer:focus-visible,
-.is-resizing > .sidebar-resizer {
-  background: var(--mantine-primary-color-light);
-  outline: 2px solid var(--mantine-primary-color-filled);
+body[data-inspector-resizing] .sidebar-resizer {
+  background: var(--panel-soft);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-.is-resizing {
-  user-select: none;
-  cursor: col-resize;
+/* A drag moves only a CSS variable; the cursor and selection lock are committed with it. */
+body[data-inspector-resizing],
+body[data-inspector-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 .graph-main {
   min-width: 0;
@@ -853,11 +1085,11 @@ button.stat:focus-visible {
 }
 .graph-scroll:focus-visible,
 .legend-node:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .graph-canvas:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -3px;
 }
 .graph-zoom {
@@ -872,6 +1104,8 @@ button.stat:focus-visible {
   max-height: calc(var(--graph-height) + 38px);
   overflow: auto;
   min-width: 0;
+  /* The inspector lays itself out for its own width, not the window's: tight below 380px, two columns above 560px. */
+  container: inspector / inline-size;
 }
 .graph-legend {
   display: flex;
@@ -880,7 +1114,6 @@ button.stat:focus-visible {
   gap: 4px 18px;
   min-height: 38px;
   padding: 6px 12px;
-  border-top: 1px solid var(--line);
 }
 .legend-lines {
   display: flex;
@@ -958,6 +1191,14 @@ button.stat:focus-visible {
 .legend-key[data-state='removed'] i {
   border-top: 2px dashed var(--idle);
 }
+/* A stack carries its count where a contract carries its icon: a filled disc. */
+.legend-key[data-state='stack'] i {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--mantine-color-dimmed);
+}
 /* One role: its name, who holds it, and who can hand it out. */
 .role-row code {
   display: block;
@@ -966,6 +1207,83 @@ button.stat:focus-visible {
   color: var(--mantine-color-text);
   font-size: 11.5px;
   overflow-wrap: anywhere;
+}
+/* Roles held by exactly the same addresses share one block, their names side by side. */
+.role-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 3px;
+}
+.role-names code {
+  display: inline;
+  margin-bottom: 0;
+}
+/* A long list collapsed behind its count, with a filter once opened. Short lists never reach this. */
+.inspector-collection {
+  width: 100%;
+}
+.inspector-collection > summary {
+  padding: 8px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.inspector-collection input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--panel-soft);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+.inspector-collection-items {
+  display: grid;
+  gap: 4px;
+}
+.inspector-collection-items[data-flow='inline'] {
+  display: block;
+}
+.inspector-collection-items[data-flow='inline'] > div {
+  display: inline;
+}
+.inspector-collection-items > div[hidden] {
+  display: none;
+}
+@container inspector (width < 380px) {
+  .inspector {
+    padding: 12px;
+  }
+  .link-row {
+    flex-wrap: wrap;
+  }
+  .link-count {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .power-tags {
+    white-space: normal;
+  }
+}
+@container inspector (width > 560px) {
+  .inspector-collection-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 12px;
+  }
+  .inspector-collection-items[data-flow='inline'] {
+    display: block;
+  }
+  .inspector-roles,
+  .inspector-relations,
+  .inspector-settings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+  }
 }
 .role-holder {
   margin: 0 6px 4px 0;
@@ -1019,6 +1337,16 @@ button.stat:focus-visible {
 }
 .connection-detail + .connection-detail {
   margin-top: 6px;
+}
+.role-grant-history > summary {
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  font-size: var(--mantine-font-size-xs);
+}
+.role-grant-history > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: 3px;
 }
 .link-row {
   display: flex;
@@ -1091,7 +1419,7 @@ button.stat:focus-visible {
   padding-inline: 0;
 }
 .inspector-heading:focus {
-  outline: 2px solid var(--mantine-primary-color-filled);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .graph-fullscreen {
@@ -1169,22 +1497,50 @@ button.stat:focus-visible {
   max-width: 100%;
 }
 .contracts-table-wrap {
-  max-height: calc(100dvh - 250px);
-  min-height: 280px;
+  max-height: calc(100dvh - 190px);
   overflow: auto;
-  border-radius: var(--r-card);
-  background: var(--panel);
+  border-radius: 0;
+  background: transparent;
+}
+.contracts-table {
+  border-collapse: separate;
+  border-spacing: 0 2px;
 }
 .contracts-table th,
 .contracts-table td {
   vertical-align: middle;
   white-space: nowrap;
+  padding-inline: 14px;
 }
 .contracts-table th {
-  background: var(--panel);
+  background: var(--canvas);
 }
 .contracts-table td:first-child {
   white-space: normal;
+  width: 60%;
+  border-radius: 8px 0 0 8px;
+}
+.contracts-table td:last-child {
+  width: 40%;
+  border-radius: 0 8px 8px 0;
+}
+.contracts-table tbody tr:last-child {
+  border-bottom: 0;
+}
+.contracts-table .contracts-group th {
+  padding-block: 20px 6px;
+  color: var(--mantine-color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.contracts-table tbody:first-of-type .contracts-group th {
+  padding-top: 12px;
+}
+.contracts-table .contracts-group {
+  border-bottom: 0;
+}
+.contracts-table .contracts-group:hover {
+  background: transparent;
 }
 .contracts-action {
   width: 1%;
@@ -1194,9 +1550,12 @@ button.stat:focus-visible {
   height: auto;
   min-height: 26px;
   max-width: 100%;
-  margin-left: -8px;
+  margin-inline-start: -8px;
   color: var(--mantine-color-text);
   font-weight: 600;
+  justify-self: start;
+  justify-content: flex-start;
+  text-align: start;
 }
 .contract-name .mantine-Button-label {
   /* Mantine clips the label box, which cuts descenders at this compact height. */
@@ -1223,11 +1582,27 @@ main h1.mantine-Title-root {
 }
 /* Mantine pieces follow the same tonal roles. */
 .mantine-Table-table {
-  --table-border-color: var(--line);
+  --table-border-color: transparent;
   --table-hover-color: var(--panel-soft);
 }
+.mantine-Table-tr {
+  border: 0;
+}
+.mantine-Accordion-root {
+  border: 0;
+}
 .mantine-Accordion-item {
-  border-color: var(--line);
+  border: 0;
+  border-radius: 8px;
+  margin-block: 4px;
+}
+.mantine-Accordion-item[data-active] {
+  background: var(--panel-soft);
+}
+.mantine-Accordion-control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+  border-radius: 8px;
 }
 /* Mantine sets a filled button's text colour inline (and omits data-variant for the default), so the role goes on the property.
    A button given its own colour carries --button-bg inline and keeps Mantine's text colour. */
@@ -1238,7 +1613,7 @@ main h1.mantine-Title-root {
 .mantine-Input-input:not([data-variant='unstyled']) {
   --input-bg: var(--panel-soft);
   --input-bd: transparent;
-  --input-bd-focus: var(--primary);
+  --input-bd-focus: var(--focus-ring);
 }
 .panel .mantine-Input-input:not([data-variant='unstyled']),
 .graph-toolbar .mantine-Input-input,
@@ -1247,7 +1622,7 @@ main h1.mantine-Title-root {
 }
 .contracts-toolbar .mantine-Input-input,
 .graph-toolbar .mantine-Input-input {
-  border-radius: var(--r-pill);
+  border-radius: 8px;
 }
 .mantine-Modal-content,
 .mantine-Popover-dropdown,
@@ -1257,7 +1632,7 @@ main h1.mantine-Title-root {
   border: 0;
   background: var(--raise);
   color: var(--mantine-color-text);
-  box-shadow: none;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
 }
 .mantine-Modal-header {
   background: var(--raise);
@@ -1315,7 +1690,6 @@ main h1.mantine-Title-root {
     grid-template-columns: 1fr;
   }
   .graph-inspector {
-    border-top: 1px solid var(--line);
     max-height: 420px;
   }
   .graph-fullscreen {
@@ -1335,15 +1709,28 @@ main h1.mantine-Title-root {
   }
   .contract-cards {
     display: grid;
-    gap: 10px;
+    gap: 24px;
+  }
+  .contract-card-group {
+    overflow: hidden;
+    border-radius: 0;
+    background: transparent;
+  }
+  .contracts-group-label {
+    margin: 0;
+    padding: 14px 16px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mantine-color-dimmed);
   }
   .contract-card {
     display: grid;
     gap: 8px;
     min-width: 0;
     padding: 14px 16px;
-    border-radius: 18px;
-    background: var(--panel);
+  }
+  .contract-card + .contract-card {
+    margin-block-start: 4px;
   }
 }
 @media (max-width: 600px) {
@@ -1362,13 +1749,14 @@ main h1.mantine-Title-root {
     order: 3;
     flex: 0 0 100%;
     justify-content: space-between;
+    gap: 2px;
   }
   /* Four sections fit a phone once the icons step aside; one more and the row has to scroll. */
   .app-nav a {
     flex: 1;
     justify-content: center;
     height: 36px;
-    padding: 0 6px;
+    padding: 0 4px;
     font-size: 13px;
   }
   .app-nav a svg {
@@ -1529,8 +1917,10 @@ main h1.mantine-Title-root {
   display: flex;
   align-items: start;
   gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
+  margin-block: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel-soft);
   counter-increment: step;
 }
 .exec-steps li::before {
@@ -1558,8 +1948,10 @@ main h1.mantine-Title-root {
   min-width: 0;
 }
 .removal-group {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
+  margin-block: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel-soft);
 }
 .removal-row {
   display: flex;
@@ -1722,3 +2114,371 @@ main h1.mantine-Title-root {
   }
 }
 /* ---- End of wiring map ---- */
+
+/* Compact app chrome leaves the viewport to the current maintenance task. */
+.app-header {
+  min-height: 44px;
+  margin: 0;
+  padding: 5px 16px;
+  gap: 12px;
+  border-radius: 0;
+  background: transparent;
+  flex-wrap: nowrap;
+}
+.brand {
+  flex: none;
+  gap: 8px;
+}
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: transparent;
+}
+.brand-mark img {
+  width: 18px;
+  height: 18px;
+}
+.brand-name {
+  font-size: 12px;
+}
+.app-nav {
+  flex: 1;
+  gap: 4px;
+  margin-inline-start: 8px;
+  order: initial;
+}
+.app-nav a {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.app-nav a.current {
+  background: transparent;
+  color: var(--mantine-color-text);
+  font-weight: 650;
+}
+.app-nav a svg {
+  display: none;
+}
+main {
+  min-height: 0;
+  padding: 8px 16px 12px;
+}
+.workspace-heading {
+  min-height: 42px;
+  padding: 0 0 6px;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+.workspace-heading > .hero-main {
+  flex: 1 1 220px;
+  min-width: 140px;
+  max-width: 420px;
+  gap: 0;
+}
+.workspace-heading .hero-select {
+  max-width: none;
+}
+.workspace-heading .hero-select .mantine-Select-input {
+  height: 32px;
+  min-height: 32px;
+  font-size: 14px;
+  font-weight: 650;
+  padding-inline-end: 26px;
+}
+.workspace-toolbar {
+  flex: 0 1 auto;
+  gap: 0;
+}
+.workspace-toolbar .mantine-Tabs-list {
+  width: auto;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--panel);
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+.workspace-toolbar .mantine-Tabs-tab {
+  flex: none;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.workspace-toolbar .mantine-Tabs-tab[data-active] {
+  background: var(--raise);
+  color: var(--mantine-color-text);
+}
+.workspace-actions {
+  margin-inline-start: auto;
+  flex: none;
+}
+.workspace-status {
+  font-size: 12px;
+  font-weight: 400;
+}
+.workspace-tabs > .mantine-Tabs-panel {
+  padding-top: 0;
+}
+.graph-panel {
+  --graph-height: max(320px, var(--graph-fit, calc(100dvh - 158px)));
+  border-radius: 12px;
+}
+.graph-panel .graph-toolbar {
+  min-height: 44px;
+  padding: 6px 10px;
+  gap: 8px;
+}
+.graph-toolbar .mantine-Button-root {
+  height: 30px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+.graph-toolbar .mantine-ActionIcon-root {
+  width: 30px;
+  height: 30px;
+}
+.graph-toolbar .mantine-TextInput-input {
+  min-height: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+.map-key-bar {
+  padding: 3px 8px;
+  min-height: 30px;
+}
+.inspector-close {
+  position: sticky;
+  top: 8px;
+  height: 0;
+  padding: 0;
+  margin-inline-end: 8px;
+  background: transparent;
+  z-index: 3;
+}
+.inspector-close .mantine-ActionIcon-root {
+  flex: none;
+}
+.inspector {
+  padding: 16px;
+  gap: 12px;
+}
+.inspector-heading {
+  display: inline;
+  align-self: flex-start;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.4;
+  margin-inline-end: 30px;
+  overflow-wrap: anywhere;
+}
+.inspector-heading:focus {
+  outline: none;
+}
+.inspector-heading:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+.app-nav a:focus-visible,
+.seg-tabs .mantine-Tabs-tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.inspector .address {
+  font-size: 12px;
+  white-space: nowrap;
+  background: transparent;
+  padding-inline: 0;
+}
+.inspector .mantine-Accordion-control {
+  min-height: 44px;
+  padding-block: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.inspector .mantine-Accordion-label {
+  padding-block: 0;
+}
+.inspector-exception {
+  color: var(--warn);
+}
+.inspector-safe-owners > summary {
+  cursor: pointer;
+  font-size: 13px;
+  padding-block: 6px;
+}
+.inspector-safe-owners > summary:focus-visible,
+.completed-steps > summary:focus-visible,
+.upgrade-facet-details > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.upgrade-flow {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+}
+.upgrade-steps {
+  max-width: 680px;
+  margin-block: 8px 18px;
+}
+.upgrade-facet-details {
+  margin-top: 6px;
+}
+.upgrade-facet-details > summary {
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  padding-block: 6px;
+}
+.contracts-identity {
+  display: grid;
+  gap: 2px;
+}
+.contracts-view {
+  max-width: 960px;
+  margin-inline: auto;
+}
+.contracts-description:empty {
+  display: none;
+}
+.contracts-table .address,
+.contract-card .address {
+  padding: 0;
+  background: transparent;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.contracts-table td:last-child > .mantine-Stack-root > .mantine-Group-root {
+  justify-content: flex-end;
+}
+.contracts-table th:last-child {
+  text-align: end;
+  padding-inline-end: 74px;
+}
+.contracts-table .contracts-group th {
+  text-align: start;
+}
+.contracts-filters {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.completed-steps {
+  margin-top: 12px;
+}
+.completed-steps > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--mantine-color-dimmed);
+  padding-block: 6px;
+}
+@media (max-width: 760px) {
+  .workspace-heading {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  .workspace-heading > .hero-main {
+    max-width: none;
+  }
+  .workspace-toolbar {
+    order: 3;
+    flex: 1 1 100%;
+  }
+}
+@media (max-width: 600px) {
+  .app-header {
+    padding-inline: 10px;
+    gap: 6px;
+    border-radius: 0;
+  }
+  .brand-name {
+    display: none;
+  }
+  .app-nav {
+    flex: 1;
+    margin-inline-start: 0;
+    justify-content: flex-start;
+  }
+  .app-nav a {
+    flex: none;
+    padding-inline: 8px;
+  }
+  main {
+    padding: 6px 8px 10px;
+  }
+  .workspace-heading {
+    gap: 4px 8px;
+    padding-bottom: 4px;
+  }
+  .workspace-heading > .hero-main {
+    flex-basis: 100%;
+  }
+  .workspace-actions {
+    margin-inline-start: 0;
+  }
+  .workspace-toolbar {
+    order: 3;
+  }
+  .workspace-toolbar .mantine-Tabs-list {
+    width: 100%;
+  }
+  .workspace-toolbar .mantine-Tabs-tab {
+    flex: 1;
+    padding-inline: 6px;
+  }
+  .graph-panel .graph-toolbar {
+    padding: 6px 8px;
+  }
+  .graph-panel .graph-query {
+    min-width: 0;
+  }
+}
+
+/* Details are a bounded overlay; the map keeps the whole work area. */
+.graph-workspace {
+  display: block;
+  position: relative;
+}
+.graph-inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: var(--sidebar-width, 360px);
+  max-height: calc(var(--graph-height) - 24px);
+  background: var(--panel);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.2);
+  z-index: 2;
+}
+.sidebar-resizer {
+  position: absolute;
+  top: 20px;
+  right: calc(var(--sidebar-width, 360px) + 12px);
+  width: 8px;
+  height: 48px;
+  border: 0;
+  background: transparent;
+  z-index: 3;
+}
+@media (max-width: 900px) {
+  .graph-inspector,
+  .graph-fullscreen .graph-inspector {
+    top: auto;
+    right: 10px;
+    bottom: 42px;
+    width: min(380px, calc(100% - 20px));
+    max-height: min(55dvh, calc(var(--graph-height) * 0.6));
+  }
+  .sidebar-resizer {
+    display: none;
+  }
+}
+.graph-panel.graph-fullscreen {
+  --graph-height: max(280px, var(--graph-fit, calc(100dvh - 80px)));
+}

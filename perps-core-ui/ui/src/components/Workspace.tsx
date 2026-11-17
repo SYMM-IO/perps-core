@@ -2,20 +2,21 @@ import { linkId } from '../../../shared/graph-model.js'
 import { useWorkbench } from '../api'
 import { lazyView } from '../lib/lazy'
 import { useParamPatch, type PatchOptions } from '../lib/url'
-import { download, httpUrl, isIssue, issueText, pretty } from '../lib/state'
+import { download, httpUrl, isIssue, pretty } from '../lib/state'
 import type { ContractNode, GraphFilters, Profile, Snapshot } from '../types'
 import { Empty, EnvironmentBadge, JsonView } from './Common'
 import { ContractsTable } from './ContractsTable'
+import { MaintenanceOverview } from './MaintenanceOverview'
 import { Sources } from './Sources'
 import {
   Accordion,
-  ActionIcon,
   Alert,
   Badge,
   Button,
   FileButton,
   Group,
   Modal,
+  Popover,
   Select,
   Stack,
   Table,
@@ -25,7 +26,7 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core'
-import { ArrowUpRight, ChevronsUpDown, Database, GitCompareArrows, RefreshCw, Rows3, Settings, TriangleAlert, Waypoints } from 'lucide-react'
+import { ChevronsUpDown, GitCompareArrows, RefreshCw } from 'lucide-react'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
@@ -49,13 +50,23 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
   const { system, engine, run, job, request, busy, jobs, operation } = useWorkbench()
   const [params, setParams] = useSearchParams()
   const patch = useParamPatch()
+  // Older shared links carry map state without naming a tab. A fresh visit starts with the maintenance overview.
+  const mapLink = [...params.keys()].some((key) => key === 'node' || key === 'link' || key.startsWith('graph')),
+    tab = params.get('tab') || (mapLink ? 'map' : 'overview')
+  const legacyMapDefaults = useRef(mapLink)
   const [settings, setSettings] = useState(false),
     [sources, setSources] = useState(false),
-    [rpc, setRpc] = useState('')
+    [rpc, setRpc] = useState(''),
+    [mapOpened, setMapOpened] = useState(tab === 'map'),
+    [focusDetails, setFocusDetails] = useState(0)
   const kept = useRef<{ id: string; snapshot: Snapshot } | null>(null)
+  const deploymentRpc = system?.profile.rpc || system?.profiles.find((p) => p.id === system.profile.id)?.rpc || ''
   useEffect(() => {
-    setRpc(system?.profile.rpc || system?.profiles.find((p) => p.id === system.profile.id)?.rpc || '')
-  }, [system?.profile.id])
+    if (tab === 'map') setMapOpened(true)
+  }, [tab])
+  useEffect(() => {
+    setRpc(deploymentRpc)
+  }, [system?.profile.id, deploymentRpc])
   // Links carry the deployment they were made on, so a pasted one can say when the app has another loaded.
   useEffect(() => {
     if (system?.profile.id && !params.get('deployment')) patch({ deployment: system.profile.id }, { replace: true })
@@ -74,14 +85,13 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
     locked = !!system.active || !!engine?.active,
     labels = deploymentLabels(system.profiles)
   const nodes = snapshot?.nodes || profile.nodes,
-    selected = params.get('node') || 'core'
-  const tab = params.get('tab') || 'map',
-    link = params.get('link') || ''
+    selected = params.has('node') ? params.get('node')! : legacyMapDefaults.current ? 'core' : ''
+  const link = params.get('link') || ''
   const mode = params.get('graphMode') || 'all'
   const filters: GraphFilters = {
     mode: mode === 'implementation' ? 'implementation' : 'all',
     hide: params.has('graphHide') ? params.get('graphHide')!.split(',').filter(Boolean) : LEGACY_MODES[mode] || [],
-    focus: params.has('graphFocus') ? params.get('graphFocus')! : 'core',
+    focus: params.has('graphFocus') ? params.get('graphFocus')! : legacyMapDefaults.current ? 'core' : '',
     query: params.get('graphQuery') || '',
     missingOnly: params.get('graphAttention') === '1',
   }
@@ -89,18 +99,32 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
   const update = (values: Record<string, string>, options?: PatchOptions) =>
     patch('link' in values && !values.link ? { ...values, link: null } : values, options)
   const select = (id: string) => update({ node: id, link: '' })
+  const inspectContract = (node: ContractNode) => {
+    setFocusDetails((request) => request + 1)
+    update({
+      tab: 'map',
+      node: node.id,
+      graphFocus: node.id,
+      graphMode: 'all',
+      graphHide: '',
+      graphQuery: '',
+      graphAttention: '0',
+      link: '',
+    })
+  }
   const edges = snapshot?.edges || [],
     issues = edges.filter(isIssue)
-  const name = (id: string) => nodes.find((n) => n.id === id)?.name || id.replace(/^address:/, '')
   const prepare = (node: ContractNode) => onPrepare(node)
   const selectDeployment = (id: string) =>
     run('Loading workspace', async () => {
       await request('system/select', { id })
-      setParams({ view: 'workspace', tab: 'map', node: 'core', deployment: id })
+      legacyMapDefaults.current = false
+      setParams({ view: 'workspace', deployment: id })
       return true
     })
   // An issue opens the map on the contract that owns it, with the failing connection selected.
   const showIssue = (edge: (typeof edges)[number]) => {
+    setFocusDetails((request) => request + 1)
     const anchor = nodes.some((n) => n.id === edge.from) ? edge.from : edge.to
     update({
       tab: 'map',
@@ -119,10 +143,9 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
       (snapshot.roleHistory.complete === false || Object.values(snapshot.roleHistory).some((v: any) => v?.complete === false))
   const compareBlocked = !snapshot || !system.connected ? 'Inspect live first' : ''
   return (
-    <Stack gap="sm">
-      <section className="hero" aria-label="Deployment">
+    <Tabs value={tab} onChange={(value) => update({ tab: value || 'overview' })} keepMounted={false} className="seg-tabs workspace-tabs">
+      <section className="workspace-heading" aria-label="Deployment">
         <div className="hero-main">
-          <span className="eyebrow">Deployment</span>
           <Select
             aria-label="Deployment"
             className="hero-select"
@@ -145,97 +168,65 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
               if (value && value !== profile.id) void selectDeployment(value)
             }}
           />
-          <div className="deployment-meta">
-            <EnvironmentBadge environment={profile.environment} />
-            {inspecting && snapshot ? (
-              <span className="chip" role="status">
-                <i className="dot" data-state="saved" /> Inspecting… showing the saved snapshot
-              </span>
-            ) : (system.live ?? system.connected) ? (
-              <span className="chip">
-                <i className="dot" data-state="live" /> Live
-              </span>
-            ) : stale ? (
-              <Tooltip
-                label="Read from the last saved inspection. Inspect live to reconnect before comparing or preparing an upgrade."
-                multiline
-                w={280}
+        </div>
+        <div className="workspace-toolbar">
+          {!foreign && (
+            <Tabs.List>
+              <Tabs.Tab value="overview">Overview</Tabs.Tab>
+              <Tabs.Tab value="map">Map</Tabs.Tab>
+              <Tabs.Tab value="contracts">Contracts</Tabs.Tab>
+              <Tabs.Tab value="changes">Changes</Tabs.Tab>
+            </Tabs.List>
+          )}
+        </div>
+        <Group gap={6} wrap="nowrap" className="workspace-actions">
+          <Popover position="bottom-end" width={320}>
+            <Popover.Target>
+              <Button
+                variant="subtle"
+                color="gray"
+                size="compact-sm"
+                className="workspace-status"
+                leftSection={
+                  <span className="dot" data-state={stale || inspecting ? 'saved' : (system.live ?? system.connected) ? 'live' : undefined} />
+                }
               >
-                <span className="chip" tabIndex={0}>
-                  <i className="dot" data-state="saved" /> Saved snapshot
-                </span>
-              </Tooltip>
-            ) : (
-              <span className="chip">
-                <i className="dot" /> Not inspected
-              </span>
-            )}
-            <span className="chip">
-              {profile.chainName || 'Chain'} <b>{profile.chainId}</b>
-            </span>
-            {snapshot && (
-              <>
-                <span className="chip">
-                  Block <b>{snapshot.blockNumber.toLocaleString()}</b>
-                </span>
-                <span className="chip chip-date">{new Date(snapshot.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-              </>
-            )}
-            <button type="button" className="chip chip-button" onClick={() => setSources(true)}>
-              <Database size={12} aria-hidden /> Sources{partial ? ' · partial history' : ''}
-            </button>
-          </div>
-        </div>
-        <div className="hero-stats">
-          <div className="stat">
-            <b>{nodes.length}</b>
-            <span>addresses</span>
-          </div>
-          <div className="stat">
-            <b>{snapshot ? edges.length : '—'}</b>
-            <span>connections</span>
-          </div>
-          <button
-            type="button"
-            className="stat"
-            data-tone={issues.length ? 'bad' : undefined}
-            disabled={!issues.length}
-            onClick={() => update({ tab: 'map', graphFocus: '', graphMode: 'all', graphHide: '', graphQuery: '', graphAttention: '1', link: '' })}
-          >
-            <b>{snapshot ? issues.length : '—'}</b>
-            <span>{issues.length === 1 ? 'issue' : 'issues'}</span>
-          </button>
-        </div>
-        <Group gap="xs" wrap="nowrap" className="hero-actions">
+                {inspecting ? 'Inspecting…' : stale ? 'Saved snapshot' : (system.live ?? system.connected) ? 'Live' : 'Not inspected'}
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown>
+              <Stack gap="sm">
+                <Group gap="xs">
+                  <EnvironmentBadge environment={profile.environment} />
+                  <Text size="sm">
+                    {profile.chainName || 'Chain'} · {profile.chainId}
+                  </Text>
+                </Group>
+                {snapshot && (
+                  <Text size="sm" c="dimmed">
+                    {new Date(snapshot.at).toLocaleString()} · Block {snapshot.blockNumber.toLocaleString()}
+                  </Text>
+                )}
+                {inspecting && snapshot && <Text size="sm">Showing the saved inspection while the new one runs.</Text>}
+                {partial && <Text size="sm">Partial role history</Text>}
+                <Button variant="default" size="compact-sm" onClick={() => setSources(true)}>
+                  Inspection sources
+                </Button>
+                <Button variant="subtle" color="gray" size="compact-sm" onClick={() => setSettings(true)}>
+                  Deployment settings
+                </Button>
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
           <Button
-            leftSection={<RefreshCw size={15} />}
+            variant="default"
+            size="compact-sm"
+            leftSection={<RefreshCw size={14} />}
             disabled={busy || !rpc}
             onClick={() => run('Inspecting live deployment', () => job('system/scan', { rpc }, true))}
           >
             Inspect live
           </Button>
-          <Tooltip label={compareBlocked} disabled={!compareBlocked}>
-            <div>
-              <Button
-                variant="default"
-                leftSection={<GitCompareArrows size={15} />}
-                disabled={busy || !!compareBlocked}
-                onClick={() =>
-                  run('Compiling and comparing source', async () => {
-                    await job('compile', { scope: 'core' })
-                    return job('system/compare', {}, true)
-                  })
-                }
-              >
-                Compare source
-              </Button>
-            </div>
-          </Tooltip>
-          <Tooltip label="Deployment settings">
-            <ActionIcon variant="default" size={36} aria-label="Deployment settings" onClick={() => setSettings(true)}>
-              <Settings size={16} />
-            </ActionIcon>
-          </Tooltip>
         </Group>
       </section>
       {foreign ? (
@@ -250,7 +241,13 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
                 Switch
               </Button>
             )}
-            <Button variant="default" onClick={() => setParams({ view: 'workspace', tab: 'map', node: 'core', deployment: profile.id })}>
+            <Button
+              variant="default"
+              onClick={() => {
+                legacyMapDefaults.current = false
+                setParams({ view: 'workspace', deployment: profile.id })
+              }}
+            >
               Stay on {profile.name}
             </Button>
             {locked && (
@@ -261,94 +258,89 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
           </Group>
         </Alert>
       ) : (
-        <Tabs value={tab} onChange={(value) => update({ tab: value || 'map' })} keepMounted={false} className="seg-tabs">
-          {/* Tabs and open issues share a row, so the map starts higher on the page. */}
-          <div className="workspace-bar">
-            <Tabs.List>
-              <Tabs.Tab value="map" leftSection={<Waypoints size={14} aria-hidden />}>
-                Map
-              </Tabs.Tab>
-              <Tabs.Tab value="contracts" leftSection={<Rows3 size={14} aria-hidden />}>
-                Contracts
-              </Tabs.Tab>
-              <Tabs.Tab value="changes" leftSection={<GitCompareArrows size={14} aria-hidden />}>
-                Changes
-              </Tabs.Tab>
-            </Tabs.List>
-            {!!issues.length && (
-              <div className="issue-strip" role="region" aria-label="Connections needing attention">
-                <span className="issue-count">
-                  <TriangleAlert size={14} aria-hidden /> {issues.length} {issues.length === 1 ? 'needs' : 'need'} attention
-                </span>
-                {issues.slice(0, 3).map((e, i) => (
-                  <button type="button" className="issue-chip" key={i} onClick={() => showIssue(e)}>
-                    <b>
-                      {name(e.from)} → {name(e.to)}
-                    </b>
-                    <span>{issueText(e)}</span>
-                    <ArrowUpRight size={13} aria-hidden />
-                  </button>
-                ))}
-                {issues.length > 3 && (
-                  <Button
-                    size="compact-xs"
-                    variant="subtle"
-                    color="red"
-                    onClick={() =>
-                      update({ tab: 'map', graphFocus: '', graphMode: 'all', graphHide: '', graphQuery: '', graphAttention: '1', link: '' })
-                    }
-                  >
-                    Show all {issues.length} on the map
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+        <>
+          <Tabs.Panel value="overview" pt="md">
+            <MaintenanceOverview
+              profile={profile}
+              snapshot={snapshot}
+              partial={partial}
+              onInspect={inspectContract}
+              onIssue={showIssue}
+              onContracts={() => update({ tab: 'contracts' })}
+            />
+          </Tabs.Panel>
           {/* The map stays mounted across tabs, so its question, arrangement and zoom survive a look at the table. */}
           <Tabs.Panel value="map" pt="sm" keepMounted>
-            <Suspense fallback={<Empty title="Loading graph…" />}>
-              <ContractGraph
-                snapshot={snapshot}
-                profile={profile}
-                selected={selected}
-                link={link}
-                filters={filters}
-                delta={system.delta}
-                since={system.since}
-                onSelect={select}
-                onLink={(id) => update({ link: id })}
-                onFilters={(next, options) =>
-                  update(
-                    {
-                      graphMode: next.mode,
-                      graphHide: next.hide.join(','),
-                      graphFocus: next.focus,
-                      graphQuery: next.query,
-                      graphAttention: next.missingOnly ? '1' : '0',
-                    },
-                    options,
-                  )
-                }
-                onPrepare={prepare}
-                prepareDisabled={blocked}
-              />
-            </Suspense>
+            {(mapOpened || tab === 'map') && (
+              <Suspense fallback={<Empty title="Loading graph…" />}>
+                <ContractGraph
+                  snapshot={snapshot}
+                  profile={profile}
+                  selected={selected}
+                  link={link}
+                  filters={filters}
+                  delta={system.delta}
+                  since={system.since}
+                  onSelect={select}
+                  onLink={(id) => update({ link: id })}
+                  onFilters={(next, options) =>
+                    update(
+                      {
+                        graphMode: next.mode,
+                        graphHide: next.hide.join(','),
+                        graphFocus: next.focus,
+                        graphQuery: next.query,
+                        graphAttention: next.missingOnly ? '1' : '0',
+                      },
+                      options,
+                    )
+                  }
+                  onPrepare={prepare}
+                  prepareDisabled={blocked}
+                  focusDetails={focusDetails}
+                />
+              </Suspense>
+            )}
           </Tabs.Panel>
           <Tabs.Panel value="contracts" pt="sm">
             <ContractsTable
               nodes={nodes}
               comparison={system.comparison}
+              explorer={profile.explorer}
               busy={blocked}
-              onInspect={(node) => update({ node: node.id, graphFocus: node.id, tab: 'map', link: '' })}
+              onInspect={inspectContract}
               onPrepare={prepare}
             />
           </Tabs.Panel>
           <Tabs.Panel value="changes" pt="md">
             <Stack>
+              <Group justify="space-between">
+                <div>
+                  <Title order={2} size="h4">
+                    Source comparison
+                  </Title>
+                </div>
+                <Tooltip label={compareBlocked} disabled={!compareBlocked}>
+                  <div>
+                    <Button
+                      leftSection={<GitCompareArrows size={15} />}
+                      disabled={blocked || !!compareBlocked}
+                      onClick={() =>
+                        run('Compiling and comparing source', async () => {
+                          await job('compile', { scope: 'core' })
+                          return job('system/compare', {}, true)
+                        })
+                      }
+                    >
+                      Compare source
+                    </Button>
+                  </div>
+                </Tooltip>
+              </Group>
               {!Object.keys(system.comparison || {}).length ? (
-                <Empty title="Compare this checkout with the deployment">
-                  Use Compare source to see changed facets, implementations and functions.
-                </Empty>
+                <Text size="sm" c="dimmed">
+                  {compareBlocked ? 'Inspect live to compare source.' : 'Run Compare source to find changed code.'}
+                </Text>
               ) : (
                 Object.entries(system.comparison).map(([id, c]) => {
                   const n = nodes.find((n) => n.id === id)
@@ -361,7 +353,9 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
                           </Title>
                           <Text size="sm" c="dimmed">
                             {c.kind === 'diamond'
-                              ? `${c.matching} matching · ${c.total - c.matching} changed or new facets`
+                              ? c.total === c.matching
+                                ? 'Matches this checkout'
+                                : `${c.total - c.matching} changed or new facets`
                               : c.matching
                                 ? 'Bytecode matches'
                                 : 'Deployed bytecode differs'}
@@ -407,32 +401,34 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
                   )
                 })
               )}
-              <Accordion>
-                <Accordion.Item value="state">
-                  <Accordion.Control>Configuration changes since the last inspection ({system.delta.length})</Accordion.Control>
-                  <Accordion.Panel>
-                    {system.delta.length ? (
-                      system.delta.map((d: any, i: number) => (
-                        <div className="diff-row" key={i}>
-                          <Text fw={600} size="sm">
-                            {d.name || d.node} · {d.field}
-                          </Text>
-                          <code>{pretty(d.before)}</code>
-                          <span>→</span>
-                          <code>{pretty(d.after)}</code>
-                        </div>
-                      ))
-                    ) : (
-                      <Text size="sm" c="dimmed">
-                        No configuration changes recorded.
-                      </Text>
-                    )}
-                  </Accordion.Panel>
-                </Accordion.Item>
-              </Accordion>
+              {!!system.delta?.length && (
+                <Accordion>
+                  <Accordion.Item value="state">
+                    <Accordion.Control>Configuration changes since the last inspection ({system.delta.length})</Accordion.Control>
+                    <Accordion.Panel>
+                      {system.delta.length ? (
+                        system.delta.map((d: any, i: number) => (
+                          <div className="diff-row" key={i}>
+                            <Text fw={600} size="sm">
+                              {d.name || d.node} · {d.field}
+                            </Text>
+                            <code>{pretty(d.before)}</code>
+                            <span>→</span>
+                            <code>{pretty(d.after)}</code>
+                          </div>
+                        ))
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          No configuration changes recorded.
+                        </Text>
+                      )}
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                </Accordion>
+              )}
             </Stack>
           </Tabs.Panel>
-        </Tabs>
+        </>
       )}
       <Sources
         opened={sources}
@@ -456,7 +452,8 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
                   void run('Importing deployment profile', async () => {
                     const imported = JSON.parse(await file.text())
                     await request('system/select', { profile: imported })
-                    setParams({ view: 'workspace', tab: 'map', node: 'core', deployment: String(imported.id) })
+                    legacyMapDefaults.current = false
+                    setParams({ view: 'workspace', deployment: String(imported.id) })
                     setSettings(false)
                     return true
                   })
@@ -484,6 +481,6 @@ export function Workspace({ onPrepare }: { onPrepare: (node: ContractNode) => vo
           ))}
         </Stack>
       </Modal>
-    </Stack>
+    </Tabs>
   )
 }

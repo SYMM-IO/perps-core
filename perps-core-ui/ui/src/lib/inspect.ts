@@ -58,6 +58,30 @@ export function rolesOn(node: ContractNode, edges: Connection[]): RoleRow[] {
   return [...roles.values()].sort((a, b) => urgent(b) - urgent(a) || a.role.localeCompare(b.role))
 }
 
+export interface RoleGroup {
+  roles: string[]
+  holders: { id: string; missing: boolean }[]
+  admins: string[]
+}
+/**
+ * Roles that are held by exactly the same addresses and granted by the same admins share one block, so a
+ * contract whose five roles all sit with one multisig says so once. Groups keep the order of their first
+ * role, so a group with a missing grant still sorts first.
+ */
+export function groupRoles(rows: RoleRow[]): RoleGroup[] {
+  const groups = new Map<string, RoleGroup>()
+  for (const row of rows) {
+    const key = JSON.stringify([
+      [...row.admins].sort(),
+      row.holders.map((h) => [h.id, h.missing]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    ])
+    const group = groups.get(key) || { roles: [], holders: row.holders, admins: row.admins }
+    group.roles.push(row.role)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
 /** Seconds as a person would say them, for values whose name says they are a length of time. */
 export function duration(key: string, value: unknown): string | undefined {
   if (!TIMED.test(key)) return undefined

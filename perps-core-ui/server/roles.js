@@ -29,7 +29,8 @@ export function roleHash(kind, name) {
 }
 export async function inspectRoleConnections({ nodes, profile, read, onProgress = () => {}, signal }) {
 	const edges = [],
-		seen = new Set();
+		seen = new Set(),
+		memberCandidates = new Set();
 	let expectations = [...EXPECTED_ROLES, ...(profile.expectedRoles || []).map(e => [e.holder, e.contract, e.role])];
 	for (const n of nodes.filter(n => n.kind === "partyB"))
 		expectations.push(["instantLayer", n.id, "TRUSTED_ROLE"], [n.id, "instantLayer", "OPERATOR_ROLE"]);
@@ -64,9 +65,15 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 			status,
 			actual: status === "unknown" ? null : status === "verified",
 			expected: kind === "role" && expected.has([holder.id, contract.id, role].join(":")) ? true : null,
-			basis: basis || (expected.has([holder.id, contract.id, role].join(":")) ? "Expected integration grant" : "Observed role grant"),
+			basis:
+				basis ||
+				(status === "verified"
+					? "hasRole = true"
+					: status === "missing"
+						? "hasRole = false; required integration role"
+						: "Role membership read unavailable"),
 			roleHash: hash,
-			// When an indexer recorded the grant, keep the transaction: the chain says the role is held, this says since when.
+			// Grant events are history only; membership comes from the pinned hasRole read.
 			...(kind === "role" && granted(contract, hash, holder) ? { grant: granted(contract, hash, holder) } : {}),
 			holder: holder.address,
 			contract: contract.address,
@@ -105,11 +112,11 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 			if (r.contract === n.id) roles.set(r.hash, r.name === "UNKNOWN_ROLE" ? `Role ${r.hash.slice(0, 10)}` : r.name);
 		for (const r of n.roleHistory || []) if (!roles.has(r.hash)) roles.set(r.hash, `Role ${r.hash.slice(0, 10)}`);
 		for (const [h, c, name] of expectations) if (c === n.id) roles.set(roleHash(n.kind, name), name);
-		for (const name of Object.keys(n.state.roles || {})) roles.set(roleHash(n.kind, name), name);
+		for (const name of Object.keys(n.state.roles || {})) if (![...roles.values()].includes(name)) roles.set(roleHash(n.kind, name), name);
 		n.roleCatalog = [...roles].map(([hash, name]) => ({ name, hash }));
 		n.state.roles ||= {};
 		n.roleAdmins = {};
-		// OpenZeppelin enumerable contracts expose complete membership per role.
+		// Enumerable membership discovers candidates; hasRole below confirms every displayed grant.
 		for (const [hash, name] of roles) {
 			if (n.roleInterface.enumerable && !n.state.roles[name])
 				try {
@@ -128,7 +135,10 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 						);
 					n.state.roles[name] = members;
 				} catch {}
-			for (const address of n.state.roles[name] || []) add(ensureNode(nodes, address, "authority", "Role holder"), n, name, "verified", hash);
+			for (const address of n.state.roles[name] || []) {
+				ensureNode(nodes, address, "authority", "Role holder");
+				memberCandidates.add([n.id, hash.toLowerCase(), address.toLowerCase()].join(":"));
+			}
 			if (n.roleInterface.adminRole)
 				try {
 					n.roleAdmins[hash] = await read(n.address, "function getRoleAdmin(bytes32) view returns(bytes32)", [hash]);
@@ -137,46 +147,46 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 	}
 	const candidates = [...nodes].filter(n => !["facet", "implementation", "library"].includes(n.kind));
 	const jobs = [];
+	// Keep only membership confirmed by this pass, never an inferred or retained member list.
+	for (const n of contracts) n.state.roles = {};
 	for (const n of contracts)
 		for (const { name, hash } of n.roleCatalog)
 			for (const holder of candidates) {
 				const needed = expected.has([holder.id, n.id, name].join(":"));
-				if (!n.state.roles[name])
-					jobs.push(async () => {
-						try {
-							const yes = await read(
-								n.address,
-								n.roleInterface.addressFirst
-									? "function hasRole(address,bytes32) view returns(bool)"
-									: "function hasRole(bytes32,address) view returns(bool)",
-								n.roleInterface.addressFirst ? [holder.address, hash] : [hash, holder.address],
+				jobs.push(async () => {
+					try {
+						const yes = await read(
+							n.address,
+							n.roleInterface.addressFirst
+								? "function hasRole(address,bytes32) view returns(bool)"
+								: "function hasRole(bytes32,address) view returns(bool)",
+							n.roleInterface.addressFirst ? [holder.address, hash] : [hash, holder.address],
+						);
+						if (typeof yes !== "boolean") throw new Error("Invalid hasRole result");
+						if (yes) (n.state.roles[name] ||= []).push(holder.address);
+						if (yes || needed) {
+							const guardUnavailable =
+								diamondKind(n.kind) && n.observedAt != null && !n.diamond && !explicit.has([holder.id, n.id, name].join(":"));
+							add(
+								holder,
+								n,
+								name,
+								yes ? "verified" : guardUnavailable ? "unknown" : "missing",
+								hash,
+								"role",
+								guardUnavailable && !yes ? "Role absent; deployed authorization guard could not be checked" : undefined,
 							);
-							if (yes || needed) {
-								const guardUnavailable =
-									diamondKind(n.kind) && n.observedAt != null && !n.diamond && !explicit.has([holder.id, n.id, name].join(":"));
-								add(
-									holder,
-									n,
-									name,
-									yes ? "verified" : guardUnavailable ? "unknown" : "missing",
-									hash,
-									"role",
-									guardUnavailable && !yes ? "Role absent; deployed authorization guard could not be checked" : undefined,
-								);
-							}
-						} catch {
-							n.roleReadFailures = (n.roleReadFailures || 0) + 1;
-							if (
-								needed ||
-								(n.roleHistory || []).some(
-									r => !r.admin && r.hash === hash && r.holder.toLowerCase() === holder.address.toLowerCase(),
-								)
-							)
-								add(holder, n, name, "unknown", hash);
 						}
-					});
-				else if (needed && !n.state.roles[name].some(a => a.toLowerCase() === holder.address.toLowerCase()))
-					add(holder, n, name, "missing", hash);
+					} catch {
+						n.roleReadFailures = (n.roleReadFailures || 0) + 1;
+						if (
+							needed ||
+							memberCandidates.has([n.id, hash.toLowerCase(), holder.address.toLowerCase()].join(":")) ||
+							(n.roleHistory || []).some(r => !r.admin && r.hash === hash && r.holder.toLowerCase() === holder.address.toLowerCase())
+						)
+							add(holder, n, name, "unknown", hash);
+					}
+				});
 				if (n.roleInterface.customAdmin)
 					jobs.push(async () => {
 						try {
@@ -201,6 +211,12 @@ export async function inspectRoleConnections({ nodes, profile, read, onProgress 
 		);
 		await Promise.all(jobs.slice(offset, offset + 192).map(run => run()));
 	}
+	for (const n of contracts)
+		n.state.roles = Object.fromEntries(
+			Object.entries(n.state.roles)
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([name, members]) => [name, [...new Set(members)].sort()]),
+		);
 	for (const n of contracts)
 		for (const { name, hash } of n.roleCatalog) {
 			const adminHash = n.roleAdmins[hash];

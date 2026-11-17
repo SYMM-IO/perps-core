@@ -47,7 +47,6 @@ import {
   Title,
   UnstyledButton,
 } from '@mantine/core'
-import { useMediaQuery } from '@mantine/hooks'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight } from 'lucide-react'
 import { isAddress } from 'ethers'
@@ -75,8 +74,6 @@ export function Upgrade() {
     target = params.get('target') || '',
     step = Math.max(0, Math.min(2, Number(params.get('step')) || 0))
   const nodeId = params.get('upgradeNode') || params.get('node') || scope
-  // Wide screens put the steps in a side rail, so the work area can use the rest of the width.
-  const wide = useMediaQuery('(min-width: 901px)', true)
   const [code, setCode] = useState('')
   const recordQuery = useQuery({
     queryKey: ['plan', adapter, planId],
@@ -128,10 +125,6 @@ export function Upgrade() {
                 <KindTile kind={n.kind} />
                 <span className="upgrade-choice-text">
                   <b>{n.name}</b>
-                  <small>
-                    {familyName(n.kind)}
-                    {n.strategy ? ` · ${n.strategy}` : ''}
-                  </small>
                 </span>
                 <code>{short(n.address)}</code>
                 <ArrowRight size={16} className="upgrade-choice-go" aria-hidden />
@@ -164,38 +157,26 @@ export function Upgrade() {
       : ''
   return (
     <ErrorCodeContext.Provider value={setCode}>
-      <Stack gap="lg" className="upgrade-view">
+      <Stack gap="md" className="upgrade-view">
         <Group justify="space-between">
           <div>
             <Title order={1} size="h3">
               {familyName(record?.plan.scope || scope)} upgrade
             </Title>
-            <Text size="sm" c="dimmed">
-              Prepare, rehearse, then sign the reviewed transactions.
-            </Text>
           </div>
           <Button variant="subtle" onClick={() => go({ view: 'workspace' })}>
             ← Workspace
           </Button>
         </Group>
         <ContextBar record={record} scope={scope} address={target} />
-        <div className="upgrade-layout">
-          <aside className="upgrade-rail" aria-label="Upgrade steps">
-            <Stepper
-              active={Math.min(step, 2)}
-              onStepClick={(index) => go({ step: String(index) })}
-              size="sm"
-              orientation={wide ? 'vertical' : 'horizontal'}
-            >
-              <Stepper.Step label="Prepare" description="Target and changes" />
-              <Stepper.Step label="Rehearse" description="Local fork" allowStepSelect={!!record} />
-              <Stepper.Step
-                label="Execute"
-                description="Wallet, Ledger or Safe"
-                allowStepSelect={!!record && record.rehearsal?.status === 'passed'}
-              />
+        <Stack className="upgrade-flow" gap="md">
+          <div className="upgrade-steps" aria-label="Upgrade steps">
+            <Stepper active={Math.min(step, 2)} onStepClick={(index) => go({ step: String(index) })} size="xs" orientation="horizontal">
+              <Stepper.Step label="Prepare" />
+              <Stepper.Step label="Rehearse" allowStepSelect={!!record} />
+              <Stepper.Step label="Execute" allowStepSelect={!!record && record.rehearsal?.status === 'passed'} />
             </Stepper>
-          </aside>
+          </div>
           <Stack gap="md" className="upgrade-main">
             {recordQuery.error && <Alert color="red">{recordQuery.error.message}</Alert>}
             {failure && (
@@ -241,7 +222,7 @@ export function Upgrade() {
                         )}
                       </Group>
                       <Text size="sm" c="dimmed" mt="sm">
-                        Deploy and apply this exact plan on an isolated local fork, then verify the resulting configuration. No live upgrade is sent.
+                        Test this plan on a local fork. No live transactions are sent.
                       </Text>
                       {record.rehearsal?.error && (
                         <Alert color="red" mt="md">
@@ -250,11 +231,6 @@ export function Upgrade() {
                       )}
                       {record.rehearsal?.status === 'passed' && (
                         <Stack mt="md" gap="xs">
-                          {record.rehearsal.checks?.map((c) => (
-                            <Text size="sm" key={c}>
-                              ✓ {c}
-                            </Text>
-                          ))}
                           <Text size="sm">Passed at block {record.rehearsal.blockNumber}</Text>
                           {record.rehearsal.limitations?.map((l, i) => (
                             <Text size="xs" c="dimmed" key={i}>
@@ -333,7 +309,7 @@ export function Upgrade() {
               </>
             )}
           </Stack>
-        </div>
+        </Stack>
       </Stack>
     </ErrorCodeContext.Provider>
   )
@@ -402,23 +378,25 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
   // A snapshot restored after a restart is for reading only; the server prepares from a live inspection.
   const ready = sameTarget && sameChain && !snapshot?.restored && (engine?.build?.scope || 'core') === scope && !!engine?.build
   const wrongChain = sameTarget && !!snapshot && !sameChain
-  const node = system?.snapshot?.nodes?.find((n) => same(n.address, address))
   // The workspace already holds a live connection to this deployment; reuse it unless the operator overrides it.
   const shared = !!system?.connected && !editing
+  const effectiveRpc = editing ? rpc : defaultRpc
   const inspectedAt = snapshot?.inspectedAt
   return (
     <Stack>
       <section className="panel">
-        <Group justify="space-between" align="start" wrap="nowrap">
-          <div>
-            <Title order={3} size="h4">
-              {node?.name || familyName(scope)}
-            </Title>
-            <Address value={address} />
-            <Text size="xs" c="dimmed" mt={4}>
-              {shared ? 'Using the workspace connection' : rpc ? `RPC ${rpc.replace(/^https?:\/\//, '').split(/[/?]/)[0]}` : 'No RPC endpoint set'}
-            </Text>
-          </div>
+        <Group justify="space-between" align="center">
+          <Button
+            disabled={busy || !isAddress(address) || (!shared && !effectiveRpc)}
+            onClick={() =>
+              run('Inspecting target and compiling source', async () => {
+                await request('connect', shared ? { target: address } : { rpc: effectiveRpc, target: address })
+                return job('compile', { scope })
+              })
+            }
+          >
+            Inspect & compile
+          </Button>
           <Button
             variant="subtle"
             color="gray"
@@ -427,8 +405,8 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
             onClick={() => {
               if (editing) {
                 setAddress(target)
-                setRpc(defaultRpc)
               }
+              setRpc(defaultRpc)
               setEditing(!editing)
             }}
           >
@@ -441,48 +419,6 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
             <TextInput label="RPC endpoint" value={rpc} onChange={(e) => setRpc(e.currentTarget.value)} disabled={busy} />
           </div>
         )}
-        <Group mt="md">
-          <Button
-            disabled={busy || !isAddress(address) || (!shared && !rpc)}
-            onClick={() =>
-              run('Inspecting target and compiling source', async () => {
-                await request('connect', shared ? { target: address } : { rpc, target: address })
-                return job('compile', { scope })
-              })
-            }
-          >
-            Inspect & compile
-          </Button>
-          <FileButton
-            accept="application/json,.json"
-            onChange={(file) => {
-              if (file) void run('Importing baseline', () => file.text().then((text) => request('baseline', JSON.parse(text))))
-            }}
-          >
-            {(props) => (
-              <Button {...props} variant="default" disabled={busy}>
-                Import deployed baseline
-              </Button>
-            )}
-          </FileButton>
-          <Button
-            variant="subtle"
-            disabled={busy || !engine?.build}
-            onClick={() =>
-              run('Exporting build', async () => {
-                download(await request('build'), 'symmio-build.json')
-                return true
-              })
-            }
-          >
-            Export build
-          </Button>
-        </Group>
-        {engine?.baseline && (
-          <Text size="xs" mt="sm" c="dimmed">
-            Baseline {engine.baseline.digest.slice(0, 12)}
-          </Text>
-        )}
         {wrongChain && (
           <Alert color="orange" mt="md">
             Connected to {chainLabel(snapshot!.chainId, profiles)}; this deployment is on {chainLabel(expectedChain, profiles)}. Inspect & compile
@@ -490,23 +426,72 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
           </Alert>
         )}
         {ready && (
-          <div className="target-summary">
-            <Text size="sm">
-              {chainLabel(snapshot!.chainId, profiles)} · Block {snapshot!.blockNumber.toLocaleString()}
-              {inspectedAt ? ` · ${new Date(inspectedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
-            </Text>
-            <Text size="sm">
-              {snapshot!.facets.length} facets · {Object.keys(snapshot!.map).length} functions
-            </Text>
+          <Group mt="sm" gap="xs">
             <Text size="xs" c="dimmed">
               Upgrade owner · {snapshot!.authority.kind}
             </Text>
             <Address value={snapshot!.owner} />
-            <Text size="xs" c="dimmed">
-              Source {engine!.build!.source.commit.slice(0, 12)} · Build {engine!.build!.digest.slice(0, 12)}
-            </Text>
-          </div>
+          </Group>
         )}
+        <Accordion mt="sm">
+          <Accordion.Item value="source">
+            <Accordion.Control>Source & baseline tools</Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap="xs">
+                <Address value={address} />
+                <Text size="xs" c="dimmed">
+                  {shared
+                    ? 'Using the workspace connection'
+                    : rpc
+                      ? `RPC ${rpc.replace(/^https?:\/\//, '').split(/[/?]/)[0]}`
+                      : 'No RPC endpoint set'}
+                </Text>
+                {ready && (
+                  <>
+                    <Text size="xs" c="dimmed">
+                      {chainLabel(snapshot!.chainId, profiles)} · Block {snapshot!.blockNumber.toLocaleString()}
+                      {inspectedAt ? ` · ${new Date(inspectedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Source {engine!.build!.source.commit.slice(0, 12)} · Build {engine!.build!.digest.slice(0, 12)}
+                    </Text>
+                  </>
+                )}
+                {engine?.baseline && (
+                  <Text size="xs" c="dimmed">
+                    Baseline {engine.baseline.digest.slice(0, 12)}
+                  </Text>
+                )}
+                <Group>
+                  <FileButton
+                    accept="application/json,.json"
+                    onChange={(file) => {
+                      if (file) void run('Importing baseline', () => file.text().then((text) => request('baseline', JSON.parse(text))))
+                    }}
+                  >
+                    {(props) => (
+                      <Button {...props} variant="default" disabled={busy}>
+                        Import deployed baseline
+                      </Button>
+                    )}
+                  </FileButton>
+                  <Button
+                    variant="subtle"
+                    disabled={busy || !engine?.build}
+                    onClick={() =>
+                      run('Exporting build', async () => {
+                        download(await request('build'), 'symmio-build.json')
+                        return true
+                      })
+                    }
+                  >
+                    Export build
+                  </Button>
+                </Group>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       </section>
       {ready ? (
         <FacetSelection
@@ -523,8 +508,7 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
         />
       ) : (
         <Text size="sm" c="dimmed">
-          Inspect & compile reads this Diamond and builds the checkout, then lists the facets you can change. The plan records the exact target,
-          source and compiler inputs.
+          Inspect & compile to choose the facets to change.
         </Text>
       )}
     </Stack>
@@ -668,17 +652,10 @@ function FacetSelection({
                   onChange={(e) => toggleFacet(f.name, e.currentTarget.checked)}
                   disabled={busy}
                 />
-                <Text size="xs" c="dimmed">
-                  {Object.keys(f.selectors).length} functions{f.dependencies.length ? ` · ${f.dependencies.length} libraries` : ''}
-                </Text>
-                <Accordion variant="default">
-                  <Accordion.Item value="details">
-                    <Accordion.Control>Functions & dependencies</Accordion.Control>
-                    <Accordion.Panel>
-                      <JsonView value={{ functions: f.selectors, libraries: f.dependencies }} />
-                    </Accordion.Panel>
-                  </Accordion.Item>
-                </Accordion>
+                <details className="upgrade-facet-details">
+                  <summary>Functions & dependencies</summary>
+                  <JsonView value={{ functions: f.selectors, libraries: f.dependencies }} />
+                </details>
               </div>
             ))
           ) : (
@@ -831,10 +808,6 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
     <Stack>
       <section className="panel">
         {!system?.connected && <Alert mb="md">Saved snapshot. Return to Workspace and Inspect live before preparing.</Alert>}
-        <Title order={3} size="h4" mb="sm">
-          {node.name}
-        </Title>
-        <Address value={node.address} />
         <div className="two-columns">
           <TextInput
             label="Deployment wallet address"
@@ -864,43 +837,51 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
           Use wallet address
         </Button>
       </section>
-      <Group>
-        <FileButton
-          accept="application/json,.json"
-          onChange={(file) => {
-            if (file)
-              void run('Importing component baseline', async () => {
-                const result = await request('system/baseline', JSON.parse(await file.text()))
-                setBaseline(`${result.scope} baseline imported`)
-                return result
-              })
-          }}
-        >
-          {(props) => (
-            <Button {...props} variant="default" disabled={busy}>
-              Import deployed baseline
-            </Button>
-          )}
-        </FileButton>
-        <Button
-          variant="subtle"
-          disabled={busy}
-          onClick={() =>
-            run('Exporting component build', async () => {
-              await job('compile', { scope })
-              download(await request(`system/build?scope=${scope}`), `${scope}-build.json`)
-              return true
-            })
-          }
-        >
-          Export component build
-        </Button>
-        {baseline && (
-          <Text size="xs" c="dimmed">
-            {baseline}
-          </Text>
-        )}
-      </Group>
+      <Accordion>
+        <Accordion.Item value="source">
+          <Accordion.Control>Source & baseline tools</Accordion.Control>
+          <Accordion.Panel>
+            <Address value={node.address} />
+            <Group mt="sm">
+              <FileButton
+                accept="application/json,.json"
+                onChange={(file) => {
+                  if (file)
+                    void run('Importing component baseline', async () => {
+                      const result = await request('system/baseline', JSON.parse(await file.text()))
+                      setBaseline(`${result.scope} baseline imported`)
+                      return result
+                    })
+                }}
+              >
+                {(props) => (
+                  <Button {...props} variant="default" disabled={busy}>
+                    Import deployed baseline
+                  </Button>
+                )}
+              </FileButton>
+              <Button
+                variant="subtle"
+                disabled={busy}
+                onClick={() =>
+                  run('Exporting component build', async () => {
+                    await job('compile', { scope })
+                    download(await request(`system/build?scope=${scope}`), `${scope}-build.json`)
+                    return true
+                  })
+                }
+              >
+                Export component build
+              </Button>
+              {baseline && (
+                <Text size="xs" c="dimmed">
+                  {baseline}
+                </Text>
+              )}
+            </Group>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
       <Button
         disabled={busy || !isAddress(draft.deployer) || !isAddress(draft.authority) || system?.connected === false}
         onClick={() =>
@@ -924,7 +905,6 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
       >
         Prepare transactions
       </Button>
-      {system?.connected === false && <Alert color="gray">Inspect live in the workspace to reconnect before preparing transactions.</Alert>}
     </Stack>
   )
 }
@@ -953,16 +933,12 @@ function PlanSummary({ record }: { record: PlanRecord }) {
     <section className="panel">
       <Group justify="space-between">
         <Title order={3} size="h4">
-          {familyName(p.scope)} · {p.id.slice(0, 8)}
+          Planned changes
         </Title>
         <Badge color={state.color} variant="light">
           {state.label}
         </Badge>
       </Group>
-      <Text size="sm" c="dimmed" mt="sm">
-        Chain {planChainId(p)} · {new Date(p.createdAt).toLocaleString()}
-      </Text>
-      <Address value={planTarget(p)} />
       <div className="two-columns">
         <div>
           <Text size="xs" c="dimmed" mt="xs">
@@ -1066,6 +1042,9 @@ function PlanSummary({ record }: { record: PlanRecord }) {
             <JsonView
               value={{
                 source: p.source,
+                target: planTarget(p),
+                chainId: planChainId(p),
+                createdAt: p.createdAt,
                 buildDigest: p.buildDigest,
                 baseline: diamond ? p.baselineDigest : undefined,
                 bindings: diamond ? p.bindings : undefined,

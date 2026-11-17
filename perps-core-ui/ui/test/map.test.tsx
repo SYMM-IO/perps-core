@@ -1,6 +1,17 @@
 import book from '../../../addresses.json'
 import { ContractGraph } from '../src/components/ContractGraph'
-import { countGlyph, FAMILIES, familyOf, familyTones, graphStyles, mapPalette, MIRRORED, NODE_KINDS, nodeGlyph } from '../src/lib/graph-styles'
+import {
+  countGlyph,
+  FAMILIES,
+  familyOf,
+  familyTones,
+  glyphFor,
+  graphStyles,
+  mapPalette,
+  MIRRORED,
+  NODE_KINDS,
+  nodeGlyph,
+} from '../src/lib/graph-styles'
 import { fitBox, fitText, panToKeep, wheelReader } from '../src/lib/map-gesture'
 import type { GraphFilters } from '../src/types'
 import { MantineProvider } from '@mantine/core'
@@ -49,6 +60,20 @@ test('a node icon is a complete drawing in the tone it was asked for', () => {
     expect(drawn.querySelector('circle')?.getAttribute('fill')).toBe('#2b5350')
     expect(svg).not.toContain('key=')
   }
+})
+
+test('a wallet authority is drawn as a person, every other authority keeps the key', () => {
+  expect(glyphFor({ kind: 'authority', codeSize: 0 })).toBe('eoa')
+  expect(glyphFor({ kind: 'authority', codeSize: 184 })).toBe('authority')
+  expect(glyphFor({ kind: 'authority' })).toBe('authority')
+  expect(glyphFor({ kind: 'safe', codeSize: 0 })).toBe('safe')
+  expect(glyphFor({})).toBe('external')
+  // The wallet glyph wins over the kind's icon, and a stack's count still wins over it.
+  const styles = graphStyles(false),
+    at = (selector: string) => styles.findIndex((s) => s.selector === selector)
+  expect(at('node[glyph="eoa"]')).toBeGreaterThan(at('node[kind="authority"]'))
+  expect(at('node[glyph="eoa"]')).toBeLessThan(at('node.stack'))
+  expect(styles[at('node[glyph="eoa"]')].style['background-image']).toBe(nodeGlyph('eoa', familyTones(false).governance))
 })
 
 test('a stack shows how many addresses it holds where a contract shows its icon', () => {
@@ -192,9 +217,19 @@ const snapshot = {
 const delta = [{ kind: 'connection', node: 'gov', to: 'core', edgeKind: 'role', label: 'SETTER_ROLE', before: null, after: { status: 'verified' } }]
 const whole: GraphFilters = { mode: 'all', focus: '', query: '', missingOnly: false, hide: [] }
 const spies = { filters: vi.fn(), select: vi.fn(), link: vi.fn() }
-function Harness({ start = whole, startLink = '' }: { start?: GraphFilters; startLink?: string }) {
+function Harness({
+  start = whole,
+  startLink = '',
+  startSelected = 'core',
+  focusDetails = 0,
+}: {
+  start?: GraphFilters
+  startLink?: string
+  startSelected?: string
+  focusDetails?: number
+}) {
   const [filters, setFilters] = useState(start),
-    [selected, setSelected] = useState('core'),
+    [selected, setSelected] = useState(startSelected),
     [link, setLink] = useState(startLink)
   return (
     <MantineProvider env="test">
@@ -205,6 +240,7 @@ function Harness({ start = whole, startLink = '' }: { start?: GraphFilters; star
         link={link}
         filters={filters}
         delta={delta}
+        focusDetails={focusDetails}
         onFilters={(next, options) => {
           spies.filters(next, options)
           setFilters(next)
@@ -255,17 +291,76 @@ describe('the map', () => {
   const section = () => document.querySelector<HTMLElement>('.graph-panel')!
   const escape = () => fireEvent.keyDown(screen.getByRole('group', { name: /Interactive contract graph/ }), { key: 'Escape' })
 
+  test('Fit keeps an unchanged selection above a mobile detail overlay', () => {
+    const viewport = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 })
+    const original = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('graph-canvas'))
+        return { x: 0, y: 0, left: 0, top: 0, right: 390, bottom: 600, width: 390, height: 600, toJSON() {} }
+      if (this.classList.contains('graph-inspector'))
+        return { x: 10, y: 260, left: 10, top: 260, right: 380, bottom: 590, width: 370, height: 330, toJSON() {} }
+      return original.call(this)
+    })
+    try {
+      render(<Harness />)
+      const drawing = section().querySelector('.graph-canvas') as HTMLElement & { _cyreg: { cy: import('cytoscape').Core } }
+      fireEvent.click(screen.getByRole('button', { name: 'Fit to view' }))
+      expect(drawing._cyreg.cy.getElementById('core').renderedBoundingBox().y2).toBeLessThan(260)
+      expect(screen.getByLabelText('Contract inspector')).toBeTruthy()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: viewport })
+    }
+  })
+
+  test.each(['', 'gov>core'])('an overview drill-down puts focus into its contract or connection detail: %s', async (startLink) => {
+    render(<Harness startLink={startLink} focusDetails={1} />)
+    const inspector = screen.getByLabelText(startLink ? 'Connection detail' : 'Contract inspector')
+    await waitFor(() => expect(document.activeElement).toBe(inspector.querySelector('.inspector-heading')))
+  })
+
+  test('filters are opt-in, with a visible reset for a scoped deep link even while the panel is closed', () => {
+    render(<Harness start={{ ...whole, focus: 'core' }} />)
+    expect(screen.queryByRole('button', { name: 'Whole system' })).toBeNull()
+    const toggle = screen.getByRole('button', { name: /Filters · 1/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'One contract' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('button', { name: 'Whole system' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(spies.filters).toHaveBeenLastCalledWith(whole, { replace: true })
+  })
+
+  test('contract detail can close completely and be reopened through search without replacing the map', () => {
+    render(<Harness />)
+    const drawing = section().querySelector('.graph-canvas canvas')
+    expect(screen.getByLabelText('Contract inspector')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
+    expect(screen.queryByLabelText('Contract inspector')).toBeNull()
+    expect(screen.queryByRole('separator')).toBeNull()
+    expect(section().querySelector('.without-inspector')).toBeTruthy()
+    const box = screen.getByRole('textbox', { name: 'Find contract, role or getter' })
+    fireEvent.change(box, { target: { value: 'Symmio' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(screen.getByLabelText('Contract inspector')).toBeTruthy()
+    expect(section().querySelector('.graph-canvas canvas')).toBe(drawing)
+  })
+
   test('fullscreen is the same map: the question, the change view, the zoom and the canvas all stay', async () => {
     render(<Harness />)
-    fireEvent.click(within(screen.getByLabelText('Contract inspector')).getAllByRole('button', { name: 'Show on map' })[0])
+    fireEvent.click(screen.getByRole('button', { name: /Who can change it/ }))
+    fireEvent.click(await within(screen.getByLabelText('Contract inspector')).findByRole('button', { name: 'Show on map' }))
     expect(screen.getByRole('heading', { name: 'Who can change Symmio' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(screen.getByRole('button', { name: /Changes/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
     await waitFor(() => expect(section().querySelector('.graph-zoom')!.textContent).toContain('88%'))
     const drawing = section().querySelector('.graph-canvas canvas')
     expect(drawing).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Fullscreen' }))
     expect(section().className).toContain('graph-fullscreen')
     expect(screen.getByRole('heading', { name: 'Who can change Symmio' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Changes/ }).getAttribute('aria-pressed')).toBe('true')
@@ -281,14 +376,23 @@ describe('the map', () => {
     expect(section().querySelector('.graph-canvas canvas')).toBe(drawing)
   })
 
-  test('Escape closes an open line before it closes fullscreen', () => {
+  test('Escape closes an open line before it closes fullscreen', async () => {
     render(<Harness startLink="gov>core" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Fullscreen' }))
     expect(screen.getByLabelText('Connection detail')).toBeTruthy()
     escape()
     expect(spies.link).toHaveBeenLastCalledWith('')
     expect(screen.queryByLabelText('Connection detail')).toBeNull()
     expect(section().className).toContain('graph-fullscreen')
+  })
+
+  test('with nothing selected the map uses the full canvas and keeps issues available in filters', () => {
+    render(<Harness startSelected="" />)
+    expect(screen.queryByLabelText('Deployment summary')).toBeNull()
+    expect(screen.queryByRole('separator')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    expect(screen.getByRole('button', { name: /Issues only.*1/ })).toBeTruthy()
   })
 
   test('choosing a contract in a panel lights it on the map, with both questions one click away', () => {
@@ -333,13 +437,16 @@ describe('the map', () => {
     const status = section().querySelector<HTMLElement>('[role="status"]')!
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(status.textContent).toBe('Whole system · 5 nodes · 5 of 5 connections · 1 issue · Selected Symmio')
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(screen.getByRole('button', { name: /Issues only/ }))
     expect(spies.filters).toHaveBeenLastCalledWith(expect.objectContaining({ missingOnly: true }), { replace: true })
     await waitFor(() => expect(status.textContent).toBe('Whole system · 2 nodes · 1 of 5 connections · 1 issue · Selected Symmio'))
     // A question is drawn whatever the filters say, and the pill says how much of it they would have hidden.
-    act(() => void fireEvent.click(within(screen.getByLabelText('Contract inspector')).getAllByRole('button', { name: 'Show on map' })[0]))
+    fireEvent.click(screen.getByRole('button', { name: /Who can change it/ }))
+    fireEvent.click(await within(screen.getByLabelText('Contract inspector')).findByRole('button', { name: 'Show on map' }))
     expect(section().querySelector('.graph-scope')?.textContent).toMatch(/2 addresses can change Symmio · 3 of 3 connections drawn past the filters/)
     expect(status.textContent).toContain('2 addresses can change Symmio')
+    fireEvent.click(screen.getByRole('button', { name: 'Map key' }))
     expect(section().querySelector('.graph-legend')?.textContent).toMatch(/\d+ address(es)? · /)
   })
 })

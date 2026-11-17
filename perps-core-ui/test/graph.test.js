@@ -22,6 +22,10 @@ test("role discovery keeps separate grants, expected missing grants and failed r
 			const diamond = signature.includes("hasRole(address");
 			const [holder, role] = diamond ? args : [args[1], args[0]];
 			if (contract === address(5) && holder === address(2) && role === id("TRUSTED_ROLE")) throw new Error("RPC unavailable");
+			if (signature.includes("hasRole(bytes32,address)") && contract === address(2))
+				return (
+					(holder === address(4) && [ZeroHash, id("SETTER_ROLE")].includes(role)) || (holder === address(5) && role === id("OPERATOR_ROLE"))
+				);
 			return contract === address(1) && holder === address(2) && role === id("INSTANT_LAYER_ROLE");
 		},
 	});
@@ -142,6 +146,14 @@ test("compact layout groups the lanes around Core without overlapping or reorder
 		for (let j = i + 1; j < placed.length; j++)
 			assert.ok(Math.abs(placed[i].x - placed[j].x) >= LAYOUT.column || Math.abs(placed[i].y - placed[j].y) >= LAYOUT.row);
 	assert.equal(semanticLayout(nodes).sections.length, 5, "the whole-system view keeps one lane per role");
+});
+
+test("lanes are numbered left to right like an architectural drawing, skipping lanes with nothing in them", () => {
+	const nodes = [node("gov", "authority", 1), node("core", "core", 2), node("service", "verifier", 3)];
+	assert.deepEqual(
+		semanticLayout(nodes).sections.map(s => s.label),
+		["01 · Governance", "02 · Core & accounts", "03 · Services"],
+	);
 });
 
 test("filter groups hide connections without moving contracts, and their counts ignore what is hidden", () => {

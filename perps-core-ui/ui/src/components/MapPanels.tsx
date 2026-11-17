@@ -1,5 +1,6 @@
 import { short } from '../lib/state'
 import type { ContractNode, Link } from '../types'
+import { Collection } from './Common'
 import { Button, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
 
@@ -76,14 +77,16 @@ export function StackDetail({
           Addresses
         </Text>
         <Stack gap={0}>
-          {stack.members.map((m) => (
-            <UnstyledButton key={m.id} className="link-row" onClick={() => onSelect(m.id)}>
-              <span className="link-name">
-                <code>{short(m.address)}</code>
-              </span>
-              {!sameName && <span className="link-count">{m.name}</span>}
-            </UnstyledButton>
-          ))}
+          <Collection unit="addresses">
+            {stack.members.map((m) => (
+              <UnstyledButton key={`${m.id} ${m.address} ${m.name}`} className="link-row" onClick={() => onSelect(m.id)}>
+                <span className="link-name">
+                  <code>{short(m.address)}</code>
+                </span>
+                {!sameName && <span className="link-count">{m.name}</span>}
+              </UnstyledButton>
+            ))}
+          </Collection>
         </Stack>
         <Text size="xs" c="dimmed" mt={6}>
           Choosing one draws it on its own and opens it here.
@@ -110,16 +113,18 @@ export function PowerList({ result, nodes, onLink }: { result: PowerResult; node
             </Text>
           )}
           <Stack gap={0}>
-            {entries.map((e) => (
-              <UnstyledButton key={`${e.node}|${via}`} className="link-row" onClick={() => onLink(e.link)}>
-                <span className="link-name">{nameOf(nodes, e.node)}</span>
-                <span className="power-tags">
-                  {!!e.owns.length && <b>owns</b>}
-                  {!!e.holds.length && <span title={e.holds.join(', ')}>holds {e.holds.length}</span>}
-                  {!!e.grants.length && <span title={e.grants.join(', ')}>can grant {e.grants.length}</span>}
-                </span>
-              </UnstyledButton>
-            ))}
+            <Collection unit="addresses">
+              {entries.map((e) => (
+                <UnstyledButton key={`${e.node} ${nameOf(nodes, e.node)} ${via}`} className="link-row" onClick={() => onLink(e.link)}>
+                  <span className="link-name">{nameOf(nodes, e.node)}</span>
+                  <span className="power-tags">
+                    {!!e.owns.length && <b>owns</b>}
+                    {!!e.holds.length && <span title={e.holds.join(', ')}>holds {e.holds.length}</span>}
+                    {!!e.grants.length && <span title={e.grants.join(', ')}>can grant {e.grants.length}</span>}
+                  </span>
+                </UnstyledButton>
+              ))}
+            </Collection>
           </Stack>
         </div>
       ))}

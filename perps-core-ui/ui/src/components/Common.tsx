@@ -1,18 +1,30 @@
 import { useWorkbench } from '../api'
-import { httpUrl, planChainId } from '../lib/state'
+import { httpUrl, planChainId, short } from '../lib/state'
 import type { Deployment, Plan, Profile } from '../types'
 import { ActionIcon, Alert, Badge, Button, Code, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { Box, Check, Copy, ExternalLink, Gem, Handshake, Layers, ShieldCheck, Zap, type LucideIcon } from 'lucide-react'
-import { createContext, useContext, useState } from 'react'
-import type { ReactNode } from 'react'
+import { Children, createContext, useContext, useState } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
-export function Address({ value, align = 'start', href }: { value: string; align?: 'start' | 'center'; href?: string }) {
+export function Address({
+  value,
+  align = 'start',
+  href,
+  compact = false,
+}: {
+  value: string
+  align?: 'start' | 'center'
+  href?: string
+  compact?: boolean
+}) {
   const [copied, setCopied] = useState(false),
     [error, setError] = useState('')
   return (
     <Stack gap={4}>
       <Group gap={6} wrap="nowrap" align="center" justify={align === 'center' ? 'center' : 'flex-start'}>
-        <Code className="address">{value}</Code>
+        <Code className="address" title={compact ? value : undefined}>
+          {compact ? short(value) : value}
+        </Code>
         <Tooltip label={copied ? 'Copied' : 'Copy address'}>
           <ActionIcon
             variant="subtle"
@@ -70,6 +82,54 @@ export function Empty({ title, children, action }: { title: string; children?: R
       )}
       {action}
     </Stack>
+  )
+}
+/**
+ * A long list that starts collapsed behind its count, with a filter once opened. Short lists and lists
+ * with something wrong (`attention`) render as they always did. Filtering matches each child's key, so
+ * callers put the searchable text — address, name — in the key.
+ */
+export function Collection({
+  children,
+  attention = false,
+  unit = 'members',
+  flow = 'rows',
+}: {
+  children: ReactNode
+  attention?: boolean
+  unit?: string
+  /** `rows` stacks one item per line; `inline` keeps pills flowing like text. */
+  flow?: 'rows' | 'inline'
+}) {
+  const [query, setQuery] = useState('')
+  const items = Children.toArray(children)
+  if (items.length <= 6 || attention) return <>{children}</>
+  const q = query.trim().toLowerCase()
+  return (
+    <details className="inspector-collection">
+      <summary>
+        {items.length} {unit}{' '}
+        <Text span size="xs" c="dimmed">
+          · expand list
+        </Text>
+      </summary>
+      <input aria-label={`Filter ${unit}`} placeholder="Filter…" value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
+      <div className="inspector-collection-items" data-flow={flow}>
+        {items.map((child, i) => (
+          <div
+            key={i}
+            hidden={
+              !!q &&
+              !String((child as ReactElement).key || '')
+                .toLowerCase()
+                .includes(q)
+            }
+          >
+            {child}
+          </div>
+        ))}
+      </div>
+    </details>
   )
 }
 export function ErrorNotice({ children }: { children: ReactNode }) {

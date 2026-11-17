@@ -13,6 +13,7 @@ const KINDS: Record<string, string> = {
   timelock: 'Timelock',
   proxyAdmin: 'Proxy admin',
   gasless: 'Gasless layer',
+  instantLayer: 'Instant layer',
   multiAccount: 'MultiAccount',
   express: 'Express provider',
   symbolManager: 'Symbol manager',

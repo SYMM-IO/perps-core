@@ -1,9 +1,9 @@
 import { power } from '../../../shared/graph-insight.js'
 import { edgeKind, isImplementation, linkId } from '../../../shared/graph-model.js'
-import { duration, relations, rolesOn, settingsOf, type Relation } from '../lib/inspect'
+import { duration, groupRoles, relations, rolesOn, settingsOf, type Relation } from '../lib/inspect'
 import { httpUrl, isIssue, issueText, kindName, pretty, short, UPGRADEABLE } from '../lib/state'
 import type { Connection, ContractNode, Link, Profile } from '../types'
-import { Address, JsonView, StatusBadge } from './Common'
+import { Address, Collection, JsonView, StatusBadge } from './Common'
 import { PowerList, type PowerResult } from './MapPanels'
 import { Accordion, Badge, Button, Group, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
@@ -69,8 +69,7 @@ export function Inspector({
       </Text>
     )
   const own = edges.filter((e) => e.from === node.id || e.to === node.id),
-    internals = own.filter((e) => isImplementation(edgeKind(e))),
-    issues = own.filter(isIssue)
+    internals = own.filter((e) => isImplementation(edgeKind(e)))
   const supported = UPGRADEABLE.includes(node.kind)
   const under = power({ nodes, edges }, node.id, 'under') as PowerResult,
     over = power({ nodes, edges }, node.id, 'over') as PowerResult,
@@ -79,15 +78,16 @@ export function Inspector({
     { pointsTo, referencedBy } = relations(node, edges),
     { settings, constants } = settingsOf(node, nodes)
   const explorer = `${(httpUrl(profile.explorer) || 'https://blockscan.com').replace(/\/$/, '')}/address/`
-  const facts = [
-    node.state?.paused === true && 'Paused',
-    node.state?.facets && `${node.state.facets} facets`,
-    node.state?.functions && `${node.state.functions} functions`,
-    node.codeSize === 0 && 'A wallet, not a contract',
-    node.listed && 'In the address book',
-  ].filter(Boolean)
+  const safeOwners = node.kind === 'safe' ? edges.filter((e) => e.to === node.id && e.label === 'Safe owner') : []
   const technical = (
     [
+      ['Address', node.address],
+      ['Type', `${kindName(node.kind)}${node.kind === 'authority' ? (node.codeSize === 0 ? ' · EOA' : node.codeSize ? ' · contract' : '') : ''}`],
+      ['Upgrade path', node.strategy],
+      ['Implementation', node.implementation],
+      ['Facets', node.state?.facets],
+      ['Functions', node.state?.functions],
+      ['Address book', node.listed ? 'Listed' : undefined],
       ['Status', node.status],
       ['Code', node.codeSize === 0 ? 'none' : node.codeSize ? `${Number(node.codeSize).toLocaleString()} bytes` : undefined],
       ['Code hash', node.codeHash],
@@ -105,16 +105,23 @@ export function Inspector({
     focusHeading()
   }
   const related = (rows: Relation[]) => (
-    <Stack gap={0}>
-      {rows.map((r) => (
-        <UnstyledButton key={r.other} className="link-row" data-state={r.state} onClick={() => open(r.link)}>
-          <span className="link-dot" aria-hidden />
-          <span className="link-name">{nameOf(nodes, r.other)}</span>
-          <span className="link-count" title={r.labels.join(', ')}>
-            {r.labels.join(', ')}
-          </span>
-        </UnstyledButton>
-      ))}
+    <Stack gap={0} className="inspector-relations">
+      <Collection unit="contracts" attention={rows.some((r) => r.state === 'missing')}>
+        {rows.map((r) => (
+          <UnstyledButton
+            key={`${r.other} ${nameOf(nodes, r.other)} ${r.labels.join(' ')}`}
+            className="link-row"
+            data-state={r.state}
+            onClick={() => open(r.link)}
+          >
+            <span className="link-dot" aria-hidden />
+            <span className="link-name">{nameOf(nodes, r.other)}</span>
+            <span className="link-count" title={r.labels.join(', ')}>
+              {r.labels.join(', ')}
+            </span>
+          </UnstyledButton>
+        ))}
+      </Collection>
     </Stack>
   )
   const onMap = (direction: 'over' | 'under') =>
@@ -129,23 +136,16 @@ export function Inspector({
         <Title order={3} size="h4" tabIndex={-1} className="inspector-heading" ref={heading}>
           {node.name}
         </Title>
-        <Text size="xs" c="dimmed">
-          {kindName(node.kind)}
-          {node.strategy && node.strategy !== 'Inspect only' ? ` · ${node.strategy}` : ''}
-        </Text>
       </div>
-      <Address value={node.address} href={explorer + node.address} />
-      {node.implementation && (
-        <div>
-          <Text size="xs" c="dimmed">
-            Implementation
-          </Text>
-          <Address value={node.implementation} href={explorer + node.implementation} />
-        </div>
+      <Address value={node.address} href={explorer + node.address} compact />
+      {node.state?.paused === true && (
+        <Text size="xs" className="inspector-exception">
+          Paused
+        </Text>
       )}
-      {!!facts.length && (
-        <Text size="xs" c="dimmed">
-          {facts.join(' · ')}
+      {node.status === 'no-code' && (
+        <Text size="xs" className="inspector-exception">
+          No contract code
         </Text>
       )}
       {node.removed && (
@@ -153,36 +153,35 @@ export function Inspector({
           Gone since the previous inspection. Shown because the map is drawing changes.
         </Text>
       )}
-      {issues.map((e, i) => (
-        <UnstyledButton key={i} className="issue-row" onClick={() => open(linkId(e.from, e.to))}>
-          <TriangleAlert size={14} aria-hidden />
-          <span>
-            {issueText(e)}
-            <small>
-              {nameOf(nodes, e.from)} → {nameOf(nodes, e.to)}
-            </small>
-          </span>
-        </UnstyledButton>
-      ))}
-      {supported && (
-        <Button disabled={prepareDisabled} onClick={() => onPrepare(node)}>
-          Prepare upgrade
-        </Button>
+      {!!safeOwners.length && (
+        <details className="inspector-safe-owners">
+          <summary>
+            Safe owners · {String(node.state.threshold ?? '?')} of {safeOwners.length}
+          </summary>
+          <Stack gap={0}>
+            <Collection unit="owners">
+              {safeOwners.map((e) => (
+                <UnstyledButton
+                  key={`${e.from} ${nameOf(nodes, e.from)}`}
+                  className="link-row"
+                  onClick={() => {
+                    onSelect(e.from)
+                    focusHeading()
+                  }}
+                >
+                  <span className="link-dot" aria-hidden />
+                  <span className="link-name">{nameOf(nodes, e.from)}</span>
+                </UnstyledButton>
+              ))}
+            </Collection>
+          </Stack>
+        </details>
       )}
       {/* Remounted per contract, so each one opens on the section that matters for it. */}
-      <Accordion
-        key={node.id}
-        multiple
-        variant="default"
-        className="inspector-accordion"
-        defaultValue={[
-          changes.length ? 'changes' : '',
-          reach(under) ? 'under' : reach(over) ? 'over' : pointsTo.length ? 'points' : 'referenced',
-        ].filter(Boolean)}
-      >
+      <Accordion key={node.id} multiple variant="default" className="inspector-accordion" defaultValue={[]}>
         {!!changes.length && (
           <Accordion.Item value="changes">
-            <Accordion.Control>Changed since the previous inspection ({changes.length})</Accordion.Control>
+            <Accordion.Control>Recent changes</Accordion.Control>
             <Accordion.Panel>
               <Stack gap={6}>
                 {changes.slice(0, 40).map((d, i) => (
@@ -202,7 +201,7 @@ export function Inspector({
         )}
         {(!!reach(under) || !!roles.length) && (
           <Accordion.Item value="under">
-            <Accordion.Control>Who can change it ({reach(under)})</Accordion.Control>
+            <Accordion.Control>Who can change it</Accordion.Control>
             <Accordion.Panel>
               <Group justify="space-between" mb={8} wrap="nowrap">
                 {!!roles.length && (
@@ -218,32 +217,38 @@ export function Inspector({
                 {onMap('under')}
               </Group>
               {byRole && roles.length ? (
-                <Stack gap={10}>
-                  {roles.map((r) => (
-                    <div key={r.role} className="role-row">
-                      <code>{r.role}</code>
+                <Stack gap={10} className="inspector-roles">
+                  {groupRoles(roles).map((g) => (
+                    <div key={g.roles.join('|')} className="role-row">
+                      <div className="role-names">
+                        {g.roles.map((role) => (
+                          <code key={role}>{role}</code>
+                        ))}
+                      </div>
                       <div>
-                        {r.holders.length ? (
-                          r.holders.map((h) => (
-                            <UnstyledButton
-                              key={h.id}
-                              className="role-holder"
-                              data-missing={h.missing || undefined}
-                              onClick={() => open(linkId(h.id, node.id))}
-                            >
-                              {nameOf(nodes, h.id)}
-                              {h.missing ? ' · not granted' : ''}
-                            </UnstyledButton>
-                          ))
+                        {g.holders.length ? (
+                          <Collection unit="holders" flow="inline" attention={g.holders.some((h) => h.missing)}>
+                            {g.holders.map((h) => (
+                              <UnstyledButton
+                                key={`${h.id} ${nameOf(nodes, h.id)}`}
+                                className="role-holder"
+                                data-missing={h.missing || undefined}
+                                onClick={() => open(linkId(h.id, node.id))}
+                              >
+                                {nameOf(nodes, h.id)}
+                                {h.missing ? ' · not granted' : ''}
+                              </UnstyledButton>
+                            ))}
+                          </Collection>
                         ) : (
                           <Text span size="xs" c="dimmed">
                             held by nobody
                           </Text>
                         )}
                       </div>
-                      {!!r.admins.length && (
+                      {!!g.admins.length && (
                         <Text size="xs" c="dimmed">
-                          granted by {[...new Set(r.admins)].map((id) => nameOf(nodes, id)).join(', ')}
+                          granted by {[...new Set(g.admins)].map((id) => nameOf(nodes, id)).join(', ')}
                         </Text>
                       )}
                     </div>
@@ -261,7 +266,7 @@ export function Inspector({
         )}
         {!!reach(over) && (
           <Accordion.Item value="over">
-            <Accordion.Control>What it can change ({reach(over)})</Accordion.Control>
+            <Accordion.Control>What it can change</Accordion.Control>
             <Accordion.Panel>
               <Group justify="flex-end" mb={4}>
                 {onMap('over')}
@@ -272,19 +277,19 @@ export function Inspector({
         )}
         {!!pointsTo.length && (
           <Accordion.Item value="points">
-            <Accordion.Control>Points to ({pointsTo.length})</Accordion.Control>
+            <Accordion.Control>Points to</Accordion.Control>
             <Accordion.Panel>{related(pointsTo)}</Accordion.Panel>
           </Accordion.Item>
         )}
         {!!referencedBy.length && (
           <Accordion.Item value="referenced">
-            <Accordion.Control>Referenced by ({referencedBy.length})</Accordion.Control>
+            <Accordion.Control>Referenced by</Accordion.Control>
             <Accordion.Panel>{related(referencedBy)}</Accordion.Panel>
           </Accordion.Item>
         )}
         {!!internals.length && (
           <Accordion.Item value="internals">
-            <Accordion.Control>Facets & libraries ({internals.length})</Accordion.Control>
+            <Accordion.Control>Facets & libraries</Accordion.Control>
             <Accordion.Panel>
               <Stack gap={0}>
                 {internals.map((e, i) => {
@@ -311,9 +316,9 @@ export function Inspector({
         )}
         {!!settings.length && (
           <Accordion.Item value="settings">
-            <Accordion.Control>Settings ({settings.length})</Accordion.Control>
+            <Accordion.Control>Settings</Accordion.Control>
             <Accordion.Panel>
-              <Stack gap="xs">
+              <Stack gap="xs" className="inspector-settings">
                 {settings.map(([key, value]) => {
                   const time = duration(key, value)
                   return (
@@ -375,6 +380,61 @@ export function Inspector({
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
+      {supported && (
+        <Button size="compact-sm" variant="default" w="fit-content" disabled={prepareDisabled} onClick={() => onPrepare(node)}>
+          Prepare upgrade
+        </Button>
+      )}
+    </Stack>
+  )
+}
+
+/**
+ * What the sidebar shows with nothing selected: every connection that needs attention, each opening the
+ * link that carries it — or confirmation that everything is set, with the way back to the map.
+ */
+export function InspectorSummary({
+  issues,
+  nodes,
+  onSelect,
+  onLink,
+}: {
+  issues: Connection[]
+  nodes: ContractNode[]
+  onSelect: (id: string) => void
+  onLink: (id: string) => void
+}) {
+  const heading = useHeadingFocus('summary')
+  const open = (e: Connection) => {
+    const anchor = nodes.some((n) => n.id === e.from) ? e.from : e.to
+    onSelect(anchor)
+    onLink(linkId(e.from, e.to))
+    focusHeading()
+  }
+  return (
+    <Stack p="md" gap="sm" className="inspector" aria-label="Deployment summary">
+      <Title order={3} size="h4" tabIndex={-1} className="inspector-heading" ref={heading}>
+        {issues.length ? `${issues.length} ${issues.length === 1 ? 'needs' : 'need'} attention` : 'No missing connections found'}
+      </Title>
+      {issues.length ? (
+        <Stack gap={6}>
+          {issues.map((e, i) => (
+            <UnstyledButton key={i} className="issue-row" onClick={() => open(e)}>
+              <TriangleAlert size={14} aria-hidden />
+              <span>
+                {issueText(e)}
+                <small>
+                  {nameOf(nodes, e.from)} → {nameOf(nodes, e.to)}
+                </small>
+              </span>
+            </UnstyledButton>
+          ))}
+        </Stack>
+      ) : (
+        <Text size="sm" c="dimmed">
+          No missing connections were found in this inspection. Choose a contract to review its connections and read coverage.
+        </Text>
+      )}
     </Stack>
   )
 }
@@ -398,6 +458,7 @@ export function LinkDetail({
   onClose: () => void
 }) {
   const heading = useHeadingFocus(link.id)
+  const rolesOnly = link.edges.every((edge) => edge.kind === 'role')
   const endpoint = (id: string) => (
     <Button
       size="compact-sm"
@@ -431,13 +492,13 @@ export function LinkDetail({
       <Group gap={6}>
         {endpoint(link.from)}
         <Text size="xs" c="dimmed">
-          grants or points to
+          {rolesOnly ? 'holds roles on' : 'grants or points to'}
         </Text>
         {endpoint(link.to)}
       </Group>
       <Group gap="xs">
         <Text size="sm">
-          {link.count} {link.count === 1 ? 'connection' : 'connections'}
+          {link.count} {rolesOnly ? (link.count === 1 ? 'role' : 'roles') : link.count === 1 ? 'connection' : 'connections'}
         </Text>
         {!!link.missing && (
           <Badge variant="light" color="red">
@@ -451,55 +512,67 @@ export function LinkDetail({
         )}
       </Group>
       <Stack gap={0}>
-        {link.edges.map((e, i) => (
-          <div key={`${e.label}-${i}`} className="connection-detail">
-            <Group gap="xs" wrap="nowrap" align="start">
-              <StatusBadge status={e.status} />
-              <Text size="xs" className="break" fw={600}>
-                {e.label}
-              </Text>
-              {e.diff && (
-                <Badge variant="light" color={e.diff === 'removed' ? 'gray' : 'yellow'}>
-                  {{ added: 'new', changed: 'changed', removed: 'gone' }[e.diff as string]}
-                </Badge>
-              )}
-            </Group>
-            {/* On a link to a stack, each connection says which of the stacked addresses it belongs to. */}
-            {(e.fromMember || e.toMember) && (
-              <Text size="xs" c="dimmed">
-                {short(nodes.find((n) => n.id === (e.fromMember || e.toMember))?.address || '')}
-              </Text>
-            )}
-            {e.basis && (
-              <Text size="xs" c="dimmed">
-                {e.basis}
-              </Text>
-            )}
-            {/* An indexer recorded when this role was granted; the chain read above is what says it is still held. */}
-            {e.grant?.tx && (
-              <Text size="xs" c="dimmed" className="break">
-                Granted{e.grant.timestamp ? ` ${new Date(e.grant.timestamp * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' })}` : ''} in{' '}
-                {httpUrl(explorer) ? (
-                  <a href={`${httpUrl(explorer)!.replace(/\/$/, '')}/tx/${e.grant.tx}`} target="_blank" rel="noopener noreferrer">
-                    {short(e.grant.tx)} ↗
-                  </a>
-                ) : (
-                  short(e.grant.tx)
+        <Collection unit={rolesOnly ? 'roles' : 'connections'} attention={link.missing > 0}>
+          {link.edges.map((e, i) => (
+            <div key={`${e.label}-${i}`} className="connection-detail">
+              <Group gap="xs" wrap="nowrap" align="start">
+                <StatusBadge status={e.status} />
+                <Text size="xs" className="break" fw={600}>
+                  {e.label}
+                </Text>
+                {e.diff && (
+                  <Badge variant="light" color={e.diff === 'removed' ? 'gray' : 'yellow'}>
+                    {{ added: 'new', changed: 'changed', removed: 'gone' }[e.diff as string]}
+                  </Badge>
                 )}
-              </Text>
-            )}
-            {(isIssue(e) || typeof e.actual === 'string') && e.actual !== undefined && (
-              <Text size="xs" className="break">
-                Read: {String(e.actual)}
-              </Text>
-            )}
-            {isIssue(e) && e.expected !== undefined && (
-              <Text size="xs" className="break">
-                Expected: {String(e.expected)}
-              </Text>
-            )}
-          </div>
-        ))}
+              </Group>
+              {/* On a link to a stack, each connection says which of the stacked addresses it belongs to. */}
+              {(e.fromMember || e.toMember) && (
+                <Text size="xs" c="dimmed">
+                  {short(nodes.find((n) => n.id === (e.fromMember || e.toMember))?.address || '')}
+                </Text>
+              )}
+              {e.kind === 'role' && typeof e.actual === 'boolean' ? (
+                <Text size="xs" c="dimmed">
+                  hasRole = {String(e.actual)}
+                </Text>
+              ) : (
+                e.basis && (
+                  <Text size="xs" c="dimmed">
+                    {e.basis}
+                  </Text>
+                )
+              )}
+              {/* A recorded grant is optional history; hasRole above is the membership evidence. */}
+              {e.grant?.tx && (
+                <details className="role-grant-history">
+                  <summary>Grant transaction</summary>
+                  <Text size="xs" c="dimmed" className="break">
+                    Granted{e.grant.timestamp ? ` ${new Date(e.grant.timestamp * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' })}` : ''}{' '}
+                    in{' '}
+                    {httpUrl(explorer) ? (
+                      <a href={`${httpUrl(explorer)!.replace(/\/$/, '')}/tx/${e.grant.tx}`} target="_blank" rel="noopener noreferrer">
+                        {short(e.grant.tx)} ↗
+                      </a>
+                    ) : (
+                      short(e.grant.tx)
+                    )}
+                  </Text>
+                </details>
+              )}
+              {!(e.kind === 'role' && typeof e.actual === 'boolean') && (isIssue(e) || typeof e.actual === 'string') && e.actual !== undefined && (
+                <Text size="xs" className="break">
+                  Read: {String(e.actual)}
+                </Text>
+              )}
+              {isIssue(e) && e.expected !== undefined && (
+                <Text size="xs" className="break">
+                  Expected: {String(e.expected)}
+                </Text>
+              )}
+            </div>
+          ))}
+        </Collection>
       </Stack>
       {block !== undefined && (
         <Text size="xs" c="dimmed">

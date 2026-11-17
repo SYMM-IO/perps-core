@@ -124,23 +124,24 @@ describe('History', () => {
     ])
   })
 
-  it('names the contract and its deployment', () => {
+  it('names the contract and states the selected deployment once above the table', () => {
     show([item('a')])
     const [row] = rows()
     expect(within(row).getByText('Symmio')).toBeTruthy()
-    expect(within(row).getByText('Core Diamond')).toBeTruthy()
-    expect(within(row).getByText('Vibe Arbitrum')).toBeTruthy()
-    expect(within(row).getByText('Production')).toBeTruthy()
+    expect(within(row).queryByText('Core Diamond')).toBeNull()
+    expect(within(row).queryByText('Vibe Arbitrum')).toBeNull()
+    expect(screen.getByText('Prepared for Vibe Arbitrum (Production)')).toBeTruthy()
   })
 
   it('filters by the selected deployment, not the chain, with other deployments one checkbox away', () => {
     show([item('p'), item('s', stagingPlan)], [], staging)
     expect(rows()).toHaveLength(1)
-    expect(within(rows()[0]).getByText('Staging')).toBeTruthy()
+    expect(within(rows()[0]).queryByText('Staging')).toBeNull()
     expect(screen.getByText('Prepared for Vibe Arbitrum (Staging)')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Show other deployments (1)'))
     expect(rows()).toHaveLength(2)
     expect(screen.getByText('Every deployment')).toBeTruthy()
+    expect(screen.getByText('Staging')).toBeTruthy()
   })
 
   it('matches older plans without a deployment by chain, and says so', () => {

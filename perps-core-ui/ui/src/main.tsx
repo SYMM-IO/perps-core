@@ -8,24 +8,23 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
-// Material-style tonal theme: neutral grey surfaces, coral as the primary, a light primary on dark surfaces
-// (so filled buttons carry dark text there), and full or large radii everywhere.
+// Compact neutral controls; surfaces and spacing carry hierarchy, with color reserved for actions and state.
 const theme = createTheme({
-  fontFamily: 'Manrope, sans-serif',
+  fontFamily: 'Inter, sans-serif',
   fontFamilyMonospace: 'JetBrains Mono, monospace',
-  headings: { fontFamily: 'Manrope, sans-serif', fontWeight: '700' },
+  headings: { fontFamily: 'Inter, sans-serif', fontWeight: '650' },
   primaryColor: 'coral',
   primaryShade: { light: 7, dark: 2 },
   autoContrast: true,
-  defaultRadius: 'md',
-  radius: { xs: '6px', sm: '10px', md: '14px', lg: '20px', xl: '32px' },
+  defaultRadius: 'sm',
+  radius: { xs: '4px', sm: '8px', md: '10px', lg: '14px', xl: '20px' },
   colors: {
     coral: ['#fff0ed', '#ffdad4', '#ffb4a8', '#ff8f80', '#f86657', '#e05142', '#c9402f', '#b3392b', '#932a1f', '#6f1d15'],
     dark: ['#e6e6e8', '#c8c8cc', '#a9a9af', '#7c7c82', '#404044', '#333336', '#272729', '#1c1c1d', '#121212', '#0c0c0c'],
   },
   components: {
-    Button: { defaultProps: { fw: 600, radius: 'xl' } },
-    ActionIcon: { defaultProps: { radius: 'xl' } },
+    Button: { defaultProps: { fw: 500, radius: 'sm' } },
+    ActionIcon: { defaultProps: { radius: 'sm' } },
     Badge: { defaultProps: { tt: 'none', fw: 600, radius: 'xl' } },
     Checkbox: { defaultProps: { radius: 'xs' } },
     Alert: { defaultProps: { radius: 'lg' } },

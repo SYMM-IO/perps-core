@@ -1,13 +1,12 @@
 import { CANCELLABLE, nextStep, useWorkbench, type ShownError } from './api'
-import { Address, chainLabel, Empty, EnvironmentBadge } from './components/Common'
-import { connectWallet, WalletRequest } from './components/Signing'
+import { chainLabel, Empty, EnvironmentBadge } from './components/Common'
+import { WalletRequest } from './components/Signing'
 import { Upgrade } from './components/Upgrade'
 import { Workspace } from './components/Workspace'
 import { lazyView } from './lib/lazy'
-import { familyName, historyEntries, inDeployment, planTarget, recordState, short, upgradeParams, type HistoryRow } from './lib/state'
+import { familyName, historyEntries, inDeployment, planTarget, recordState, upgradeParams, type HistoryRow } from './lib/state'
 import type { ActiveTask, ContractNode, Profile, Time } from './types'
 import {
-  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -15,16 +14,16 @@ import {
   Code,
   Group,
   Loader,
+  Menu,
   PasswordInput,
   Progress,
   Stack,
   Table,
   Text,
   Title,
-  Tooltip,
   useMantineColorScheme,
 } from '@mantine/core'
-import { CircleArrowUp, FlaskConical, GitBranch, History as HistoryIcon, Moon, Sun, Wallet, Waypoints } from 'lucide-react'
+import { CircleArrowUp, FlaskConical, History as HistoryIcon, Moon, Sun, MoreHorizontal, Waypoints } from 'lucide-react'
 import { Suspense, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
@@ -43,12 +42,11 @@ const plainClick = (e: MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey
 
 export default function App() {
   const api = useWorkbench()
-  const { engine, system, run } = api
+  const { system } = api
   const [params, setParams] = useSearchParams()
   const requested = params.get('view') || 'workspace',
     view = (requested in PAGES ? requested : 'workspace') as Page
-  const [wallet, setWallet] = useState(''),
-    [access, setAccess] = useState('')
+  const [access, setAccess] = useState('')
   const main = useRef<HTMLElement>(null),
     first = useRef(true)
   const { colorScheme, toggleColorScheme } = useMantineColorScheme()
@@ -80,10 +78,9 @@ export default function App() {
             <img src="/docs/v0.8.6/assets/symmio-mark.svg" alt="" width={20} height={20} />
           </span>
           <span className="brand-name">SYMMIO</span>
-          <span className="brand-product">Perps Core</span>
         </div>
         <nav className="app-nav" aria-label="Sections">
-          {(Object.keys(PAGES) as Page[]).map((page) => {
+          {(['workspace', 'history'] as Page[]).map((page) => {
             const Icon = PAGES[page].icon
             return (
               <a
@@ -103,34 +100,40 @@ export default function App() {
             )
           })}
         </nav>
-        <div className="header-tools">
-          {engine?.build && (
-            <span className="checkout-label" title="Checkout">
-              <GitBranch size={13} aria-hidden />
-              {engine.build.source.branch} · {engine.build.source.commit.slice(0, 8)}
-            </span>
-          )}
-          <Tooltip label="Switch theme">
-            <ActionIcon variant="default" size={36} aria-label="Switch theme" onClick={toggleColorScheme}>
-              {colorScheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            </ActionIcon>
-          </Tooltip>
-          <Button
-            variant="default"
-            leftSection={wallet ? <span className="dot" data-state="live" /> : <Wallet size={15} />}
-            onClick={() =>
-              run('Connecting wallet', async () => {
-                const address = await connectWallet()
-                setWallet(address)
-                return address
-              })
-            }
-          >
-            {wallet ? short(wallet) : 'Connect wallet'}
-          </Button>
-        </div>
+        <Menu position="bottom-end" width={200}>
+          <Menu.Target>
+            <Button variant="subtle" color="gray" size="compact-sm" leftSection={<MoreHorizontal size={16} aria-hidden />}>
+              {view === 'upgrade' || view === 'fuzz' ? PAGES[view].label : 'More'}
+            </Button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {(['upgrade', 'fuzz'] as Page[]).map((page) => {
+              const Icon = PAGES[page].icon
+              return (
+                <Menu.Item
+                  key={page}
+                  component="a"
+                  href={`?${viewParams(page)}`}
+                  leftSection={<Icon size={14} />}
+                  onClick={(event) => {
+                    if (plainClick(event)) {
+                      event.preventDefault()
+                      navigate(page)
+                    }
+                  }}
+                >
+                  {PAGES[page].label}
+                </Menu.Item>
+              )
+            })}
+            <Menu.Divider />
+            <Menu.Item leftSection={colorScheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />} onClick={toggleColorScheme}>
+              Switch theme
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
       </header>
-      <main id="main" ref={main} tabIndex={-1}>
+      <main id="main" ref={main} tabIndex={-1} data-view={view}>
         <Stack gap="sm">
           {!api.token || api.unauthorized ? (
             <section className="auth-panel panel">
@@ -153,10 +156,7 @@ export default function App() {
           ) : (
             <>
               <ErrorBanner errors={errors} onDismiss={() => void api.dismiss(errors)} />
-              <StatusRow
-                reserve={view !== 'fuzz'}
-                idle={params.get('adapter') === 'diamond' && view === 'upgrade' ? engine?.activity : system?.activity}
-              />
+              <StatusRow reserve={false} />
               <WalletRequest />
               {view === 'fuzz' ? (
                 <Suspense fallback={<Empty title="Loading fuzz report…" />}>
@@ -175,7 +175,6 @@ export default function App() {
           )}
         </Stack>
       </main>
-      <footer>Local only · Plans, receipts and fuzz reports stay in this checkout</footer>
     </>
   )
 }
@@ -397,8 +396,7 @@ export function History({ onWorkspace }: { onWorkspace: () => void }) {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Contract</Table.Th>
-                <Table.Th>Deployment</Table.Th>
-                <Table.Th>Address</Table.Th>
+                {everything && <Table.Th>Deployment</Table.Th>}
                 <Table.Th>Created</Table.Th>
                 <Table.Th>Status</Table.Th>
                 <Table.Th>
@@ -415,12 +413,8 @@ export function History({ onWorkspace }: { onWorkspace: () => void }) {
                       <Text size="sm" fw={600}>
                         {name(h)}
                       </Text>
-                      <Text size="xs" c="dimmed">
-                        {familyName(h.scope)}
-                      </Text>
                     </Table.Td>
-                    <Table.Td>{deployment(h)}</Table.Td>
-                    <Table.Td>{h.target && <Address value={h.target} />}</Table.Td>
+                    {everything && <Table.Td>{deployment(h)}</Table.Td>}
                     <Table.Td>{h.at ? new Date(h.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</Table.Td>
                     <Table.Td>
                       <Badge variant="light" color={state.color}>

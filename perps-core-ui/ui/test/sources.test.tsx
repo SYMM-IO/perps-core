@@ -1,7 +1,7 @@
 import { Sources } from '../src/components/Sources'
 import type { Profile, Snapshot } from '../src/types'
 import { MantineProvider } from '@mantine/core'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, it } from 'vitest'
 
 const profile: Profile = {
@@ -26,9 +26,10 @@ const mount = (snapshot: Snapshot | undefined, connected = false, issues = 2) =>
       <Sources opened onClose={() => {}} profile={profile} snapshot={snapshot} connected={connected} issues={issues} />
     </MantineProvider>,
   )
-const text = () => document.body.textContent || ''
+const evidence = (name: string) => screen.getByRole('button', { name })
+const open = (name: string) => fireEvent.click(evidence(name))
 
-it('names the address book entry, the block, the subgraph that found the role holders, and what an issue is measured against', () => {
+it('starts with the read identity and gaps, with detailed evidence closed until requested', async () => {
   mount({
     ...base,
     sources: {
@@ -48,32 +49,73 @@ it('names the address book entry, the block, the subgraph that found the role ho
       checks: { expectedGrants: 13, comparedPointers: 1 },
     },
   })
-  expect(text()).toContain('addresses.json in this repository, deployment “Vibe Arbitrum”, last checked on chain on 2026-10-10')
-  expect(text()).toContain('19 contracts and 17 possible role holders')
-  expect(text()).toContain('Block 513,733,791')
-  expect(text()).toContain('through arb1.arbitrum.io')
-  expect(text()).toContain('102 more addresses were found')
-  expect(text()).toContain('Nothing is being read now')
-  expect(text()).toContain('Subgraph arbitrum-vibe-mainnet-events/stage')
-  expect(text()).toContain('68 grants and 13 revocations')
-  expect(text()).toContain('91 blocks behind the chain read')
-  expect(text()).toContain('41 holders it named was then asked of the chain with hasRole')
-  expect(text()).toContain('role events from 1 contract missing from the address list')
-  expect(text()).toContain('13 required grants come from rules written in this repository')
-  expect(text()).toContain('2 issues now.')
-  expect((screen.getByRole('link', { name: /Open its source/ }) as HTMLAnchorElement).href).toBe('https://profiles.example.com/vibe')
+  expect(screen.getByText('Saved inspection · Block 513,733,791')).toBeTruthy()
+  expect(screen.getByText(/arb1.arbitrum.io/)).toBeTruthy()
+  expect(screen.getByText('Role events stop 91 blocks before this inspection.')).toBeTruthy()
+  for (const name of ['Address list', 'Role holder evidence', 'Contract interfaces', 'Review rules'])
+    expect(evidence(name).getAttribute('aria-expanded')).toBe('false')
+  expect(screen.queryByRole('link', { name: /Open source/ })).toBeNull()
+
+  open('Address list')
+  expect(screen.getByText('addresses.json · Vibe Arbitrum · 19 contracts · 17 possible role holders')).toBeTruthy()
+  expect(screen.getByText('Last checked on chain: 2026-10-10')).toBeTruthy()
+  expect(screen.getByText('102 additional addresses discovered on chain.')).toBeTruthy()
+  expect(((await screen.findByRole('link', { name: /Open source/ })) as HTMLAnchorElement).href).toBe('https://profiles.example.com/vibe')
+  open('Role holder evidence')
+  expect(screen.getByText('Subgraph arbitrum-vibe-mainnet-events/stage')).toBeTruthy()
+  expect(screen.getByText('68 grants · 13 revocations · through block 513,733,700')).toBeTruthy()
+  expect(screen.getByText('41 candidate holders checked on chain with hasRole.')).toBeTruthy()
+  expect(screen.getByText(/Events also reference 1 unlisted contract/)).toBeTruthy()
+  open('Review rules')
+  expect(screen.getByText(/13 required grants: server\/roles.js/)).toBeTruthy()
+  expect(screen.getByText('2 disagreements in this inspection.')).toBeTruthy()
 })
 
-it('says plainly when role holders came from an incomplete RPC scan, and still reads a snapshot saved before sources were recorded', () => {
-  mount({ ...base, roleHistory: { complete: false, requests: 48, eventCount: 0, unreadRanges: 49 } }, false, 0)
-  expect(text()).toContain('Event scan through the RPC')
-  expect(text()).toContain('Incomplete: 49 block ranges could not be read')
-  expect(text()).toContain('Inspect live again to find role holders through the events subgraph')
-  expect(text()).toContain('addresses.json in this repository, deployment “Vibe Arbitrum”, last checked on chain on 2026-10-10')
-  expect(text()).toContain('No disagreements now.')
+it('keeps incomplete RPC coverage and unavailable reads visible before opening evidence', () => {
+  mount(
+    {
+      ...base,
+      edges: [{ from: 'a', to: 'b', label: 'Owner', status: 'unknown' }],
+      roleHistory: { complete: false, requests: 48, eventCount: 0, unreadRanges: 49 },
+    },
+    false,
+    0,
+  )
+  expect(screen.getByText('Role history incomplete · 49 unread block ranges. Unlisted holders may be missing.')).toBeTruthy()
+  expect(screen.getByText('1 connection read unavailable.')).toBeTruthy()
+  expect(evidence('Role holder evidence').getAttribute('aria-expanded')).toBe('false')
+  open('Role holder evidence')
+  expect(screen.getByText('Event scan through the RPC · incomplete.')).toBeTruthy()
+  expect(screen.getByText('Inspect live can retry the events subgraph.')).toBeTruthy()
+  open('Review rules')
+  expect(screen.getByText('0 disagreements in this inspection.')).toBeTruthy()
 })
 
-it('explains what will be read before anything has been inspected, and never links a non-http source address', () => {
+it('shows a role indexer error in the default coverage summary', () => {
+  mount({
+    ...base,
+    sources: {
+      history: {
+        source: 'subgraph',
+        complete: true,
+        grants: 0,
+        revocations: 0,
+        holdersToConfirm: 0,
+        toBlock: 123,
+        subgraph: { name: 'events', hasIndexingErrors: true },
+      },
+    },
+  })
+  expect(screen.getByText('The role indexer reports errors; its list may stop early.')).toBeTruthy()
+  expect(evidence('Role holder evidence').getAttribute('aria-expanded')).toBe('false')
+})
+
+it('marks missing historical coverage instead of treating a saved inspection as complete', () => {
+  mount(base)
+  expect(screen.getByText('Role history coverage was not recorded.')).toBeTruthy()
+})
+
+it('does not report disagreements before inspection or link a non-http source address', () => {
   render(
     <MantineProvider env="test">
       <Sources
@@ -86,7 +128,10 @@ it('explains what will be read before anything has been inspected, and never lin
       />
     </MantineProvider>,
   )
-  expect(text()).toContain('Not read yet.')
-  expect(text()).toContain('through the Events subgraph')
-  expect(screen.queryByRole('link', { name: /Open its source/ })).toBeNull()
+  expect(screen.getByText('Not inspected yet. Inspect live to read this deployment.')).toBeTruthy()
+  open('Address list')
+  expect(screen.queryByRole('link', { name: /Open source/ })).toBeNull()
+  open('Review rules')
+  expect(screen.getByText('Inspect live to check these expectations.')).toBeTruthy()
+  expect(screen.queryByText('0 disagreements in this inspection.')).toBeNull()
 })

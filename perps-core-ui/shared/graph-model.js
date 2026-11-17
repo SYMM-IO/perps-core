@@ -153,9 +153,11 @@ export function semanticLayout(nodes, { implementation = false, compact = false 
 	for (const node of nodes) groups[groupOf(laneOf(node))].push(node);
 	const positions = {},
 		sections = [];
-	let x = 0;
+	let x = 0,
+		lane = 0;
 	for (const group of groups) {
 		if (!group.length) continue;
+		lane++;
 		group.sort((a, b) => laneOf(a) - laneOf(b) || rank(a) - rank(b) || `${a.name}:${a.id}`.localeCompare(`${b.name}:${b.id}`));
 		// Compact grids prevent large authority inventories becoming a long column.
 		const columns = Math.ceil(group.length / (merge ? LAYOUT.compactRows : LAYOUT.rows)),
@@ -170,7 +172,15 @@ export function semanticLayout(nodes, { implementation = false, compact = false 
 				y: ((i % rows) - (rows - 1) / 2) * pitch,
 			};
 		const names = [...new Set(group.map(node => lanes[laneOf(node)].name))];
-		sections.push({ name: names.join(" · "), x: x + width / 2, width, count: group.length, rows });
+		// Numbered like an architectural drawing ("01 · Governance"), so the lanes read in order left to right.
+		sections.push({
+			name: names.join(" · "),
+			label: `${String(lane).padStart(2, "0")} · ${names.join(" · ")}`,
+			x: x + width / 2,
+			width,
+			count: group.length,
+			rows,
+		});
 		x += width + LAYOUT.gap;
 	}
 	return { positions, sections };
