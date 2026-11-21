@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { MuonStorage, SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
@@ -13,6 +14,7 @@ library LibMuonAccount {
 	/// @notice Verifies Party A UPNL signature against the Muon oracle.
 	function verifyPartyAUpnl(SingleUpnlSig memory upnlSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(upnlSig.reqId);
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==
@@ -34,6 +36,7 @@ library LibMuonAccount {
 	/// @notice Verifies Party A UPNL signature that also includes a pending balance check.
 	function verifyPartyAUpnlWithPendingBalance(SingleUpnlWithPendingBalanceSig memory upnlSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(upnlSig.reqId);
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==

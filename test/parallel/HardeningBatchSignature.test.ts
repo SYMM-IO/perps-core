@@ -8,6 +8,7 @@ import { User } from "../models/User.js"
 import { limitCloseRequestBuilder } from "../models/requestModels/CloseRequest.js"
 import { decimal } from "../utils/Common.js"
 import { deterministicMuonKey, signMuonHash } from "../utils/MuonSignature.js"
+import { DUMMY_REQ_ID } from "../utils/SignatureUtils.js"
 
 describe("Batch signature array boundaries", function () {
 	async function setup(close: boolean) {
@@ -57,14 +58,14 @@ describe("Batch signature array boundaries", function () {
 					"uint256",
 					"uint256",
 				],
-				[1n, "0x0001", context.diamond, hedger.address, user.address, nonceB, nonceA, 0n, 0n, ids, values, timestamp, chainId],
+				[1n, DUMMY_REQ_ID, context.diamond, hedger.address, user.address, nonceB, nonceA, 0n, 0n, ids, values, timestamp, chainId],
 			)
 		const nonceB = await context.viewFacet.nonceOfPartyB(hedger.address, user.address)
 		const nonceA = await context.viewFacet.nonceOfPartyA(user.address)
 		const chainId = (await ethers.provider.getNetwork()).chainId
 		const hash = hashFor(quoteIds, prices)
 		const signature = {
-			reqId: "0x0001",
+			reqId: DUMMY_REQ_ID,
 			timestamp,
 			prices,
 			symbolIds: [1n, 1n],

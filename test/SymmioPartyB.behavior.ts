@@ -7,7 +7,7 @@ import { RunContext } from "./models/RunContext.js"
 import { User } from "./models/User.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, unDecimal } from "./utils/Common.js"
-import { getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import { DUMMY_REQ_ID, getDummyPairUpnlAndPricesSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
 
 export function shouldBehaveLikeSymmioPartyB(): void {
 	let context: RunContext
@@ -171,7 +171,7 @@ export function shouldBehaveLikeSymmioPartyB(): void {
 				await verifier.connect(context.signers.admin).addPublicKey({ x: 12345n, parity: 0 })
 				await context.controlFacet.connect(context.signers.admin).setSignatureVerifierAddress(await verifier.getAddress())
 				const sig = {
-					reqId: "0x",
+					reqId: DUMMY_REQ_ID,
 					timestamp: 0n,
 					upnlPartyA: 0n,
 					upnlPartyB: 0n,

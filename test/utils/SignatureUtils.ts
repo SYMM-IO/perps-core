@@ -17,9 +17,13 @@ import type {
 import { ethers } from "../helpers/hardhat-connection.js"
 import { getBlockTimestamp } from "./Common.js"
 
+/// @notice Dummy 32-byte Muon request ID used by tests (mock verifier accepts the crypto).
+/// @dev Must stay 32 bytes: production verification rejects any other reqId length.
+export const DUMMY_REQ_ID = "0x" + "11".repeat(32)
+
 export async function getDummySingleUpnlSig(upnl: bigint = 0n): Promise<SingleUpnlSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
@@ -38,7 +42,7 @@ export async function getDummySingleUpnlWithPendingBalanceSig(
 	fundingDebt: bigint = 0n,
 ): Promise<SingleUpnlWithPendingBalanceSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		fundingDebt: fundingDebt,
@@ -62,7 +66,7 @@ export async function getDummyLiquidationSig(
 	allocatedBalance: bigint,
 ): Promise<DeferredLiquidationSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(),
 		liquidationBlockNumber: 1,
 		liquidationTimestamp: await getBlockTimestamp(),
@@ -84,7 +88,7 @@ export async function getDummyLiquidationSig(
 
 export async function getDummySingleUpnlAndPriceSig(price: bigint = 1n, upnl: bigint = 0n): Promise<SingleUpnlAndPriceSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(700n),
 		upnl: upnl,
 		gatewaySignature: ethers.ZeroAddress,
@@ -103,7 +107,7 @@ export async function getDummyPairUpnlAndPriceSig(
 	upnlPartyB: bigint = 0n,
 ): Promise<PairUpnlAndPriceSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(),
 		upnlPartyA: upnlPartyA,
 		upnlPartyB: upnlPartyB,
@@ -119,7 +123,7 @@ export async function getDummyPairUpnlAndPriceSig(
 
 export async function getDummyPairUpnlSig(upnlPartyA: bigint = 0n, upnlPartyB: bigint = 0n): Promise<PairUpnlSigStructOutput> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: BigInt(await getBlockTimestamp()),
 		upnlPartyA: upnlPartyA,
 		upnlPartyB: upnlPartyB,
@@ -138,7 +142,7 @@ export async function getDummySettlementSig(
 	quotesSettlementsData: QuoteSettlementDataStructOutput[] = [],
 ): Promise<SettlementSigStructOutput> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: BigInt(await getBlockTimestamp()),
 		upnlPartyA: upnlPartyA,
 		upnlPartyBs: upnlPartyBs,
@@ -164,7 +168,7 @@ export async function getDummyHighLowPriceSig(
 	upnlPartyA: bigint = 0n,
 ): Promise<HighLowPriceSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(),
 		highest: highest,
 		lowest: lowest,
@@ -186,7 +190,7 @@ export async function getDummyHighLowPriceSig(
 
 export async function getDummyPriceSig(quoteIds: bigint[] = [], prices: bigint[] = []): Promise<QuotePriceSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(),
 		quoteIds: quoteIds,
 		prices: prices,
@@ -206,7 +210,7 @@ export async function getDummyPairUpnlAndPricesSig(
 	upnlPartyB: bigint = 0n,
 ): Promise<any> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: await getBlockTimestamp(),
 		upnlPartyA: upnlPartyA,
 		upnlPartyB: upnlPartyB,
@@ -230,7 +234,7 @@ export async function getDummyUnifiedSettlementSig(
 	quotesSettlementsData: UnifiedQuoteSettlementDataStruct[] = [],
 ): Promise<UnifiedSettlementSigStruct> {
 	return {
-		reqId: "0x",
+		reqId: DUMMY_REQ_ID,
 		timestamp: BigInt(await getBlockTimestamp()),
 		quotesSettlementsData: quotesSettlementsData,
 		partyB: partyB,

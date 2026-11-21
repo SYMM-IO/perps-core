@@ -7,6 +7,11 @@ pragma solidity >=0.8.18;
 
 import { IMuonSignatureVerifier } from "../../core/interfaces/IMuonSignatureVerifier.sol";
 
+/// @notice Reverted when a Muon `reqId` is not exactly 32 bytes long.
+/// @dev `bytes` stays the ABI/storage type so valid 32-byte IDs hash exactly as before;
+///      this only rejects IDs that would otherwise silently change the signed payload.
+error InvalidMuonReqIdLength(uint256 actualLength);
+
 /// @notice Shared compatibility checks for Muon signature verifiers.
 library LibMuonVerifier {
 	/// @notice Returns whether a deployed verifier explicitly supports a function category ID.
@@ -19,5 +24,12 @@ library LibMuonVerifier {
 		} catch {
 			return false;
 		}
+	}
+
+	/// @notice Requires a Muon `reqId` to be exactly 32 bytes, before signature verification.
+	/// @dev Every production Muon verification path calls this first so a short or long ID
+	///      reverts with a specific error instead of silently altering the signed hash.
+	function requireValidReqId(bytes memory reqId) internal pure {
+		if (reqId.length != 32) revert InvalidMuonReqIdLength(reqId.length);
 	}
 }

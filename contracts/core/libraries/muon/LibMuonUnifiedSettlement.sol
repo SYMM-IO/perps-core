@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { MuonStorage, UnifiedSettlementSig } from "../../storages/MuonStorage.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
@@ -14,6 +15,7 @@ library LibMuonUnifiedSettlement {
 	function verifyUnifiedSettlement(UnifiedSettlementSig memory settleSig, bool isCrossPartyB, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		AccountStorage.Layout storage accountLayout = AccountStorage.layout();
+		LibMuonVerifier.requireValidReqId(settleSig.reqId);
 
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(settleSig.timestamp, func);

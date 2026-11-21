@@ -81,6 +81,10 @@ library LibCreditLine {
 		if (data.timestamp > block.timestamp) revert MuonSignatureExpired();
 		if (block.timestamp > data.timestamp + cl.muonFreshnessWindow) revert MuonSignatureExpired();
 
+		// Reject non-32-byte request IDs before signature verification so a short or
+		// long ID cannot silently alter the signed payload.
+		LibMuonVerifier.requireValidReqId(data.reqId);
+
 		// Verify Muon signature and require Express-credit authorization from both signers.
 		// NOTE: Includes express provider (address(this)) and symmio addresses to prevent cross-deployment replay.
 		//       The Muon oracle app must sign over both contract addresses.

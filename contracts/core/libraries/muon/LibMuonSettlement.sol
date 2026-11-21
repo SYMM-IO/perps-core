@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { MuonStorage, SettlementSig } from "../../storages/MuonStorage.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
@@ -15,6 +16,7 @@ library LibMuonSettlement {
 	/// @notice Verifies a settlement signature for non-cross partyB mode UPNL settlement.
 	function verifySettlement(SettlementSig memory settleSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(settleSig.reqId);
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(settleSig.timestamp, func);
 		// == ) ==

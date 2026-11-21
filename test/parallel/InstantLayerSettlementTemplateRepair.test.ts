@@ -27,6 +27,13 @@ function sourceTemplates(active = true, instantOpenMode = false): InstantLayerTe
 	}))
 }
 
+function legacySourceTemplates(active = true, instantOpenMode = false): InstantLayerTemplateSnapshot[] {
+	return sourceTemplates(active, instantOpenMode).map(template => {
+		template.operations.at(-1)!.insertionPoints[0] = 448n
+		return template
+	})
+}
+
 function cloneOperations(operations: InstantLayerTemplateOperation[]): InstantLayerTemplateOperation[] {
 	return operations.map(operation => ({
 		insertionPoints: [...operation.insertionPoints],
@@ -65,7 +72,7 @@ function wordAt(calldata: string, byteOffsetAfterSelector: bigint): bigint {
 }
 
 describe("InstantLayer settlement-template recreation planning", function () {
-	it("pins quoteId to byte offset 448 and currentPrice to 480 in the deployed settleUpnl ABI", function () {
+	it("pins quoteId to byte offset 480 and currentPrice to 512 with a 32-byte Muon request ID", function () {
 		const settleUpnl = new Interface([
 			"function settleUpnl((bytes reqId,uint256 timestamp,(uint256 quoteId,uint256 currentPrice,uint8 partyBUpnlIndex)[] quotesSettlementsData,int256[] upnlPartyBs,int256 upnlPartyA,bytes gatewaySignature,(uint256 signature,address owner,address nonce) sigs) settleSig,uint256[] updatedPrices,address partyA)",
 		])
@@ -73,7 +80,7 @@ describe("InstantLayer settlement-template recreation planning", function () {
 		const currentPrice = 0x5555666677778888n
 		const calldata = settleUpnl.encodeFunctionData("settleUpnl", [
 			{
-				reqId: "0x",
+				reqId: "0x" + "11".repeat(32),
 				timestamp: 1n,
 				quotesSettlementsData: [{ quoteId, currentPrice, partyBUpnlIndex: 0 }],
 				upnlPartyBs: [0n],
@@ -87,6 +94,19 @@ describe("InstantLayer settlement-template recreation planning", function () {
 
 		expect(wordAt(calldata, SETTLEMENT_QUOTE_ID_OFFSET)).to.equal(quoteId)
 		expect(wordAt(calldata, SETTLEMENT_CURRENT_PRICE_OFFSET)).to.equal(currentPrice)
+
+		const plan = buildSettlementTemplateRecreationPlan(legacySourceTemplates())
+		const addition = plan.actions.find(action => action.kind === "addTemplate")
+		if (!addition || addition.kind !== "addTemplate") throw new Error("Missing canonical settlement template")
+		const insertionOffset = addition.operations.at(-1)!.insertionPoints[0]
+		const start = 10 + Number(insertionOffset) * 2
+		const returnedQuoteId = 7n
+		const injected = calldata.slice(0, start) + returnedQuoteId.toString(16).padStart(64, "0") + calldata.slice(start + 64)
+		const decoded = settleUpnl.decodeFunctionData("settleUpnl", injected)
+		expect(decoded.settleSig.reqId).to.equal("0x" + "11".repeat(32))
+		expect(decoded.settleSig.quotesSettlementsData).to.have.length(1)
+		expect(decoded.settleSig.quotesSettlementsData[0].quoteId).to.equal(returnedQuoteId)
+		expect(decoded.settleSig.quotesSettlementsData[0].currentPrice).to.equal(currentPrice)
 	})
 
 	it("builds four exact additions before deactivating the four originals", function () {
@@ -116,6 +136,79 @@ describe("InstantLayer settlement-template recreation planning", function () {
 		expect(() => assertSettlementTemplateRecreationComplete(after)).not.to.throw()
 	})
 
+	it("migrates legacy empty-ID templates to offset 480 and preserves the rest of their wiring", function () {
+		const before = legacySourceTemplates(true, true)
+		const plan = buildSettlementTemplateRecreationPlan(before)
+		const additions = plan.actions.filter(action => action.kind === "addTemplate")
+
+		expect(additions).to.have.length(4)
+		for (const [index, action] of additions.entries()) {
+			const expected = cloneOperations(before[index].operations)
+			expected.at(-1)!.insertionPoints[0] = 480n
+			expect(action.operations).to.deep.equal(expected)
+		}
+		expect(before.map(template => template.operations.at(-1)!.insertionPoints)).to.deep.equal([[448n], [448n], [448n], [448n]])
+		expect(plan.actions.slice(-4).map(action => (action.kind === "setTemplateActive" ? action.templateId : -1n))).to.deep.equal([8n, 9n, 10n, 11n])
+
+		const after = applyPlan(before, plan.actions)
+		expect(buildSettlementTemplateRecreationPlan(after).actions).to.deep.equal([])
+		expect(after.filter(template => template.active).every(template => template.instantOpenMode)).to.equal(true)
+		expect(() => assertSettlementTemplateRecreationComplete(after)).not.to.throw()
+	})
+
+	it("keeps an active offset-480 replacement when its source still uses offset 448", function () {
+		const before = legacySourceTemplates()
+		const replacement = { ...before[0], id: 12n, operations: cloneOperations(before[0].operations) }
+		replacement.operations.at(-1)!.insertionPoints[0] = 480n
+		before.push(replacement)
+
+		const plan = buildSettlementTemplateRecreationPlan(before)
+		const actions = plan.actions.filter(action => action.name === replacement.name)
+		expect(actions.map(action => action.kind)).to.deep.equal(["setTemplateActive"])
+		expect(actions[0].kind === "setTemplateActive" && actions[0].templateId).to.equal(8n)
+		expect(actions[0].kind === "setTemplateActive" && actions[0].active).to.equal(false)
+		expect(() => assertSettlementTemplateRecreationComplete(applyPlan(before, plan.actions))).not.to.throw()
+	})
+
+	it("reactivates a retired canonical replacement before retiring its legacy copy and explains the layout change", function () {
+		const before = legacySourceTemplates(false, true)
+		const replacement = { ...before[0], id: 12n, active: false, instantOpenMode: false, operations: cloneOperations(before[0].operations) }
+		replacement.operations.at(-1)!.insertionPoints[0] = 480n
+		before.push(replacement)
+		before.push({ ...before[0], id: 13n, active: true, operations: cloneOperations(before[0].operations) })
+
+		const plan = buildSettlementTemplateRecreationPlan(before)
+		const actions = plan.actions.filter(action => action.name === replacement.name)
+		expect(actions.map(action => action.kind)).to.deep.equal(["setTemplateInstantOpenMode", "setTemplateActive", "setTemplateActive"])
+		expect(actions.slice(0, 2).every(action => action.kind !== "addTemplate" && action.templateId === 12n)).to.equal(true)
+		expect(actions[1].description).to.include("previously classified unsafe for empty request IDs")
+		expect(actions[2].kind === "setTemplateActive" && actions[2].templateId).to.equal(13n)
+		expect(actions[2].kind === "setTemplateActive" && actions[2].active).to.equal(false)
+		expect(() => assertSettlementTemplateRecreationComplete(applyPlan(before, plan.actions))).not.to.throw()
+	})
+
+	it("retires duplicate legacy offset-448 copies after preparing a canonical replacement", function () {
+		const before = sourceTemplates(false)
+		const legacy = { ...before[0], id: 12n, active: true, operations: cloneOperations(before[0].operations) }
+		legacy.operations.at(-1)!.insertionPoints[0] = 448n
+		before.push(legacy)
+
+		const plan = buildSettlementTemplateRecreationPlan(before)
+		const actions = plan.actions.filter(action => action.name === legacy.name)
+		expect(actions.map(action => action.kind)).to.deep.equal(["addTemplate", "setTemplateActive"])
+		expect(actions[1].kind === "setTemplateActive" && actions[1].templateId).to.equal(12n)
+		expect(() => assertSettlementTemplateRecreationComplete(applyPlan(before, plan.actions))).not.to.throw()
+	})
+
+	it("can prepare offset-480 replacements without retiring originals when explicitly requested", function () {
+		const before = legacySourceTemplates()
+		const plan = buildSettlementTemplateRecreationPlan(before, { deactivateOriginals: false })
+		expect(plan.actions.map(action => action.kind)).to.deep.equal(["addTemplate", "addTemplate", "addTemplate", "addTemplate"])
+		const after = applyPlan(before, plan.actions)
+		expect(buildSettlementTemplateRecreationPlan(after, { deactivateOriginals: false }).actions).to.deep.equal([])
+		expect(buildSettlementTemplateRecreationPlan(after).recreated).to.equal(false)
+	})
+
 	it("restores instant-open mode when a source template uses it", function () {
 		const plan = buildSettlementTemplateRecreationPlan(sourceTemplates(true, true))
 		expect(plan.actions.filter(action => action.kind === "setTemplateInstantOpenMode")).to.have.length(4)
@@ -140,7 +233,7 @@ describe("InstantLayer settlement-template recreation planning", function () {
 		expect(firstTemplateActions.every(action => action.kind !== "addTemplate")).to.equal(true)
 	})
 
-	it("replaces and retires a known unsafe copy that injects quote ID at currentPrice offset 480", function () {
+	it("replaces and retires a known unsafe copy that injects quote ID at the currentPrice offset", function () {
 		const before = sourceTemplates(false)
 		const unsafe = { ...before[0], id: 12n, active: true, operations: cloneOperations(before[0].operations) }
 		unsafe.operations.at(-1)!.insertionPoints[0] = SETTLEMENT_CURRENT_PRICE_OFFSET
@@ -158,7 +251,16 @@ describe("InstantLayer settlement-template recreation planning", function () {
 	it("refuses to infer safety from an unrecognized active same-name layout", function () {
 		const templates = sourceTemplates(false)
 		const unknown = { ...templates[2], id: 12n, active: true, operations: cloneOperations(templates[2].operations) }
-		unknown.operations.at(-1)!.insertionPoints[0] = 512n
+		unknown.operations.at(-1)!.insertionPoints[0] = 544n
+		templates.push(unknown)
+		expect(() => buildSettlementTemplateRecreationPlan(templates)).to.throw("active unrecognized template")
+	})
+
+	it("refuses a legacy-offset copy when other source wiring differs", function () {
+		const templates = sourceTemplates(false)
+		const unknown = { ...templates[0], id: 12n, active: true, operations: cloneOperations(templates[0].operations) }
+		unknown.operations.at(-1)!.insertionPoints[0] = 448n
+		unknown.operations.at(-1)!.sourceIndices[0] = 99n
 		templates.push(unknown)
 		expect(() => buildSettlementTemplateRecreationPlan(templates)).to.throw("active unrecognized template")
 	})

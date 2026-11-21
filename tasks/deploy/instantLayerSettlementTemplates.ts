@@ -1,7 +1,9 @@
 import type { BaseContract } from "ethers"
 
-export const SETTLEMENT_QUOTE_ID_OFFSET = 448n
-export const SETTLEMENT_CURRENT_PRICE_OFFSET = 480n
+// Offsets exclude the selector and assume the required 32-byte Muon request ID.
+export const SETTLEMENT_QUOTE_ID_OFFSET = 480n
+export const SETTLEMENT_CURRENT_PRICE_OFFSET = 512n
+export const LEGACY_SETTLEMENT_QUOTE_ID_OFFSET = 448n
 
 export const SETTLEMENT_TEMPLATE_NAMES = Object.freeze([
 	"InstantOpenAndSettleUpnl",
@@ -57,6 +59,8 @@ export interface SettlementTemplateRecreationPlan {
 		activeReplacementIds: bigint[]
 		unsafeCurrentPriceOffsetIds: bigint[]
 		activeUnsafeCurrentPriceOffsetIds: bigint[]
+		legacyQuoteIdOffsetIds: bigint[]
+		activeLegacyQuoteIdOffsetIds: bigint[]
 		instantOpenMode: boolean
 	}>
 	recreated: boolean
@@ -129,11 +133,11 @@ function operationsKey(operations: InstantLayerTemplateOperation[]): string {
 	)
 }
 
-function isCurrentPriceOffsetCopy(template: InstantLayerTemplateSnapshot, source: InstantLayerTemplateSnapshot): boolean {
-	if (settlementInjectionOffset(template) !== SETTLEMENT_CURRENT_PRICE_OFFSET) return false
+function isOffsetCopy(template: InstantLayerTemplateSnapshot, expectedOperationsKey: string, offset: bigint): boolean {
+	if (settlementInjectionOffset(template) !== offset) return false
 	const operations = cloneOperations(template.operations)
 	operations.at(-1)!.insertionPoints[0] = SETTLEMENT_QUOTE_ID_OFFSET
-	return operationsKey(operations) === operationsKey(source.operations)
+	return operationsKey(operations) === expectedOperationsKey
 }
 
 export function normalizeInstantLayerTemplate(id: bigint | number, value: any): InstantLayerTemplateSnapshot {
@@ -169,21 +173,31 @@ export function buildSettlementTemplateRecreationPlan(
 	for (const name of SETTLEMENT_TEMPLATE_NAMES) {
 		const matching = templates.filter(template => template.name === name)
 		const source = matching
-			.filter(template => settlementInjectionOffset(template) === SETTLEMENT_QUOTE_ID_OFFSET)
+			.filter(template => {
+				const offset = settlementInjectionOffset(template)
+				return offset === SETTLEMENT_QUOTE_ID_OFFSET || offset === LEGACY_SETTLEMENT_QUOTE_ID_OFFSET
+			})
 			.sort((a, b) => Number(a.id - b.id))[0]
 		if (!source) {
 			throw new Error(
-				`Required source template ${JSON.stringify(name)} with settleUpnl quote ID at byte offset ${SETTLEMENT_QUOTE_ID_OFFSET} is missing`,
+				`Required source template ${JSON.stringify(name)} with settleUpnl quote ID at byte offset ${SETTLEMENT_QUOTE_ID_OFFSET} or legacy offset ${LEGACY_SETTLEMENT_QUOTE_ID_OFFSET} is missing`,
 			)
 		}
 		const sourceId = source.id
 
-		const sourceKey = operationsKey(source.operations)
+		const replacementOperations = cloneOperations(source.operations)
+		replacementOperations.at(-1)!.insertionPoints[0] = SETTLEMENT_QUOTE_ID_OFFSET
+		const replacementKey = operationsKey(replacementOperations)
 		const sameName = matching.filter(template => template.id !== sourceId)
-		const replacements = sameName.filter(template => operationsKey(template.operations) === sourceKey)
-		const unsafeCurrentPriceOffset = sameName.filter(template => isCurrentPriceOffsetCopy(template, source))
+		const replacements = sameName.filter(template => operationsKey(template.operations) === replacementKey)
+		const unsafeCurrentPriceOffset = sameName.filter(template => isOffsetCopy(template, replacementKey, SETTLEMENT_CURRENT_PRICE_OFFSET))
+		const legacyQuoteIdOffset = matching.filter(template => isOffsetCopy(template, replacementKey, LEGACY_SETTLEMENT_QUOTE_ID_OFFSET))
 		const activeUnknown = sameName.filter(
-			template => template.active && !replacements.includes(template) && !unsafeCurrentPriceOffset.includes(template),
+			template =>
+				template.active &&
+				!replacements.includes(template) &&
+				!unsafeCurrentPriceOffset.includes(template) &&
+				!legacyQuoteIdOffset.includes(template),
 		)
 		if (activeUnknown.length > 0) {
 			throw new Error(
@@ -212,7 +226,7 @@ export function buildSettlementTemplateRecreationPlan(
 					templateId: selectedReplacement.id,
 					active: true,
 					name,
-					description: `Reactivate exact ${name} replacement ${selectedReplacement.id}`,
+					description: `Reactivate ${name} replacement ${selectedReplacement.id} at offset ${SETTLEMENT_QUOTE_ID_OFFSET} for 32-byte Muon request IDs; this offset was previously classified unsafe for empty request IDs`,
 				})
 			} else {
 				const replacementId = nextTemplateId++
@@ -220,8 +234,8 @@ export function buildSettlementTemplateRecreationPlan(
 					kind: "addTemplate",
 					templateId: replacementId,
 					name,
-					operations: cloneOperations(source.operations),
-					description: `Recreate ${name} as template ${replacementId} with exact source wiring and quote-ID offset ${SETTLEMENT_QUOTE_ID_OFFSET}`,
+					operations: replacementOperations,
+					description: `Recreate ${name} as template ${replacementId} with quote-ID offset ${SETTLEMENT_QUOTE_ID_OFFSET}, preserving the remaining source wiring`,
 				})
 				if (source.instantOpenMode) {
 					preparations.push({
@@ -262,6 +276,17 @@ export function buildSettlementTemplateRecreationPlan(
 					description: `Deactivate unsafe ${name} template ${template.id} that injects quote ID into currentPrice offset ${SETTLEMENT_CURRENT_PRICE_OFFSET}`,
 				})
 			}
+			for (const template of legacyQuoteIdOffset
+				.filter(template => template.active && template.id !== sourceId)
+				.sort((a, b) => Number(a.id - b.id))) {
+				deactivations.push({
+					kind: "setTemplateActive",
+					templateId: template.id,
+					active: false,
+					name,
+					description: `Deactivate legacy ${name} template ${template.id} with empty-request-ID quote offset ${LEGACY_SETTLEMENT_QUOTE_ID_OFFSET}`,
+				})
+			}
 		}
 
 		summaries.push({
@@ -272,6 +297,8 @@ export function buildSettlementTemplateRecreationPlan(
 			activeReplacementIds: activeReplacements.map(template => template.id),
 			unsafeCurrentPriceOffsetIds: unsafeCurrentPriceOffset.map(template => template.id),
 			activeUnsafeCurrentPriceOffsetIds: unsafeCurrentPriceOffset.filter(template => template.active).map(template => template.id),
+			legacyQuoteIdOffsetIds: legacyQuoteIdOffset.map(template => template.id),
+			activeLegacyQuoteIdOffsetIds: legacyQuoteIdOffset.filter(template => template.active).map(template => template.id),
 			instantOpenMode: source.instantOpenMode,
 		})
 	}
@@ -290,6 +317,9 @@ export function assertSettlementTemplateRecreationComplete(templates: InstantLay
 		if (template.sourceActive) throw new Error(`${template.name} original template ${template.sourceId} is still active`)
 		if (template.activeUnsafeCurrentPriceOffsetIds.length > 0) {
 			throw new Error(`${template.name} has unsafe active template ids ${template.activeUnsafeCurrentPriceOffsetIds.join(", ")}`)
+		}
+		if (template.activeLegacyQuoteIdOffsetIds.length > 0) {
+			throw new Error(`${template.name} has active legacy empty-request-ID template ids ${template.activeLegacyQuoteIdOffsetIds.join(", ")}`)
 		}
 	}
 }

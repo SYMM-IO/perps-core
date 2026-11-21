@@ -1,6 +1,6 @@
 /**
- * Recreate the four settleUpnl InstantLayer templates by copying the deployed
- * source templates exactly. The default mode is read-only planning.
+ * Recreate the four settleUpnl InstantLayer templates for 32-byte Muon request IDs,
+ * preserving source wiring except the quote-ID insertion offset. The default mode is read-only planning.
  *
  * Plan:
  *   INSTANT_LAYER_ADDRESS=0x... \
@@ -17,6 +17,7 @@ import path from "node:path"
 
 import { exactBooleanEnv, requireExecutionConfirmation } from "../tasks/deploy/executionGuard.js"
 import {
+	LEGACY_SETTLEMENT_QUOTE_ID_OFFSET,
 	SETTLEMENT_CURRENT_PRICE_OFFSET,
 	SETTLEMENT_QUOTE_ID_OFFSET,
 	assertSettlementTemplateRecreationComplete,
@@ -28,7 +29,7 @@ import {
 import { send } from "../tasks/deploy/tx.js"
 import { ethers } from "../test/helpers/hardhat-connection.js"
 
-const PLAN_API_VERSION = "operations.symm.io/instant-layer-settlement-template-recreation-v2"
+const PLAN_API_VERSION = "operations.symm.io/instant-layer-settlement-template-recreation-v3"
 
 function requiredAddress(name: string): string {
 	const value = process.env[name]
@@ -164,6 +165,7 @@ async function main(): Promise<void> {
 		nextTemplateId: nextTemplateId.toString(),
 		quoteIdOffset: SETTLEMENT_QUOTE_ID_OFFSET.toString(),
 		currentPriceOffset: SETTLEMENT_CURRENT_PRICE_OFFSET.toString(),
+		legacyQuoteIdOffset: LEGACY_SETTLEMENT_QUOTE_ID_OFFSET.toString(),
 		deactivateOriginals,
 		recreated: plan.recreated,
 		templates: plan.templates,
@@ -180,7 +182,7 @@ async function main(): Promise<void> {
 	console.log(`  Mode:           ${execute ? "EXECUTE" : "PLAN ONLY"}`)
 	for (const template of plan.templates) {
 		console.log(
-			`  ${template.name}: source ${template.sourceId} (${template.sourceActive ? "active" : "inactive"}), replacements [${template.replacementIds.join(", ")}] active [${template.activeReplacementIds.join(", ")}], unsafe-480 [${template.unsafeCurrentPriceOffsetIds.join(", ")}] instant-open ${template.instantOpenMode}`,
+			`  ${template.name}: source ${template.sourceId} (${template.sourceActive ? "active" : "inactive"}), replacements [${template.replacementIds.join(", ")}] active [${template.activeReplacementIds.join(", ")}], unsafe-${SETTLEMENT_CURRENT_PRICE_OFFSET} [${template.unsafeCurrentPriceOffsetIds.join(", ")}], legacy-${LEGACY_SETTLEMENT_QUOTE_ID_OFFSET} [${template.legacyQuoteIdOffsetIds.join(", ")}] instant-open ${template.instantOpenMode}`,
 		)
 	}
 	if (actions.length === 0) console.log("  Actions:        none; recreation is already complete")
@@ -207,7 +209,7 @@ async function main(): Promise<void> {
 		if (!remaining.recreated) throw new Error(`Exact settlement-template replacements are incomplete; ${remaining.actions.length} action(s) remain`)
 	}
 	console.log(
-		"\nSettlement templates verified: every exact offset-448 replacement is active and the requested original-template policy is satisfied.",
+		`\nSettlement templates verified: offset-${SETTLEMENT_QUOTE_ID_OFFSET} replacements are active and the requested original-template policy is satisfied.`,
 	)
 }
 

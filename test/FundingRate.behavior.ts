@@ -13,7 +13,13 @@ import { limitOpenRequestBuilder } from "./models/requestModels/OpenRequest.js"
 import { limitQuoteRequestBuilder } from "./models/requestModels/QuoteRequest.js"
 import { decimal, getBlockTimestamp, getQuoteQuantity, unDecimal } from "./utils/Common.js"
 import { deterministicMuonKey, signMuonHash } from "./utils/MuonSignature.js"
-import { getDummyHighLowPriceSig, getDummyPairUpnlAndPriceSig, getDummyPairUpnlSig, getDummySingleUpnlSig } from "./utils/SignatureUtils.js"
+import {
+	DUMMY_REQ_ID,
+	getDummyHighLowPriceSig,
+	getDummyPairUpnlAndPriceSig,
+	getDummyPairUpnlSig,
+	getDummySingleUpnlSig,
+} from "./utils/SignatureUtils.js"
 
 const quoteFundingSettledInterface = new ethers.Interface([
 	"event QuoteFundingSettled(uint256 indexed quoteId, uint256 indexed symbolId, address indexed partyB, address partyA, address allocationKey, int256 funding)",
@@ -421,7 +427,7 @@ export function shouldBehaveLikeFundingRate(): void {
 
 				function unsignedUpnl(timestamp = 0n) {
 					return {
-						reqId: "0x",
+						reqId: DUMMY_REQ_ID,
 						timestamp,
 						// Ignored in bound mode; these values must not feed solvency arithmetic.
 						upnlPartyA: ethers.MinInt256,

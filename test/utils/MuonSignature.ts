@@ -4,6 +4,10 @@ import { ethers } from "../helpers/hardhat-connection.js"
 
 export const EXPRESS_CREDIT_MUON_FUNCTION = 8
 
+/// @notice Dummy 32-byte Muon request ID for express credit data (mock verifier accepts the crypto).
+/// @dev Must stay 32 bytes: production verification rejects any other reqId length.
+export const DUMMY_EXPRESS_REQ_ID = "0x" + "33".repeat(32)
+
 const SECP256K1_ORDER = BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141")
 const SECP256K1_HALF_ORDER = (SECP256K1_ORDER >> 1n) + 1n
 
@@ -68,7 +72,7 @@ export async function buildSignedExpressCreditData(params: {
 	gatewaySigner: Pick<Signer, "signMessage">
 	nonceSeed?: bigint
 }): Promise<{ encoded: string; hash: string }> {
-	const reqId = params.reqId ?? "0x0001"
+	const reqId = params.reqId ?? DUMMY_EXPRESS_REQ_ID
 	const hash = ethers.solidityPackedKeccak256(
 		["uint256", "bytes", "address", "uint256", "uint256", "uint256", "address", "address"],
 		[params.appId, reqId, params.affiliate, params.eligibleBase, params.timestamp, params.chainId, params.expressProvider, params.symmio],

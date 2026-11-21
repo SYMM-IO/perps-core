@@ -1270,6 +1270,17 @@
         "type": "error"
     },
     {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "actualLength",
+                "type": "uint256"
+            }
+        ],
+        "name": "InvalidMuonReqIdLength",
+        "type": "error"
+    },
+    {
         "inputs": [],
         "name": "PendingQuoteIsStale",
         "type": "error"

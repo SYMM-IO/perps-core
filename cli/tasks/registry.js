@@ -1068,7 +1068,7 @@ async function prepareSettlementTemplateRepair({ ui }) {
 	});
 	if (instantLayer === null) return null;
 	const deactivateOriginals = await ui.confirm({
-		message: "Deactivate the four original templates after exact offset-448 replacements are available?",
+		message: "Deactivate original and legacy templates after offset-480 replacements are available?",
 		initialValue: true,
 	});
 	if (deactivateOriginals === null) return null;
@@ -1080,16 +1080,16 @@ async function prepareSettlementTemplateRepair({ ui }) {
 	};
 }
 
-function validateSettlementRepairPlan(plan, input) {
-	if (plan?.apiVersion !== "operations.symm.io/instant-layer-settlement-template-recreation-v2") {
+export function validateSettlementRepairPlan(plan, input) {
+	if (plan?.apiVersion !== "operations.symm.io/instant-layer-settlement-template-recreation-v3") {
 		throw new Error("Settlement-template script returned an unsupported plan artifact");
 	}
 	if (Number(plan.chainId) !== input.chainId) throw new Error(`Repair plan chain ${plan.chainId} does not match ${input.chainId}`);
 	if (String(plan.instantLayer).toLowerCase() !== input.instantLayer.toLowerCase()) {
 		throw new Error(`Repair plan target ${plan.instantLayer} does not match ${input.instantLayer}`);
 	}
-	if (plan.quoteIdOffset !== "448" || plan.currentPriceOffset !== "480") {
-		throw new Error("Recreation plan must preserve quoteId at 448 and leave currentPrice at 480 untouched");
+	if (plan.quoteIdOffset !== "480" || plan.currentPriceOffset !== "512" || plan.legacyQuoteIdOffset !== "448") {
+		throw new Error("Recreation plan offsets must be quoteId 480, currentPrice 512 and legacy quoteId 448 for 32-byte Muon request IDs");
 	}
 	if (!Array.isArray(plan.actions)) throw new Error("Repair plan actions are missing");
 	return plan;
@@ -1116,11 +1116,11 @@ async function writeSettlementRepairPlan(ctx, input, label) {
 
 const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 	id: "maintenance.recreate-settlement-templates",
-	version: 3,
+	version: 4,
 	category: "maintenance",
 	risk: "transaction",
 	title: "Recreate settleUpnl InstantLayer templates",
-	description: "Recreate exact offset-448 copies of all four settleUpnl templates, then retire the original template IDs.",
+	description: "Prepare offset-480 settleUpnl templates for 32-byte Muon request IDs, then apply the original-template deactivation policy.",
 	supportedNetworks: ["localhost", "fork-arbitrum", "arbitrum"],
 	inputs: ["network", "InstantLayer address", "original-template deactivation", "signer"],
 	artifacts: ["reviewed action plan", "transaction journal", "Safe batch when selected", "post-state verification"],
@@ -1136,9 +1136,9 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 	},
 	plan: () => [
 		{ id: "inspect", phase: "prepare", title: "Inspect live settlement templates and build exact actions" },
-		{ id: "authorize", phase: "authorization", title: "Review and authorize exact offset-448 recreation" },
-		{ id: "apply", phase: "execution", title: "Add exact replacements before deactivating originals" },
-		{ id: "verify", phase: "verification", title: "Prove exact replacements active and originals inactive" },
+		{ id: "authorize", phase: "authorization", title: "Review and authorize offset-480 recreation" },
+		{ id: "apply", phase: "execution", title: "Prepare replacements before any deactivation" },
+		{ id: "verify", phase: "verification", title: "Verify replacements and the original-template policy" },
 	],
 	run: async (ctx, input) => {
 		await ctx.step("inspect", "Inspect live settlement templates and build exact actions", async () => {
@@ -1151,7 +1151,7 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 				"Reviewed settlement-template actions",
 			);
 		});
-		await ctx.step("authorize", "Review and authorize exact offset-448 recreation", async () => {
+		await ctx.step("authorize", "Review and authorize offset-480 recreation", async () => {
 			if (ctx.state.settlementTemplatePlan?.actionCount === 0) return;
 			if (input.network === "arbitrum") {
 				const typed = await ctx.ui.text({
@@ -1168,7 +1168,7 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 			}
 			ctx.checkpoint();
 		});
-		await ctx.step("apply", "Add exact replacements before deactivating originals", async () => {
+		await ctx.step("apply", "Prepare replacements before any deactivation", async () => {
 			if (ctx.state.settlementTemplatePlan?.actionCount === 0) {
 				ctx.ui.note(
 					"Post-state already matches the reviewed recreation policy; no transaction subprocess was started.",
@@ -1183,7 +1183,8 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 					chainId: input.chainId,
 					network: input.network,
 					name: "Recreate InstantLayer settleUpnl templates",
-					description: "Add exact offset-448 replacements first, then deactivate the four original template IDs.",
+					description:
+						"Prepare offset-480 settlement replacements for 32-byte Muon request IDs and apply the reviewed original-template policy.",
 				});
 				ctx.wait("Execute the exported/proposed Safe batch, then continue this task to verify the live template registry.");
 			}
@@ -1201,7 +1202,7 @@ const SETTLEMENT_TEMPLATE_REPAIR_TASK = common({
 				},
 			);
 		});
-		await ctx.step("verify", "Prove exact replacements active and originals inactive", async () => {
+		await ctx.step("verify", "Verify replacements and the original-template policy", async () => {
 			const result = await writeSettlementRepairPlan(ctx, input, "settlement-template-verification");
 			if (!result.plan.recreated || result.plan.actions.length !== 0) {
 				throw new Error(`Settlement-template verification still requires ${result.plan.actions.length} action(s)`);

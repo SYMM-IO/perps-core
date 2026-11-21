@@ -23,6 +23,7 @@ import { shouldBehaveLikeLiquidationUpnlRoundingAllowance } from "../Liquidation
 import { shouldBehaveLikeLockQuote } from "../LockQuote.behavior.js"
 import { shouldBehaveLikeMigration } from "../Migration.behavior.js"
 import { shouldBehaveLikeMultiAccount } from "../MultiAccount.behavior.js"
+import { shouldBehaveLikeMuonReqIdLength } from "../MuonReqIdLength.behavior.js"
 import { shouldBehaveLikeOpenPosition } from "../OpenPosition.behavior.js"
 import { shouldBehaveLikePartyBBatchActionsFacet } from "../PartyBBatchActionsFacet.behavior.js"
 import { shouldBehaveLikePartyBEmergencyActionsFacet } from "../PartyBEmergencyActionsFacet.behavior.js"
@@ -118,6 +119,10 @@ describe("UnitTests", function () {
 
 		describe("Migration", async function () {
 			shouldBehaveLikeMigration()
+		})
+
+		describe("MuonReqIdLength", async function () {
+			shouldBehaveLikeMuonReqIdLength()
 		})
 
 		describe("Settlement", async function () {

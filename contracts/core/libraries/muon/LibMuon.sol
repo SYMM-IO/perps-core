@@ -7,6 +7,7 @@ pragma solidity >=0.8.18;
 import { MuonStorage, SingleUpnlSig, SingleUpnlWithPendingBalanceSig } from "../../storages/MuonStorage.sol";
 import { GlobalAppStorage } from "../../storages/GlobalAppStorage.sol";
 import { IMuonSignatureVerifier, MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { LibAccount } from "../LibAccount.sol";
 
 library LibMuon {
@@ -70,6 +71,7 @@ library LibMuon {
 	/// @notice Verifies Party B UPNL signature with configurable cross partyB nonce usage.
 	function verifyPartyBUpnl(SingleUpnlSig memory upnlSig, address partyB, address partyA, bool useCrossCounter, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(upnlSig.reqId);
 		// == SignatureCheck( ==
 		verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==
@@ -98,6 +100,7 @@ library LibMuon {
 		MuonFunction func
 	) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(upnlSig.reqId);
 		// == SignatureCheck( ==
 		verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==

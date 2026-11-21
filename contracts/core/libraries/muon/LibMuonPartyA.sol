@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { MuonStorage, SingleUpnlAndPriceSig } from "../../storages/MuonStorage.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { MuonFunction } from "../../interfaces/IMuonSignatureVerifier.sol";
@@ -13,6 +14,7 @@ library LibMuonPartyA {
 	/// @notice Verifies Party A UPNL and price signature for a specific symbol.
 	function verifyPartyAUpnlAndPrice(SingleUpnlAndPriceSig memory upnlSig, address partyA, uint256 symbolId, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(upnlSig.reqId);
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==

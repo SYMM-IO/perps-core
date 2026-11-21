@@ -5,6 +5,7 @@
 pragma solidity >=0.8.18;
 
 import { MuonStorage, PairUpnlAndPricesSig } from "../../storages/MuonStorage.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { LibMuon } from "./LibMuon.sol";
 import { LibAccount } from "../LibAccount.sol";
@@ -22,6 +23,7 @@ library LibMuonPartyBBatchActions {
 		// Packed arrays have no length prefix: enforce their boundary before verifying or consuming prices.
 		require(upnlSig.prices.length == quoteIds.length, "PartyBFacet: Invalid length");
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(upnlSig.reqId);
 		// == SignatureCheck( ==
 		LibMuon.verifyUpnlTimestamp(upnlSig.timestamp, func);
 		// == ) ==

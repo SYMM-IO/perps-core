@@ -4,6 +4,7 @@ import { deployExpressProvider } from "../tasks/deploy/expressWithdrawLayerDiamo
 import { initializeFixture } from "./Initialize.fixture.js"
 import connection, { ethers, hre, networkHelpers } from "./helpers/hardhat-connection.js"
 import { time } from "./helpers/network-helpers.js"
+import { DUMMY_EXPRESS_REQ_ID } from "./utils/MuonSignature.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
@@ -209,7 +210,7 @@ export function shouldBehaveLikeExpressLayerSecurity(): void {
 			],
 			[
 				{
-					reqId: "0x0001",
+					reqId: DUMMY_EXPRESS_REQ_ID,
 					eligibleBase,
 					timestamp,
 					gatewaySignature: "0x",

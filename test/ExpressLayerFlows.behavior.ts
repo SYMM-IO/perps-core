@@ -5,7 +5,7 @@ import { initializeFixture } from "./Initialize.fixture.js"
 import connection, { ethers, hre } from "./helpers/hardhat-connection.js"
 import { WithdrawStatus } from "./models/Enums.js"
 import { RunContext } from "./models/RunContext.js"
-import { buildSignedExpressCreditData, deterministicMuonKey, EXPRESS_CREDIT_MUON_FUNCTION } from "./utils/MuonSignature.js"
+import { buildSignedExpressCreditData, deterministicMuonKey, DUMMY_EXPRESS_REQ_ID, EXPRESS_CREDIT_MUON_FUNCTION } from "./utils/MuonSignature.js"
 
 const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"))
 const SIGNER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("SIGNER_ROLE"))
@@ -220,7 +220,7 @@ export function shouldBehaveLikeExpressLayerFlows(): void {
 			],
 			[
 				{
-					reqId: "0x0001",
+					reqId: DUMMY_EXPRESS_REQ_ID,
 					eligibleBase,
 					timestamp,
 					gatewaySignature: "0x",

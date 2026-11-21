@@ -199,9 +199,13 @@ but are not supported operator entrypoints and must not be documented as public 
 
 From `./symmio`, select **Other maintenance scripts** and then
 **Recreate settleUpnl InstantLayer templates**. The operation reads all four settlement
-template variants from their original IDs, verifies that `quoteId` is injected at byte offset
-448 (and that byte offset 480 remains `currentPrice`), creates byte-for-byte replacements while
-preserving instant-open mode, and only then deactivates the originals. It is idempotent and
+template variants from their original IDs and prepares `quoteId` injection at byte offset
+480 (with `currentPrice` at 512) for 32-byte Muon request IDs. Legacy offset-448 templates are
+migrated while preserving the remaining wiring and instant-open mode. Valid offset-480
+replacements are retained or reactivated before the selected originals and legacy copies are
+deactivated. Offset 480 was classified unsafe under the previous empty-request-ID layout;
+it is canonical with 32-byte IDs. Use this repair with the matching Core and Muon signer
+configuration, after confirming production request IDs are 32 bytes. The repair is idempotent and
 verifies the registry again after execution. Live Arbitrum defaults to a
 Safe Builder file; EOA, Ledger, and direct Safe proposal modes remain available according to
 the task's signer policy.

@@ -13,6 +13,7 @@ import {
 	LiquidationSnapshotSig,
 	LiquidationPartyBSymbolState
 } from "../../storages/MuonStorage.sol";
+import { LibMuonVerifier } from "../../../helpers/verification/LibMuonVerifier.sol";
 import { AccountStorage } from "../../storages/AccountStorage.sol";
 import { QuoteStorage } from "../../storages/QuoteStorage.sol";
 import { SymbolAdjustmentStorage, SymbolAdjustment } from "../../storages/SymbolAdjustmentStorage.sol";
@@ -32,6 +33,7 @@ library LibMuonLiquidation {
 	function verifyLiquidationSig(LiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		_requireCanonicalLiquidationId(liquidationSig.liquidationId);
+		LibMuonVerifier.requireValidReqId(liquidationSig.reqId);
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -62,6 +64,7 @@ library LibMuonLiquidation {
 	function verifyLiquidationSnapshotSig(LiquidationSnapshotSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		_requireCanonicalLiquidationId(liquidationSig.liquidationId);
+		LibMuonVerifier.requireValidReqId(liquidationSig.reqId);
 		bytes32 hash = keccak256(
 			abi.encodePacked(
 				muonLayout.muonAppId,
@@ -96,6 +99,7 @@ library LibMuonLiquidation {
 	function verifyDeferredLiquidationSig(DeferredLiquidationSig memory liquidationSig, address partyA, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
 		_requireCanonicalLiquidationId(liquidationSig.liquidationId);
+		LibMuonVerifier.requireValidReqId(liquidationSig.reqId);
 		require(liquidationSig.prices.length == liquidationSig.symbolIds.length, "LibMuon: Invalid length");
 		bytes32 hash = keccak256(
 			abi.encodePacked(
@@ -128,6 +132,7 @@ library LibMuonLiquidation {
 	/// @notice Verifies a quote prices signature for liquidation position settlement.
 	function verifyQuotePrices(QuotePriceSig memory priceSig, MuonFunction func) internal view {
 		MuonStorage.Layout storage muonLayout = MuonStorage.layout();
+		LibMuonVerifier.requireValidReqId(priceSig.reqId);
 		require(priceSig.prices.length == priceSig.quoteIds.length, "LibMuon: Invalid length");
 		bytes32 hash = keccak256(
 			abi.encodePacked(
