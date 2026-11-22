@@ -1,5 +1,5 @@
 import { changeOverlay, power, powerOf, stackModel, withChanges } from "./graph-insight.js";
-import { bundleEdges, graphModel, LAYOUT, linkId, semanticLayout } from "./graph-model.js";
+import { bundleEdges, graphModel, LAYOUT, linkId, NODE, PORTRAIT_COLUMN, semanticLayout } from "./graph-model.js";
 
 // The derived view the wiring map draws, step by step. Each step is pure, so the map can keep each one
 // until its own inputs change and the whole chain can be tested without a browser.
@@ -49,9 +49,9 @@ export function filterView(drawn, filters, reached = null) {
  * numbers the map reports about itself.
  *
  * @param {{ nodes: any[], edges: any[], stacks?: Map<string, any>, memberOf?: Map<string, string> }} model
- * @param {{ plain: { tally: { total: number } }, reached?: { nodes: Set<string>, links: Set<string> } | null, showChanges?: boolean, filters?: { mode?: string, focus?: string } }} options
+ * @param {{ plain: { tally: { total: number } }, reached?: { nodes: Set<string>, links: Set<string> } | null, showChanges?: boolean, filters?: { mode?: string, focus?: string }, orientation?: "landscape" | "portrait", rowCapacity?: number }} options
  */
-export function finishView(model, { plain, reached = null, showChanges = false, filters = {} }) {
+export function finishView(model, { plain, reached = null, showChanges = false, filters = {}, orientation = "landscape", rowCapacity = 1 }) {
 	const { stacks, memberOf } = stacksOf(model),
 		links = bundleEdges(model.edges);
 	const at = id => memberOf.get(id) ?? id;
@@ -68,10 +68,10 @@ export function finishView(model, { plain, reached = null, showChanges = false, 
 			links: new Set(marked.map(l => l.id)),
 		};
 	}
-	const layout = semanticLayout(model.nodes, { implementation: filters.mode === "implementation", compact: !!filters.focus });
+	const layout = semanticLayout(model.nodes, { implementation: filters.mode === "implementation", compact: !!filters.focus, orientation, rowCapacity });
 	// Lane names sit above the tallest lane, clear of its first row.
 	const top = Math.min(0, ...Object.values(layout.positions).map(p => p.y)) - LAYOUT.row / 2 - 11;
-	const positions = { ...layout.positions, ...Object.fromEntries(layout.sections.map(s => [`lane:${s.name}`, { x: s.x, y: top }])) };
+	const positions = { ...layout.positions, ...Object.fromEntries(layout.sections.map(s => [`lane:${s.name}`, { x: s.x, y: s.y ?? top }])) };
 	const tally = {
 		addresses: model.nodes.reduce((sum, n) => sum + (n.stack ? n.members.length : 1), 0),
 		nodes: model.nodes.length,
@@ -87,7 +87,7 @@ export function finishView(model, { plain, reached = null, showChanges = false, 
  * The whole chain in one call: change marks, filters, the question's answer, stacks, lines, lighting,
  * layout and tallies. The map runs the same steps one at a time so each is kept until its inputs change.
  */
-export function mapView({ snapshot, delta = [], filters = {}, selected = "", reach = null, stacking = true, expanded = [], changes = false }) {
+export function mapView({ snapshot, delta = [], filters = {}, selected = "", reach = null, stacking = true, expanded = [], changes = false, orientation = "landscape", rowCapacity = 1 }) {
 	const { overlay, showChanges, drawn } = changeView(snapshot, delta, changes),
 		reached = reach ? power(snapshot, reach.id, reach.direction) : null,
 		{ plain, every, base, answer } = filterView(drawn, filters, reached);
@@ -106,7 +106,7 @@ export function mapView({ snapshot, delta = [], filters = {}, selected = "", rea
 		model,
 		...stacksOf(model),
 		stackCount: stacksOf(stackModel(base, { keep })).stacks.size,
-		...finishView(model, { plain, reached, showChanges, filters }),
+		...finishView(model, { plain, reached, showChanges, filters, orientation, rowCapacity }),
 	};
 }
 
@@ -153,26 +153,33 @@ const AROUND = Array.from({ length: 7 }, (_, i) => i - 3)
  *
  * @param {any[]} nodes the nodes to draw
  * @param {Record<string, {x: number, y: number}>} fresh where a fresh layout puts each one
- * @param {{ positions: Record<string, {x: number, y: number}>, memberOf?: Map<string, string>, reserved?: {x: number, y: number}[] } | null} previous
+ * @param {{ positions: Record<string, {x: number, y: number}>, remembered?: Record<string, {x: number, y: number}>, memberOf?: Map<string, string>, reserved?: {x: number, y: number}[], portrait?: boolean } | null} previous
  *   what was drawn before: positions by id, which stack each address was in, and places to keep clear (lane names)
  */
 export function placeNodes(nodes, fresh, previous) {
 	if (!previous) return Object.fromEntries(nodes.map(n => [n.id, { ...fresh[n.id] }]));
 	const placed = {},
-		taken = [...(previous.reserved || [])];
-	const free = p => taken.every(q => Math.abs(q.x - p.x) >= SPACE.width || Math.abs(q.y - p.y) >= SPACE.height);
+		taken = [],
+		portrait = previous.portrait,
+		column = portrait ? PORTRAIT_COLUMN : LAYOUT.column;
+	const free = p =>
+		taken.every(q => Math.abs(q.x - p.x) >= SPACE.width || Math.abs(q.y - p.y) >= SPACE.height) &&
+		(previous.reserved || []).every(q => Math.abs(q.x - p.x) >= SPACE.width || Math.abs(q.y - p.y) >= (portrait ? 43 : SPACE.height));
 	const beside = p => {
 		for (const [i, j] of AROUND) {
-			const spot = { x: p.x + i * LAYOUT.column, y: p.y + j * LAYOUT.row };
+			if (portrait && i) continue;
+			const spot = { x: p.x + i * column, y: p.y + j * LAYOUT.row };
 			if (free(spot)) return spot;
 		}
-		return { x: p.x, y: p.y + 13 * LAYOUT.row };
+		let spot = { x: p.x, y: p.y + 13 * LAYOUT.row };
+		while (!free(spot)) spot = { x: p.x, y: spot.y + LAYOUT.row };
+		return spot;
 	};
 	const claim = (id, p) => {
 		placed[id] = free(p) ? { ...p } : beside(p);
 		taken.push(placed[id]);
 	};
-	const was = id => previous.positions[id] ?? previous.positions[previous.memberOf?.get(id)];
+	const was = id => previous.positions[id] ?? previous.positions[previous.memberOf?.get(id)] ?? previous.remembered?.[id];
 	for (const n of nodes)
 		if (previous.positions[n.id]) {
 			placed[n.id] = { ...previous.positions[n.id] };

@@ -10,10 +10,32 @@ const Line = ({ children, dim }: { children: ReactNode; dim?: boolean }) => (
 )
 const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`
 
+const scopeCaveat = 'External contracts without local ABIs and non-enumerable mapping keys may need additional inventory.'
+const legacyLegend = 'Red = missing required connection; gray = unavailable or optional unset.'
+
+function recordedCoverage(value: Snapshot['coverage'], hasRoleHistory: boolean) {
+  if (typeof value !== 'string' || !value.trim()) return { scope: [], methodNote: '' }
+  const text = value.trim().replace(legacyLegend, '').trim()
+  const current = /^(Roles, role administrators, setup getters, hooks, allowlists, facets and proxy implementations) are read at block \d+\.\s*/.exec(text)
+  if (!current || !text.endsWith(scopeCaveat)) return { scope: text ? [text] : [], methodNote: '' }
+
+  const method = text.slice(current[0].length, -scopeCaveat.length).trim()
+  const methodNote = !hasRoleHistory
+    ? method
+    : method.includes('scanned from genesis')
+    ? 'Role event history scanned from genesis.'
+    : method.includes('inventory and enumerable holders were still checked')
+      ? 'Inventory and enumerable holders were still checked.'
+      : ''
+  return { scope: [`The scan reads ${current[1].toLowerCase()}.`, scopeCaveat], methodNote }
+}
+
 /** Read identity and coverage gaps first; the supporting evidence opens on request. */
 export function Sources({
   opened,
   onClose,
+  onExit,
+  showScope = false,
   profile,
   snapshot,
   connected,
@@ -21,6 +43,8 @@ export function Sources({
 }: {
   opened: boolean
   onClose: () => void
+  onExit?: () => void
+  showScope?: boolean
   profile: Profile
   snapshot?: Snapshot
   connected: boolean
@@ -34,8 +58,17 @@ export function Sources({
     events = profile.links?.find((l) => /event/i.test(l.label || '')),
     unavailable = snapshot?.edges.filter((edge) => edge.status === 'unknown').length || 0,
     partial = !!history && (history.complete === false || Object.values(history).some((entry: any) => entry?.complete === false))
+  const { scope, methodNote } = recordedCoverage(snapshot?.coverage, !!history)
   return (
-    <Modal opened={opened} onClose={onClose} title="Inspection sources" size="lg">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      onExitTransitionEnd={onExit}
+      returnFocus={!onExit}
+      title="Inspection sources"
+      size="lg"
+      classNames={{ content: 'inspection-dialog-content' }}
+    >
       <Stack gap="sm">
         <div aria-label="Inspection read">
           {snapshot ? (
@@ -66,7 +99,17 @@ export function Sources({
             {snapshot && !history && <Line>Role history coverage was not recorded.</Line>}
           </Stack>
         )}
-        <Accordion multiple>
+        <Accordion multiple defaultValue={showScope && scope.length ? ['scope'] : []}>
+          {!!scope.length && (
+            <Accordion.Item value="scope">
+              <Accordion.Control>What the scan read</Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap={4}>
+                  {scope.map((line) => <Line key={line}>{line}</Line>)}
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
           <Accordion.Item value="inventory">
             <Accordion.Control>Address list</Accordion.Control>
             <Accordion.Panel>
@@ -81,7 +124,7 @@ export function Sources({
                 ) : null}
                 {sourceUrl && (
                   <a href={sourceUrl} target="_blank" rel="noopener noreferrer">
-                    Open source ↗
+                    View address list source ↗
                   </a>
                 )}
               </Stack>
@@ -91,6 +134,7 @@ export function Sources({
             <Accordion.Control>Role holder evidence</Accordion.Control>
             <Accordion.Panel>
               <Stack gap={4}>
+                {methodNote && <Line dim>{methodNote}</Line>}
                 {!history ? (
                   <Line dim>Inspect live finds role holders{events ? ` through the ${events.label} subgraph` : ' through RPC events'}.</Line>
                 ) : history.source === 'subgraph' ? (

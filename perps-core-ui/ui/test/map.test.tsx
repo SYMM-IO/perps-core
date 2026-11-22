@@ -409,7 +409,7 @@ describe('the map', () => {
     spies.filters.mockClear()
     render(<Harness />)
     const box = screen.getByRole('textbox', { name: 'Find contract, role or getter' })
-    expect(box.getAttribute('placeholder')).toBe('Find contract, role or getter')
+    expect(screen.getByText('Find contract, role or getter', { selector: 'label' }).getAttribute('for')).toBe(box.id)
     for (const text of ['l', 'li', 'lis']) fireEvent.change(box, { target: { value: text } })
     expect(spies.filters).not.toHaveBeenCalled()
     await waitFor(() => expect(spies.filters).toHaveBeenCalledTimes(1))
@@ -419,17 +419,52 @@ describe('the map', () => {
     expect(spies.select).toHaveBeenLastCalledWith('idle')
     // An address nobody has says so, rather than blaming the connections.
     fireEvent.change(box, { target: { value: '0xdeadbeef' } })
-    await waitFor(() => expect(screen.getByText('No contract at 0xdeadbeef.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No matches for ‘0xdeadbeef’.')).toBeTruthy())
   })
 
-  test('"/" finds and "?" lists the gestures and shortcuts', async () => {
+  test('Enter commits the search and selection once even before the search delay expires', () => {
     render(<Harness />)
-    fireEvent.keyDown(document.body, { key: '/' })
-    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Find contract, role or getter' }))
-    ;(document.activeElement as HTMLElement).blur()
-    fireEvent.keyDown(document.body, { key: '?' })
-    await waitFor(() => expect(screen.getByText('Double-click')).toBeTruthy())
-    expect(screen.getByText(/Close the open line, then the question or highlight, then fullscreen/)).toBeTruthy()
+    const box = screen.getByRole('textbox', { name: 'Find contract, role or getter' })
+    vi.useFakeTimers()
+    try {
+      fireEvent.change(box, { target: { value: 'Listed' } })
+      fireEvent.keyDown(box, { key: 'Enter' })
+      expect(spies.select).toHaveBeenLastCalledWith('idle')
+      expect(spies.filters).toHaveBeenCalledTimes(1)
+      act(() => vi.advanceTimersByTime(150))
+      expect(spies.filters).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('Map shortcuts apply only with focus in the Map and outside text entry', async () => {
+    render(
+      <>
+        <button>Outside Map</button>
+        <Harness />
+      </>,
+    )
+    const outside = screen.getByRole('button', { name: 'Outside Map' })
+    const canvas = screen.getByRole('group', { name: /Interactive contract graph/ })
+    const search = screen.getByRole('textbox', { name: 'Find contract, role or getter' })
+    outside.focus()
+    fireEvent.keyDown(outside, { key: '/' })
+    fireEvent.keyDown(outside, { key: '?' })
+    expect(document.activeElement).toBe(outside)
+    expect(screen.queryByRole('dialog', { name: 'Gestures and shortcuts' })).toBeNull()
+    canvas.focus()
+    fireEvent.keyDown(canvas, { key: '/' })
+    expect(document.activeElement).toBe(search)
+    fireEvent.keyDown(search, { key: '?' })
+    expect(screen.queryByRole('dialog', { name: 'Gestures and shortcuts' })).toBeNull()
+    canvas.focus()
+    fireEvent.keyDown(canvas, { key: '?' })
+    const help = await screen.findByRole('dialog', { name: 'Gestures and shortcuts' })
+    expect(within(help).getByText(/use the arrow keys to move it, Enter to finish, or Escape to cancel/i)).toBeTruthy()
+    expect(within(help).getByText('Focus the map on a contract')).toBeTruthy()
+    expect(within(help).getByText('Double-click or double-tap the contract.')).toBeTruthy()
+    expect(within(help).getByText(/Close connection details → dismiss .* → clear the highlight → exit fullscreen/)).toBeTruthy()
   })
 
   test('what is drawn is announced politely, and counts read as words', async () => {

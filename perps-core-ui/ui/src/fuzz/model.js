@@ -516,8 +516,8 @@ export function runOutcomeSnapshot(report) {
  */
 export function runHeadline(report, connection = '') {
   const outcome = runOutcomeSnapshot(report)
-  if (['stale', 'frozen', 'error'].includes(connection) && isLiveRun(report)) {
-    return connection === 'error' ? 'Last report unavailable' : 'Last reported snapshot'
+  if ((connection === 'error' && report) || (['stale', 'frozen'].includes(connection) && isLiveRun(report))) {
+    return 'Last reported snapshot'
   }
   if (outcome.signals.hasFailure) return 'Needs attention'
   if (outcome.stoppedCleanly) return 'Stopped cleanly'
@@ -538,7 +538,12 @@ export function participantSnapshot(report) {
 
 /** @param {FuzzReport | null} report */
 export function rootCount(report) {
-  return optionalNumber(report?.latest?.root?.completed, report?.counters?.roots?.completed, report?.run?.result?.rootActions) ?? 0
+  return reportedCycleCount(report) ?? 0
+}
+
+/** @param {FuzzReport | null} report */
+function reportedCycleCount(report) {
+  return optionalNumber(report?.latest?.root?.completed, report?.counters?.roots?.completed, report?.run?.result?.rootActions)
 }
 
 /**
@@ -598,7 +603,7 @@ export function inputYieldSnapshot(report) {
 const targets = (count) => `${compactNumber(count)} configured ${count === 1 ? 'target' : 'targets'}`
 
 /**
- * The coverage verdict: a title, a badge, one summary sentence, four cards and the list of gaps.
+ * The coverage verdict, summary, cards, grouped target gaps and report notices.
  * @param {FuzzReport | null} report
  */
 export function coverageSnapshot(report) {
@@ -665,7 +670,8 @@ export function coverageSnapshot(report) {
             : terminal
               ? 'GAPS'
               : 'BUILDING'
-  const notYet = (/** @type {string} */ verb) => `${terminal ? `Not ${verb} in this run` : `Not ${verb} yet`}`
+  const missingCount = (/** @type {number} */ count, /** @type {string} */ verb) =>
+    `${compactNumber(count)} not ${verb}`
   /** @type {{ label: string, value: string, detail: string, tone: Tone }[]} */
   const cards = [
     {
@@ -674,7 +680,7 @@ export function coverageSnapshot(report) {
       detail: !states.available
         ? 'Historical target evidence unavailable'
         : states.missing.length
-          ? `${notYet('observed')}: ${states.missing.map((item) => item.label).join(', ')}`
+          ? missingCount(states.missing.length, 'observed')
           : 'All configured quote states reached',
       tone: states.available && !states.missing.length ? 'good' : 'warn',
     },
@@ -684,17 +690,17 @@ export function coverageSnapshot(report) {
       detail: !actions.available
         ? 'Confirmed action-type data unavailable'
         : actions.missing.length
-          ? `${notYet('confirmed')}: ${actions.missing.map(humanize).join(', ')}`
+          ? missingCount(actions.missing.length, 'confirmed')
           : 'Every supported action type independently checked',
       tone: actions.available && !actions.missing.length ? 'good' : 'warn',
     },
     {
-      label: 'High-risk checks',
+      label: 'High-risk workflows',
       value: corners.available ? `${corners.targets.length - corners.missing.length}/${corners.targets.length}` : '—',
       detail: !corners.available
         ? 'High-risk workflow data unavailable'
         : corners.missing.length
-          ? `${notYet('verified')}: ${corners.missing.map((item) => item.label).join(', ')}`
+          ? missingCount(corners.missing.length, 'verified')
           : 'Every configured workflow passed',
       tone: corners.available && !corners.missing.length ? 'good' : 'warn',
     },
@@ -710,14 +716,16 @@ export function coverageSnapshot(report) {
       tone: signals.hasFailure ? 'bad' : signals.storageWarning || !signals.evidenceComplete ? 'warn' : 'good',
     },
   ]
+  const gapGroups = [
+    { id: 'states', title: 'Quote states not observed', targets: states.missing.map((item) => item.label) },
+    { id: 'actions', title: 'Action types not confirmed', targets: actions.missing.map(humanize) },
+    { id: 'workflows', title: 'High-risk workflows not verified', targets: corners.missing.map((item) => item.label) },
+  ].filter((group) => group.targets.length > 0)
   /** @type {{ label: string, tone: Tone }[]} */
-  const gaps = [
+  const notices = [
     ...(!states.available ? [{ label: 'Lifecycle coverage data unavailable', tone: /** @type {Tone} */ ('warn') }] : []),
     ...(!actions.available ? [{ label: 'Independent state-check data unavailable', tone: /** @type {Tone} */ ('warn') }] : []),
     ...(!corners.available ? [{ label: 'High-risk workflow data unavailable', tone: /** @type {Tone} */ ('warn') }] : []),
-    ...states.missing.map((item) => ({ label: `State not observed · ${item.label}`, tone: /** @type {Tone} */ ('warn') })),
-    ...actions.missing.map((action) => ({ label: `Action type not checked · ${humanize(action)}`, tone: /** @type {Tone} */ ('warn') })),
-    ...corners.missing.map((item) => ({ label: `Workflow not verified · ${item.label}`, tone: /** @type {Tone} */ ('warn') })),
     ...signals.failureCategories.map((item) => ({ label: item, tone: /** @type {Tone} */ ('bad') })),
     ...(signals.storageWarning ? [{ label: `Storage · ${signals.storageWarning}`, tone: /** @type {Tone} */ ('warn') }] : []),
     ...(!signals.evidenceComplete
@@ -727,20 +735,34 @@ export function coverageSnapshot(report) {
       ? [{ label: 'All configured run targets reached', tone: /** @type {Tone} */ ('good') }]
       : []),
   ]
-  return { tone, title, label, summary, cards, gaps, evidence }
+  const snapshotSummary = `At the last report, ${targets(gapCount)} ${gapCount === 1 ? 'was' : 'were'} still unverified.`
+  return { tone, title, label, summary, snapshotSummary, cards, gapGroups, notices, evidence }
 }
 
 // ---- Timelines -------------------------------------------------------------------------------------
 
-/** @param {FuzzReport | null} report @returns {Json[]} */
-function timelinePoints(report) {
-  return Array.isArray(report?.timeline) ? report.timeline.map(object) : []
-}
+/** @typedef {{ checkpoint: number, cycle?: number, label: string, point: Json, snapshot: boolean }} ReportCheckpoint */
 
-/** @param {Json} point @param {number} index */
-function pointLabel(point, index) {
-  const root = optionalNumber(point.root)
-  return root === undefined ? `#${index + 1}` : `cycle ${compactNumber(root)}`
+/** @param {FuzzReport | null} report @returns {ReportCheckpoint[]} */
+export function reportCheckpoints(report) {
+  const timeline = Array.isArray(report?.timeline) ? report.timeline : []
+  const latest = object(report?.latest)
+  const cycle = reportedCycleCount(report)
+  const elapsed = elapsedMs(report)
+  const snapshot = timeline.length === 0
+  const hasSnapshot = hasQuoteTelemetry(latest.quotes) ||
+    hasQueueTelemetry(latest.queue) ||
+    isObject(latest.pace) ||
+    (cycle !== undefined && (elapsed ?? 0) > 0)
+  const source = snapshot
+    ? hasSnapshot ? [{ quotes: latest.quotes, queue: latest.queue, pace: latest.pace, root: cycle, elapsedMs: elapsed }] : []
+    : timeline
+  return source.map((entry, index) => {
+    const point = object(entry)
+    const cycle = optionalNumber(point.root, point.roots?.completed)
+    const checkpoint = index + 1
+    return { checkpoint, cycle, label: cycle === undefined ? `checkpoint ${checkpoint}` : `cycle ${cycle.toLocaleString('en-US')}`, point, snapshot }
+  })
 }
 
 /** @param {number[]} values @param {number} quantile */
@@ -750,102 +772,71 @@ export function percentile(values, quantile) {
   return ordered[Math.min(ordered.length - 1, Math.max(0, Math.ceil(quantile * ordered.length) - 1))]
 }
 
-/**
- * Live and ended quotes at each retained checkpoint, or the current snapshot alone when there is no timeline.
- * @param {FuzzReport | null} report @returns {{ label: string, live: number, ended: number }[]}
+/** Live and ended quote counts, with each missing count retained as a gap.
+ * @param {FuzzReport | null} report @param {ReportCheckpoint[]} checkpoints
  */
-export function quoteTimeline(report) {
-  const points = timelinePoints(report).flatMap((point, index) => {
+export function quoteTimeline(report, checkpoints = reportCheckpoints(report)) {
+  return checkpoints.map(({ checkpoint, cycle, label, point }) => {
     const totals = quoteTotals(point.quotes)
-    return hasQuoteTelemetry(point.quotes) && totals.active !== undefined && totals.terminal !== undefined
-      ? [{ label: pointLabel(point, index), live: totals.active, ended: totals.terminal }]
-      : []
+    return { checkpoint, cycle, label, live: totals.active, ended: totals.terminal }
   })
-  if (points.length > 0) return points
-  const totals = quoteTotals(report?.latest?.quotes)
-  if (!hasQuoteTelemetry(report?.latest?.quotes) || totals.active === undefined || totals.terminal === undefined) return []
-  return [{ label: `cycle ${compactNumber(rootCount(report))}`, live: totals.active, ended: totals.terminal }]
 }
 
 /**
- * Cycles per second over the last 16 checkpoints, and the reporter's rolling whole-cycle p50 and p95. Where a
- * checkpoint carries no rolling window, the percentiles are approximated from retained cycle durations.
- * @param {FuzzReport | null} report
+ * Throughput over up to 16 retained checkpoints and the reported rolling whole-cycle durations.
+ * Older rows may be approximated from the retained duration samples.
+ * @param {FuzzReport | null} report @param {ReportCheckpoint[]} checkpoints
  */
-export function paceTimeline(report) {
-  /** @type {{ label: string, rate?: number, p50?: number, p95?: number, durationMs?: number, elapsedMs?: number, completed?: number, exact: boolean }[]} */
-  const points = timelinePoints(report).map((point, index) => {
+export function paceTimeline(report, checkpoints = reportCheckpoints(report)) {
+  return checkpoints.map(({ checkpoint, cycle, label, point, snapshot }, index) => {
     const pace = object(point.pace)
-    return {
-      label: pointLabel(point, index),
-      p50: optionalNumber(pace.rootP50Ms),
-      p95: optionalNumber(pace.rootP95Ms),
-      durationMs: optionalNumber(point.durationMs),
-      elapsedMs: optionalNumber(point.elapsedMs),
-      completed: optionalNumber(point.roots?.completed, point.root),
-      exact: ['rootP50Ms', 'rootP95Ms', 'window'].some((field) => pace[field] !== undefined),
-    }
-  })
-  points.forEach((point, index) => {
-    const previous = points[Math.max(0, index - 16)]
-    if (point.completed !== undefined && point.elapsedMs !== undefined) {
-      if (previous.completed !== undefined && previous.elapsedMs !== undefined && point.elapsedMs > previous.elapsedMs) {
-        point.rate = ((point.completed - previous.completed) * 1_000) / (point.elapsedMs - previous.elapsedMs)
-      } else if (point.elapsedMs > 0) {
-        point.rate = (point.completed * 1_000) / point.elapsedMs
-      }
-    }
+    const elapsed = optionalNumber(point.elapsedMs)
+    const completed = optionalNumber(point.roots?.completed, cycle)
+    const previous = checkpoints[Math.max(0, index - 16)]
+    const previousElapsed = index === 0 ? 0 : optionalNumber(previous.point.elapsedMs)
+    const previousCompleted = index === 0 ? 0 : optionalNumber(previous.point.roots?.completed, previous.cycle)
+    const rate = elapsed !== undefined && completed !== undefined && previousElapsed !== undefined &&
+      previousCompleted !== undefined && elapsed > previousElapsed && completed >= previousCompleted
+      ? (1_000 * (completed - previousCompleted)) / (elapsed - previousElapsed)
+      : undefined
+    const exactP50 = optionalNumber(pace.rootP50Ms)
+    const exactP95 = optionalNumber(pace.rootP95Ms)
     const durations = /** @type {number[]} */ (
-      points
-        .slice(Math.max(0, index - 63), index + 1)
-        .map((candidate) => candidate.durationMs)
-        .filter((value) => value !== undefined)
+      !snapshot && optionalNumber(point.durationMs) !== undefined && (exactP50 === undefined || exactP95 === undefined)
+        ? checkpoints.slice(Math.max(0, index - 63), index + 1)
+          .map(({ point: sample }) => optionalNumber(sample.durationMs))
+          .filter((value) => value !== undefined)
+        : []
     )
-    point.p50 ??= percentile(durations, 0.5)
-    point.p95 ??= percentile(durations, 0.95)
+    const p50 = exactP50 ?? percentile(durations, 0.5)
+    const p95 = exactP95 ?? percentile(durations, 0.95)
+    const exact = exactP50 !== undefined || exactP95 !== undefined
+    const approximate = (exactP50 === undefined && p50 !== undefined) || (exactP95 === undefined && p95 !== undefined)
+    return { checkpoint, cycle, label, rate, p50, p95, exact, approximate }
   })
-  if (points.some((point) => point.rate !== undefined || point.p50 !== undefined || point.p95 !== undefined)) return points
-  const pace = object(report?.latest?.pace)
-  const elapsed = elapsedMs(report)
-  const p50 = optionalNumber(pace.rootP50Ms)
-  const p95 = optionalNumber(pace.rootP95Ms)
-  const rateNow = elapsed ? (rootCount(report) * 1_000) / elapsed : undefined
-  if (p50 === undefined && p95 === undefined && rateNow === undefined) return []
-  return [{ label: `cycle ${compactNumber(rootCount(report))}`, rate: rateNow, p50, p95, exact: p50 !== undefined || p95 !== undefined }]
 }
 
 /**
- * Queue pressure at each checkpoint: the interval maxima where the report kept them, else the settled snapshot.
- * @param {FuzzReport | null} report
+ * Per-metric interval maxima where the report kept them, else the settled queue sample.
+ * @param {FuzzReport | null} report @param {ReportCheckpoint[]} checkpoints
  */
-export function queueTimeline(report) {
-  const points = timelinePoints(report).flatMap((point, index) => {
-    const peak = hasQueueTelemetry(point.queuePeak)
-    const source = peak ? point.queuePeak : hasQueueTelemetry(point.queue) ? point.queue : undefined
-    if (!source) return []
-    const totals = queueTotals(source)
-    return [
-      {
-        label: pointLabel(point, index),
-        outstanding: totals.outstanding,
-        pending: totals.pending,
-        scheduled: totals.scheduled,
-        running: totals.running,
-        peak,
-      },
-    ]
+export function queueTimeline(report, checkpoints = reportCheckpoints(report)) {
+  return checkpoints.map(({ checkpoint, cycle, label, point }) => {
+    const interval = object(point.queuePeak)
+    const peak = optionalNumber(interval.outstanding, interval.pending, interval.scheduled) !== undefined || typeof interval.running === 'boolean'
+    const queue = peak ? interval : object(point.queue)
+    const accepted = optionalNumber(queue.accepted)
+    const completed = optionalNumber(queue.completed)
+    return {
+      checkpoint,
+      cycle,
+      label,
+      outstanding: optionalNumber(queue.outstanding) ??
+        (accepted !== undefined && completed !== undefined ? Math.max(0, accepted - completed) : undefined),
+      pending: optionalNumber(queue.pending),
+      scheduled: optionalNumber(queue.scheduled),
+      running: typeof queue.running === 'boolean' ? Number(queue.running) : undefined,
+      peak,
+    }
   })
-  if (points.length > 0) return points
-  if (!hasQueueTelemetry(report?.latest?.queue)) return []
-  const totals = queueTotals(report?.latest?.queue)
-  return [
-    {
-      label: `cycle ${compactNumber(rootCount(report))}`,
-      outstanding: totals.outstanding,
-      pending: totals.pending,
-      scheduled: totals.scheduled,
-      running: totals.running,
-      peak: false,
-    },
-  ]
 }

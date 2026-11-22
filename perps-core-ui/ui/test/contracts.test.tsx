@@ -46,12 +46,13 @@ it('opens the exact selected component without repeating upgrade actions in the 
   expect(table.queryByRole('button', { name: /Prepare/ })).toBeNull()
   expect(onPrepare).not.toHaveBeenCalled()
 })
-it('searches by contract name and lets an empty result restore the complete inventory', () => {
+it('clears a search without widening the contract inventory', () => {
   mount()
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not-found' } })
   expect(screen.queryByRole('table')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Show all addresses' }))
-  expect(within(screen.getByRole('table')).getByRole('button', { name: 'Inspect ControlFacet' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+  expect(within(screen.getByRole('table')).queryByRole('button', { name: 'Inspect ControlFacet' })).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('searchbox'))
 })
 it('keeps read-only inspection available while a job runs', () => {
   const { onPrepare, onInspect } = mount(true)

@@ -194,7 +194,7 @@ describe('the run verdict', () => {
     report.run!.status = 'running'
     expect(runHeadline(report)).toBe('Simulation running')
     expect(runHeadline(report, 'stale')).toBe('Last reported snapshot')
-    expect(runHeadline(report, 'error')).toBe('Last report unavailable')
+    expect(runHeadline(report, 'error')).toBe('Last reported snapshot')
   })
 })
 
@@ -283,8 +283,8 @@ describe('yield, time and timelines', () => {
   it('reads quote stock, pace and queue pressure from the retained checkpoints', () => {
     const report = cleanReport()
     expect(quoteTimeline(report)).toEqual([
-      { label: 'cycle 1', live: 1, ended: 0 },
-      { label: 'cycle 40', live: 2, ended: 5 },
+      { checkpoint: 1, cycle: 1, label: 'cycle 1', live: 1, ended: 0 },
+      { checkpoint: 2, cycle: 40, label: 'cycle 40', live: 2, ended: 5 },
     ])
     const pace = paceTimeline(report)
     expect(pace.map((point) => [point.p50, point.p95, point.exact])).toEqual([
@@ -298,8 +298,8 @@ describe('yield, time and timelines', () => {
   it('falls back to the current snapshot when there is no timeline', () => {
     const report = cleanReport()
     report.timeline = []
-    expect(quoteTimeline(report)).toEqual([{ label: 'cycle 40', live: 2, ended: 5 }])
-    expect(queueTimeline(report)).toEqual([{ label: 'cycle 40', outstanding: 0, pending: 0, scheduled: 0, running: 0, peak: false }])
-    expect(paceTimeline(report)).toEqual([{ label: 'cycle 40', rate: 40_000 / 300_000, p50: 120, p95: 400, exact: true }])
+    expect(quoteTimeline(report)).toEqual([{ checkpoint: 1, cycle: 40, label: 'cycle 40', live: 2, ended: 5 }])
+    expect(queueTimeline(report)).toEqual([{ checkpoint: 1, cycle: 40, label: 'cycle 40', outstanding: 0, pending: 0, scheduled: 0, running: 0, peak: false }])
+    expect(paceTimeline(report)).toEqual([{ checkpoint: 1, cycle: 40, label: 'cycle 40', rate: 40_000 / 300_000, p50: 120, p95: 400, exact: true, approximate: false }])
   })
 })

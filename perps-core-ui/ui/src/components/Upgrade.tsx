@@ -26,6 +26,7 @@ import {
   JsonView,
   KindTile,
   planDeployment,
+  ResponsiveReview,
   useTrackedRun,
 } from './Common'
 import { connectWallet, Signing } from './Signing'
@@ -36,9 +37,10 @@ import {
   Button,
   Checkbox,
   Code,
+  Combobox,
   FileButton,
   Group,
-  Select,
+  InputBase,
   Stack,
   Stepper,
   Table,
@@ -46,6 +48,7 @@ import {
   TextInput,
   Title,
   UnstyledButton,
+  useCombobox,
 } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight } from 'lucide-react'
@@ -56,6 +59,7 @@ import { useSearchParams } from 'react-router-dom'
 /** Diamond upgrade and introspection functions; the server refuses to remove them. */
 const PROTECTED = ['0x1f931c1c', '0x7a0ed627']
 const same = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
+const INSPECT_AND_COMPILE = 'Inspecting target and compiling source'
 /** Failures with one obvious way forward, and the button that takes it. */
 const ACTIONS: Partial<Record<ErrorCode, string>> = {
   'stale-source': 'Compile again',
@@ -83,6 +87,9 @@ export function Upgrade() {
     retry: false,
   })
   const record = recordQuery.data || (adapter === 'system' && system?.plan?.plan.id === planId ? system.plan : undefined)
+  const rehearsalPassed = record?.rehearsal?.status === 'passed'
+  const rehearsalStatus = record?.rehearsal?.status
+  const rehearsalLabel = rehearsalPassed ? 'Passed' : rehearsalStatus === 'failed' ? 'Failed' : rehearsalStatus
   const go = (values: Record<string, string>) =>
     setParams((previous) => {
       const p = new URLSearchParams(previous)
@@ -178,7 +185,20 @@ export function Upgrade() {
             </Stepper>
           </div>
           <Stack gap="md" className="upgrade-main">
-            {recordQuery.error && <Alert color="red">{recordQuery.error.message}</Alert>}
+            {recordQuery.error && (
+              <Alert color="red" title={record ? 'Could not refresh the saved plan' : 'Could not load the saved plan'}>
+                <Text size="sm">{recordQuery.error.message}</Text>
+                <Button
+                  variant="default"
+                  size="compact-sm"
+                  mt="sm"
+                  loading={recordQuery.isFetching}
+                  onClick={() => void recordQuery.refetch()}
+                >
+                  Retry loading plan
+                </Button>
+              </Alert>
+            )}
             {failure && (
               <Alert color="orange" variant="light" className="next-step">
                 <Group justify="space-between" wrap="wrap" gap="sm">
@@ -195,9 +215,10 @@ export function Upgrade() {
               ) : (
                 <PeripheralPrepare key={`${system?.profile.id}:${nodeId}`} scope={scope} nodeId={nodeId} onPrepared={prepared} />
               ))}
-            {step > 0 && !record && (
+            {step > 0 && !record && !recordQuery.error && (
               <Empty
                 title={recordQuery.isFetching ? 'Loading saved plan…' : 'No prepared plan'}
+                loading={recordQuery.isFetching}
                 action={
                   <Button variant="default" onClick={() => go({ step: '0' })}>
                     Prepare upgrade
@@ -207,7 +228,7 @@ export function Upgrade() {
             )}
             {step > 0 && record && (
               <>
-                <PlanSummary record={record} />
+                <PlanSummary record={record} reviewingRehearsal={step === 1} />
                 {step === 1 ? (
                   <>
                     <section className="panel">
@@ -217,7 +238,7 @@ export function Upgrade() {
                         </Title>
                         {record.rehearsal && (
                           <Badge color={record.rehearsal.status === 'passed' ? 'teal' : 'red'} variant="light">
-                            {record.rehearsal.status}
+                            {rehearsalLabel}
                           </Badge>
                         )}
                       </Group>
@@ -231,7 +252,11 @@ export function Upgrade() {
                       )}
                       {record.rehearsal?.status === 'passed' && (
                         <Stack mt="md" gap="xs">
-                          <Text size="sm">Passed at block {record.rehearsal.blockNumber}</Text>
+                          {record.rehearsal.blockNumber != null && (
+                            <Text size="xs" c="dimmed">
+                              Fork block {record.rehearsal.blockNumber}
+                            </Text>
+                          )}
                           {record.rehearsal.limitations?.map((l, i) => (
                             <Text size="xs" c="dimmed" key={i}>
                               {l}
@@ -248,7 +273,13 @@ export function Upgrade() {
                         </Stack>
                       )}
                       <Group mt="md">
+                        {rehearsalPassed && (
+                          <Button variant="filled" onClick={() => go({ step: '2' })}>
+                            Review execution →
+                          </Button>
+                        )}
                         <Button
+                          variant={rehearsalPassed ? 'default' : 'filled'}
                           disabled={busy || !!record.plan.blockers?.length || !!engine?.active || !!system?.active}
                           onClick={() =>
                             track('Rehearsing upgrade', () =>
@@ -256,13 +287,8 @@ export function Upgrade() {
                             )
                           }
                         >
-                          Run fork rehearsal
+                          {rehearsalPassed ? 'Rerun fork rehearsal' : 'Run fork rehearsal'}
                         </Button>
-                        {record.rehearsal?.status === 'passed' && (
-                          <Button variant="default" onClick={() => go({ step: '2' })}>
-                            Review execution →
-                          </Button>
-                        )}
                         <Button
                           variant="subtle"
                           disabled={busy || (adapter === 'system' && record.rehearsal?.status !== 'passed')}
@@ -286,7 +312,7 @@ export function Upgrade() {
                     {record.rehearsal?.status === 'passed' || record.status === 'verified' ? (
                       <Signing key={`${adapter}:${record.plan.id}`} record={record} adapter={adapter} />
                     ) : (
-                      <Empty title="Rehearse this plan before signing" action={<Button onClick={() => go({ step: '1' })}>Run rehearsal</Button>} />
+                      <Empty title="Rehearse this plan before signing" action={<Button onClick={() => go({ step: '1' })}>Review rehearsal</Button>} />
                     )}
                     {adapter === 'system' && record.rehearsal?.status === 'passed' && record.status !== 'verified' && (
                       <Group gap="sm">
@@ -363,13 +389,15 @@ function ContextBar({ record, scope, address }: { record?: PlanRecord; scope: st
 }
 
 function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: string; onPrepared: (id: string) => void }) {
-  const { engine, system, request, job, busy } = useWorkbench()
+  const { engine, system, request, job, busy, errors } = useWorkbench()
   const run = useTrackedRun()
   const profiles = system?.profiles || []
   const defaultRpc = system?.profile.rpc || profiles.find((p) => p.id === system?.profile.id)?.rpc || ''
   const [rpc, setRpc] = useState(defaultRpc),
     [address, setAddress] = useState(target),
-    [editing, setEditing] = useState(false)
+    [editing, setEditing] = useState(false),
+    [showAddressError, setShowAddressError] = useState(false),
+    [showRpcError, setShowRpcError] = useState(false)
   const snapshot = engine?.snapshot,
     expectedChain = system?.profile.chainId,
     sameTarget = same(snapshot?.target, address),
@@ -377,19 +405,27 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
   // The engine keeps its own connection, so a Diamond read on another chain at the same address must not pass for this deployment.
   // A snapshot restored after a restart is for reading only; the server prepares from a live inspection.
   const ready = sameTarget && sameChain && !snapshot?.restored && (engine?.build?.scope || 'core') === scope && !!engine?.build
+  const failedAttempt = errors?.find(({ source, operation }) =>
+    source === 'engine' ? ['connect', 'compile'].includes(operation.toLowerCase()) : !source && operation === INSPECT_AND_COMPILE,
+  )
+  const compileFailed = failedAttempt?.source === 'engine' && failedAttempt.operation.toLowerCase() === 'compile'
+  const sourceCommit = engine?.build?.source.commit.slice(0, 12)
   const wrongChain = sameTarget && !!snapshot && !sameChain
   // The workspace already holds a live connection to this deployment; reuse it unless the operator overrides it.
   const shared = !!system?.connected && !editing
   const effectiveRpc = editing ? rpc : defaultRpc
+  const validAddress = isAddress(address)
+  const hasRpc = !!effectiveRpc.trim()
   const inspectedAt = snapshot?.inspectedAt
   return (
     <Stack>
       <section className="panel">
         <Group justify="space-between" align="center">
           <Button
-            disabled={busy || !isAddress(address) || (!shared && !effectiveRpc)}
+            variant={ready && !failedAttempt ? 'default' : 'filled'}
+            disabled={busy || !validAddress || (!shared && !hasRpc)}
             onClick={() =>
-              run('Inspecting target and compiling source', async () => {
+              run(INSPECT_AND_COMPILE, async () => {
                 await request('connect', shared ? { target: address } : { rpc: effectiveRpc, target: address })
                 return job('compile', { scope })
               })
@@ -405,6 +441,8 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
             onClick={() => {
               if (editing) {
                 setAddress(target)
+                setShowAddressError(false)
+                setShowRpcError(false)
               }
               setRpc(defaultRpc)
               setEditing(!editing)
@@ -415,8 +453,41 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
         </Group>
         {editing && (
           <div className="two-columns" style={{ marginTop: 12 }}>
-            <TextInput label="Diamond address" value={address} onChange={(e) => setAddress(e.currentTarget.value)} disabled={busy} />
-            <TextInput label="RPC endpoint" value={rpc} onChange={(e) => setRpc(e.currentTarget.value)} disabled={busy} />
+            <TextInput
+              label="Diamond address"
+              description="For example, a 0x address with 40 hexadecimal characters."
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
+              value={address}
+              aria-required="true"
+              autoCapitalize="none"
+              spellCheck={false}
+              onChange={(e) => {
+                const value = e.currentTarget.value
+                setAddress(value)
+                if (showAddressError && isAddress(value)) setShowAddressError(false)
+              }}
+              onBlur={() => setShowAddressError(!validAddress)}
+              error={showAddressError && !validAddress ? 'Enter a 0x address with 40 hexadecimal digits.' : undefined}
+              disabled={busy}
+            />
+            <TextInput
+              label="RPC endpoint"
+              description="Required when overriding the workspace connection."
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
+              value={rpc}
+              inputMode="url"
+              aria-required="true"
+              autoCapitalize="none"
+              spellCheck={false}
+              onChange={(e) => {
+                const value = e.currentTarget.value
+                setRpc(value)
+                if (showRpcError && value.trim()) setShowRpcError(false)
+              }}
+              onBlur={() => setShowRpcError(!hasRpc)}
+              error={showRpcError && !hasRpc ? 'Enter a read-only RPC endpoint.' : undefined}
+              disabled={busy}
+            />
           </div>
         )}
         {wrongChain && (
@@ -426,12 +497,19 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
           </Alert>
         )}
         {ready && (
-          <Group mt="sm" gap="xs">
-            <Text size="xs" c="dimmed">
-              Upgrade owner · {snapshot!.authority.kind}
+          <Stack mt="sm" gap="xs">
+            <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+              {failedAttempt
+                ? `${compileFailed ? 'Last compile failed' : 'Inspect & compile failed'} · form uses source ${sourceCommit}`
+                : `Source ${sourceCommit} · Inspected block ${snapshot!.blockNumber.toLocaleString()}`}
             </Text>
-            <Address value={snapshot!.owner} />
-          </Group>
+            <Group gap="xs">
+              <Text size="xs" c="dimmed">
+                Upgrade owner · {snapshot!.authority.kind}
+              </Text>
+              <Address value={snapshot!.owner} />
+            </Group>
+          </Stack>
         )}
         <Accordion mt="sm">
           <Accordion.Item value="source">
@@ -453,15 +531,15 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
                       {inspectedAt ? ` · ${new Date(inspectedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
                     </Text>
                     <Text size="xs" c="dimmed">
-                      Source {engine!.build!.source.commit.slice(0, 12)} · Build {engine!.build!.digest.slice(0, 12)}
+                      Source {sourceCommit} · Build {engine!.build!.digest.slice(0, 12)}
                     </Text>
                   </>
                 )}
-                {engine?.baseline && (
-                  <Text size="xs" c="dimmed">
-                    Baseline {engine.baseline.digest.slice(0, 12)}
-                  </Text>
-                )}
+                <Text size="xs" c="dimmed">
+                  {engine?.baseline
+                    ? `Deployed baseline ${engine.baseline.digest.slice(0, 12)}${engine.baseline.source ? ` · Source ${engine.baseline.source.commit.slice(0, 12)}` : ''}`
+                    : 'No deployed baseline is loaded. Use Import deployed baseline to supply one.'}
+                </Text>
                 <Group>
                   <FileButton
                     accept="application/json,.json"
@@ -497,6 +575,7 @@ function DiamondPrepare({ scope, target, onPrepared }: { scope: string; target: 
         <FacetSelection
           key={draftKey(snapshot!.chainId, address, scope, engine!.build!.digest)}
           engine={engine!}
+          inspectFailed={!!failedAttempt}
           scope={scope}
           nodes={system?.snapshot?.nodes || []}
           initial={
@@ -530,14 +609,65 @@ function groupByFacet(selectors: string[], map: Record<string, string>, nodes: C
   }
   return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
+
+const upgradeScopes = [
+  { value: 'patch', label: 'Patch selected facets' },
+  { value: 'reconcile', label: 'Reconcile all functions' },
+]
+
+function UpgradeScopeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const combobox = useCombobox({
+    onDropdownOpen: () => combobox.updateSelectedOptionIndex('active'),
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  })
+
+  return (
+    <Combobox
+      store={combobox}
+      onOptionSubmit={(option) => {
+        if (option !== value) onChange(option)
+        combobox.closeDropdown()
+      }}
+    >
+      <Combobox.Target targetType="button" withExpandedAttribute>
+        <InputBase
+          component="button"
+          type="button"
+          label="Upgrade scope"
+          multiline
+          pointer
+          rightSection={<Combobox.Chevron />}
+          rightSectionPointerEvents="none"
+          style={{ textAlign: 'start', whiteSpace: 'normal' }}
+          onClick={() => combobox.toggleDropdown()}
+          onBlur={() => combobox.closeDropdown()}
+        >
+          <span>{upgradeScopes.find((scope) => scope.value === value)?.label}</span>
+        </InputBase>
+      </Combobox.Target>
+      <Combobox.Dropdown>
+        <Combobox.Options aria-label="Upgrade scope">
+          {upgradeScopes.map((scope) => (
+            <Combobox.Option key={scope.value} value={scope.value} active={scope.value === value} aria-selected={scope.value === value}>
+              {scope.label}
+            </Combobox.Option>
+          ))}
+        </Combobox.Options>
+      </Combobox.Dropdown>
+    </Combobox>
+  )
+}
+
 function FacetSelection({
   engine,
+  inspectFailed,
   scope,
   nodes,
   initial,
   onPrepared,
 }: {
   engine: EngineStatus
+  inspectFailed: boolean
   scope: string
   nodes: ContractNode[]
   initial: string[]
@@ -546,19 +676,24 @@ function FacetSelection({
   const { request, busy } = useWorkbench()
   const run = useTrackedRun()
   const key = draftKey(engine.snapshot!.chainId, engine.snapshot!.target, scope, engine.build!.digest)
-  const [draft, setDraft] = useState<DiamondDraft>(() =>
-      readDraft(sessionStorage, key, { selected: initial, removals: [], deployer: '', mode: 'patch' }),
-    ),
+  const [{ draft, storage }, setDraftState] = useState<{
+    draft: DiamondDraft
+    storage: 'unsaved' | 'saved' | 'failed'
+  }>(() => {
+      const fallback: DiamondDraft = { selected: initial, removals: [], deployer: '', mode: 'patch' }
+      const draft = readDraft(sessionStorage, key, fallback)
+      return { draft, storage: draft === fallback ? 'unsaved' : 'saved' }
+    }),
     [search, setSearch] = useState(''),
     [removalSearch, setRemovalSearch] = useState(''),
-    [storageError, setStorageError] = useState('')
+    [showDeployerError, setShowDeployerError] = useState(false)
   function update(patch: Partial<DiamondDraft>) {
     const next = { ...draft, ...patch }
-    setDraft(next)
     try {
       sessionStorage.setItem(key, JSON.stringify(next))
+      setDraftState({ draft: next, storage: 'saved' })
     } catch {
-      setStorageError('Could not retain this draft. Keep this page open until you download the prepared plan.')
+      setDraftState({ draft: next, storage: 'failed' })
     }
   }
   const catalog = engine.build!.catalog,
@@ -606,28 +741,22 @@ function FacetSelection({
       type="search"
       size="xs"
       mb="sm"
-      aria-label="Find a function to remove"
-      placeholder="Find by selector, function or facet"
+      label="Find a function to remove"
+      description="Find by selector, function or facet"
+      autoCapitalize="none"
+      spellCheck={false}
       value={removalSearch}
       onChange={(e) => setRemovalSearch(e.currentTarget.value)}
     />
   )
   return (
     <Stack>
-      {storageError && <Alert color="red">{storageError}</Alert>}
-      <Group grow align="end">
-        <TextInput type="search" label="Find facets or functions" value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
-        <Select
-          label="Upgrade scope"
-          value={draft.mode}
-          onChange={(v) => update({ mode: v || 'patch', removals: [] })}
-          allowDeselect={false}
-          data={[
-            { value: 'patch', label: 'Patch selected facets' },
-            { value: 'reconcile', label: 'Reconcile all functions' },
-          ]}
-        />
-      </Group>
+      {storage === 'failed' && (
+        <Alert color="red">Draft could not be saved. Keep this page open until you prepare and download the plan.</Alert>
+      )}
+      <div className="two-columns">
+        <UpgradeScopeSelect value={draft.mode} onChange={(mode) => update({ mode, removals: [] })} />
+      </div>
       <Text size="sm" c="dimmed">
         {reconcile
           ? 'Every live function the selected facets do not provide is removed. Review the removals below and acknowledge them.'
@@ -642,6 +771,16 @@ function FacetSelection({
             {draft.selected.length} selected
           </Text>
         </Group>
+        <TextInput
+          type="search"
+          size="xs"
+          mb="sm"
+          label="Find facets or functions"
+          value={search}
+          autoCapitalize="none"
+          spellCheck={false}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+        />
         <div className="bounded-list">
           {facets.length ? (
             facets.map((f) => (
@@ -659,7 +798,9 @@ function FacetSelection({
               </div>
             ))
           ) : (
-            <Empty title="No matching facets" />
+            <Empty title="No matching facets">
+              {search.trim() ? `No facets match ‘${search}’. Clear the facet search to see all facets.` : 'The current build has no facets.'}
+            </Empty>
           )}
         </div>
       </section>
@@ -689,7 +830,7 @@ function FacetSelection({
                 checked={acknowledged}
                 disabled={busy}
                 onChange={(e) => update({ removals: e.currentTarget.checked ? required : [] })}
-                label={`I reviewed these ${required.length} removals from ${groups.map((g) => g.name).join(', ')}`}
+                label={`I reviewed ${required.length === 1 ? 'this removal' : `these ${required.length} removals`} from ${new Intl.ListFormat(undefined, { type: 'conjunction' }).format(groups.map((g) => g.name))}`}
               />
             </>
           ) : (
@@ -733,8 +874,12 @@ function FacetSelection({
           label="Deployment signer address"
           description="Deploys the new libraries and facets. The Diamond owner authorizes the cut."
           value={draft.deployer}
+          autoCapitalize="none"
+          spellCheck={false}
           onChange={(e) => update({ deployer: e.currentTarget.value })}
-          error={draft.deployer && !isAddress(draft.deployer) ? 'Enter a valid Ethereum address' : undefined}
+          onFocus={() => setShowDeployerError(false)}
+          onBlur={() => setShowDeployerError(true)}
+          error={showDeployerError && draft.deployer && !isAddress(draft.deployer) ? 'Enter a valid Ethereum address' : undefined}
           disabled={busy}
         />
         <Button
@@ -752,10 +897,14 @@ function FacetSelection({
         </Button>
       </section>
       <Group justify="space-between">
-        <Text size="xs" c="dimmed">
-          {reconcile && required.length && !acknowledged ? 'Acknowledge the removals to prepare.' : 'Draft saved for this chain, target and source.'}
-        </Text>
+        {reconcile && required.length > 0 && !acknowledged ? (
+          <Text size="xs" c="dimmed">Acknowledge the removals to prepare.</Text>
+        ) : storage === 'saved' ? (
+          <Text size="xs" c="dimmed">Draft saved for this chain, target and source.</Text>
+        ) : null}
         <Button
+          ml="auto"
+          variant={inspectFailed ? 'default' : 'filled'}
           disabled={
             busy ||
             !isAddress(draft.deployer) ||
@@ -793,7 +942,11 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
         return { deployer: '', authority: '' }
       }
     }),
-    [baseline, setBaseline] = useState('')
+    [baseline, setBaseline] = useState(''),
+    [addressFeedback, setAddressFeedback] = useState({ deployer: false, authority: false })
+  const validDeployer = isAddress(draft.deployer)
+  const validAuthority = isAddress(draft.authority)
+  const addressFormat = 'For example, a 0x address with 40 hexadecimal characters.'
   const update = (patch: Record<string, string>) => {
     const next = { ...draft, ...patch }
     setDraft(next)
@@ -811,15 +964,26 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
         <div className="two-columns">
           <TextInput
             label="Deployment wallet address"
+            description={addressFormat}
+            inputWrapperOrder={['label', 'input', 'description', 'error']}
             value={draft.deployer}
+            autoCapitalize="none"
+            spellCheck={false}
             onChange={(e) => update({ deployer: e.currentTarget.value })}
+            onBlur={() => setAddressFeedback((previous) => ({ ...previous, deployer: !!draft.deployer && !validDeployer }))}
+            error={addressFeedback.deployer && draft.deployer && !validDeployer ? 'Enter a valid Ethereum address' : undefined}
             disabled={busy}
           />
           <TextInput
             label="Configuration and upgrade authority"
-            description="Owner, admin or Safe with the required roles."
+            description={`Owner, admin or Safe with the required roles. ${addressFormat}`}
+            inputWrapperOrder={['label', 'input', 'description', 'error']}
             value={draft.authority}
+            autoCapitalize="none"
+            spellCheck={false}
             onChange={(e) => update({ authority: e.currentTarget.value })}
+            onBlur={() => setAddressFeedback((previous) => ({ ...previous, authority: !!draft.authority && !validAuthority }))}
+            error={addressFeedback.authority && draft.authority && !validAuthority ? 'Enter a valid Ethereum address' : undefined}
             disabled={busy}
           />
         </div>
@@ -883,7 +1047,7 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
         </Accordion.Item>
       </Accordion>
       <Button
-        disabled={busy || !isAddress(draft.deployer) || !isAddress(draft.authority) || system?.connected === false}
+        disabled={busy || !validDeployer || !validAuthority || system?.connected === false}
         onClick={() =>
           run('Compiling and preparing component upgrade', async () => {
             await job('compile', { scope })
@@ -903,7 +1067,7 @@ function PeripheralPrepare({ scope, nodeId, onPrepared }: { scope: string; nodeI
           })
         }
       >
-        Prepare transactions
+        Prepare upgrade plan
       </Button>
     </Stack>
   )
@@ -922,13 +1086,46 @@ function cutByFacet(p: DiamondPlan, nodes: ContractNode[]) {
   }
   return [...rows.entries()].sort(([a], [b]) => a.localeCompare(b))
 }
-function PlanSummary({ record }: { record: PlanRecord }) {
+const FACET_COUNTS = [
+  { action: 'add', label: 'Adds' },
+  { action: 'replace', label: 'Replaces' },
+  { action: 'remove', label: 'Removes' },
+] as const
+
+const countLabel = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
+
+function PlanSummary({ record, reviewingRehearsal }: { record: PlanRecord; reviewingRehearsal: boolean }) {
   const { system } = useWorkbench()
   const p = record.plan,
     state = planState(record),
     diamond = isDiamondPlan(p),
     removes = diamond ? p.changes.filter((c) => c.action === 'remove').length : 0
-  const byFacet = diamond ? cutByFacet(p, system?.snapshot?.nodes || []) : []
+  const facetRows = diamond
+    ? cutByFacet(p, system?.snapshot?.nodes || []).map(([name, counts]) => ({
+        name,
+        fields: FACET_COUNTS.map(({ action, label }) => ({
+          label,
+          value: counts[action] || '—',
+          color: action === 'remove' && counts.remove ? 'red' : undefined,
+        })),
+      }))
+    : []
+  const changesLabel = diamond
+    ? `${countLabel(p.deployments.length, 'deployment')} · ${countLabel(p.changes.length, 'function change')}`
+    : `Before → after · ${countLabel(p.changes.length, 'configuration change')}`
+  const showInlineChanges = reviewingRehearsal && !diamond && p.changes.length <= 3
+  const configurationChanges = !diamond
+    ? p.changes.map((c, i) => (
+        <div className="diff-row" key={i}>
+          <Text fw={600} size="sm">
+            {c.contract} · {c.field}
+          </Text>
+          <code>{pretty(c.before)}</code>
+          <span>→</span>
+          <code>{pretty(c.after)}</code>
+        </div>
+      ))
+    : null
   return (
     <section className="panel">
       <Group justify="space-between">
@@ -963,79 +1160,102 @@ function PlanSummary({ record }: { record: PlanRecord }) {
           {w}
         </Alert>
       ))}
-      {diamond && !!byFacet.length && (
-        <div className="table-scroll">
-          <Table mt="md" className="cut-by-facet">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Facet</Table.Th>
-                <Table.Th>Adds</Table.Th>
-                <Table.Th>Replaces</Table.Th>
-                <Table.Th>Removes</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {byFacet.map(([name, c]) => (
-                <Table.Tr key={name}>
-                  <Table.Td>{name}</Table.Td>
-                  <Table.Td>{c.add || '—'}</Table.Td>
-                  <Table.Td>{c.replace || '—'}</Table.Td>
-                  <Table.Td c={c.remove ? 'red' : undefined}>{c.remove || '—'}</Table.Td>
+      {!!facetRows.length && (
+        <ResponsiveReview
+          className="planned-review"
+          table={
+            <Table className="cut-by-facet">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Facet</Table.Th>
+                  {FACET_COUNTS.map(({ action, label }) => (
+                    <Table.Th key={action} ta="right">
+                      {label}
+                    </Table.Th>
+                  ))}
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </div>
+              </Table.Thead>
+              <Table.Tbody>
+                {facetRows.map(({ name, fields }) => (
+                  <Table.Tr key={name}>
+                    <Table.Td>{name}</Table.Td>
+                    {fields.map(({ label, value, color }) => (
+                      <Table.Td key={label} ta="right" c={color}>
+                        {value}
+                      </Table.Td>
+                    ))}
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          }
+          rows={facetRows.map(({ name, fields }) => (
+            <li className="review-row" key={name}>
+              <Text size="sm" fw={600}>
+                {name}
+              </Text>
+              <dl className="review-fields">
+                {fields.map(({ label, value, color }) => (
+                  <div key={label}>
+                    <Text component="dt" size="xs" c="dimmed">
+                      {label}
+                    </Text>
+                    <Text component="dd" size="sm" c={color}>
+                      {value}
+                    </Text>
+                  </div>
+                ))}
+              </dl>
+            </li>
+          ))}
+        />
       )}
       {!!removes && (
         <Text size="sm" c="red" fw={600} mt="sm">
           Removes {removes} {removes === 1 ? 'function' : 'functions'}
         </Text>
       )}
+      {showInlineChanges && (
+        <>
+          <Text component="h4" size="xs" c="dimmed" fw={600} mt="md" mb="xs">
+            {changesLabel}
+          </Text>
+          {configurationChanges}
+        </>
+      )}
       <Accordion mt="md">
-        <Accordion.Item value="changes">
-          <Accordion.Control>
-            {diamond
-              ? `${p.deployments.length} deployments · ${p.changes.length} function changes`
-              : `Before → after · ${p.changes.length} configuration changes`}
-          </Accordion.Control>
-          <Accordion.Panel>
-            {diamond ? (
-              <>
-                <Table>
-                  <Table.Tbody>
-                    {p.deployments.map((d) => (
-                      <Table.Tr key={d.name}>
-                        <Table.Td>{d.name}</Table.Td>
-                        <Table.Td>{d.reason}</Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-                {p.changes.map((c, i) => (
-                  <div className="diff-row" key={i}>
-                    <Badge variant="light" color={c.action === 'remove' ? 'red' : 'gray'}>
-                      {c.action}
-                    </Badge>
-                    <Code>{c.signature || c.selector}</Code>
-                    <Text size="xs">{c.name || c.from}</Text>
-                  </div>
-                ))}
-              </>
-            ) : (
-              p.changes.map((c, i) => (
-                <div className="diff-row" key={i}>
-                  <Text fw={600} size="sm">
-                    {c.contract} · {c.field}
-                  </Text>
-                  <code>{pretty(c.before)}</code>
-                  <span>→</span>
-                  <code>{pretty(c.after)}</code>
-                </div>
-              ))
-            )}
-          </Accordion.Panel>
-        </Accordion.Item>
+        {!showInlineChanges && (
+          <Accordion.Item value="changes">
+            <Accordion.Control>{changesLabel}</Accordion.Control>
+            <Accordion.Panel>
+              {diamond ? (
+                <>
+                  <Table>
+                    <Table.Tbody>
+                      {p.deployments.map((d) => (
+                        <Table.Tr key={d.name}>
+                          <Table.Td>{d.name}</Table.Td>
+                          <Table.Td>{d.reason}</Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                  {p.changes.map((c, i) => (
+                    <div className="diff-row" key={i}>
+                      <Badge variant="light" color={c.action === 'remove' ? 'red' : 'gray'}>
+                        {c.action}
+                      </Badge>
+                      <Code>{c.signature || c.selector}</Code>
+                      <Text size="xs">{c.name || c.from}</Text>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                configurationChanges
+              )}
+            </Accordion.Panel>
+          </Accordion.Item>
+        )}
         <Accordion.Item value="source">
           <Accordion.Control>Source & plan evidence</Accordion.Control>
           <Accordion.Panel>

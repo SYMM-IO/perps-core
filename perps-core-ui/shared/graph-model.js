@@ -134,9 +134,11 @@ const IMPLEMENTATION_LANES = [
 	{ name: "Libraries", kinds: ["library"] },
 ];
 export const LAYOUT = { column: 236, row: 88, gap: 150, rows: 8, compactRows: 6 };
+export const NODE = { width: 212, height: 58 };
+export const PORTRAIT_COLUMN = NODE.width + 16;
 // `compact` suits one contract's neighborhood: the lanes either side of Core share a
 // column group, so a handful of contracts is not spread thin across five lanes.
-export function semanticLayout(nodes, { implementation = false, compact = false } = {}) {
+export function semanticLayout(nodes, { implementation = false, compact = false, orientation = "landscape", rowCapacity = 1 } = {}) {
 	const lanes = implementation ? IMPLEMENTATION_LANES : SYSTEM_LANES;
 	const laneOf = node => {
 		const index = lanes.findIndex(lane => lane.kinds.includes(node.kind));
@@ -154,34 +156,44 @@ export function semanticLayout(nodes, { implementation = false, compact = false 
 	const positions = {},
 		sections = [];
 	let x = 0,
+		y = 0,
 		lane = 0;
 	for (const group of groups) {
 		if (!group.length) continue;
 		lane++;
 		group.sort((a, b) => laneOf(a) - laneOf(b) || rank(a) - rank(b) || `${a.name}:${a.id}`.localeCompare(`${b.name}:${b.id}`));
-		// Compact grids prevent large authority inventories becoming a long column.
-		const columns = Math.ceil(group.length / (merge ? LAYOUT.compactRows : LAYOUT.rows)),
-			rows = Math.ceil(group.length / columns);
-		const width = columns * LAYOUT.column;
-		// A sparse centre column gets room for the links that run between its own contracts.
-		const pitch = merge && group === groups[1] && group.length <= 3 ? LAYOUT.row * 2 : LAYOUT.row;
-		// Column-major order keeps each lane's contracts together inside a merged group.
-		for (const [i, node] of group.entries())
-			positions[node.id] = {
-				x: x + Math.floor(i / rows) * LAYOUT.column + LAYOUT.column / 2,
-				y: ((i % rows) - (rows - 1) / 2) * pitch,
-			};
+		const portrait = orientation === "portrait",
+			columns = portrait ? Math.min(rowCapacity, group.length) : Math.ceil(group.length / (merge ? LAYOUT.compactRows : LAYOUT.rows)),
+			rows = Math.ceil(group.length / columns),
+			width = portrait ? NODE.width + (columns - 1) * PORTRAIT_COLUMN : columns * LAYOUT.column;
+		if (portrait) {
+			for (const [i, node] of group.entries()) {
+				const row = Math.floor(i / columns),
+					length = Math.min(columns, group.length - row * columns);
+				positions[node.id] = { x: ((i % columns) - (length - 1) / 2) * PORTRAIT_COLUMN, y: y + row * LAYOUT.row };
+			}
+		} else {
+			// A sparse centre column gets room for the links that run between its own contracts.
+			const pitch = merge && group === groups[1] && group.length <= 3 ? LAYOUT.row * 2 : LAYOUT.row;
+			// Column-major order keeps each lane's contracts together inside a merged group.
+			for (const [i, node] of group.entries())
+				positions[node.id] = {
+					x: x + Math.floor(i / rows) * LAYOUT.column + LAYOUT.column / 2,
+					y: ((i % rows) - (rows - 1) / 2) * pitch,
+				};
+		}
 		const names = [...new Set(group.map(node => lanes[laneOf(node)].name))];
-		// Numbered like an architectural drawing ("01 · Governance"), so the lanes read in order left to right.
 		sections.push({
 			name: names.join(" · "),
 			label: `${String(lane).padStart(2, "0")} · ${names.join(" · ")}`,
-			x: x + width / 2,
+			x: portrait ? 0 : x + width / 2,
+			...(portrait ? { y: y - 46 } : {}),
 			width,
 			count: group.length,
 			rows,
 		});
 		x += width + LAYOUT.gap;
+		y += rows * LAYOUT.row;
 	}
 	return { positions, sections };
 }

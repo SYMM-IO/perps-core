@@ -126,10 +126,11 @@ it('opens a chosen component as the focused contract', async () => {
   })
 })
 
-it('keeps Compare source in Changes and retains the live-inspection gate', async () => {
+it('shows the inspection prerequisite in Changes until the source can be compared', () => {
   open()
   fireEvent.click(screen.getByRole('tab', { name: 'Changes' }))
-  expect((screen.getByRole('button', { name: 'Compare source' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Compare source' })).toBeNull()
+  expect(screen.getByText('Inspect live to compare source.')).toBeTruthy()
   expect(mock.api.job).not.toHaveBeenCalled()
 })
 

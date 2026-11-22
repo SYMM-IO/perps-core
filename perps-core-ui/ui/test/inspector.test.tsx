@@ -55,10 +55,13 @@ const inspect = (node: ContractNode, extra: Partial<Parameters<typeof Inspector>
 }
 const sections = () => [...document.querySelectorAll('.mantine-Accordion-control')].map((c) => c.textContent)
 
-it('starts contract details with identity and choices instead of repeated issues and inventory stats', () => {
+it('shows identity and outstanding issues above collapsed contract details', () => {
   inspect({ ...nodes[1], listed: true, state: { facets: 33, functions: 481 } })
   const panel = screen.getByLabelText('Contract inspector')
-  expect(panel.querySelector('.issue-row')).toBeNull()
+  const issue = within(panel).getByRole('button', { name: /PAUSER_ROLE not granted/ })
+  const roles = within(panel).getByRole('button', { name: 'Who can change it' })
+  expect(issue.compareDocumentPosition(roles) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(roles.getAttribute('aria-expanded')).toBe('false')
   expect(panel.textContent).not.toMatch(/33 facets|481 functions|In the address book|Diamond cut/)
   expect(panel.querySelector('.address')?.textContent).not.toBe(nodes[1].address)
   expect(screen.getByRole('button', { name: 'Prepare upgrade' }).getAttribute('data-variant')).toBe('default')

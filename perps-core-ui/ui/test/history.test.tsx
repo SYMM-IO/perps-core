@@ -91,7 +91,7 @@ describe('History', () => {
     expect(within(pinned).getByText('Staging')).toBeTruthy()
     // The table keeps to the selected deployment.
     expect(rows()).toHaveLength(1)
-    fireEvent.click(within(pinned).getByRole('button', { name: 'Open plan' }))
+    fireEvent.click(within(pinned).getByRole('button', { name: /^Open plan for/ }))
     await waitFor(() => expect(path).toContain('plan=b'))
     expect(mock.api.request).toHaveBeenCalledWith(`plan?id=${'b'.padEnd(64, '0')}`)
     expect(new URLSearchParams(path).get('target')).toBe(CORE)
@@ -141,13 +141,13 @@ describe('History', () => {
     fireEvent.click(screen.getByLabelText('Show other deployments (1)'))
     expect(rows()).toHaveLength(2)
     expect(screen.getByText('Every deployment')).toBeTruthy()
-    expect(screen.getByText('Staging')).toBeTruthy()
+    expect(within(rows()[1]).getByText('Staging')).toBeTruthy()
   })
 
   it('matches older plans without a deployment by chain, and says so', () => {
     show([item('o', { deployment: undefined })], [{ ...item('q', { deployment: undefined, chainId: 8453, family: 'peripheral' }) }], staging)
     expect(rows()).toHaveLength(1)
-    expect(screen.getByText(/older plans on arbitrum \(42161\) that do not record a deployment/)).toBeTruthy()
+    expect(within(rows()[0]).getByText('· no deployment recorded')).toBeTruthy()
     expect(screen.getByLabelText('Show other deployments (1)')).toBeTruthy()
   })
 })

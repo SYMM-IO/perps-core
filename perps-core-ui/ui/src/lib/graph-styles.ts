@@ -19,8 +19,9 @@ import { __iconData as timer } from 'lucide-react/dist/esm/icons/timer.mjs'
 import { __iconData as vault } from 'lucide-react/dist/esm/icons/vault.mjs'
 import { __iconData as walletCards } from 'lucide-react/dist/esm/icons/wallet-cards.mjs'
 import { __iconData as zap } from 'lucide-react/dist/esm/icons/zap.mjs'
+import { NODE } from '../../../shared/graph-model.js'
 
-export const NODE = { width: 212, height: 58 }
+export { NODE }
 /** Where a contract's name starts: after the icon, so every name on the map lines up like a list. */
 const TEXT_LEFT = 52
 export const TEXT_WIDTH = NODE.width - TEXT_LEFT - 12
@@ -90,24 +91,24 @@ export interface Tone {
   glyph: string
 }
 /** Flat tonal containers, one hue per family. Kept beside the roles in styles.css; Cytoscape cannot read CSS variables. */
-export function familyTones(light: boolean): Record<Family, Tone> {
+export function familyTones(light: boolean, desktop = false): Record<Family, Tone> {
   return light
     ? {
         core: { bg: '#ffdad4', ink: '#410503', chip: '#ffb4a8', glyph: '#5c1109' },
-        protocol: { bg: '#e3e3e7', ink: '#1b1b1d', chip: '#ffdad4', glyph: '#8c2a1e' },
+        protocol: { bg: desktop ? '#bfbfc7' : '#e3e3e7', ink: '#1b1b1d', chip: '#ffdad4', glyph: '#8c2a1e' },
         solver: { bg: '#cdeeea', ink: '#00201f', chip: '#a5dcd6', glyph: '#003735' },
         frontend: { bg: '#d6e3ff', ink: '#001b3d', chip: '#b0c9f5', glyph: '#0b315f' },
-        governance: { bg: '#e9e1f4', ink: '#211a2e', chip: '#d2c5e8', glyph: '#3a2f52' },
+        governance: { bg: desktop ? '#d2bfea' : '#e9e1f4', ink: '#211a2e', chip: '#d2c5e8', glyph: '#3a2f52' },
         token: { bg: '#ffe9b0', ink: '#261a00', chip: '#f5d27a', glyph: '#4a3600' },
         external: { bg: '#ededf0', ink: '#5e5e64', chip: '#dcdce0', glyph: '#5e5e64' },
         code: { bg: '#e3e3e7', ink: '#1b1b1d', chip: '#d0d0d6', glyph: '#3b3b40' },
       }
     : {
         core: { bg: '#73342a', ink: '#ffdad4', chip: '#8f4538', glyph: '#ffdad4' },
-        protocol: { bg: '#2e2e32', ink: '#e6e6e8', chip: '#5a2f28', glyph: '#ffb4a8' },
+        protocol: { bg: desktop ? '#515158' : '#2e2e32', ink: '#e6e6e8', chip: '#5a2f28', glyph: '#ffb4a8' },
         solver: { bg: '#1d3a38', ink: '#b7ecea', chip: '#2b5350', glyph: '#b7ecea' },
         frontend: { bg: '#23384f', ink: '#d2e4ff', chip: '#335070', glyph: '#d2e4ff' },
-        governance: { bg: '#3f394b', ink: '#e9e0f7', chip: '#574f68', glyph: '#e9e0f7' },
+        governance: { bg: desktop ? '#594b6a' : '#3f394b', ink: '#e9e0f7', chip: '#574f68', glyph: '#e9e0f7' },
         token: { bg: '#46380f', ink: '#ffe08a', chip: '#62500f', glyph: '#ffe08a' },
         external: { bg: '#222225', ink: '#b4b4ba', chip: '#333337', glyph: '#b4b4ba' },
         code: { bg: '#303035', ink: '#e6e6e8', chip: '#44444a', glyph: '#c9c9cf' },
@@ -152,16 +153,18 @@ export const MIRRORED = {
   warn: '--warn',
   idle: '--idle',
 } as const
-export function mapPalette(light: boolean): Record<keyof typeof MIRRORED, string> {
-  return light
-    ? { bg: '#fafafa', ink: '#1b1b1d', dim: '#5e5e64', ok: '#1b7a4f', bad: '#ba1a1a', primary: '#b3392b', warn: '#8a6100', idle: '#8a8a90' }
-    : { bg: '#121212', ink: '#e6e6e8', dim: '#a9a9af', ok: '#86d9a8', bad: '#ffb4ab', primary: '#ffb4a8', warn: '#e9c46a', idle: '#8e8e94' }
+export function mapPalette(light: boolean, moreContrast = false): Record<keyof typeof MIRRORED, string> {
+  const palette = light
+    ? { bg: '#fafafa', ink: '#1b1b1d', dim: '#5e5e64', ok: '#1b7a4f', bad: '#a21949', primary: '#b3392b', warn: '#765400', idle: '#6d6d73' }
+    : { bg: '#121212', ink: '#e6e6e8', dim: '#a9a9af', ok: '#86d9a8', bad: '#ff9fbc', primary: '#ffb4a8', warn: '#e9c46a', idle: '#8e8e94' }
+  // Mirrors the increased-contrast secondary text in styles.css.
+  return moreContrast ? { ...palette, dim: light ? '#333338' : '#d0d0d3' } : palette
 }
 
-export function graphStyles(light: boolean): any[] {
+export function graphStyles(light: boolean, moreContrast = false, desktop = false): any[] {
   // Amber (`warn`) marks what is different from the previous inspection; `idle` is a line that says nothing either way.
-  const { bg, ink, dim, ok, bad, primary, warn, idle } = mapPalette(light),
-    tones = familyTones(light),
+  const { bg, ink, dim, ok, bad, primary, warn, idle } = mapPalette(light, moreContrast),
+    tones = familyTones(light, desktop),
     shapeOf = Object.fromEntries(FAMILIES.map((f) => [f.id, f.shape])) as Record<Family, Shape>
   const look = (kind: string) => {
     const family = familyOf(kind),
@@ -244,7 +247,7 @@ export function graphStyles(light: boolean): any[] {
         'arrow-scale': 0.9,
         'line-color': ok,
         'target-arrow-color': ok,
-        'line-opacity': 0.75,
+        'line-opacity': moreContrast ? 1 : 0.75,
         // At rest a link shows only its count, beside the contract it belongs to, where nothing overlaps it.
         'source-label': 'data(sourceCount)',
         'target-label': 'data(targetCount)',
@@ -259,6 +262,15 @@ export function graphStyles(light: boolean): any[] {
         'text-background-shape': 'round-rectangle',
         'text-events': 'yes',
         'overlay-opacity': 0,
+      },
+    },
+    {
+      selector: 'edge.portrait-route',
+      style: {
+        'curve-style': 'segments',
+        'edge-distances': 'node-position',
+        'segment-weights': 'data(segmentWeights)',
+        'segment-distances': 'data(segmentDistances)',
       },
     },
     {
@@ -287,7 +299,10 @@ export function graphStyles(light: boolean): any[] {
       style: { 'line-color': idle, 'target-arrow-color': idle, color: dim, 'line-style': 'dashed', 'line-opacity': 0.7 },
     },
     // A dense overview keeps its lines; counts and names appear on hover, selection, or when something is wrong.
-    { selector: 'edge.quiet[state="set"]', style: { 'text-opacity': 0, 'text-background-opacity': 0, 'line-opacity': 0.45 } },
+    {
+      selector: 'edge.quiet[state="set"]',
+      style: { 'text-opacity': 0, 'text-background-opacity': 0, 'line-opacity': moreContrast ? 1 : light ? 0.75 : 0.45 },
+    },
     {
       selector: 'edge:selected, edge.hover-edge',
       style: {
@@ -304,7 +319,7 @@ export function graphStyles(light: boolean): any[] {
     },
     { selector: 'edge:selected', style: { 'line-color': ink, 'target-arrow-color': ink, color: ink } },
     // Everything outside the highlighted contract's neighbourhood steps back but stays readable as context.
-    { selector: '.faded', style: { opacity: 0.32 } },
+    { selector: '.faded', style: { opacity: moreContrast ? 0.65 : 0.32 } },
     { selector: 'edge.faded', style: { 'text-opacity': 0, 'text-background-opacity': 0 } },
   ]
 }

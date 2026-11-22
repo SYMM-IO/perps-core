@@ -1,7 +1,7 @@
 import { useWorkbench } from '../api'
 import { confirmationFor, download, planChainId, short } from '../lib/state'
 import type { ActiveTask, ContractNode, Plan, PlanRecord, WalletPrompt } from '../types'
-import { chainLabel, chainName, CopyData, explorerTx, JsonView, planDeployment, readTxHash, saveTxHash, useTrackedRun } from './Common'
+import { chainLabel, chainName, CopyData, explorerTx, JsonView, planDeployment, readTxHash, ResponsiveReview, saveTxHash, useTrackedRun } from './Common'
 import { Accordion, Alert, Anchor, Badge, Button, Code, Group, Modal, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { formatEther, formatUnits, toQuantity } from 'ethers'
 import { useEffect, useState } from 'react'
@@ -167,19 +167,23 @@ export function WalletRequest() {
               </div>
               <div>
                 <dt>Value</dt>
-                <dd>{formatEther(req.value || '0')}</dd>
+                <dd>{formatEther(req.value || '0')} native token</dd>
               </div>
               <div>
                 <dt>Gas limit</dt>
                 <dd>{Number(req.gasLimit).toLocaleString()}</dd>
               </div>
               {fee !== undefined && (
-                <div>
-                  <dt>{req.maxFeePerGas !== undefined ? 'Max fee' : 'Gas price'}</dt>
-                  <dd>
-                    {gwei(fee)} · up to {formatEther(BigInt(fee) * BigInt(req.gasLimit))}
-                  </dd>
-                </div>
+                <>
+                  <div>
+                    <dt>{req.maxFeePerGas !== undefined ? 'Maximum fee per gas' : 'Gas price per gas'}</dt>
+                    <dd>{gwei(fee)}</dd>
+                  </div>
+                  <div>
+                    <dt>Maximum total gas fee</dt>
+                    <dd>{formatEther(BigInt(fee) * BigInt(req.gasLimit))} native token</dd>
+                  </div>
+                </>
               )}
             </dl>
             <Accordion>
@@ -293,10 +297,10 @@ function ExecutionRows({ steps, explorer }: { steps: (ExecutionStep & { number: 
                 </Text>
               )}
               {step.hash && (
-                <Group gap={8} wrap="nowrap">
+                <Group gap={8}>
                   <Code className="break">{step.hash}</Code>
                   {href && (
-                    <Anchor href={href} target="_blank" rel="noopener noreferrer" size="xs">
+                    <Anchor href={href} target="_blank" rel="noopener noreferrer" size="xs" aria-label={`View ${step.title} transaction on explorer`}>
                       Explorer ↗
                     </Anchor>
                   )}
@@ -386,7 +390,8 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
     profiles.find((x) => x.chainId === chain && x.explorer)?.explorer ||
     (system?.profile.chainId === chain ? system?.profile.explorer : undefined)
   const selected = pending || unresolved[0]?.id,
-    stored = readTxHash(p.id, selected)
+    stored = readTxHash(p.id, selected),
+    validHash = /^0x[\da-f]{64}$/i.test(hash)
   // A hash this browser kept from the wallet fills the recovery form, so it does not have to be dug out of the wallet.
   useEffect(() => {
     if (stored && !hash) setHash(stored)
@@ -638,13 +643,20 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
                 />
                 <TextInput
                   label="Transaction hash"
-                  description={stored && hash === stored ? 'Filled in from the hash this browser received from the wallet.' : undefined}
+                  description={
+                    stored && hash === stored
+                      ? 'Enter 0x followed by 64 hexadecimal characters. This browser filled in the hash received from the wallet.'
+                      : 'Enter 0x followed by 64 hexadecimal characters.'
+                  }
+                  error={hash && !validHash ? 'The transaction hash must be 0x followed by 64 hexadecimal characters.' : undefined}
+                  autoCapitalize="none"
+                  spellCheck={false}
                   value={hash}
                   onChange={(e) => setHash(e.currentTarget.value)}
                   placeholder="0x…"
                 />
                 <Button
-                  disabled={!/^0x[\da-f]{64}$/i.test(hash) || busy}
+                  disabled={!validHash || busy}
                   onClick={() =>
                     run('Reconciling transaction', () => {
                       const actionId = selected!,
@@ -672,7 +684,11 @@ export function Signing({ record, adapter }: { record: PlanRecord; adapter: 'dia
             Keep task
           </Button>
           <Button
-            color="red"
+            style={{
+              '--button-bg': 'var(--error-container)',
+              '--button-color': 'var(--on-error-container)',
+              '--button-hover': 'color-mix(in srgb, var(--error-container) 88%, var(--on-error-container))',
+            }}
             onClick={() => {
               setCancelOpen(false)
               void run('Cancelling task', () => request(`${prefix}cancel`, {}))
@@ -699,6 +715,22 @@ function FinalCut({
     if (!groups.has(key)) groups.set(key, { action: c.action, to: c.to, selectors: [] })
     groups.get(key)!.selectors.push(c.selector)
   }
+  const rows = [...groups.values()].map(({ action, to, selectors }) => ({
+    key: `${action}:${to}`,
+    action: (
+      <Badge variant="light" color={action === 'remove' ? 'red' : 'gray'}>
+        {action}
+      </Badge>
+    ),
+    facet: to ? (
+      <>
+        {names.find(([, address]) => same(address, to))?.[0] || 'Facet'} <code>{to}</code>
+      </>
+    ) : (
+      'Removed from the Diamond'
+    ),
+    count: selectors.length,
+  }))
   return (
     <section className="panel">
       <Title order={3} size="h4">
@@ -707,38 +739,57 @@ function FinalCut({
       <Text size="sm" c="dimmed" mt={4}>
         Built from the deployed facet addresses after the second rehearsal. This is what the wallet signs or the Safe batch carries.
       </Text>
-      <div className="table-scroll">
-        <Table mt="sm">
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Action</Table.Th>
-              <Table.Th>Facet</Table.Th>
-              <Table.Th>Functions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {[...groups.values()].map((g) => (
-              <Table.Tr key={`${g.action}:${g.to}`}>
-                <Table.Td>
-                  <Badge variant="light" color={g.action === 'remove' ? 'red' : 'gray'}>
-                    {g.action}
-                  </Badge>
-                </Table.Td>
-                <Table.Td className="break">
-                  {g.to ? (
-                    <>
-                      {names.find(([, a]) => same(a, g.to))?.[0] || 'Facet'} <code>{g.to}</code>
-                    </>
-                  ) : (
-                    'Removed from the Diamond'
-                  )}
-                </Table.Td>
-                <Table.Td>{g.selectors.length}</Table.Td>
+      <ResponsiveReview
+        className="final-review"
+        table={
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Action</Table.Th>
+                <Table.Th>Facet</Table.Th>
+                <Table.Th>Functions</Table.Th>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </div>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map(({ key, action, facet, count }) => (
+                <Table.Tr key={key}>
+                  <Table.Td>{action}</Table.Td>
+                  <Table.Td>{facet}</Table.Td>
+                  <Table.Td>{count}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        }
+        rows={rows.map(({ key, action, facet, count }) => (
+          <li className="review-row" key={key}>
+            <dl className="review-fields">
+              <div className="review-primary-field">
+                <Text component="dt" size="xs" c="dimmed">
+                  Facet
+                </Text>
+                <Text component="dd" size="sm" fw={600}>
+                  {facet}
+                </Text>
+              </div>
+              <div>
+                <Text component="dt" size="xs" c="dimmed">
+                  Action
+                </Text>
+                <dd>{action}</dd>
+              </div>
+              <div>
+                <Text component="dt" size="xs" c="dimmed">
+                  Functions
+                </Text>
+                <Text component="dd" size="sm">
+                  {count}
+                </Text>
+              </div>
+            </dl>
+          </li>
+        ))}
+      />
       {final.data && (
         <Accordion mt="sm">
           <Accordion.Item value="calldata">

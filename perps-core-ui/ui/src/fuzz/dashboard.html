@@ -6,7 +6,11 @@
         <option value="">Current run</option>
       </select>
     </label>
-    <button id="follow-button" class="button button--quiet" type="button" aria-pressed="true">
+    <div id="archive-feedback" class="archive-feedback">
+      <p id="archive-message" role="status" aria-live="polite"></p>
+      <button id="archive-retry" class="button button--quiet" type="button" aria-describedby="archive-message" hidden>Retry</button>
+    </div>
+    <button id="follow-button" class="button button--quiet" type="button">
       <span id="follow-button-label">Pause updates</span>
     </button>
     <button id="export-report" class="button button--quiet" type="button" aria-describedby="export-hint" disabled>Export JSON</button>
@@ -17,8 +21,10 @@
 <div class="monitor-strip">
   <div id="connection-banner" class="connection-banner" role="status" aria-live="off">
     <span id="connection-dot" class="connection-dot" aria-hidden="true"></span>
-    <span id="connection-label">Waiting for a report</span>
-    <span id="connection-detail">Polling the local report</span>
+    <div class="connection-copy">
+      <span id="connection-label">Loading current report…</span>
+      <span id="connection-detail"></span>
+    </div>
   </div>
 
   <nav class="section-nav" aria-label="Report sections">
@@ -30,19 +36,20 @@
 
 <div id="dashboard-main">
   <section id="waiting-state" class="empty-state" aria-labelledby="waiting-title">
-    <p class="section-label">LOCAL REPORT</p>
-    <h1 id="waiting-title">Waiting for a run report</h1>
-    <p>Start one with this command. This page fills in as soon as the run reports.</p>
-    <div class="command-copy">
-      <code id="start-command">npm run test:fuzz:dashboard</code>
-      <button id="copy-start-command" class="button button--quiet" type="button">Copy</button>
+    <h1 id="waiting-title">Loading current report…</h1>
+    <div id="start-guidance" hidden>
+      <p>Start one with this command. This page fills in as soon as the run reports.</p>
+      <div class="command-copy">
+        <code id="start-command" translate="no">npm run test:fuzz:dashboard</code>
+        <button id="copy-start-command" class="button button--quiet" type="button">Copy</button>
+      </div>
     </div>
   </section>
 
   <div id="error-banner" class="error-banner" role="alert" hidden>
     <div>
       <p class="error-banner__title">Report unavailable</p>
-      <p id="error-message">The page will retry automatically.</p>
+      <p id="error-message">The local report service is unavailable. This page will retry automatically.</p>
     </div>
     <button id="retry-button" class="button button--quiet" type="button">Retry</button>
   </div>
@@ -53,7 +60,7 @@
       <div class="run-hero">
         <div class="run-hero__identity">
           <div class="run-hero__headline">
-            <span id="run-status" class="status-badge">WAITING</span>
+            <span id="run-status" class="status-badge">Waiting</span>
             <span id="run-mode" class="mode-label">—</span>
           </div>
           <h1 id="run-title">Protocol simulation</h1>
@@ -70,17 +77,20 @@
         <div class="problems__replay">
           <p class="problems__seed">
             <span>Seed</span>
-            <code id="problems-seed">—</code>
+            <code id="problems-seed" translate="no">—</code>
           </p>
           <button id="problems-copy" class="button button--primary" type="button" disabled>Copy replay</button>
           <p id="problems-replay-note" class="problems__note" hidden></p>
         </div>
+        <details id="problems-earlier" class="problems__earlier" hidden>
+          <summary id="problems-earlier-label"></summary>
+          <ol id="problems-earlier-list" class="problems__list" role="list"></ol>
+        </details>
       </section>
 
       <div class="snapshot">
         <p id="health-note" class="sr-only">Configured run targets, not exhaustive protocol coverage</p>
         <div id="kpi-strip" class="kpi-strip"></div>
-        <p id="summary-limit-note" class="summary-limit-note">These are configured run targets, not exhaustive protocol coverage.</p>
       </div>
 
       <details id="story" class="simulation-story">
@@ -95,7 +105,7 @@
           </div>
           <div id="story-track" class="story-track" aria-label="Four stages in one simulation cycle">
             <div class="story-route" aria-hidden="true"></div>
-            <div id="story-token" class="story-token" aria-hidden="true"><span>CYCLE</span></div>
+            <div id="story-token" class="story-token" aria-hidden="true"><span>Cycle</span></div>
             <article class="story-step" data-story-step="0">
               <p class="story-step__index">01</p>
               <h3>Actors</h3>
@@ -132,7 +142,7 @@
     <section id="quotes" class="report-section anchor-target" aria-labelledby="quotes-title">
       <div class="section-heading">
         <div>
-          <p class="section-label">QUOTE OUTCOMES</p>
+          <p class="section-label">Quote outcomes</p>
           <h2 id="quotes-title">Where 0 quotes ended up</h2>
         </div>
       </div>
@@ -167,11 +177,7 @@
       </details>
     </section>
 
-    <details id="details" class="technical-disclosure anchor-target">
-      <summary>
-        <span>Details</span>
-      </summary>
-
+    <div id="details" class="technical-views anchor-target">
       <div class="details-tabs" role="tablist" aria-label="Detailed report views">
         <button
           id="details-tab-coverage"
@@ -235,20 +241,19 @@
             <div>
               <h2 id="coverage-verdict-title">Building coverage</h2>
             </div>
-            <span id="coverage-status" class="status-badge sr-only">ANALYZING</span>
+            <span id="coverage-status" class="status-badge sr-only">Analyzing</span>
           </header>
           <p id="coverage-summary" class="coverage-summary">Waiting for enough evidence to assess this run.</p>
           <div id="coverage-grid" class="coverage-grid"></div>
+          <div id="coverage-gaps" class="coverage-gaps" hidden></div>
         </div>
 
         <details class="evidence-disclosure">
           <summary>Limits &amp; evidence</summary>
           <div class="evidence-disclosure__body">
-            <div id="coverage-gaps" class="coverage-gaps" role="list" aria-label="Coverage gaps and warnings"></div>
-
             <article id="confidence-limits" class="confidence-limits">
               <header>
-                <p class="section-label">CONFIDENCE LIMITS</p>
+                <p class="section-label">Confidence limits</p>
                 <h3>What this run does not prove</h3>
               </header>
               <p id="confidence-limit-summary">
@@ -297,14 +302,70 @@
           <div>
             <h2 id="performance-title">Performance</h2>
           </div>
-          <div class="segmented-control" role="group" aria-label="Chart history window">
-            <button type="button" data-chart-window="32" aria-pressed="false">32</button>
-            <button type="button" data-chart-window="64" aria-pressed="true">64</button>
-            <button type="button" data-chart-window="all" aria-pressed="false">All retained</button>
+          <div class="chart-window">
+            <div class="segmented-control" role="group" aria-label="Retained checkpoint history" aria-describedby="chart-window-summary">
+              <button type="button" data-chart-window="32" aria-pressed="false">Latest 32 checkpoints</button>
+              <button type="button" data-chart-window="64" aria-pressed="true">Latest 64 checkpoints</button>
+              <button type="button" data-chart-window="all" aria-pressed="false">All retained checkpoints</button>
+            </div>
+            <p id="chart-window-summary" class="chart-note" role="status"></p>
           </div>
         </div>
 
+        <p id="chart-inspection-help" class="sr-only">Use left and right arrow keys to inspect checkpoints. Home and End select the first and last checkpoints.</p>
         <div class="chart-grid" aria-label="Run performance charts">
+          <article class="panel chart-panel">
+            <header class="panel__header">
+              <div>
+                <h3>Simulation speed</h3>
+                <p id="pace-telemetry-note" class="chart-note">Cycle throughput and whole-cycle duration use separate scales.</p>
+              </div>
+              <div class="legend" aria-label="Simulation speed series">
+                <span><i class="legend-swatch legend-swatch--rate"></i>Cycles/s</span>
+                <span><i class="legend-swatch legend-swatch--p50"></i>P50</span>
+                <span><i class="legend-swatch legend-swatch--p95"></i>P95</span>
+              </div>
+            </header>
+            <div class="chart-wrap" role="group" aria-label="Simulation speed checkpoint cursor" aria-describedby="chart-inspection-help" tabindex="0">
+              <canvas id="pace-chart" height="240" role="img" aria-label="Simulation-cycle throughput and whole-cycle duration over the run"></canvas>
+              <div id="pace-tooltip" class="chart-tooltip" aria-hidden="true" hidden></div>
+            </div>
+            <details class="chart-data">
+              <summary aria-label="Simulation pace data">Data</summary>
+              <p id="pace-chart-caption" class="chart-data-caption">Throughput and whole-cycle duration by checkpoint</p>
+              <p id="pace-chart-scroll-hint" class="chart-scroll-hint" hidden></p>
+              <div class="table-scroll" role="region" aria-label="Simulation speed data table" aria-describedby="pace-chart-scroll-hint" tabindex="0">
+                <table id="pace-chart-table" aria-labelledby="pace-chart-caption"></table>
+              </div>
+            </details>
+          </article>
+
+          <article class="panel chart-panel">
+            <header class="panel__header">
+              <div>
+                <h3>Queue pressure</h3>
+                <p id="queue-telemetry-note" class="chart-note">Queue telemetry by retained checkpoint.</p>
+              </div>
+              <div class="legend" aria-label="Queue pressure series">
+                <span><i class="legend-swatch legend-swatch--outstanding"></i>Outstanding</span>
+                <span><i class="legend-swatch legend-swatch--waiting"></i>Waiting</span>
+                <span><i class="legend-swatch legend-swatch--scheduled"></i>Scheduled</span>
+              </div>
+            </header>
+            <div class="chart-wrap" role="group" aria-label="Queue pressure checkpoint cursor" aria-describedby="chart-inspection-help" tabindex="0">
+              <canvas id="queue-chart" height="240" role="img" aria-label="Queue pressure over the run"></canvas>
+              <div id="queue-tooltip" class="chart-tooltip" aria-hidden="true" hidden></div>
+            </div>
+            <details class="chart-data">
+              <summary aria-label="Queue-pressure data">Data</summary>
+              <p id="queue-chart-caption" class="chart-data-caption">Queue pressure by checkpoint</p>
+              <p id="queue-chart-scroll-hint" class="chart-scroll-hint" hidden></p>
+              <div class="table-scroll" role="region" aria-label="Queue pressure data table" aria-describedby="queue-chart-scroll-hint" tabindex="0">
+                <table id="queue-chart-table" aria-labelledby="queue-chart-caption"></table>
+              </div>
+            </details>
+          </article>
+
           <article class="panel panel--wide chart-panel">
             <header class="panel__header">
               <div>
@@ -316,74 +377,16 @@
                 <span><i class="legend-swatch legend-swatch--ended"></i>Ended</span>
               </div>
             </header>
-            <div class="chart-wrap">
+            <div class="chart-wrap" role="group" aria-label="Quote stock checkpoint cursor" aria-describedby="chart-inspection-help" tabindex="0">
               <canvas id="quote-chart" height="260" role="img" aria-label="Live and ended quote counts over the run"></canvas>
-              <div id="quote-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
+              <div id="quote-tooltip" class="chart-tooltip" aria-hidden="true" hidden></div>
             </div>
             <details class="chart-data">
               <summary aria-label="Quote-stock data">Data</summary>
-              <div class="table-scroll" role="region" aria-label="Quote stock data table" tabindex="0">
-                <table id="quote-chart-table">
-                  <caption>
-                    Quote stock by timeline bucket
-                  </caption>
-                </table>
-              </div>
-            </details>
-          </article>
-
-          <article class="panel chart-panel">
-            <header class="panel__header">
-              <div>
-                <h3>Simulation speed</h3>
-                <p id="pace-telemetry-note" class="sr-only">Cycle throughput and whole-cycle duration use separate scales.</p>
-              </div>
-              <div class="legend" aria-label="Simulation speed series">
-                <span><i class="legend-swatch legend-swatch--rate"></i>Cycles/s</span>
-                <span><i class="legend-swatch legend-swatch--p50"></i>P50</span>
-                <span><i class="legend-swatch legend-swatch--p95"></i>P95</span>
-              </div>
-            </header>
-            <div class="chart-wrap">
-              <canvas id="pace-chart" height="240" role="img" aria-label="Simulation-cycle throughput and whole-cycle duration over the run"></canvas>
-              <div id="pace-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
-            </div>
-            <details class="chart-data">
-              <summary aria-label="Simulation pace data">Data</summary>
-              <div class="table-scroll" role="region" aria-label="Simulation speed data table" tabindex="0">
-                <table id="pace-chart-table">
-                  <caption>
-                    Throughput and latency by timeline bucket
-                  </caption>
-                </table>
-              </div>
-            </details>
-          </article>
-
-          <article class="panel chart-panel">
-            <header class="panel__header">
-              <div>
-                <h3>Queue pressure</h3>
-                <p id="queue-telemetry-note" class="sr-only">Queue telemetry by retained checkpoint.</p>
-              </div>
-              <div class="legend" aria-label="Queue pressure series">
-                <span><i class="legend-swatch legend-swatch--outstanding"></i>Outstanding</span>
-                <span><i class="legend-swatch legend-swatch--waiting"></i>Waiting</span>
-                <span><i class="legend-swatch legend-swatch--scheduled"></i>Scheduled</span>
-              </div>
-            </header>
-            <div class="chart-wrap">
-              <canvas id="queue-chart" height="240" role="img" aria-label="Queue pressure over the run"></canvas>
-              <div id="queue-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
-            </div>
-            <details class="chart-data">
-              <summary aria-label="Queue-pressure data">Data</summary>
-              <div class="table-scroll" role="region" aria-label="Queue pressure data table" tabindex="0">
-                <table id="queue-chart-table">
-                  <caption>
-                    Queue pressure by timeline bucket
-                  </caption>
-                </table>
+              <p id="quote-chart-caption" class="chart-data-caption">Quote stock by checkpoint</p>
+              <p id="quote-chart-scroll-hint" class="chart-scroll-hint" hidden></p>
+              <div class="table-scroll" role="region" aria-label="Quote stock data table" aria-describedby="quote-chart-scroll-hint" tabindex="0">
+                <table id="quote-chart-table" aria-labelledby="quote-chart-caption"></table>
               </div>
             </details>
           </article>
@@ -414,11 +417,11 @@
           <dl class="run-facts run-facts--technical">
             <div>
               <dt>Seed</dt>
-              <dd id="seed-value" class="mono">—</dd>
+              <dd id="seed-value" class="mono" translate="no">—</dd>
             </div>
             <div>
               <dt>Run fingerprint</dt>
-              <dd id="trace-value" class="mono">—</dd>
+              <dd id="trace-value" class="mono" translate="no">—</dd>
             </div>
             <div>
               <dt>Original mode</dt>
@@ -470,8 +473,9 @@
           </details>
         </div>
       </section>
-    </details>
+    </div>
   </div>
 </div>
 
+<div id="details-scroll-reserve" aria-hidden="true"></div>
 <div id="announcer" class="sr-only" aria-live="polite"></div>

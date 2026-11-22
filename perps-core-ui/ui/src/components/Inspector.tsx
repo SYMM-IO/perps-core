@@ -5,7 +5,7 @@ import { httpUrl, isIssue, issueText, kindName, pretty, short, UPGRADEABLE } fro
 import type { Connection, ContractNode, Link, Profile } from '../types'
 import { Address, Collection, JsonView, StatusBadge } from './Common'
 import { PowerList, type PowerResult } from './MapPanels'
-import { Accordion, Badge, Button, Group, Stack, Text, Title, UnstyledButton } from '@mantine/core'
+import { Accordion, Badge, Button, Group, Stack, Text, Title, UnstyledButton, VisuallyHidden } from '@mantine/core'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -13,7 +13,7 @@ const nameOf = (nodes: ContractNode[], id: string) => nodes.find((n) => n.id ===
 // Moving between a contract and one of its links replaces the panel. The control that was
 // activated disappears with it, so the heading of whatever renders next takes the focus.
 let handoff = false
-const focusHeading = () => {
+export const focusHeading = () => {
   handoff = true
   setTimeout(() => (handoff = false), 1000)
 }
@@ -27,9 +27,65 @@ function useHeadingFocus(key: string) {
   return heading
 }
 
+function IssueRow({ edge, nodes, onOpen }: { edge: Connection; nodes: ContractNode[]; onOpen: () => void }) {
+  const unavailable = edge.status === 'unknown'
+  const label = unavailable
+    ? `${edge.label} read unavailable`
+    : edge.status === 'missing' && edgeKind(edge) === 'pointer'
+      ? `${edge.label} missing`
+      : issueText(edge)
+  return (
+    <UnstyledButton className="issue-row" data-unavailable={unavailable || undefined} onClick={onOpen}>
+      <TriangleAlert size={14} aria-hidden />
+      <span>
+        {label}
+        <small>
+          {nameOf(nodes, edge.from)} → {nameOf(nodes, edge.to)}
+        </small>
+      </span>
+    </UnstyledButton>
+  )
+}
+
+function ContractIssues({ edges, nodes, open }: { edges: Connection[]; nodes: ContractNode[]; open: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const active = edges.filter((edge) => !edge.removed && edge.diff !== 'removed')
+  const confirmed = active.filter(isIssue)
+  const missing = confirmed.filter((edge) => edge.status === 'missing')
+  const mismatched = confirmed.filter((edge) => edge.status === 'mismatch')
+  const unavailable = active.filter((edge) => edge.status === 'unknown')
+  const issues = [...missing, ...mismatched, ...unavailable]
+  if (!issues.length) return null
+
+  return (
+    <Stack gap={6}>
+      <Text size="xs" c="dimmed">
+        {[missing.length && `${missing.length} missing`, mismatched.length && `${mismatched.length} mismatched`, unavailable.length && `${unavailable.length} unavailable`]
+          .filter(Boolean)
+          .join(' · ')}
+      </Text>
+      {(expanded ? issues : issues.slice(0, 3)).map((edge, i) => (
+        <IssueRow edge={edge} nodes={nodes} key={i} onOpen={() => open(linkId(edge.from, edge.to))} />
+      ))}
+      {issues.length > 3 && (
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color="gray"
+          className="inspector-issues-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Show fewer issues' : `Show all ${issues.length} issues`}
+        </Button>
+      )}
+    </Stack>
+  )
+}
+
 /**
  * One contract, arranged by the questions asked of it: is anything wrong, who can change it, what can it
- * change, what does it depend on, how is it set up. Each fact appears once. Relationships are grouped by
+ * change, what does it depend on, how is it set up. Relationships are grouped by
  * what they mean, so a number beside a name never has to be decoded, and the raw read is kept last.
  */
 export function Inspector({
@@ -148,6 +204,7 @@ export function Inspector({
           No contract code
         </Text>
       )}
+      <ContractIssues key={`issues:${node.id}`} edges={own} nodes={nodes} open={open} />
       {node.removed && (
         <Text size="sm" c="dimmed">
           Gone since the previous inspection. Shown because the map is drawing changes.
@@ -177,7 +234,7 @@ export function Inspector({
           </Stack>
         </details>
       )}
-      {/* Remounted per contract, so each one opens on the section that matters for it. */}
+      {/* Remounted per contract, so its sections start collapsed. */}
       <Accordion key={node.id} multiple variant="default" className="inspector-accordion" defaultValue={[]}>
         {!!changes.length && (
           <Accordion.Item value="changes">
@@ -418,17 +475,7 @@ export function InspectorSummary({
       </Title>
       {issues.length ? (
         <Stack gap={6}>
-          {issues.map((e, i) => (
-            <UnstyledButton key={i} className="issue-row" onClick={() => open(e)}>
-              <TriangleAlert size={14} aria-hidden />
-              <span>
-                {issueText(e)}
-                <small>
-                  {nameOf(nodes, e.from)} → {nameOf(nodes, e.to)}
-                </small>
-              </span>
-            </UnstyledButton>
-          ))}
+          {issues.map((e, i) => <IssueRow edge={e} nodes={nodes} key={i} onOpen={() => open(e)} />)}
         </Stack>
       ) : (
         <Text size="sm" c="dimmed">
@@ -445,6 +492,7 @@ export function LinkDetail({
   nodes,
   block,
   back,
+  backId,
   explorer,
   onSelect,
   onClose,
@@ -453,49 +501,54 @@ export function LinkDetail({
   nodes: ContractNode[]
   block?: number
   back?: string
+  backId?: string
   explorer?: string
   onSelect: (id: string) => void
   onClose: () => void
 }) {
   const heading = useHeadingFocus(link.id)
   const rolesOnly = link.edges.every((edge) => edge.kind === 'role')
+  const backIsEndpoint = backId === link.from || backId === link.to
   const endpoint = (id: string) => (
-    <Button
-      size="compact-sm"
-      variant="default"
+    <UnstyledButton
+      className="connection-endpoint"
       onClick={() => {
         onSelect(id)
         focusHeading()
       }}
     >
       {nameOf(nodes, id)}
-    </Button>
+    </UnstyledButton>
   )
   return (
-    <Stack p="md" gap="sm" className="inspector" aria-label="Connection detail">
+    <Stack className="inspector connection-inspector" aria-label="Connection detail">
       <Button
         variant="subtle"
         color="gray"
         size="compact-xs"
         w="fit-content"
-        leftSection={<ArrowLeft size={13} />}
+        className="connection-nav-button connection-back"
+        leftSection={<ArrowLeft size={13} aria-hidden />}
+        aria-label={back && backIsEndpoint ? `Back to ${back}` : undefined}
         onClick={() => {
           onClose()
-          focusHeading()
+          if (back) focusHeading()
         }}
       >
-        {back ? `Back to ${back}` : 'Back'}
+        {back && !backIsEndpoint ? `Back to ${back}` : 'Back'}
       </Button>
       <Title order={3} size="h5" tabIndex={-1} className="inspector-heading" ref={heading}>
-        {nameOf(nodes, link.from)} → {nameOf(nodes, link.to)}
-      </Title>
-      <Group gap={6}>
-        {endpoint(link.from)}
-        <Text size="xs" c="dimmed">
-          {rolesOnly ? 'holds roles on' : 'grants or points to'}
-        </Text>
+        {endpoint(link.from)}{' '}
+        {rolesOnly ? (
+          <span className="connection-relation">roles checked on</span>
+        ) : (
+          <>
+            <span className="connection-relation" aria-hidden>→</span>
+            <VisuallyHidden>to</VisuallyHidden>
+          </>
+        )}{' '}
         {endpoint(link.to)}
-      </Group>
+      </Title>
       <Group gap="xs">
         <Text size="sm">
           {link.count} {rolesOnly ? (link.count === 1 ? 'role' : 'roles') : link.count === 1 ? 'connection' : 'connections'}
@@ -515,7 +568,7 @@ export function LinkDetail({
         <Collection unit={rolesOnly ? 'roles' : 'connections'} attention={link.missing > 0}>
           {link.edges.map((e, i) => (
             <div key={`${e.label}-${i}`} className="connection-detail">
-              <Group gap="xs" wrap="nowrap" align="start">
+              <Group gap="xs" align="start" className="connection-detail-status">
                 <StatusBadge status={e.status} />
                 <Text size="xs" className="break" fw={600}>
                   {e.label}
@@ -551,7 +604,12 @@ export function LinkDetail({
                     Granted{e.grant.timestamp ? ` ${new Date(e.grant.timestamp * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' })}` : ''}{' '}
                     in{' '}
                     {httpUrl(explorer) ? (
-                      <a href={`${httpUrl(explorer)!.replace(/\/$/, '')}/tx/${e.grant.tx}`} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={`${httpUrl(explorer)!.replace(/\/$/, '')}/tx/${e.grant.tx}`}
+                        aria-label={`View grant transaction ${e.grant.tx} on explorer`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         {short(e.grant.tx)} ↗
                       </a>
                     ) : (

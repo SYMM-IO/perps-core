@@ -289,7 +289,7 @@ function useWorkbenchState() {
       value = new URL(value).hash.slice(1)
     } catch {}
     if (!/^[a-f0-9]{64}$/.test(value)) {
-      setError('Paste the full local access link printed by npm run ui.', 'Sign in')
+      setError('This is not a complete local access link. Paste the full link, including the part after #.', 'Sign in')
       return
     }
     sessionStorage.setItem('workbench-token', value)
@@ -306,7 +306,13 @@ function useWorkbenchState() {
     refresh,
     engine,
     system,
+    systemError: systemQuery.error,
+    retrySystem: systemQuery.refetch,
+    systemRetrying: systemQuery.isRefetching,
     profiles: profilesQuery.data?.profiles ?? [],
+    profilesError: profilesQuery.error,
+    retryProfiles: profilesQuery.refetch,
+    profilesRetrying: profilesQuery.isRefetching,
     jobs,
     progress,
     loading: engineQuery.isPending || systemQuery.isPending,
@@ -314,6 +320,7 @@ function useWorkbenchState() {
     operation,
     /** The message of the last local failure; the banner reads `errors`. */
     error: local?.message || '',
+    accessError: local?.operation === 'Sign in' ? local.message : '',
     errors,
     dismiss,
     setError,

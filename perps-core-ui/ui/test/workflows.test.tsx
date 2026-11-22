@@ -361,7 +361,11 @@ it('shows the plan, step, target and fees of a wallet request', () => {
   expect(screen.getByText(/step 3 of 4/)).toBeTruthy()
   expect(screen.getByText(/Symmio/)).toBeTruthy()
   expect(screen.getByText('100,000')).toBeTruthy()
-  expect(screen.getByText('2 gwei · up to 0.0002')).toBeTruthy()
+  expect(screen.getByText('0.0 native token')).toBeTruthy()
+  expect(screen.getByText('Maximum fee per gas')).toBeTruthy()
+  expect(screen.getByText('2 gwei')).toBeTruthy()
+  expect(screen.getByText('Maximum total gas fee')).toBeTruthy()
+  expect(screen.getByText('0.0002 native token')).toBeTruthy()
 })
 it('keeps a wallet hash the server did not hear about, offers to attach it and fills the recovery form with it', async () => {
   const planId = record.plan.id
@@ -459,7 +463,7 @@ it('requires a deployment wallet and a live connection before preparation', () =
     },
   }
   const page = render(<Upgrade />, { wrapper })
-  const button = screen.getByRole('button', { name: 'Prepare transactions' }) as HTMLButtonElement
+  const button = screen.getByRole('button', { name: 'Prepare upgrade plan' }) as HTMLButtonElement
   expect(button.disabled).toBe(true)
   fireEvent.change(screen.getByLabelText('Deployment wallet address'), { target: { value: address } })
   expect(button.disabled).toBe(false)
@@ -486,7 +490,7 @@ it('compiles the selected peripheral family before preparing its transaction seq
   mock.api.job.mockResolvedValue({ planId: 'b'.repeat(64) })
   render(<Upgrade />, { wrapper })
   fireEvent.change(screen.getByLabelText('Deployment wallet address'), { target: { value: address } })
-  fireEvent.click(screen.getByRole('button', { name: 'Prepare transactions' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare upgrade plan' }))
   await waitFor(() =>
     expect(mock.api.job).toHaveBeenNthCalledWith(
       2,
@@ -511,5 +515,5 @@ it('tells apart two deployments that share a name and version in the picker', ()
   const both = profiles.slice(0, 2).map((p) => ({ ...p, version: '0.8.6' }))
   mock.api.system = { ...mock.api.system, profile: { ...both[0] }, profiles: both, delta: [], history: [] }
   render(<Workspace onPrepare={vi.fn()} />, { wrapper })
-  expect((screen.getByRole('combobox', { name: 'Deployment' }) as HTMLInputElement).value).toBe('Vibe Arbitrum · 0.8.6 · Production')
+  expect(screen.getByRole('combobox', { name: 'Deployment' }).textContent).toBe('arbitrum-vibe · Chain 42161 · Vibe Arbitrum · 0.8.6')
 })

@@ -79,7 +79,7 @@ it('collapses completed work while every unconfirmed outcome stays in the main e
   const current = screen.getByText('failed action').closest('li')!
   expect(current.getAttribute('data-step')).toBe('2')
   expect(current.textContent).toContain(address)
-  const links = screen.getAllByRole('link', { name: /Explorer/, hidden: true })
+  const links = screen.getAllByRole('link', { name: /^View .* transaction on explorer$/, hidden: true })
   expect(links.map((link) => (link as HTMLAnchorElement).href)).toContain(`https://explorer.example/tx/${hash('1')}`)
 })
 

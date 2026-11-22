@@ -157,6 +157,23 @@ it('keeps the problems hidden on a clean run and shows each number with its expl
   const { root } = mount()
   await waitFor(() => expect(root.getElementById('dashboard')!.hidden).toBe(false))
   expect(root.getElementById('problems')!.hidden).toBe(true)
+  expect(root.getElementById('coverage-summary')!.hidden).toBe(true)
+  expect(root.querySelector('.run-hero')!.textContent).toContain('configured targets still unverified')
+  const coverageLists = [...root.querySelectorAll('.coverage-gap-group')].map((group) => ({
+    heading: group.querySelector('h3')!.textContent,
+    targets: [...group.querySelectorAll('li')].map((target) => target.textContent),
+  }))
+  expect(coverageLists.map(({ heading }) => heading)).toEqual([
+    'Quote states not observed',
+    'Action types not confirmed',
+    'High-risk workflows not verified',
+  ])
+  expect(coverageLists.map(({ targets }) => targets.length)).toEqual([10, 9, 19])
+  const workflowCard = root.querySelectorAll('.coverage-card')[2]
+  expect(workflowCard.querySelector('.coverage-card__label')!.textContent).toBe('High-risk workflows')
+  expect(workflowCard.querySelector('.coverage-card__detail')!.textContent).toBe('19 not verified')
+  expect(root.querySelector('#coverage-grid')!.textContent).not.toContain('CANCEL REQUEST')
+  expect(root.querySelector('.evidence-disclosure #coverage-gaps')).toBeNull()
   const kpis = [...root.querySelectorAll('.kpi')].map((node) => [
     node.querySelector('.kpi__label')!.textContent,
     node.querySelector('.kpi__value')!.textContent,

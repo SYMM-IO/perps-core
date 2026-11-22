@@ -1,10 +1,10 @@
 import { useWorkbench } from '../api'
 import { httpUrl, planChainId, short } from '../lib/state'
 import type { Deployment, Plan, Profile } from '../types'
-import { ActionIcon, Alert, Badge, Button, Code, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Alert, Badge, Button, Code, Group, Loader, Stack, Text, Tooltip } from '@mantine/core'
 import { Box, Check, Copy, ExternalLink, Gem, Handshake, Layers, ShieldCheck, Zap, type LucideIcon } from 'lucide-react'
-import { Children, createContext, useContext, useState } from 'react'
-import type { ReactElement, ReactNode } from 'react'
+import { Children, createContext, isValidElement, useContext, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 export function Address({
   value,
@@ -18,11 +18,11 @@ export function Address({
   compact?: boolean
 }) {
   const [copied, setCopied] = useState(false),
-    [error, setError] = useState('')
+    [copyFailed, setCopyFailed] = useState(false)
   return (
     <Stack gap={4}>
       <Group gap={6} wrap="nowrap" align="center" justify={align === 'center' ? 'center' : 'flex-start'}>
-        <Code className="address" title={compact ? value : undefined}>
+        <Code className="address" title={compact ? value : undefined} translate="no">
           {compact ? short(value) : value}
         </Code>
         <Tooltip label={copied ? 'Copied' : 'Copy address'}>
@@ -33,9 +33,11 @@ export function Address({
               try {
                 await navigator.clipboard.writeText(value)
                 setCopied(true)
+                setCopyFailed(false)
                 setTimeout(() => setCopied(false), 1800)
               } catch {
-                setError('Could not copy. Select and copy the address.')
+                setCopied(false)
+                setCopyFailed(true)
               }
             }}
           >
@@ -53,10 +55,15 @@ export function Address({
       <span className="sr-only" role="status">
         {copied ? 'Copied to clipboard' : ''}
       </span>
-      {error && (
-        <Text size="xs" c="red">
-          {error}
-        </Text>
+      {copyFailed && (
+        <>
+          <Text size="xs" c="red" role="alert">
+            Could not copy the address. Select and copy the full address below.
+          </Text>
+          <Code className="address address-copy-fallback" translate="no">
+            {value}
+          </Code>
+        </>
       )}
     </Stack>
   )
@@ -71,10 +78,27 @@ export function KindTile({ kind }: { kind: string }) {
     </span>
   )
 }
-export function Empty({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+export function Empty({
+  title,
+  children,
+  action,
+  loading = false,
+}: {
+  title: string
+  children?: ReactNode
+  action?: ReactNode
+  loading?: boolean
+}) {
   return (
-    <Stack className="empty-state" align="center" gap="sm">
-      <Text fw={600}>{title}</Text>
+    <Stack className="empty-state" data-loading={loading || undefined} align="center" gap="sm">
+      {loading ? (
+        <Group gap="xs" justify="center" wrap="nowrap">
+          <Loader size="sm" aria-hidden />
+          <Text fw={600}>{title}</Text>
+        </Group>
+      ) : (
+        <Text fw={600}>{title}</Text>
+      )}
       {children && (
         <Text c="dimmed" size="sm" ta="center" maw={520}>
           {children}
@@ -84,6 +108,18 @@ export function Empty({ title, children, action }: { title: string; children?: R
     </Stack>
   )
 }
+/** Switch from a comparison table to flat rows when the panel has less room. */
+export function ResponsiveReview({ table, rows, className }: { table: ReactNode; rows: ReactNode; className?: string }) {
+  return (
+    <div className={className ? `responsive-review ${className}` : 'responsive-review'}>
+      <div className="review-table">{table}</div>
+      <ul className="review-rows" role="list">
+        {rows}
+      </ul>
+    </div>
+  )
+}
+
 /**
  * A long list that starts collapsed behind its count, with a filter once opened. Short lists and lists
  * with something wrong (`attention`) render as they always did. Filtering matches each child's key, so
@@ -102,9 +138,16 @@ export function Collection({
   flow?: 'rows' | 'inline'
 }) {
   const [query, setQuery] = useState('')
+  const filterId = useId()
+  const filterInput = useRef<HTMLInputElement>(null)
   const items = Children.toArray(children)
   if (items.length <= 6 || attention) return <>{children}</>
   const q = query.trim().toLowerCase()
+  const matches = items.flatMap((child, index) => {
+    const key = isValidElement(child) ? child.key : null
+    if (q && !String(key || '').toLowerCase().includes(q)) return []
+    return [{ child, key: key ?? index }]
+  })
   return (
     <details className="inspector-collection">
       <summary>
@@ -113,20 +156,38 @@ export function Collection({
           · expand list
         </Text>
       </summary>
-      <input aria-label={`Filter ${unit}`} placeholder="Filter…" value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
+      <Text component="label" htmlFor={filterId} display="block" size="sm" c="dimmed">
+        Filter {unit}
+      </Text>
+      <input
+        id={filterId}
+        ref={filterInput}
+        value={query}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        onChange={(e) => setQuery(e.currentTarget.value)}
+      />
+      <Text role="status" size="sm" c="dimmed">
+        {matches.length === 0 && `No matching ${unit}`}
+      </Text>
+      {matches.length === 0 && (
+        <Button
+          type="button"
+          size="compact-xs"
+          variant="default"
+          mt={4}
+          onClick={() => {
+            setQuery('')
+            filterInput.current?.focus()
+          }}
+        >
+          Clear filter
+        </Button>
+      )}
       <div className="inspector-collection-items" data-flow={flow}>
-        {items.map((child, i) => (
-          <div
-            key={i}
-            hidden={
-              !!q &&
-              !String((child as ReactElement).key || '')
-                .toLowerCase()
-                .includes(q)
-            }
-          >
-            {child}
-          </div>
+        {matches.map(({ child, key }) => (
+          <div key={key}>{child}</div>
         ))}
       </div>
     </details>
@@ -151,7 +212,7 @@ export function StatusBadge({ status }: { status: string }) {
 }
 export function JsonView({ value }: { value: unknown }) {
   return (
-    <Code block className="json-code">
+    <Code block className="json-code" translate="no">
       {JSON.stringify(value, null, 2)}
     </Code>
   )
@@ -168,17 +229,19 @@ export function CopyData({ value }: { value: string }) {
           try {
             await navigator.clipboard.writeText(value)
             setCopied(true)
+            setError('')
             setTimeout(() => setCopied(false), 1800)
           } catch {
+            setCopied(false)
             setError('Copy failed. Select the calldata above.')
           }
         }}
       >
         {copied ? 'Copied' : 'Copy calldata'}
       </Button>
-      <span role="status" className="sr-only">
+      <Text size="xs" c="dimmed" role="status" className={error ? undefined : 'sr-only'}>
         {copied ? 'Copied to clipboard' : error}
-      </span>
+      </Text>
     </>
   )
 }

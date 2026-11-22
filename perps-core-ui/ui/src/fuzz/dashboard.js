@@ -31,6 +31,7 @@ import {
   quoteTimeline,
   quoteTotals,
   rate,
+  reportCheckpoints,
   reportKey,
   rootCount,
   runHeadline,
@@ -53,6 +54,7 @@ export function mountFuzzDashboard(root, { authorization }) {
   const lifetime = new AbortController()
   let disposed = false
   let resizeObserver = null
+  let runsLoading = false
 
   // The runner writes the report at most every two seconds.
   const POLL_INTERVAL_MS = 2_000
@@ -62,10 +64,16 @@ export function mountFuzzDashboard(root, { authorization }) {
   const COPIED_MS = 2_000
   const ACTIVITY_PAGE_SIZE = 12
   const UNCHANGED = Symbol('unchanged')
+  const clockFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const shortDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const quotePlural = new Intl.PluralRules()
+  const outcomeList = new Intl.ListFormat(undefined, { type: 'conjunction' })
+  const reportedNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 })
 
   const dom = {}
-  const chartModels = new WeakMap()
+  const chartCursors = new WeakMap()
   const copyTimers = new Map()
+  const runWarning = create('p', 'run-warning')
   const state = {
     report: null,
     reportKey: '',
@@ -77,6 +85,9 @@ export function mountFuzzDashboard(root, { authorization }) {
     lastReportAt: 0,
     error: null,
     reportRequest: 0,
+    reportPending: true,
+    retrying: false,
+    coverage: null,
     pollTimer: null,
     statusTimer: null,
     runsTimer: null,
@@ -85,9 +96,12 @@ export function mountFuzzDashboard(root, { authorization }) {
     activityFilter: 'all',
     activityVisible: ACTIVITY_PAGE_SIZE,
     detailsTab: 'coverage',
+    problemRun: '',
+    problemSignature: '',
+    problemTraces: new Map(),
     connectionState: '',
     storyAnimation: null,
-    storyTimers: [],
+    storyFrame: 0,
   }
 
   function element(id) {
@@ -100,18 +114,22 @@ export function mountFuzzDashboard(root, { authorization }) {
       'connection-label',
       'connection-detail',
       'run-select',
+      'archive-feedback',
+      'archive-message',
+      'archive-retry',
       'follow-button',
       'follow-button-label',
       'export-report',
       'export-hint',
       'waiting-state',
+      'waiting-title',
+      'start-guidance',
       'copy-start-command',
       'start-command',
       'error-banner',
       'error-message',
       'retry-button',
       'dashboard',
-      'details',
       'schema-notice',
       'run-status',
       'run-mode',
@@ -123,6 +141,9 @@ export function mountFuzzDashboard(root, { authorization }) {
       'problems-seed',
       'problems-copy',
       'problems-replay-note',
+      'problems-earlier',
+      'problems-earlier-label',
+      'problems-earlier-list',
       'seed-value',
       'trace-value',
       'technical-mode-value',
@@ -135,7 +156,6 @@ export function mountFuzzDashboard(root, { authorization }) {
       'story-stage-copy',
       'health-note',
       'kpi-strip',
-      'summary-limit-note',
       'quotes-title',
       'outcome-bar',
       'outcome-strip',
@@ -146,6 +166,8 @@ export function mountFuzzDashboard(root, { authorization }) {
       'coverage-summary',
       'coverage-grid',
       'coverage-gaps',
+      'chart-window-summary',
+      'details-scroll-reserve',
       'confidence-limit-summary',
       'confidence-limit-list',
       'quote-chart',
@@ -194,15 +216,13 @@ export function mountFuzzDashboard(root, { authorization }) {
   function clockTime(value) {
     const timestamp = timestampNumber(value)
     if (timestamp === undefined) return ''
-    return new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(timestamp))
+    return clockFormatter.format(timestamp)
   }
 
   function shortDate(value) {
     const timestamp = timestampNumber(value)
     if (timestamp === undefined) return ''
-    return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(
-      new Date(timestamp),
-    )
+    return shortDateFormatter.format(timestamp)
   }
 
   function ago(timestamp) {
@@ -307,17 +327,32 @@ export function mountFuzzDashboard(root, { authorization }) {
   function renderRunStatus(report, connectionState = state.connectionState) {
     const outcome = runOutcomeSnapshot(report)
     const snapshot = connectionState === 'stale' || connectionState === 'frozen' || connectionState === 'error'
-    setText(dom['run-status'], `${snapshot ? 'Last reported: ' : ''}${outcome.label}`.toUpperCase())
+    setText(dom['run-status'], `${snapshot ? 'Last reported: ' : ''}${outcome.label}`)
     dom['run-status'].dataset.tone = snapshot && outcome.tone !== 'bad' ? 'warn' : outcome.tone
   }
 
-  function renderRunHeader(report) {
+  function renderRunMetadata(report) {
+    const blockedProbability = optionalNumber(report?.run?.config?.blockedQuoteProbability)
+    const parts = [runSummary(report, viewNow(report)), 'Configured targets only']
+    if (blockedProbability !== undefined) {
+      parts.push(blockedProbability === 0 ? 'blocked generation off' : `blocked generation ${percent(blockedProbability)}`)
+    }
+    setText(dom['run-subtitle'], parts.join(' · '))
+  }
+
+  function renderRunHeader(report, coverage) {
     const mode = report?.run?.config?.runMode
     const trace = text(report?.run?.traceHash, '')
     renderRunStatus(report)
     setText(dom['run-mode'], humanRunMode(mode))
     setText(dom['run-title'], runHeadline(report, state.connectionState))
-    setText(dom['run-subtitle'], runSummary(report, viewNow(report)))
+    if (runStatus(report) !== 'failed' && coverage.tone === 'warn') {
+      setText(runWarning, coverage.summary)
+      if (!runWarning.parentNode) dom['run-subtitle'].before(runWarning)
+    } else {
+      runWarning.remove()
+    }
+    renderRunMetadata(report)
     setText(dom['seed-value'], seedOf(report))
     dom['seed-value'].title = seedOf(report)
     setText(dom['trace-value'], trace ? trace.slice(0, 16) : '—')
@@ -329,7 +364,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     dom['schema-notice'].hidden = !notice
   }
 
-  function failureItem(failure) {
+  function failureItem(failure, latest) {
     const node = create('li', 'problem')
     const where = [
       failure.cycle !== undefined && `cycle ${compactNumber(failure.cycle)}`,
@@ -337,7 +372,12 @@ export function mountFuzzDashboard(root, { authorization }) {
       failure.actionTitle,
     ].filter(Boolean)
     node.append(create('p', 'problem__boundary', humanize(failure.boundary)), create('p', 'problem__message', failure.message))
-    if (where.length) node.append(create('p', 'problem__where', `During ${where.join(' · ')}`))
+    if (where.length || latest) {
+      const context = create('div', 'problem__context')
+      if (where.length) context.append(create('p', 'problem__where', `During ${where.join(' · ')}`))
+      if (latest) context.append(create('p', 'problem__where', 'Latest'))
+      node.append(context)
+    }
     if (failure.stack || failure.cause) {
       const disclosure = create('details', 'problem__trace')
       disclosure.append(create('summary', '', failure.cause ? 'Stack and cause' : 'Stack'))
@@ -352,9 +392,15 @@ export function mountFuzzDashboard(root, { authorization }) {
   function renderProblems(report) {
     const signals = runSignalSnapshot(report)
     const failures = failureRecords(report)
+    const run = JSON.stringify([report?.run?.startedAt, seedOf(report)])
+    if (state.problemRun !== run) {
+      state.problemRun = run
+      state.problemSignature = ''
+      state.problemTraces.clear()
+      dom['problems-earlier'].open = false
+    }
     const show = signals.hasFailure || Boolean(signals.storageWarning)
     dom.problems.hidden = !show
-    if (!show) return
     dom.problems.dataset.tone = signals.hasFailure ? 'bad' : 'warn'
     setText(
       dom['problems-count'],
@@ -364,33 +410,60 @@ export function mountFuzzDashboard(root, { authorization }) {
           ? plural(signals.failureCategories.length, 'signal')
           : 'Storage warning',
     )
-    const items = failures.slice(-10).reverse().map(failureItem)
-    if (failures.length === 0 && signals.hasFailure) {
-      const node = create('li', 'problem')
-      node.append(
-        create('p', 'problem__boundary', 'Run signals'),
-        create('p', 'problem__message', signals.failureCategories.join(' · ')),
-        create('p', 'problem__where', isTerminalRun(report) ? 'The report kept no failure detail.' : 'Failure detail arrives when the run ends.'),
-      )
-      items.push(node)
-    }
-    if (signals.storageWarning) {
-      const node = create('li', 'problem')
-      node.dataset.tone = 'warn'
-      node.append(create('p', 'problem__boundary', 'Report storage'), create('p', 'problem__message', signals.storageWarning))
-      items.push(node)
-    }
-    // Rebuilding the list on every poll would close an open stack disclosure, so only rebuild when it changed.
-    const signature = JSON.stringify([failures, signals.failureCategories, signals.storageWarning])
-    if (dom['problems-list'].dataset.signature !== signature) {
-      dom['problems-list'].dataset.signature = signature
-      dom['problems-list'].replaceChildren(...items)
+    const terminal = isTerminalRun(report)
+    const signature = JSON.stringify([failures, signals.failureCategories, signals.storageWarning, terminal])
+    if (state.problemSignature !== signature) {
+      state.problemSignature = signature
+      const traces = new Map()
+      const newestFirst = failures
+        .map((failure, index) => {
+          const item = failureItem(failure, index === failures.length - 1)
+          const trace = item.querySelector('details')
+          if (trace) {
+            const key = JSON.stringify(failure)
+            const copies = traces.get(key) ?? []
+            trace.open = state.problemTraces.get(key)?.[copies.length]?.open ?? false
+            copies.push(trace)
+            traces.set(key, copies)
+          }
+          return item
+        })
+        .reverse()
+      state.problemTraces = traces
+      const [latest, ...earlier] = newestFirst
+      const preview = latest ? [latest] : []
+      if (!latest && signals.hasFailure) {
+        const node = create('li', 'problem')
+        node.append(
+          create('p', 'problem__boundary', 'Run signals'),
+          create('p', 'problem__message', signals.failureCategories.join(' · ')),
+          create('p', 'problem__where', terminal ? 'The report kept no failure detail.' : 'Failure detail arrives when the run ends.'),
+        )
+        preview.push(node)
+      }
+      if (signals.storageWarning) {
+        const node = create('li', 'problem')
+        node.dataset.tone = 'warn'
+        node.append(create('p', 'problem__boundary', 'Report storage'), create('p', 'problem__message', signals.storageWarning))
+        preview.push(node)
+      }
+      dom['problems-list'].replaceChildren(...preview)
+      dom['problems-earlier-list'].replaceChildren(...earlier)
+      dom['problems-earlier'].hidden = earlier.length === 0
+      setText(dom['problems-earlier-label'], plural(earlier.length, 'earlier failure'))
     }
     const replay = replayCommand(report)
     setText(dom['problems-seed'], seedOf(report))
     dom['problems-copy'].disabled = !replay
     setText(dom['problems-replay-note'], replay ? '' : 'The replay command is written when the run ends.', '')
     dom['problems-replay-note'].hidden = Boolean(replay)
+  }
+
+  function inputYieldValue(snapshot) {
+    if (snapshot?.ratio === undefined) return '—'
+    if (snapshot.sent > 0 && snapshot.ratio < 0.0005) return '<0.1%'
+    if (snapshot.discarded > 0 && snapshot.ratio >= 0.995) return '>99%'
+    return percent(snapshot.ratio)
   }
 
   function renderKpis(report) {
@@ -416,7 +489,7 @@ export function mountFuzzDashboard(root, { authorization }) {
       },
       {
         label: 'Input yield',
-        value: yieldSnapshot?.ratio === undefined ? '—' : percent(yieldSnapshot.ratio),
+        value: inputYieldValue(yieldSnapshot),
         detail: !yieldSnapshot
           ? 'Input counts unavailable'
           : yieldSnapshot.total === 0
@@ -441,13 +514,17 @@ export function mountFuzzDashboard(root, { authorization }) {
       {
         label: 'Action types checked',
         value: actions.available ? `${checkedActions}/${actions.targets.length}` : '—',
-        detail: actions.available ? 'Each supported type checked at least once' : 'State-check evidence unavailable',
+        detail: !actions.available
+          ? 'State-check evidence unavailable'
+          : actions.missing.length === 0
+            ? 'Each supported type checked at least once'
+            : `${checkedActions} of ${actions.targets.length} checked · ${actions.missing.length} missing`,
         tone: actions.available && actions.missing.length === 0 ? 'good' : 'warn',
       },
       {
-        label: 'High-risk checks',
+        label: 'High-risk attempts passed',
         value: cornersAvailable ? `${compactNumber(corners.succeeded)}/${compactNumber(corners.attempted)}` : '—',
-        detail: cornersAvailable ? `${cornerTypes}/${cornerTargetList.length} workflow types passed` : 'Workflow evidence unavailable',
+        detail: cornersAvailable ? `${cornerTypes}/${cornerTargetList.length} distinct workflow types passed` : 'Workflow evidence unavailable',
         tone: cornersAvailable && corners.failed === 0 && cornerTypes === cornerTargetList.length ? 'good' : 'warn',
       },
     ]
@@ -459,29 +536,22 @@ export function mountFuzzDashboard(root, { authorization }) {
         return node
       }),
     )
-    const blockedProbability = optionalNumber(report?.run?.config?.blockedQuoteProbability)
-    setText(
-      dom['summary-limit-note'],
-      `Configured targets only${
-        blockedProbability === 0
-          ? ' · blocked generation off'
-          : blockedProbability !== undefined
-            ? ` · blocked generation ${percent(blockedProbability)}`
-            : ''
-      }`,
-    )
   }
 
   // ---- Coverage -----------------------------------------------------------------------------------
 
-  function renderCoverageVerdict(report) {
-    const coverage = coverageSnapshot(report)
+  function renderCoverageMessage(coverage, connectionState) {
+    const snapshot = coverage.label === 'BUILDING' && ['stale', 'frozen', 'error'].includes(connectionState)
+    setText(dom['coverage-verdict-title'], snapshot ? 'Coverage at last report' : coverage.title)
+    setText(dom['coverage-status'], snapshot ? 'LAST REPORT' : coverage.label)
+    dom['coverage-status'].dataset.tone = coverage.tone
+    setText(dom['coverage-summary'], snapshot ? coverage.snapshotSummary : coverage.summary)
+    dom['coverage-summary'].hidden = coverage.label === 'GAPS'
+  }
+
+  function renderCoverageVerdict(coverage) {
     const container = dom['coverage-status'].closest('.coverage-verdict')
     if (container) container.dataset.tone = coverage.tone
-    setText(dom['coverage-verdict-title'], coverage.title)
-    setText(dom['coverage-status'], coverage.label)
-    dom['coverage-status'].dataset.tone = coverage.tone
-    setText(dom['coverage-summary'], coverage.summary)
     dom['coverage-grid'].replaceChildren(
       ...coverage.cards.map((card) => {
         const node = create('article', 'coverage-card')
@@ -492,14 +562,35 @@ export function mountFuzzDashboard(root, { authorization }) {
         return node
       }),
     )
-    dom['coverage-gaps'].replaceChildren(
-      ...coverage.gaps.map((gap) => {
-        const node = create('span', 'coverage-gap', gap.label)
-        node.dataset.tone = gap.tone
-        node.setAttribute('role', 'listitem')
-        return node
-      }),
-    )
+    const groups = coverage.gapGroups.map(({ id, title, targets }) => {
+      const section = create('section', 'coverage-gap-group')
+      section.dataset.group = id
+      const heading = create('h3', '', title)
+      heading.id = `coverage-gap-${id}`
+      const list = create('ul', '')
+      list.setAttribute('role', 'list')
+      list.setAttribute('aria-labelledby', heading.id)
+      for (const target of targets) {
+        const item = create('li', 'coverage-gap', target)
+        item.dataset.tone = 'warn'
+        list.append(item)
+      }
+      section.append(heading, list)
+      return section
+    })
+    if (coverage.notices.length) {
+      const notices = create('ul', 'coverage-notices')
+      notices.setAttribute('role', 'list')
+      notices.setAttribute('aria-label', 'Coverage warnings and notes')
+      for (const notice of coverage.notices) {
+        const item = create('li', 'coverage-gap', notice.label)
+        item.dataset.tone = notice.tone
+        notices.append(item)
+      }
+      groups.push(notices)
+    }
+    dom['coverage-gaps'].replaceChildren(...groups)
+    dom['coverage-gaps'].hidden = groups.length === 0
   }
 
   function renderConfidenceLimits(report) {
@@ -665,7 +756,8 @@ export function mountFuzzDashboard(root, { authorization }) {
       return
     }
     const totals = quoteTotals(quotes)
-    setText(dom['quotes-title'], totals.total === undefined ? 'Quote outcomes' : `Where ${compactNumber(totals.total)} quotes ended up`)
+    const oneQuote = totals.total !== undefined && quotePlural.select(totals.total) === 'one'
+    const count = compactNumber(totals.total)
     if (!hasQuoteStatusBreakdown(quotes)) {
       dom['outcome-bar'].replaceChildren()
       dom['outcome-bar'].setAttribute('aria-label', 'Quote outcome distribution unavailable')
@@ -675,7 +767,9 @@ export function mountFuzzDashboard(root, { authorization }) {
           'empty-copy',
           totals.total === undefined
             ? 'A per-state quote outcome breakdown is unavailable.'
-            : `${compactNumber(totals.total)} quotes were reported, but the per-state outcome breakdown is unavailable.`,
+            : oneQuote
+              ? `${count} quote was reported, but the per-state outcome breakdown is unavailable.`
+              : `${count} quotes were reported, but the per-state outcome breakdown is unavailable.`,
         ),
       )
       setText(dom['outcome-note'], 'Unknown outcome fields are not treated as zero.')
@@ -688,63 +782,108 @@ export function mountFuzzDashboard(root, { authorization }) {
       { label: 'Closed', value: valueFor('CLOSED'), tone: 'good' },
       { label: 'Canceled', value: valueFor('CANCELED'), tone: 'neutral' },
       { label: 'Still active', value: totals.active, tone: 'info' },
-      { label: 'Liquidated', value: valueFor('LIQUIDATED'), tone: warnIfAny('LIQUIDATED') },
-      { label: 'Expired', value: valueFor('EXPIRED'), tone: warnIfAny('EXPIRED') },
-      { label: 'Liquidated before opening', value: valueFor('LIQUIDATED_PENDING'), tone: warnIfAny('LIQUIDATED_PENDING') },
+      { label: 'Liquidated', value: valueFor('LIQUIDATED'), tone: warnIfAny('LIQUIDATED'), pattern: 'solid' },
+      { label: 'Expired', value: valueFor('EXPIRED'), tone: warnIfAny('EXPIRED'), pattern: 'diagonal' },
+      { label: 'Liquidated before opening', value: valueFor('LIQUIDATED_PENDING'), tone: warnIfAny('LIQUIDATED_PENDING'), pattern: 'dots' },
     ]
-    const distributionTotal = outcomes.reduce((sum, outcome) => sum + numeric(outcome.value), 0)
+    const reportedTotal = optionalNumber(quotes.total)
+    const classified = outcomes.reduce((sum, outcome) => sum + (outcome.value ?? 0), 0)
+    const reconciles = Number.isInteger(reportedTotal) && classified <= reportedTotal &&
+      outcomes.every(({ value }) => value === undefined || (Number.isInteger(value) && value >= 0))
+    const remainder = reconciles ? reportedTotal - classified : 0
+    if (remainder > 0) outcomes.push({ label: 'Unclassified', value: remainder, tone: 'unclassified' })
+    const positive = outcomes.filter((outcome) => outcome.value > 0)
+    const reportedZeros = outcomes.filter((outcome) => outcome.value === 0)
+    const missing = outcomes.filter((outcome) => outcome.value === undefined)
     dom['outcome-bar'].replaceChildren(
-      ...(distributionTotal > 0
-        ? outcomes
-            .filter((outcome) => numeric(outcome.value) > 0)
-            .map((outcome) => {
-              const segment = create('span', 'outcome-bar__segment')
-              segment.dataset.tone = outcome.tone
-              segment.style.flexBasis = `${(numeric(outcome.value) / distributionTotal) * 100}%`
-              segment.title = `${outcome.label}: ${compactNumber(outcome.value)}`
-              return segment
-            })
-        : []),
+      ...(reconciles ? positive : []).map((outcome) => {
+        const segment = create('span', 'outcome-bar__segment')
+        segment.dataset.tone = outcome.tone
+        if (outcome.pattern) segment.dataset.pattern = outcome.pattern
+        segment.style.flexBasis = `${(outcome.value / reportedTotal) * 100}%`
+        segment.title = `${outcome.label}: ${outcome.value.toLocaleString('en-US')}`
+        return segment
+      }),
     )
     dom['outcome-bar'].setAttribute(
       'aria-label',
-      outcomes
-        .filter((outcome) => outcome.value !== undefined)
-        .map((outcome) => `${outcome.label} ${compactNumber(outcome.value)}`)
-        .join(', '),
+      reconciles
+        ? positive.map((outcome) => `${outcome.label} ${outcome.value.toLocaleString('en-US')}`).join(', ') || 'No quotes reported'
+        : 'Quote outcome distribution unavailable',
     )
-    dom['outcome-strip'].replaceChildren(
-      ...outcomes.map((outcome) => {
-        const node = create('article', 'outcome-card')
-        node.dataset.tone = outcome.tone
-        node.append(
-          create('p', 'outcome-card__value', outcome.value === undefined ? '—' : compactNumber(outcome.value)),
-          create('p', 'outcome-card__label', outcome.label),
+    const legend = create('ul', 'outcome-legend')
+    legend.setAttribute('role', 'list')
+    legend.append(
+      ...positive.map((outcome) => {
+        const item = create('li', 'outcome-legend__entry')
+        const swatch = create('span', 'outcome-legend__swatch')
+        swatch.dataset.tone = outcome.tone
+        if (outcome.pattern) swatch.dataset.pattern = outcome.pattern
+        swatch.setAttribute('aria-hidden', 'true')
+        item.append(
+          swatch,
+          create('span', 'outcome-legend__label', outcome.label),
+          ' ',
+          create('span', 'outcome-legend__value', outcome.value.toLocaleString('en-US')),
         )
-        return node
+        return item
       }),
+      ...reportedZeros.map((outcome) => create('li', 'outcome-legend__zero', `${outcome.label} 0`)),
     )
-    if (totals.active === undefined) {
+    const summary = []
+    if (legend.childElementCount) summary.push(legend)
+    if (!reconciles) {
+      summary.push(create('p', 'outcome-legend__missing', reportedTotal === undefined
+        ? 'Quote outcome proportions are unavailable because the report does not give a total.'
+        : 'Quote outcome proportions are unavailable because the counts do not reconcile with the reported total.'))
+    }
+    if (missing.length) {
+      summary.push(create('p', 'outcome-legend__missing', `No count reported for ${outcomeList.format(missing.map((outcome) => outcome.label))}.`))
+    }
+    dom['outcome-strip'].replaceChildren(...summary)
+  }
+
+  function renderOutcomeFreshness(report, connectionState) {
+    const quotes = report.latest?.quotes
+    if (!hasQuoteTelemetry(quotes)) return
+    const { active, total } = quoteTotals(quotes)
+    const retained = ['stale', 'frozen', 'error'].includes(connectionState)
+    const live = isLiveRun(report)
+    const count = compactNumber(total)
+    const quoteLabel = quotePlural.select(total) === 'one' ? 'quote' : 'quotes'
+    const title = total === undefined ? 'Quote outcomes' : `Where ${count} ${quoteLabel} ended up`
+    setText(dom['quotes-title'], live && retained ? 'Quote outcomes at last report' : title)
+    if (!hasQuoteStatusBreakdown(quotes)) return
+    if (active === undefined) {
       setText(dom['outcome-note'], 'The active-quote count is unavailable; unknown fields are not treated as zero.')
       return
     }
     setText(
       dom['outcome-note'],
-      isLiveRun(report)
-        ? `${compactNumber(totals.active)} active now`
-        : report?.run?.config?.runMode === 'continuous'
-          ? `${compactNumber(totals.active)} still active at stop · not failures`
-          : `${compactNumber(totals.active)} still active in the final snapshot`,
+      retained
+        ? `${compactNumber(active)} active in the last reported snapshot`
+        : live
+          ? `${compactNumber(active)} active now`
+          : report.run?.config?.runMode === 'continuous'
+            ? `${compactNumber(active)} still active at stop · not failures`
+            : `${compactNumber(active)} still active in the final snapshot`,
     )
   }
 
-  function mixBlock(label, value, detail, ratioValue, tone) {
+  function mixBlock(label, value, detail, ratioValue, ratioLabel) {
     const node = create('div', 'mix-block')
     node.append(create('p', 'mix-block__label', label), create('p', 'mix-block__value', value), create('p', 'mix-block__detail', detail))
     if (ratioValue !== undefined) {
       const meter = create('div', 'mix-meter')
       const fill = create('div', 'mix-meter__fill')
-      if (tone) fill.style.background = tone
+      if (ratioLabel) {
+        meter.setAttribute('role', 'meter')
+        meter.setAttribute('aria-label', ratioLabel)
+        meter.setAttribute('aria-valuemin', '0')
+        meter.setAttribute('aria-valuemax', '100')
+        meter.setAttribute('aria-valuenow', String(ratioValue * 100))
+        meter.setAttribute('aria-valuetext', percent(ratioValue))
+      } else meter.setAttribute('aria-hidden', 'true')
       fill.style.width = `${clamp(ratioValue * 100, 0, 100)}%`
       meter.append(fill)
       node.append(meter)
@@ -771,11 +910,16 @@ export function mountFuzzDashboard(root, { authorization }) {
     const known = (value) => (value === undefined ? '—' : compactNumber(value))
     const pair = (left, right) => (left === undefined || right === undefined ? '—' : `${compactNumber(left)} / ${compactNumber(right)}`)
     const modes = (source) => {
-      const [limit, market, bestEffort] = ['LIMIT', 'MARKET', 'MARKET_BEST_EFFORT'].map((key) => optionalNumber(source[key]))
-      const complete = limit !== undefined && market !== undefined && bestEffort !== undefined
+      const fields = [['Limit', 'LIMIT'], ['Market', 'MARKET'], ['Best effort', 'MARKET_BEST_EFFORT']]
+      const counts = fields.map(([, key]) => optionalNumber(source[key]))
+      const total = counts.every((count) => count !== undefined) ? counts.reduce((sum, count) => sum + count, 0) : undefined
       return {
-        value: complete ? `${compactNumber(limit)} / ${compactNumber(market)} / ${compactNumber(bestEffort)}` : '—',
-        ratio: complete ? (limit + market + bestEffort === 0 ? 0 : limit / (limit + market + bestEffort)) : undefined,
+        value: fields.map(([label], index) => {
+          const count = counts[index]
+          const share = total > 0 ? ` (${percent(count / total)})` : ''
+          return `${label} ${formatReported(count)}${share}`
+        }).join(' · '),
+        ratio: total > 0 ? counts[0] / total : undefined,
       }
     }
     const openModes = modes(opening)
@@ -788,8 +932,8 @@ export function mountFuzzDashboard(root, { authorization }) {
         'All observed quotes',
         long === undefined || short === undefined ? undefined : long + short === 0 ? 0 : long / (long + short),
       ),
-      mixBlock('Opening limit / market / best effort', openModes.value, 'First-seen order mode', openModes.ratio, cssColor('--proof')),
-      mixBlock('Closing limit / market / best effort', closeModes.value, 'Live close requests only', closeModes.ratio, cssColor('--warn')),
+      mixBlock('Opening order modes', openModes.value, 'First-seen order mode', openModes.ratio, 'Limit share of opening order modes'),
+      mixBlock('Closing order modes', closeModes.value, 'Live close requests only', closeModes.ratio, 'Limit share of closing order modes'),
       mixBlock(
         'Split opens',
         known(optionalNumber(partialOpen.splits)),
@@ -804,35 +948,40 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   // ---- Charts -------------------------------------------------------------------------------------
 
-  function windowedTimeline(points) {
-    if (state.chartWindow === 'all') return points
-    return points.slice(-Math.max(1, numeric(state.chartWindow, 64)))
+  function formatReported(value) {
+    return value === undefined ? '—' : reportedNumber.format(value)
   }
+
+  function hasMeasurements(point, fields) {
+    return fields.some((field) => point[field] !== undefined)
+  }
+
+  const QUOTE_FIELDS = ['live', 'ended']
+  const PACE_FIELDS = ['rate', 'p50', 'p95']
+  const QUEUE_COUNT_FIELDS = ['outstanding', 'pending', 'scheduled']
+  const QUEUE_FIELDS = [...QUEUE_COUNT_FIELDS, 'running']
+  const SERIES_PATTERNS = { '--proof': [], '--series-secondary': [8, 4], '--series-neutral': [1, 4] }
 
   function timelineWindowCaption(label, visible, total) {
     if (visible >= total) return `${label} across all ${compactNumber(total)} retained checkpoints`
     return `${label}; latest ${compactNumber(visible)} of ${compactNumber(total)} retained checkpoints`
   }
 
-  function paceTelemetryMode(points) {
-    if (points.length === 0) return 'unavailable'
-    const exactPoints = points.filter((point) => point.exact).length
-    if (exactPoints === points.length) return 'exact'
-    if (exactPoints === 0) return 'legacy'
-    return 'mixed'
-  }
-
-  function paceTelemetryCopy(mode) {
-    if (mode === 'exact') return 'Whole-cycle duration uses the exact rolling window reported at each checkpoint.'
-    if (mode === 'legacy') return 'Whole-cycle duration is approximated from retained checkpoints.'
-    if (mode === 'mixed') return 'Mixed report: exact rolling-cycle duration and retained-checkpoint approximations.'
+  function paceTelemetryCopy(points) {
+    const exact = points.some((point) => point.exact)
+    const approximate = points.some((point) => point.approximate)
+    if (exact && approximate) return 'Mixed duration data: reported rolling windows and retained-checkpoint approximations.'
+    if (exact) return 'Whole-cycle duration uses reported rolling windows.'
+    if (approximate) return 'Whole-cycle duration is approximated from retained checkpoints.'
+    if (points.some((point) => point.rate !== undefined)) return 'Whole-cycle duration is unavailable.'
     return 'Simulation-speed telemetry was not reported.'
   }
 
   function queueTelemetryMode(points) {
-    if (points.length === 0) return 'unavailable'
-    const peakPoints = points.filter((point) => point.peak).length
-    if (peakPoints === points.length) return 'maxima'
+    const measured = points.filter((point) => hasMeasurements(point, QUEUE_FIELDS))
+    if (measured.length === 0) return 'unavailable'
+    const peakPoints = measured.filter((point) => point.peak).length
+    if (peakPoints === measured.length) return 'maxima'
     if (peakPoints === 0) return 'snapshots'
     return 'mixed'
   }
@@ -845,7 +994,7 @@ export function mountFuzzDashboard(root, { authorization }) {
   }
 
   function table(tableNode, captionText, headers, rows) {
-    const caption = create('caption', '', captionText)
+    setText(element(tableNode.getAttribute('aria-labelledby')), captionText)
     const head = document.createElement('thead')
     const headerRow = document.createElement('tr')
     for (const header of headers) {
@@ -868,7 +1017,20 @@ export function mountFuzzDashboard(root, { authorization }) {
         body.append(row)
       }
     }
-    tableNode.replaceChildren(caption, head, body)
+    tableNode.replaceChildren(head, body)
+    updateTableOverflow(tableNode.parentElement)
+  }
+
+  function updateTableOverflow(region) {
+    const hint = region.previousElementSibling
+    const columns = region.scrollWidth > region.clientWidth
+    const rows = region.scrollHeight > region.clientHeight
+    hint.hidden = !rows && !columns
+    setText(hint, rows && columns
+      ? 'Scroll down for more checkpoints or across for more columns.'
+      : rows
+        ? 'Scroll down for more checkpoints.'
+        : columns ? 'Scroll across for more columns.' : '', '')
   }
 
   function cssColor(name) {
@@ -876,8 +1038,8 @@ export function mountFuzzDashboard(root, { authorization }) {
   }
 
   function canvasContext(canvas) {
-    const width = Math.max(280, Math.floor(canvas.clientWidth || canvas.parentElement?.clientWidth || 600))
-    const height = Math.max(220, Math.floor(canvas.clientHeight || 280))
+    const width = canvas.clientWidth || 600
+    const height = canvas.clientHeight || (canvas.id === 'quote-chart' ? 260 : 240)
     const ratio = clamp(window.devicePixelRatio || 1, 1, 2)
     const nextWidth = Math.floor(width * ratio)
     const nextHeight = Math.floor(height * ratio)
@@ -912,7 +1074,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     context.save()
     context.font = chartFont()
     context.fillStyle = cssColor('--quiet')
-    context.strokeStyle = cssColor('--rule-soft')
+    context.strokeStyle = cssColor('--chart-grid')
     context.lineWidth = 1
     context.textAlign = 'right'
     context.textBaseline = 'middle'
@@ -928,42 +1090,95 @@ export function mountFuzzDashboard(root, { authorization }) {
     context.restore()
   }
 
-  function xPositions(points, rect) {
+  function xPositions(points, rect, byCycle) {
     if (points.length <= 1) return [rect.left + (rect.right - rect.left) / 2]
-    return points.map((_, index) => rect.left + ((rect.right - rect.left) * index) / (points.length - 1))
+    const field = byCycle ? 'cycle' : 'checkpoint'
+    const first = points[0][field]
+    const span = points.at(-1)[field] - first
+    return points.map((point) => rect.left + ((rect.right - rect.left) * (point[field] - first)) / span)
   }
 
-  function drawXAxis(context, rect, points, positions) {
+  function drawXAxis(context, rect, points, positions, byCycle) {
     if (points.length === 0) return
-    const indexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])]
     context.save()
     context.fillStyle = cssColor('--quiet')
     context.font = chartFont()
     context.textBaseline = 'top'
-    for (const index of indexes) {
-      context.textAlign = index === 0 ? 'left' : index === points.length - 1 ? 'right' : 'center'
-      context.fillText(text(points[index].label, ''), positions[index], rect.bottom + 9)
+    const y = rect.bottom + 9
+    const label = (point) => byCycle ? `cycle ${compactNumber(point.cycle)}` : point.label
+    const first = label(points[0])
+    const lastIndex = points.length - 1
+    const span = rect.right - rect.left
+    if (lastIndex === 0) {
+      context.textAlign = 'center'
+      context.fillText(first, positions[0], y, span)
+    } else {
+      const gap = 6
+      const last = label(points[lastIndex])
+      const firstWidth = context.measureText(first).width
+      const lastWidth = context.measureText(last).width
+      const scale = Math.min(1, (span - gap) / Math.max(1, firstWidth + lastWidth))
+      context.textAlign = 'left'
+      context.fillText(first, positions[0], y, Math.max(1, firstWidth * scale))
+      const midIndex = Math.floor(lastIndex / 2)
+      if (midIndex > 0) {
+        const mid = label(points[midIndex])
+        const midX = positions[midIndex]
+        const midHalfWidth = context.measureText(mid).width / 2
+        if (
+          midX - midHalfWidth >= positions[0] + firstWidth * scale + gap &&
+          midX + midHalfWidth <= positions[lastIndex] - lastWidth * scale - gap
+        ) {
+          context.textAlign = 'center'
+          context.fillText(mid, midX, y)
+        }
+      }
+      context.textAlign = 'right'
+      context.fillText(last, positions[lastIndex], y, Math.max(1, lastWidth * scale))
     }
     context.restore()
   }
 
-  function drawLine(context, points, positions, rect, field, maximum, color) {
-    const yFor = (value) => rect.bottom - (rect.bottom - rect.top) * (numeric(value) / maximum)
+  function chartY(value, rect, maximum) {
+    return rect.bottom - (rect.bottom - rect.top) * (value / maximum)
+  }
+
+  function chartSeries(field, rect, maximum, token) {
+    return { field, rect, maximum, color: cssColor(token), pattern: SERIES_PATTERNS[token] }
+  }
+
+  function drawLine(context, points, positions, { rect, field, maximum, color, pattern }) {
     context.save()
     context.beginPath()
     context.lineJoin = 'round'
     context.lineCap = 'round'
     context.lineWidth = 1.75
     context.strokeStyle = color
+    context.fillStyle = color
+    context.setLineDash(pattern)
+    const isolated = []
+    let continuing = false
     points.forEach((point, index) => {
-      if (index === 0) context.moveTo(positions[index], yFor(point[field]))
-      else context.lineTo(positions[index], yFor(point[field]))
+      const value = point[field]
+      if (value === undefined) {
+        continuing = false
+        return
+      }
+      const x = positions[index]
+      const y = chartY(value, rect, maximum)
+      if (continuing) context.lineTo(x, y)
+      else {
+        context.moveTo(x, y)
+        if (points[index + 1]?.[field] === undefined) isolated.push({ x, y })
+      }
+      continuing = true
     })
-    if (points.length === 1) {
-      context.moveTo(rect.left, yFor(points[0][field]))
-      context.lineTo(rect.right, yFor(points[0][field]))
-    }
     context.stroke()
+    for (const { x, y } of isolated) {
+      context.beginPath()
+      context.arc(x, y, 4, 0, 2 * Math.PI)
+      context.fill()
+    }
     context.restore()
   }
 
@@ -977,113 +1192,183 @@ export function mountFuzzDashboard(root, { authorization }) {
     context.restore()
   }
 
-  function installTooltip(canvas, tooltip) {
-    if (canvas.dataset.tooltipReady === 'true') return
-    canvas.dataset.tooltipReady = 'true'
-    canvas.addEventListener('mousemove', (event) => {
-      const model = chartModels.get(canvas)
-      if (!model || model.points.length === 0) return
-      const bounds = canvas.getBoundingClientRect()
-      const x = event.clientX - bounds.left
-      let nearest = 0
-      let distance = Number.POSITIVE_INFINITY
-      model.positions.forEach((position, index) => {
-        const nextDistance = Math.abs(position - x)
-        if (nextDistance < distance) {
-          distance = nextDistance
-          nearest = index
-        }
-      })
-      tooltip.textContent = model.tooltip(model.points[nearest])
-      tooltip.hidden = false
-      const tooltipWidth = tooltip.offsetWidth || 200
-      tooltip.style.left = `${clamp(model.positions[nearest] + 12, 8, Math.max(8, bounds.width - tooltipWidth - 8))}px`
-      tooltip.style.top = `${Math.max(8, event.clientY - bounds.top - 20)}px`
-    })
-    canvas.addEventListener('mouseleave', () => {
+  function installChartCursor(canvas, tooltip, listen) {
+    const wrapper = canvas.parentElement
+    const guide = create('span', 'chart-guide')
+    guide.setAttribute('aria-hidden', 'true')
+    guide.hidden = true
+    const announcement = create('span', 'sr-only')
+    announcement.setAttribute('aria-live', 'polite')
+    wrapper.append(guide, announcement)
+    let model
+    let selectedCheckpoint
+    let pinned = false
+
+    function clear() {
+      guide.hidden = true
       tooltip.hidden = true
+      announcement.textContent = ''
+      selectedCheckpoint = undefined
+      pinned = false
+    }
+
+    function show(index, announceCheckpoint = false) {
+      const point = model?.points[index]
+      if (!point) return
+      selectedCheckpoint = point.checkpoint
+      const x = model.positions[index]
+      const { top, bottom } = model.rect
+      tooltip.textContent = model.tooltip(point)
+      tooltip.hidden = false
+      guide.hidden = false
+      guide.style.left = `${canvas.offsetLeft + x}px`
+      guide.style.top = `${canvas.offsetTop + top}px`
+      guide.style.height = `${bottom - top}px`
+      const marks = model.series.flatMap((series) => {
+        const value = point[series.field]
+        if (value === undefined) return []
+        const marker = create('span', 'chart-guide-marker')
+        marker.style.top = `${chartY(value, series.rect, series.maximum) - top}px`
+        marker.style.backgroundColor = series.color
+        return [marker]
+      })
+      guide.replaceChildren(...marks)
+      const roomRight = canvas.clientWidth - x - 12
+      const tooltipWidth = tooltip.offsetWidth
+      const onSide = roomRight >= tooltipWidth || x - 12 >= tooltipWidth
+      const tooltipX = roomRight >= tooltipWidth ? x + 12 : Math.max(0, x - tooltipWidth - 12)
+      tooltip.style.left = `${canvas.offsetLeft + tooltipX}px`
+      tooltip.style.top = `${canvas.offsetTop + (onSide ? top + 8 : bottom + 8)}px`
+      if (announceCheckpoint) announcement.textContent = tooltip.textContent.replaceAll('\n', '. ')
+    }
+
+    function nearest(event) {
+      const x = event.clientX - canvas.getBoundingClientRect().left
+      let index = 0
+      for (let candidate = 1; candidate < model.positions.length; candidate++) {
+        if (Math.abs(model.positions[candidate] - x) < Math.abs(model.positions[index] - x)) index = candidate
+      }
+      return index
+    }
+
+    wrapper.addEventListener('pointermove', (event) => {
+      if (event.pointerType === 'mouse' && model?.points.length) show(nearest(event))
+    }, listen)
+    wrapper.addEventListener('pointerleave', () => {
+      if (!pinned) clear()
+    }, listen)
+    wrapper.addEventListener('click', (event) => {
+      if (!model?.points.length) return
+      pinned = true
+      show(nearest(event), true)
+    }, listen)
+    wrapper.addEventListener('focus', () => {
+      pinned = true
+      show(Math.max(0, model?.points.findIndex((point) => point.checkpoint === selectedCheckpoint) ?? 0), true)
+    }, listen)
+    wrapper.addEventListener('blur', clear, listen)
+    wrapper.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        clear()
+        return
+      }
+      if (!model?.points.length) return
+      const current = model.points.findIndex((point) => point.checkpoint === selectedCheckpoint)
+      const last = model.points.length - 1
+      let next
+      if (event.key === 'Home') next = 0
+      else if (event.key === 'End') next = last
+      else if (event.key === 'ArrowLeft') next = Math.max(0, current - 1)
+      else if (event.key === 'ArrowRight') next = Math.min(last, current + 1)
+      else return
+      event.preventDefault()
+      pinned = true
+      show(next, true)
+    }, listen)
+    chartCursors.set(canvas, (nextModel) => {
+      model = nextModel
+      if (selectedCheckpoint === undefined) return
+      const index = model?.points.findIndex((point) => point.checkpoint === selectedCheckpoint) ?? -1
+      if (index < 0) clear()
+      else show(index)
     })
   }
 
-  function drawQuoteChart(points) {
+  function drawQuoteChart(points, byCycle) {
     const canvas = dom['quote-chart']
     const { context, width, height } = canvasContext(canvas)
-    if (points.length === 0) {
+    if (!points.length) {
       drawNoData(context, width, height, 'Quote stock has not been reported')
-      chartModels.delete(canvas)
+      chartCursors.get(canvas)?.()
       canvas.setAttribute('aria-label', 'Quote stock telemetry has not been reported.')
       return
     }
     const rect = chartRect(width, height)
-    const maximum = seriesMaximum(points, ['live', 'ended'])
-    const positions = xPositions(points, rect)
+    const maximum = seriesMaximum(points, QUOTE_FIELDS)
+    const positions = xPositions(points, rect, byCycle)
     drawGrid(context, rect, maximum)
-    drawLine(context, points, positions, rect, 'ended', maximum, cssColor('--series-secondary'))
-    drawLine(context, points, positions, rect, 'live', maximum, cssColor('--proof'))
-    drawXAxis(context, rect, points, positions)
-    chartModels.set(canvas, {
+    const series = [
+      chartSeries('ended', rect, maximum, '--series-secondary'),
+      chartSeries('live', rect, maximum, '--proof'),
+    ]
+    for (const line of series) drawLine(context, points, positions, line)
+    drawXAxis(context, rect, points, positions, byCycle)
+    const hasQuotes = points.some((point) => hasMeasurements(point, QUOTE_FIELDS))
+    if (!hasQuotes) drawNoData(context, width, height, 'Quote stock has not been reported')
+    chartCursors.get(canvas)?.({
       points,
       positions,
-      tooltip: (point) => `${point.label}\nLive ${compactNumber(point.live)}\nEnded ${compactNumber(point.ended)}`,
+      rect,
+      series,
+      tooltip: (point) => `${point.label}\nLive ${formatReported(point.live)}\nEnded ${formatReported(point.ended)}`,
     })
-    canvas.setAttribute(
-      'aria-label',
-      `Quote stock over ${points.length} timeline buckets. Latest: ${compactNumber(points.at(-1).live)} live and ${compactNumber(points.at(-1).ended)} ended.`,
-    )
+    const last = points.at(-1)
+    const summary = hasQuotes ? ` Latest: ${formatReported(last.live)} live and ${formatReported(last.ended)} ended.` : ' No quote stock reported.'
+    canvas.setAttribute('aria-label', `Quote stock by ${byCycle ? 'cycle' : 'checkpoint order'}.${summary}`)
   }
 
-  function drawQueueChart(points) {
+  function queueSampleMode(point) {
+    if (!hasMeasurements(point, QUEUE_FIELDS)) return 'Unavailable'
+    return point.peak ? 'Per-metric maxima' : 'Settled snapshot'
+  }
+
+  function drawQueueChart(points, byCycle) {
     const canvas = dom['queue-chart']
     const { context, width, height } = canvasContext(canvas)
-    const mode = queueTelemetryMode(points)
     if (!points.length) {
       drawNoData(context, width, height, 'Queue telemetry has not been reported')
-      chartModels.delete(canvas)
+      chartCursors.get(canvas)?.()
       canvas.setAttribute('aria-label', 'Queue telemetry has not been reported.')
       return
     }
-    const observedMaximum = Math.max(
-      ...points.flatMap((point) => [point.outstanding, point.pending, point.scheduled, point.running].map((value) => numeric(value))),
-    )
-    if (observedMaximum === 0) {
-      drawNoData(
-        context,
-        width,
-        height,
-        mode === 'maxima' ? 'No queue pressure observed in retained intervals' : 'No pressure in retained queue telemetry',
-      )
-      chartModels.delete(canvas)
-      canvas.setAttribute(
-        'aria-label',
-        mode === 'maxima'
-          ? `No queue pressure was observed in the per-metric maxima for ${points.length} retained intervals.`
-          : `No queue pressure appears in ${points.length} retained checkpoints.`,
-      )
-      return
-    }
     const rect = chartRect(width, height)
-    const maximum = seriesMaximum(points, ['outstanding', 'pending', 'scheduled'])
-    const positions = xPositions(points, rect)
+    const maximum = seriesMaximum(points, QUEUE_COUNT_FIELDS)
+    const positions = xPositions(points, rect, byCycle)
     drawGrid(context, rect, maximum)
-    drawLine(context, points, positions, rect, 'outstanding', maximum, cssColor('--warn'))
-    drawLine(context, points, positions, rect, 'pending', maximum, cssColor('--series-neutral'))
-    drawLine(context, points, positions, rect, 'scheduled', maximum, cssColor('--proof'))
-    drawXAxis(context, rect, points, positions)
-    chartModels.set(canvas, {
+    const series = [
+      chartSeries('scheduled', rect, maximum, '--series-neutral'),
+      chartSeries('pending', rect, maximum, '--series-secondary'),
+      chartSeries('outstanding', rect, maximum, '--proof'),
+    ]
+    for (const line of series) drawLine(context, points, positions, line)
+    drawXAxis(context, rect, points, positions, byCycle)
+    const hasCounts = points.some((point) => hasMeasurements(point, QUEUE_COUNT_FIELDS))
+    const hasRunning = points.some((point) => point.running !== undefined)
+    const noCounts = hasRunning ? 'Queue counts unavailable. See Data for running state.' : 'Queue telemetry has not been reported.'
+    if (!hasCounts) drawNoData(context, width, height, noCounts)
+    chartCursors.get(canvas)?.({
       points,
       positions,
+      rect,
+      series,
       tooltip: (point) =>
-        `${point.label}${point.peak ? ' · per-metric interval maxima' : ' · settled snapshot'}\nOutstanding ${compactNumber(
-          point.outstanding,
-        )}\nWaiting ${compactNumber(point.pending)}\nScheduled ${compactNumber(point.scheduled)}\nRunning ${compactNumber(point.running)}`,
+        `${point.label} · ${queueSampleMode(point)}\nOutstanding ${formatReported(point.outstanding)}\nWaiting ${formatReported(
+          point.pending,
+        )}\nScheduled ${formatReported(point.scheduled)}\nRunning ${formatReported(point.running)}`,
     })
-    const peakOutstanding = Math.max(...points.map((point) => numeric(point.outstanding)))
-    canvas.setAttribute(
-      'aria-label',
-      mode === 'maxima'
-        ? `Queue per-metric interval maxima over ${points.length} retained checkpoints. Maximum outstanding: ${compactNumber(peakOutstanding)} actions.`
-        : `Queue pressure across ${points.length} retained checkpoints. Maximum retained outstanding: ${compactNumber(peakOutstanding)} actions.`,
-    )
+    const outstanding = points.flatMap((point) => point.outstanding === undefined ? [] : [point.outstanding])
+    const summary = outstanding.length ? ` Maximum reported outstanding: ${formatReported(Math.max(...outstanding))} actions.` : ''
+    canvas.setAttribute('aria-label', hasCounts ? `Queue pressure by ${byCycle ? 'cycle' : 'checkpoint order'}.${summary}` : noCounts)
   }
 
   function drawBandLabel(context, label, x, y, color) {
@@ -1096,92 +1381,105 @@ export function mountFuzzDashboard(root, { authorization }) {
     context.restore()
   }
 
-  function drawPaceChart(points) {
+  function drawPaceChart(points, byCycle) {
     const canvas = dom['pace-chart']
     const { context, width, height } = canvasContext(canvas)
     if (points.length === 0) {
       drawNoData(context, width, height, 'Pace telemetry has not been reported')
-      chartModels.delete(canvas)
+      chartCursors.get(canvas)?.()
       canvas.setAttribute('aria-label', 'Pace telemetry has not been reported.')
       return
     }
     const upper = chartRect(width, height, { top: 22, bottom: Math.floor(height * 0.43) })
     const lower = chartRect(width, height, { top: Math.floor(height * 0.6), bottom: height - 31 })
-    const positions = xPositions(points, upper)
+    const positions = xPositions(points, upper, byCycle)
     const rateMaximum = seriesMaximum(points, ['rate'])
     const latencyMaximum = seriesMaximum(points, ['p50', 'p95'])
     drawGrid(context, upper, rateMaximum, (value) => value.toFixed(value >= 10 ? 0 : 1))
     drawGrid(context, lower, latencyMaximum, (value) => duration(value))
-    drawLine(context, points, positions, upper, 'rate', rateMaximum, cssColor('--proof'))
-    drawLine(context, points, positions, lower, 'p95', latencyMaximum, cssColor('--warn'))
-    drawLine(context, points, positions, lower, 'p50', latencyMaximum, cssColor('--series-neutral'))
-    drawBandLabel(context, 'Cycles per second', upper.left, 3, cssColor('--proof'))
+    const series = [
+      chartSeries('rate', upper, rateMaximum, '--proof'),
+      chartSeries('p95', lower, latencyMaximum, '--series-secondary'),
+      chartSeries('p50', lower, latencyMaximum, '--series-neutral'),
+    ]
+    for (const line of series) drawLine(context, points, positions, line)
+    drawBandLabel(context, 'Cycles per second', upper.left, 3, cssColor('--quiet'))
     drawBandLabel(context, 'Whole-cycle duration · p50 / p95', lower.left, lower.top - 18, cssColor('--quiet'))
-    drawXAxis(context, lower, points, positions)
-    chartModels.set(canvas, {
+    drawXAxis(context, lower, points, positions, byCycle)
+    if (!points.some((point) => hasMeasurements(point, PACE_FIELDS))) {
+      drawNoData(context, width, height, 'Speed telemetry has not been reported')
+    }
+    chartCursors.get(canvas)?.({
       points,
       positions,
+      rect: { ...lower, top: upper.top },
+      series,
       tooltip: (point) => `${point.label}\nThroughput ${rate(point.rate)}\nP50 ${duration(point.p50)}\nP95 ${duration(point.p95)}`,
     })
     const latest = points.at(-1)
     canvas.setAttribute(
       'aria-label',
-      `Simulation throughput and whole-cycle duration over ${points.length} timeline buckets. Latest: ${rate(latest.rate)}, p50 ${duration(
-        latest.p50,
-      )}, p95 ${duration(latest.p95)}.`,
+      `Simulation throughput and whole-cycle duration by ${byCycle ? 'cycle' : 'checkpoint order'}. Latest: ${rate(latest.rate)}, p50 ${duration(latest.p50)}, p95 ${duration(latest.p95)}.`,
     )
   }
 
   function renderCharts(report) {
-    const allQuotePoints = quoteTimeline(report)
-    const allPacePoints = paceTimeline(report)
-    const allQueuePoints = queueTimeline(report)
-    const quotePoints = windowedTimeline(allQuotePoints)
-    const pacePoints = windowedTimeline(allPacePoints)
-    const queuePoints = windowedTimeline(allQueuePoints)
-    const paceMode = paceTelemetryMode(pacePoints)
-    const queueMode = queueTelemetryMode(queuePoints)
-    setText(dom['pace-telemetry-note'], paceTelemetryCopy(paceMode))
-    dom['pace-telemetry-note'].dataset.tone = paceMode === 'exact' ? 'good' : paceMode === 'unavailable' ? 'neutral' : 'warn'
-    setText(dom['queue-telemetry-note'], queueTelemetryCopy(queueMode))
-    dom['queue-telemetry-note'].dataset.tone = queueMode === 'maxima' ? 'good' : queueMode === 'unavailable' ? 'neutral' : 'warn'
-    drawQuoteChart(quotePoints)
-    drawPaceChart(pacePoints)
-    drawQueueChart(queuePoints)
+    const checkpoints = reportCheckpoints(report)
+    const visible = state.chartWindow === 'all' ? checkpoints : checkpoints.slice(-state.chartWindow)
+    const visibleCount = formatReported(visible.length)
+    const retainedCount = formatReported(checkpoints.length)
+    setText(dom['chart-window-summary'], !visible.length
+      ? 'No retained checkpoints'
+      : visible[0].snapshot
+        ? 'Current snapshot · no retained checkpoints'
+        : visible.length === checkpoints.length
+          ? `All ${retainedCount} retained checkpoints`
+          : `Latest ${visibleCount} of ${retainedCount} retained checkpoints`)
+    const byCycle = visible.length > 0 &&
+      (visible.length === 1 || visible[0].cycle < visible.at(-1).cycle) &&
+      visible.every(({ cycle }, index) => cycle !== undefined && (index === 0 || cycle >= visible[index - 1].cycle))
+    const selectPoints = (timeline) => visible.map(({ checkpoint }) => {
+      const point = timeline[checkpoint - 1]
+      if (byCycle) return point
+      return { ...point, label: `checkpoint ${formatReported(checkpoint)}` }
+    })
+    const quotePoints = selectPoints(quoteTimeline(report, checkpoints))
+    const pacePoints = selectPoints(paceTimeline(report, checkpoints))
+    const queuePoints = selectPoints(queueTimeline(report, checkpoints))
+    const paceCopy = paceTelemetryCopy(pacePoints)
+    const queueCopy = queueTelemetryCopy(queueTelemetryMode(queuePoints))
+    const axis = byCycle ? 'Cycle' : 'Checkpoint order'
+    const windowCaption = (label) => visible.length === 0 ? label
+      : visible[0].snapshot ? `${label} · Current snapshot`
+        : timelineWindowCaption(label, visible.length, checkpoints.length)
+    setText(dom['pace-telemetry-note'], paceCopy)
+    setText(dom['queue-telemetry-note'], queueCopy)
+    drawQuoteChart(quotePoints, byCycle)
+    drawPaceChart(pacePoints, byCycle)
+    drawQueueChart(queuePoints, byCycle)
     table(
       dom['quote-chart-table'],
-      timelineWindowCaption('Quote stock', quotePoints.length, allQuotePoints.length),
-      ['Bucket', 'Live', 'Ended'],
-      quotePoints.map((point) => [point.label, compactNumber(point.live), compactNumber(point.ended)]),
+      windowCaption('Quote stock'),
+      [axis, 'Live', 'Ended'],
+      quotePoints.map((point) => [point.label, formatReported(point.live), formatReported(point.ended)]),
     )
     table(
       dom['pace-chart-table'],
-      timelineWindowCaption(
-        paceMode === 'exact'
-          ? 'Throughput and exact rolling-cycle duration'
-          : paceMode === 'unavailable'
-            ? 'Throughput and whole-cycle duration'
-            : 'Throughput and approximate whole-cycle duration',
-        pacePoints.length,
-        allPacePoints.length,
-      ),
-      ['Bucket', 'Cycles/s', 'P50', 'P95'],
-      pacePoints.map((point) => [point.label, rate(point.rate), duration(point.p50), duration(point.p95)]),
+      `${windowCaption('Throughput and whole-cycle duration')}. ${paceCopy}`,
+      [axis, 'Cycles/s', 'P50 (ms)', 'P95 (ms)', 'Duration data'],
+      pacePoints.map((point) => [
+        point.label, rate(point.rate), formatReported(point.p50), formatReported(point.p95),
+        point.exact && point.approximate ? 'Reported and approximate'
+          : point.exact ? 'Reported rolling window' : point.approximate ? 'Retained-checkpoint approximation' : 'Unavailable',
+      ]),
     )
     table(
       dom['queue-chart-table'],
-      timelineWindowCaption(
-        queueMode === 'maxima' ? 'Queue per-metric interval maxima' : queueMode === 'unavailable' ? 'Queue telemetry' : 'Queue snapshots and maxima',
-        queuePoints.length,
-        allQueuePoints.length,
-      ),
-      ['Checkpoint', 'Outstanding', 'Waiting', 'Scheduled', 'Running'],
+      `${windowCaption('Queue pressure')}. ${queueCopy}`,
+      [axis, 'Outstanding', 'Waiting', 'Scheduled', 'Running', 'Queue sample'],
       queuePoints.map((point) => [
-        `${point.label} · ${point.peak ? 'per-metric maxima' : 'settled snapshot'}`,
-        compactNumber(point.outstanding),
-        compactNumber(point.pending),
-        compactNumber(point.scheduled),
-        compactNumber(point.running),
+        point.label, formatReported(point.outstanding), formatReported(point.pending),
+        formatReported(point.scheduled), formatReported(point.running), queueSampleMode(point),
       ]),
     )
   }
@@ -1196,10 +1494,10 @@ export function mountFuzzDashboard(root, { authorization }) {
   ]
 
   function clearStoryMotion() {
-    for (const animation of dom['story-token']?.getAnimations?.() || []) animation.cancel()
+    state.storyAnimation?.cancel()
     state.storyAnimation = null
-    for (const timer of state.storyTimers) window.clearTimeout(timer)
-    state.storyTimers = []
+    window.cancelAnimationFrame(state.storyFrame)
+    state.storyFrame = 0
     if (dom['story-token']) {
       dom['story-token'].style.opacity = '0'
       dom['story-token'].style.transform = ''
@@ -1238,29 +1536,39 @@ export function mountFuzzDashboard(root, { authorization }) {
     })
     activateStoryStep(0)
     dom['story-token'].style.opacity = '1'
-    state.storyAnimation = dom['story-token'].animate(
-      coordinates.map((point, index) => ({
-        transform: `translate(${point.x}px, ${point.y}px)`,
-        offset: index / Math.max(1, coordinates.length - 1),
-      })),
-      { duration: 2_600, easing: 'cubic-bezier(0.77, 0, 0.175, 1)', fill: 'forwards' },
+    const travel = 2_600
+    const hold = 350
+    const duration = travel + hold + 140
+    const frames = coordinates.map((point, index) => ({
+      transform: `translate(${point.x}px, ${point.y}px)`,
+      opacity: 1,
+      offset: (travel / duration) * index / Math.max(1, coordinates.length - 1),
+    }))
+    const arrival = frames.at(-1)
+    const animation = dom['story-token'].animate(
+      [...frames, { ...arrival, offset: (travel + hold) / duration }, { ...arrival, offset: 1, opacity: 0 }],
+      { duration, fill: 'forwards' },
     )
-    for (let index = 1; index < steps.length; index++) {
-      state.storyTimers.push(window.setTimeout(() => activateStoryStep(index), Math.round((2_600 * index) / (steps.length - 1))))
+    state.storyAnimation = animation
+    let activeStep = 0
+    function syncStage() {
+      if (state.storyAnimation !== animation) return
+      const progress = animation.effect.getComputedTiming().progress ?? 0
+      const step = Math.round(Math.min(1, progress * duration / travel) * (steps.length - 1))
+      if (step !== activeStep) {
+        activeStep = step
+        activateStoryStep(step)
+      }
+      state.storyFrame = window.requestAnimationFrame(syncStage)
     }
-    state.storyAnimation.addEventListener(
+    state.storyFrame = window.requestAnimationFrame(syncStage)
+    animation.addEventListener(
       'finish',
       () => {
-        steps.forEach((step) => {
-          step.classList.remove('is-active')
-          step.classList.add('is-complete')
-        })
+        if (state.storyAnimation !== animation) return
+        clearStoryMotion()
+        steps.forEach((step) => step.classList.add('is-complete'))
         setText(dom['story-stage-copy'], 'Cycle settled. The next randomized cycle can now begin.')
-        const finishedAnimation = state.storyAnimation
-        state.storyAnimation = null
-        if (finishedAnimation) finishedAnimation.cancel()
-        dom['story-token'].style.opacity = '0'
-        dom['story-token'].style.transform = ''
       },
       { once: true },
     )
@@ -1350,11 +1658,14 @@ export function mountFuzzDashboard(root, { authorization }) {
     setText(dom['activity-retention-note'], `${compactNumber(droppedActivity)} older events omitted from this view.`)
     dom['activity-retention-note'].hidden = droppedActivity <= 0
     if (filteredRecords.length === 0) {
+      const filterLabel = root.querySelector('[data-activity-filter][aria-pressed="true"]')?.textContent?.trim()
       dom['activity-list'].replaceChildren(
         create(
           'li',
           'empty-copy',
-          records.length === 0 ? 'No meaningful activity has been retained yet.' : 'No retained activity matches this filter.',
+          state.activityFilter === 'all'
+            ? 'No meaningful activity has been retained yet.'
+            : `No activity matches ${filterLabel}. Select All to see every retained event.`,
         ),
       )
       dom['activity-more'].hidden = true
@@ -1390,6 +1701,7 @@ export function mountFuzzDashboard(root, { authorization }) {
   function renderReplay(report) {
     const replay = replayCommand(report)
     setText(dom['replay-command'], replay || 'Replay command is not available yet.')
+    dom['replay-command'].translate = !replay
     dom['copy-replay-panel'].disabled = !replay
   }
 
@@ -1432,11 +1744,13 @@ export function mountFuzzDashboard(root, { authorization }) {
   function renderReport(report) {
     dom['waiting-state'].hidden = true
     dom.dashboard.hidden = false
-    renderRunHeader(report)
+    const coverage = coverageSnapshot(report)
+    state.coverage = coverage
+    renderRunHeader(report, coverage)
     renderProblems(report)
     renderKpis(report)
     renderStory(report)
-    renderCoverageVerdict(report)
+    renderCoverageVerdict(coverage)
     renderOutcomes(report)
     renderConfidenceLimits(report)
     renderLifecycle(report)
@@ -1458,10 +1772,11 @@ export function mountFuzzDashboard(root, { authorization }) {
     dom['export-hint'].hidden = available
   }
 
-  function showWaiting() {
+  function showWaiting({ pending = true } = {}) {
     state.report = null
     state.reportKey = ''
     state.lastReportAt = 0
+    state.reportPending = pending
     setExportAvailable(false)
     dom['waiting-state'].hidden = false
     dom.dashboard.hidden = true
@@ -1501,7 +1816,12 @@ export function mountFuzzDashboard(root, { authorization }) {
       dom.dashboard.hidden = true
       dom['follow-button'].disabled = true
     }
-    setText(dom['error-message'], `${state.error}. The dashboard will retry automatically.`)
+    const explanation = state.report
+      ? 'Could not refresh the report. Showing the last report we received.'
+      : state.selectedRunId || !state.following
+        ? 'The local report service is unavailable. Select Retry to request the report again.'
+        : 'The local report service is unavailable. This page will retry automatically.'
+    setText(dom['error-message'], state.report ? explanation : `${explanation} (${state.error})`)
     updateConnection()
   }
 
@@ -1516,10 +1836,15 @@ export function mountFuzzDashboard(root, { authorization }) {
     if (!force && !state.following && state.report !== null) return
     const url = reportUrl()
     const request = ++state.reportRequest
+    if (force && !state.report && !state.error) {
+      state.reportPending = true
+      updateConnection()
+    }
     try {
       const response = await fetchJson(url, state.report && state.etag?.url === url ? state.etag.tag : undefined)
       if (request !== state.reportRequest || disposed) return
       state.lastSuccessAt = Date.now()
+      state.reportPending = false
       clearError()
       if (response === UNCHANGED) {
         updateConnection()
@@ -1527,7 +1852,7 @@ export function mountFuzzDashboard(root, { authorization }) {
       }
       state.etag = response.etag ? { url, tag: response.etag } : null
       if (!isReport(response.payload)) {
-        showWaiting()
+        showWaiting({ pending: false })
         updateConnection()
         return
       }
@@ -1545,6 +1870,7 @@ export function mountFuzzDashboard(root, { authorization }) {
       updateConnection()
     } catch (error) {
       if (request !== state.reportRequest || disposed) return
+      state.reportPending = false
       showError(error)
     }
   }
@@ -1553,7 +1879,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     return text(run?.name ?? run?.id, '')
   }
 
-  /** "× Oct 14, 14:48 · Failed, 1 failure · 312 cycles · seed abc". Bare file names from an older server still read. */
+  /** Build the report option from the local date and available metadata. */
   function runLabel(run) {
     const name = runId(run)
     const status = text(run.status, '').toLowerCase()
@@ -1588,14 +1914,25 @@ export function mountFuzzDashboard(root, { authorization }) {
   }
 
   async function loadRuns() {
+    if (runsLoading) return
+    runsLoading = true
     try {
       const { payload } = await fetchJson('/api/fuzz/runs')
       if (disposed) return
       const runs = Array.isArray(payload?.runs) ? payload.runs : []
       state.runs = runs.map((item) => (isObject(item) ? item : { name: item }))
       renderRunOptions()
+      if (root.activeElement === dom['archive-retry']) dom['run-select'].focus()
+      dom['archive-retry'].hidden = true
+      delete dom['archive-feedback'].dataset.error
+      setText(dom['archive-message'], '', '')
     } catch {
-      // A missing run archive must not interrupt the current live report.
+      if (disposed) return
+      dom['archive-feedback'].dataset.error = 'true'
+      dom['archive-retry'].hidden = false
+      setText(dom['archive-message'], 'Could not load past reports.')
+    } finally {
+      runsLoading = false
     }
   }
 
@@ -1603,29 +1940,38 @@ export function mountFuzzDashboard(root, { authorization }) {
 
   function updateFollowButton() {
     const following = state.following && !state.selectedRunId
-    dom['follow-button'].setAttribute('aria-pressed', following ? 'true' : 'false')
+    dom['run-select'].dataset.archived = String(Boolean(state.selectedRunId))
     setText(dom['follow-button-label'], following ? 'Pause updates' : 'Follow live')
     dom['follow-button'].title = following ? 'Pause automatic report updates' : 'Return to the current report'
   }
 
   function updateConnection() {
+    const runFailed = runStatus(state.report) === 'failed'
     let connectionState = 'waiting'
-    let label = 'Waiting for a report'
-    let detail = 'Polling the local runner'
+    const selectedLabel = state.selectedRunId ? dom['run-select'].selectedOptions[0]?.textContent || state.selectedRunId : ''
+    const loadingLabel = state.selectedRunId ? 'Loading saved report…' : 'Loading current report…'
+    const emptyLabel = state.selectedRunId ? 'No saved report available' : 'Waiting for a run report'
+    let label = state.reportPending ? loadingLabel : emptyLabel
+    let detail = selectedLabel
+    if (!state.report) {
+      setText(dom['waiting-title'], label)
+      dom['start-guidance'].hidden = state.reportPending || Boolean(state.selectedRunId) || Boolean(state.error)
+    }
     if (state.error) {
       connectionState = 'error'
       label = 'Report error'
-      detail = state.error
+      detail = selectedLabel ? `${selectedLabel} · ${state.error}` : state.error
+    } else if (!state.report) {
+      connectionState = 'waiting'
     } else if (!state.following || state.selectedRunId) {
       connectionState = 'frozen'
       label = state.selectedRunId ? 'Past report' : 'Updates paused'
-      detail = state.selectedRunId ? `Showing run ${state.selectedRunId}` : 'Automatic report updates are paused'
-    } else if (!state.report) {
-      connectionState = 'waiting'
+      detail = selectedLabel || 'Automatic report updates are paused'
     } else if (isTerminalRun(state.report)) {
       connectionState = 'final'
       label = 'Final report'
-      detail = `Run ${humanize(runStatus(state.report)).toLowerCase()} ${ago(timestampNumber(state.report.run?.finishedAt) ?? state.lastReportAt)}`
+      const finished = ago(timestampNumber(state.report.run?.finishedAt) ?? state.lastReportAt)
+      detail = runFailed ? `Finished ${finished}` : `Run ${humanize(runStatus(state.report)).toLowerCase()} ${finished}`
     } else if (isLiveRun(state.report) && state.lastReportAt > 0 && Date.now() - state.lastReportAt > STALE_AFTER_MS) {
       connectionState = 'stale'
       label = 'Report stale'
@@ -1636,16 +1982,25 @@ export function mountFuzzDashboard(root, { authorization }) {
       detail = `Updated ${ago(state.lastReportAt || state.lastSuccessAt)}`
     }
     dom['connection-banner'].dataset.state = connectionState
+    dom['connection-banner'].dataset.outcome = runFailed ? 'failed' : ''
+    if (runFailed) {
+      detail = `${label} · ${detail}`
+      label = 'Run failed'
+    }
+    const changed =
+      state.connectionState && (state.connectionState !== connectionState || dom['connection-label'].textContent !== label)
     setText(dom['connection-label'], label)
-    setText(dom['connection-detail'], detail)
-    if (state.connectionState && state.connectionState !== connectionState) announce(`${label}. ${detail}.`)
+    setText(dom['connection-detail'], detail, '')
+    if (changed) announce(detail ? `${label}. ${detail}.` : label)
     state.connectionState = connectionState
     updateFollowButton()
     if (!state.report) return
+    renderCoverageMessage(state.coverage, connectionState)
+    renderOutcomeFreshness(state.report, connectionState)
     const acceptedAge = ago(state.lastReportAt || state.lastSuccessAt)
     renderRunStatus(state.report, connectionState)
     setText(dom['run-title'], runHeadline(state.report, connectionState))
-    setText(dom['run-subtitle'], runSummary(state.report, viewNow(state.report)))
+    renderRunMetadata(state.report)
     const total = quoteTotals(state.report.latest?.quotes).total
     const quoteSummary =
       total !== undefined
@@ -1711,6 +2066,11 @@ export function mountFuzzDashboard(root, { authorization }) {
     const buttons = [...root.querySelectorAll('[data-details-tab]')]
     const selectedButton = buttons.find((button) => button.dataset.detailsTab === tabName)
     if (!selectedButton) return
+    const scroll = window.scrollY
+    const details = selectedButton.closest('#details')
+    const reserve = dom['details-scroll-reserve']
+    const previousHeight = details.offsetHeight
+    const previousMax = document.documentElement.scrollHeight - document.documentElement.clientHeight - reserve.offsetHeight
     state.detailsTab = tabName
     for (const button of buttons) {
       const selected = button === selectedButton
@@ -1718,8 +2078,15 @@ export function mountFuzzDashboard(root, { authorization }) {
       button.tabIndex = selected ? 0 : -1
     }
     for (const pane of root.querySelectorAll('[data-details-pane]')) pane.hidden = pane.dataset.detailsPane !== tabName
-    if (focus) selectedButton.focus()
-    if (tabName === 'runner') window.requestAnimationFrame(scheduleChartRender)
+    // Preserve the tab row when the browser would clamp scroll for a shorter pane.
+    const naturalMax = previousMax + details.offsetHeight - previousHeight
+    const deficit = scroll > 0 ? Math.max(0, scroll - naturalMax) : 0
+    reserve.style.height = deficit ? `${deficit}px` : ''
+    if (deficit) reserve.dataset.scrollMax = String(naturalMax)
+    else delete reserve.dataset.scrollMax
+    if (window.scrollY !== scroll) window.scrollTo({ top: scroll, behavior: 'instant' })
+    if (focus) selectedButton.focus({ preventScroll: true })
+    if (tabName === 'runner' && state.report) renderCharts(state.report)
   }
 
   function handleDetailsTabKeydown(event) {
@@ -1749,6 +2116,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     state.following = true
     state.etag = null
     state.activityVisible = ACTIVITY_PAGE_SIZE
+    state.problemRun = ''
     dom['run-select'].value = runName
     showWaiting()
     updateConnection()
@@ -1768,7 +2136,24 @@ export function mountFuzzDashboard(root, { authorization }) {
       switchTo('')
     })
     dom['run-select'].addEventListener('change', () => switchTo(dom['run-select'].value))
-    dom['retry-button'].addEventListener('click', () => void loadReport({ force: true }))
+    dom['archive-retry'].addEventListener('click', () => void loadRuns(), listen)
+    dom['retry-button'].addEventListener('click', async () => {
+      if (state.retrying) return
+      const button = dom['retry-button']
+      state.retrying = true
+      button.disabled = true
+      button.dataset.pending = ''
+      setText(button, 'Retrying…')
+      announce('Retrying the report request.')
+      try {
+        await loadReport({ force: true })
+      } finally {
+        state.retrying = false
+        button.disabled = false
+        delete button.dataset.pending
+        setText(button, 'Retry')
+      }
+    }, listen)
     dom['copy-replay-panel'].addEventListener('click', () =>
       copyWithFeedback(replayCommand(state.report), dom['copy-replay-panel'], 'Replay command'),
     )
@@ -1787,9 +2172,14 @@ export function mountFuzzDashboard(root, { authorization }) {
       button.addEventListener('click', () => activateDetailsTab(button.dataset.detailsTab))
       button.addEventListener('keydown', handleDetailsTabKeydown)
     }
-    dom.details.addEventListener('toggle', () => {
-      if (dom.details.open && state.detailsTab === 'runner') window.requestAnimationFrame(scheduleChartRender)
-    })
+    window.addEventListener('scroll', () => {
+      const reserve = dom['details-scroll-reserve']
+      const max = reserve.dataset.scrollMax
+      if (max !== undefined && window.scrollY <= Number(max)) {
+        reserve.style.height = ''
+        delete reserve.dataset.scrollMax
+      }
+    }, { ...listen, passive: true })
     for (const button of root.querySelectorAll('[data-chart-window]')) {
       button.addEventListener('click', () => {
         state.chartWindow = button.dataset.chartWindow === 'all' ? 'all' : numeric(button.dataset.chartWindow, 64)
@@ -1810,15 +2200,17 @@ export function mountFuzzDashboard(root, { authorization }) {
       ['pace-chart', 'pace-tooltip'],
       ['queue-chart', 'queue-tooltip'],
     ]) {
-      installTooltip(dom[canvasId], dom[tooltipId])
+      installChartCursor(dom[canvasId], dom[tooltipId], listen)
     }
-    // In-page anchors cannot reach into a shadow root, so the section links scroll by hand.
+    for (const disclosure of root.querySelectorAll('.chart-data')) {
+      disclosure.addEventListener('toggle', () => updateTableOverflow(disclosure.querySelector('.table-scroll')), listen)
+    }
+    // In-page anchors cannot reach into a shadow root, so scroll explicitly.
     for (const link of root.querySelectorAll('.section-nav a')) {
       link.addEventListener('click', (event) => {
         event.preventDefault()
         const target = element(link.getAttribute('href').slice(1))
-        if (!target) return
-        if (target === dom.details) dom.details.open = true
+        if (!target || dom.dashboard.hidden) return
         const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
         target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
       })
@@ -1829,6 +2221,7 @@ export function mountFuzzDashboard(root, { authorization }) {
     } else {
       window.addEventListener('resize', scheduleChartRender, listen)
     }
+    window.matchMedia('(prefers-contrast: more)').addEventListener?.('change', scheduleChartRender, listen)
     window.addEventListener(
       'resize',
       () => {
@@ -1854,7 +2247,7 @@ export function mountFuzzDashboard(root, { authorization }) {
    * only checked at the archive cadence in case a new run replaces it.
    */
   function pollReport({ catchUp = false } = {}) {
-    if (document.visibilityState === 'hidden' || !state.following || state.selectedRunId) return
+    if (document.visibilityState === 'hidden' || state.retrying || !state.following || state.selectedRunId) return
     if (!catchUp && state.report && isTerminalRun(state.report) && Date.now() - state.lastSuccessAt < RUNS_INTERVAL_MS) return
     void loadReport()
   }

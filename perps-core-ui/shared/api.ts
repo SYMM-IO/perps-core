@@ -63,7 +63,7 @@ export interface Snapshot {
 	at: string
 	fingerprint: string
 	profile: Profile
-	coverage?: Record<string, any>
+	coverage?: string | Record<string, unknown>
 	roleHistory?: Record<string, any>
 	/** Where each kind of fact in this snapshot came from. Absent on snapshots saved before the engine recorded it. */
 	sources?: Record<string, any>
